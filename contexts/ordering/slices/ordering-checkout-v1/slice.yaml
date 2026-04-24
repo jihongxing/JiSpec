@@ -4,8 +4,10 @@ context_id: ordering
 priority: high
 lifecycle:
   state: behavior-defined
-  updated_at: "2024-01-01T00:00:00Z"
-goal: Allow users to submit an order from a valid cart while rejecting unavailable items.
+  updated_at: '2024-01-01T00:00:00Z'
+goal: >-
+  Allow users to submit an order from a valid cart while rejecting unavailable
+  items.
 scope:
   includes:
     - cart availability validation

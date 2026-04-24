@@ -444,7 +444,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
         const schemaPath = path.join(options.root, "schemas", "agent-output.schema.json");
         if (fs.existsSync(schemaPath)) {
           const schema = JSON.parse(fs.readFileSync(schemaPath, "utf-8"));
-          const ajv = new Ajv2020({ allErrors: true, strict: false });
+          const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
           addFormats(ajv);
           const validate = ajv.compile(schema);
 

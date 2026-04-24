@@ -2,6 +2,7 @@ import type { AIConfig, AIProvider } from "./ai-provider";
 import { CommandProvider } from "./providers/command-provider";
 import { HttpProvider } from "./providers/http-provider";
 import { StdioProvider } from "./providers/stdio-provider";
+import { MockProvider } from "./providers/mock-provider";
 
 /**
  * AI Provider Factory
@@ -17,6 +18,9 @@ export class AIProviderFactory {
     switch (providerType) {
       case "stdio":
         return new StdioProvider();
+
+      case "mock":
+        return new MockProvider();
 
       case "command": {
         if (!config?.command?.executable) {
@@ -40,7 +44,7 @@ export class AIProviderFactory {
 
       default:
         throw new Error(
-          `Unknown AI provider: ${providerType}. Valid providers: stdio, command, http`
+          `Unknown AI provider: ${providerType}. Valid providers: stdio, mock, command, http`
         );
     }
   }
@@ -49,6 +53,6 @@ export class AIProviderFactory {
    * 列出所有可用的 provider 类型
    */
   static listProviders(): string[] {
-    return ["stdio", "command", "http"];
+    return ["stdio", "mock", "command", "http"];
   }
 }

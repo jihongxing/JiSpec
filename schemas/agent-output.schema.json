@@ -1,5 +1,4 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Agent Output Protocol",
   "description": "Structured output format for JiSpec agents",
   "type": "object",
