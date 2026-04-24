@@ -9,6 +9,7 @@ import { OutputValidator } from "./output-validator";
 import { GateChecker } from "./gate-checker";
 import { TraceManager } from "./trace-manager";
 import type { ResolvedStageContract } from "./stage-contract";
+import type { StageExecutionResult, FileWrite, GateUpdate, TraceLink, Evidence } from "./stage-execution-result";
 
 /**
  * Agent role types supported by the system
@@ -84,6 +85,8 @@ export interface AgentResult {
     errors: string[];
   };
   error?: string;
+  // 结构化结果（新增）
+  executionResult?: StageExecutionResult;
 }
 
 /**
@@ -414,26 +417,42 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     }
     console.log("[Constraint] ✓ Input files unchanged");
 
-    // 7. Save output (handle multiple outputs)
+    // 7. Collect writes (don't write yet if we want structured result)
+    const writes: FileWrite[] = [];
     if (output) {
       if (context.outputs.length === 1) {
         // Single output: save to specified path or first output
         const outputPath = options.output || context.outputs[0]?.path;
         if (outputPath) {
-          console.log(`\n[Output] Saving to ${outputPath}...`);
-          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-          fs.writeFileSync(outputPath, output, "utf-8");
-          console.log("[Output] ✓ Output saved");
+          writes.push({
+            path: outputPath,
+            content: output,
+            encoding: "utf-8",
+          });
         }
       } else {
         // Multiple outputs: save to all output paths
-        console.log(`\n[Output] Saving to ${context.outputs.length} files...`);
         for (const outputFile of context.outputs) {
-          fs.mkdirSync(path.dirname(outputFile.path), { recursive: true });
-          fs.writeFileSync(outputFile.path, output, "utf-8");
-          console.log(`[Output] ✓ Saved ${outputFile.relativePath}`);
+          writes.push({
+            path: outputFile.path,
+            content: output,
+            encoding: "utf-8",
+          });
         }
       }
+    }
+
+    // 7b. Apply writes (for backward compatibility, still write files)
+    // TODO: Remove this once StageRunner takes over
+    if (!options.dryRun) {
+      for (const write of writes) {
+        console.log(`\n[Output] Saving to ${write.path}...`);
+        fs.mkdirSync(path.dirname(write.path), { recursive: true });
+        fs.writeFileSync(write.path, write.content, "utf-8");
+        console.log("[Output] ✓ Output saved");
+      }
+    } else {
+      console.log(`\n[Output] Dry-run: would write ${writes.length} file(s)`);
     }
 
     // 8. Validate output
@@ -473,6 +492,21 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     // 10. Update trace (if needed)
     // This will be implemented in Phase 3 when we have pipeline stages
 
+    // 11. Build structured execution result
+    const executionResult: StageExecutionResult = {
+      success: outputCheck.passed,
+      writes,
+      gateUpdates: [],  // TODO: collect from gateChecker
+      traceLinks: [],   // TODO: collect from TraceManager
+      evidence: [
+        {
+          type: "validation",
+          content: JSON.stringify(outputCheck),
+          timestamp: new Date().toISOString(),
+        },
+      ],
+    };
+
     return {
       success: outputCheck.passed,
       role: options.role,
@@ -482,6 +516,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
         ok: outputCheck.passed,
         errors: outputCheck.errors.map((e) => e.message),
       },
+      executionResult,
     };
   } catch (error) {
     return {

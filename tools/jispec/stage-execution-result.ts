@@ -1,0 +1,54 @@
+/**
+ * 文件写入操作
+ */
+export interface FileWrite {
+  path: string;           // 文件路径
+  content: string;        // 文件内容
+  encoding?: string;      // 编码（默认 utf-8）
+}
+
+/**
+ * 门控更新操作
+ */
+export interface GateUpdate {
+  gate: string;           // 门控名称
+  passed: boolean;        // 是否通过
+  reason?: string;        // 原因说明
+}
+
+/**
+ * 追溯链接
+ */
+export interface TraceLink {
+  from: {
+    type: string;         // 源类型（requirement, invariant, scenario, test, code）
+    id: string;           // 源 ID
+  };
+  to: {
+    type: string;         // 目标类型
+    id: string;           // 目标 ID
+  };
+  relation: string;       // 关系类型（refines, verified_by, covered_by, implemented_by）
+}
+
+/**
+ * 验证证据
+ */
+export interface Evidence {
+  type: string;           // 证据类型（test_output, trace, validation）
+  content: string;        // 证据内容
+  timestamp: string;      // 时间戳
+  metadata?: Record<string, unknown>;  // 额外元数据
+}
+
+/**
+ * 阶段执行结果（结构化）
+ */
+export interface StageExecutionResult {
+  success: boolean;
+  writes: FileWrite[];
+  gateUpdates: GateUpdate[];
+  traceLinks: TraceLink[];
+  evidence: Evidence[];
+  error?: string;
+}
