@@ -1,0 +1,8 @@
+id: catalog
+name: Catalog
+owner: team-catalog
+purpose: Own product sellability and published product availability views.
+upstream_contexts: []
+downstream_contexts:
+  - ordering
+active_slices: []

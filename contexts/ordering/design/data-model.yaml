@@ -1,0 +1,13 @@
+aggregates:
+  - id: AGG-CART
+    root: Cart
+    storage_hint: ordering.carts
+  - id: AGG-ORDER
+    root: Order
+    storage_hint: ordering.orders
+read_models:
+  - id: RM-CATALOG-AVAILABILITY
+    name: CatalogAvailabilitySnapshot
+    owner_context: catalog
+    consumed_by:
+      - ordering

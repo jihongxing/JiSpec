@@ -1,0 +1,21 @@
+tests:
+  - id: TEST-ORDER-CHECKOUT-VALID-UNIT
+    type: unit
+    verifies:
+      - SCN-ORDER-CHECKOUT-VALID
+    target: cart-domain
+  - id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+    type: integration
+    verifies:
+      - SCN-ORDER-CHECKOUT-VALID
+    target: checkout-application
+  - id: TEST-ORDER-CHECKOUT-OUT-OF-STOCK-UNIT
+    type: unit
+    verifies:
+      - SCN-ORDER-CHECKOUT-OUT-OF-STOCK
+    target: cart-domain
+  - id: TEST-ORDER-CHECKOUT-OUT-OF-STOCK-INTEGRATION
+    type: integration
+    verifies:
+      - SCN-ORDER-CHECKOUT-OUT-OF-STOCK
+    target: checkout-application

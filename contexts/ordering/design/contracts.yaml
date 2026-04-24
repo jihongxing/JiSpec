@@ -1,0 +1,19 @@
+contracts:
+  - id: CTR-ORDERING-001
+    name: CheckoutRequest
+    direction: inbound
+    fields:
+      - name: cartId
+        type: string
+        required: true
+  - id: CTR-ORDERING-002
+    name: AvailabilitySnapshot
+    direction: upstream-read
+    source_context: catalog
+    fields:
+      - name: productId
+        type: string
+        required: true
+      - name: sellable
+        type: boolean
+        required: true

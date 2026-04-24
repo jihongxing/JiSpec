@@ -1,0 +1,13 @@
+modules:
+  - id: MOD-CHECKOUT-APP
+    name: checkout-application
+    responsibility: Orchestrates the checkout flow and delegates domain operations.
+  - id: MOD-CART-DOMAIN
+    name: cart-domain
+    responsibility: Represents cart validation rules and cart state.
+  - id: MOD-ORDER-DOMAIN
+    name: order-domain
+    responsibility: Creates orders and enforces order invariants.
+  - id: MOD-AVAILABILITY-GATEWAY
+    name: availability-gateway
+    responsibility: Reads product availability information from Catalog-owned published views.

@@ -1,0 +1,32 @@
+id: ordering-checkout-v1
+title: Checkout MVP
+context_id: ordering
+status: behavior-defined
+priority: high
+goal: Allow users to submit an order from a valid cart while rejecting unavailable items.
+scope:
+  includes:
+    - cart availability validation
+    - cart total calculation
+    - order creation
+    - OrderCreated event emission
+  excludes:
+    - payment processing
+    - shipment creation
+source_refs:
+  requirement_ids:
+    - REQ-ORD-001
+    - REQ-ORD-002
+    - REQ-ORD-003
+    - REQ-ORD-004
+  design_refs:
+    - ADR-001
+owners:
+  product: pm-ordering
+  engineering: tl-ordering
+gates:
+  design_ready: true
+  behavior_ready: true
+  test_ready: false
+  implementation_ready: false
+  accepted: false

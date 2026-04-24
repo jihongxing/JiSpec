@@ -1,0 +1,50 @@
+agents:
+  - id: domain-agent
+    role: Extract domain concepts, language, invariants, and events.
+    inputs:
+      - docs/input/requirements.md
+      - jiproject/context-map.yaml
+      - contexts/<context-id>/domain/*
+    outputs:
+      - contexts/<context-id>/domain/*
+  - id: design-agent
+    role: Derive slice design, contracts, and module impact.
+    inputs:
+      - docs/input/technical-solution.md
+      - contexts/<context-id>/domain/*
+      - contexts/<context-id>/slices/<slice-id>/requirements.md
+    outputs:
+      - contexts/<context-id>/slices/<slice-id>/design.md
+      - contexts/<context-id>/design/contracts.yaml
+  - id: behavior-agent
+    role: Write scenarios and acceptance behavior from requirements and design.
+    inputs:
+      - contexts/<context-id>/slices/<slice-id>/design.md
+      - contexts/<context-id>/behavior/journeys.md
+    outputs:
+      - contexts/<context-id>/slices/<slice-id>/behaviors.feature
+  - id: test-agent
+    role: Derive test specifications and scenario coverage.
+    inputs:
+      - contexts/<context-id>/slices/<slice-id>/behaviors.feature
+      - contexts/<context-id>/design/contracts.yaml
+    outputs:
+      - contexts/<context-id>/slices/<slice-id>/test-spec.yaml
+      - contexts/<context-id>/tests/coverage-map.yaml
+  - id: build-agent
+    role: Implement code changes constrained by approved slice artifacts.
+    inputs:
+      - contexts/<context-id>/slices/<slice-id>/*
+      - src/
+    outputs:
+      - src/
+      - tests/
+  - id: review-agent
+    role: Check trace completeness, drift, and protocol gate readiness.
+    inputs:
+      - contexts/<context-id>/slices/<slice-id>/*
+      - changed-files
+      - test-results
+    outputs:
+      - review-findings
+      - gate-recommendation

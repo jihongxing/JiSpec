@@ -1,0 +1,7 @@
+id: <context-id>
+name: <Context Name>
+owner: <team-or-role>
+purpose: <one-line-purpose>
+upstream_contexts: []
+downstream_contexts: []
+active_slices: []

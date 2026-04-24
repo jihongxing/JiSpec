@@ -1,0 +1,15 @@
+contexts:
+  - id: catalog
+    name: Catalog
+    type: supporting
+    description: Owns product availability and product read models for saleability.
+  - id: ordering
+    name: Ordering
+    type: core
+    description: Owns carts, checkout orchestration, and order creation.
+relations:
+  - id: REL-001
+    from: ordering
+    to: catalog
+    relationship: upstream-downstream
+    description: Ordering depends on published product availability from Catalog.

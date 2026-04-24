@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.jispec/
+*.log
+.DS_Store
+.env
+.env.local

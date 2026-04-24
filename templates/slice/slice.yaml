@@ -1,0 +1,21 @@
+id: <slice-id>
+title: <Slice Title>
+context_id: <context-id>
+status: proposed
+priority: medium
+goal: <Business goal>
+scope:
+  includes: []
+  excludes: []
+source_refs:
+  requirement_ids: []
+  design_refs: []
+owners:
+  product: <product-owner>
+  engineering: <engineering-owner>
+gates:
+  design_ready: false
+  behavior_ready: false
+  test_ready: false
+  implementation_ready: false
+  accepted: false

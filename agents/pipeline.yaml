@@ -1,0 +1,165 @@
+# JiSpec Pipeline Configuration
+# Defines the standard DDD → SDD → BDD → TDD pipeline
+
+pipeline:
+  name: "Standard DDD → SDD → BDD → TDD Pipeline"
+  version: "1.0"
+
+  # Pipeline stages
+  stages:
+    - id: requirements
+      name: "Requirements Definition (DDD)"
+      agent: domain
+      lifecycle_state: requirements-defined
+      inputs:
+        files:
+          - "{context}/context.yaml"
+          - "{context}/contracts.yaml"
+        allowRead: true
+        allowWrite: false
+      outputs:
+        files:
+          - "{slice}/requirements.md"
+        schemas: []
+        traceRequired: true
+      gates:
+        required: [requirements_ready]
+        optional: []
+        autoUpdate: true
+      nextStage: design
+
+    - id: design
+      name: "Design Definition (SDD)"
+      agent: design
+      lifecycle_state: design-defined
+      inputs:
+        files:
+          - "{slice}/requirements.md"
+          - "{context}/context.yaml"
+        allowRead: true
+        allowWrite: false
+      outputs:
+        files:
+          - "{slice}/design.md"
+        schemas: []
+        traceRequired: true
+      gates:
+        required: [design_ready]
+        optional: []
+        autoUpdate: true
+      nextStage: behavior
+
+    - id: behavior
+      name: "Behavior Definition (BDD)"
+      agent: behavior
+      lifecycle_state: behavior-defined
+      inputs:
+        files:
+          - "{slice}/requirements.md"
+          - "{slice}/design.md"
+        allowRead: true
+        allowWrite: false
+      outputs:
+        files:
+          - "{slice}/behaviors.feature"
+        schemas: []
+        traceRequired: true
+      gates:
+        required: [behavior_ready]
+        optional: []
+        autoUpdate: true
+      nextStage: test
+
+    - id: test
+      name: "Test Definition (TDD)"
+      agent: test
+      lifecycle_state: test-defined
+      inputs:
+        files:
+          - "{slice}/requirements.md"
+          - "{slice}/behaviors.feature"
+        allowRead: true
+        allowWrite: false
+      outputs:
+        files:
+          - "{slice}/test-spec.yaml"
+        schemas: []
+        traceRequired: true
+      gates:
+        required: [test_ready]
+        optional: []
+        autoUpdate: true
+      nextStage: implementing
+
+    - id: implementing
+      name: "Implementation"
+      agent: implement
+      lifecycle_state: implementing
+      inputs:
+        files:
+          - "{slice}/requirements.md"
+          - "{slice}/behaviors.feature"
+          - "{slice}/test-spec.yaml"
+        allowRead: true
+        allowWrite: false
+      outputs:
+        files:
+          - "{slice}/src/"
+        schemas: []
+        traceRequired: true
+      gates:
+        required: [implementation_ready]
+        optional: []
+        autoUpdate: true
+      nextStage: verifying
+
+    - id: verifying
+      name: "Verification"
+      agent: verify
+      lifecycle_state: verifying
+      inputs:
+        files:
+          - "{slice}/requirements.md"
+          - "{slice}/behaviors.feature"
+          - "{slice}/test-spec.yaml"
+          - "{slice}/src/"
+        allowRead: true
+        allowWrite: false
+      outputs:
+        files:
+          - "{slice}/evidence.md"
+        schemas: []
+        traceRequired: true
+      gates:
+        required: [verification_ready]
+        optional: []
+        autoUpdate: true
+      nextStage: accepted
+
+  # Failure handling configuration
+  failure_handling:
+    retry:
+      enabled: true
+      max_attempts: 3
+      backoff: exponential
+      initial_delay: 1000
+      max_delay: 10000
+    rollback:
+      enabled: true
+      strategy: state_only
+    human_intervention:
+      enabled: true
+      prompt_on_failure: true
+      allow_skip: false
+      allow_manual_fix: true
+
+  # Parallel execution configuration
+  parallel:
+    enabled: true
+    max_concurrent: 4
+
+  # Progress tracking configuration
+  progress:
+    log_level: info
+    log_file: ".jispec/pipeline.log"
+    report_format: markdown

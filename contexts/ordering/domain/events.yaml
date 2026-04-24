@@ -1,0 +1,4 @@
+events:
+  - id: EVT-ORDER-CREATED
+    name: OrderCreated
+    description: Emitted when checkout successfully creates an order.

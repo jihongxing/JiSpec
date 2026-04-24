@@ -1,0 +1,10 @@
+milestones:
+  - id: MS-001
+    name: Checkout foundation
+    goal: Establish ordering checkout as the first end-to-end slice.
+    slices:
+      - ordering-checkout-v1
+  - id: MS-002
+    name: Catalog alignment
+    goal: Stabilize published availability data consumed by ordering.
+    slices: []

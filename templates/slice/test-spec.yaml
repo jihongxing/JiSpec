@@ -1,0 +1,6 @@
+tests:
+  - id: <TEST-ID>
+    type: unit
+    verifies:
+      - <SCENARIO-ID>
+    target: <module-or-service>

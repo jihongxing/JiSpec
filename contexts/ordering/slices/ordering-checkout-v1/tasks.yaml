@@ -1,0 +1,48 @@
+tasks:
+  - id: TASK-ORDERING-CHECKOUT-V1-001
+    title: Implement or update slice logic in checkout-application
+    owner: build-agent
+    status: pending
+  - id: TASK-ORDERING-CHECKOUT-V1-002
+    title: Implement or update slice logic in cart-domain
+    owner: build-agent
+    status: pending
+  - id: TASK-ORDERING-CHECKOUT-V1-003
+    title: Implement or update slice logic in order-domain
+    owner: build-agent
+    status: pending
+  - id: TASK-ORDERING-CHECKOUT-V1-004
+    title: Implement or update slice logic in availability-gateway
+    owner: build-agent
+    status: pending
+  - id: TASK-ORDERING-CHECKOUT-V1-005
+    title: Add or update unit tests for cart-domain
+    owner: test-agent
+    status: pending
+    depends_on:
+      - TASK-ORDERING-CHECKOUT-V1-001
+      - TASK-ORDERING-CHECKOUT-V1-002
+      - TASK-ORDERING-CHECKOUT-V1-003
+      - TASK-ORDERING-CHECKOUT-V1-004
+  - id: TASK-ORDERING-CHECKOUT-V1-006
+    title: Add or update integration tests for checkout-application
+    owner: test-agent
+    status: pending
+    depends_on:
+      - TASK-ORDERING-CHECKOUT-V1-001
+      - TASK-ORDERING-CHECKOUT-V1-002
+      - TASK-ORDERING-CHECKOUT-V1-003
+      - TASK-ORDERING-CHECKOUT-V1-004
+  - id: TASK-ORDERING-CHECKOUT-V1-007
+    title: Run slice check and resolve protocol issues
+    owner: review-agent
+    status: pending
+    depends_on:
+      - TASK-ORDERING-CHECKOUT-V1-005
+      - TASK-ORDERING-CHECKOUT-V1-006
+  - id: TASK-ORDERING-CHECKOUT-V1-008
+    title: Collect acceptance evidence and prepare gate updates
+    owner: review-agent
+    status: pending
+    depends_on:
+      - TASK-ORDERING-CHECKOUT-V1-007

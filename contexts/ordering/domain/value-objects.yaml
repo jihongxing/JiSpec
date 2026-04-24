@@ -1,0 +1,7 @@
+value_objects:
+  - id: VO-MONEY
+    name: Money
+    description: Represents a monetary amount and currency.
+  - id: VO-CART-TOTAL
+    name: CartTotal
+    description: Represents the calculated total for a cart.

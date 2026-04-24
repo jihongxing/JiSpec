@@ -1,0 +1,7 @@
+entities:
+  - id: ENT-ORDER
+    name: Order
+    description: Represents a committed order with line items and total amount.
+  - id: ENT-CART
+    name: Cart
+    description: Represents a user's pending purchase selection before checkout.

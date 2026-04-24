@@ -1,0 +1,50 @@
+links:
+  - from:
+      type: requirement
+      id: REQ-ORD-001
+    to:
+      type: invariant
+      id: INV-ORDER-001
+    relation: refines
+  - from:
+      type: requirement
+      id: REQ-ORD-003
+    to:
+      type: invariant
+      id: INV-ORDER-002
+    relation: refines
+  - from:
+      type: invariant
+      id: INV-ORDER-001
+    to:
+      type: scenario
+      id: SCN-ORDER-CHECKOUT-OUT-OF-STOCK
+    relation: verified_by
+  - from:
+      type: invariant
+      id: INV-ORDER-002
+    to:
+      type: scenario
+      id: SCN-ORDER-CHECKOUT-VALID
+    relation: verified_by
+  - from:
+      type: scenario
+      id: SCN-ORDER-CHECKOUT-VALID
+    to:
+      type: test
+      id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+    relation: covered_by
+  - from:
+      type: scenario
+      id: SCN-ORDER-CHECKOUT-OUT-OF-STOCK
+    to:
+      type: test
+      id: TEST-ORDER-CHECKOUT-OUT-OF-STOCK-INTEGRATION
+    relation: covered_by
+  - from:
+      type: test
+      id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+    to:
+      type: code
+      id: src/ordering/checkout-application
+    relation: implemented_by

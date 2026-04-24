@@ -1,0 +1,23 @@
+id: commerce-platform
+name: Commerce Platform
+version: 0.1.0
+delivery_model: bounded-context-slice
+source_documents:
+  requirements: docs/input/requirements.md
+  technical_solution: docs/input/technical-solution.md
+global_gates:
+  - trace_complete
+  - scenarios_tested
+  - contracts_validated
+  - review_passed
+defaults:
+  lifecycle:
+    - proposed
+    - framed
+    - designed
+    - behavior-defined
+    - test-defined
+    - implementing
+    - reviewing
+    - accepted
+    - released

@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jispec.dev/schemas/slice.schema.json",
+  "title": "JiSpec Slice",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "context_id",
+    "status",
+    "priority",
+    "goal",
+    "source_refs",
+    "owners",
+    "gates"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "context_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "priority": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "source_refs": {
+      "type": "object",
+      "required": [
+        "requirement_ids",
+        "design_refs"
+      ],
+      "properties": {
+        "requirement_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "design_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "owners": {
+      "type": "object",
+      "required": [
+        "product",
+        "engineering"
+      ],
+      "properties": {
+        "product": {
+          "type": "string"
+        },
+        "engineering": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "gates": {
+      "type": "object",
+      "required": [
+        "design_ready",
+        "behavior_ready",
+        "test_ready",
+        "implementation_ready",
+        "accepted"
+      ],
+      "properties": {
+        "design_ready": {
+          "type": "boolean"
+        },
+        "behavior_ready": {
+          "type": "boolean"
+        },
+        "test_ready": {
+          "type": "boolean"
+        },
+        "implementation_ready": {
+          "type": "boolean"
+        },
+        "accepted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

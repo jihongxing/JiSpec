@@ -1,0 +1,10 @@
+strategy:
+  unit:
+    - validate cart availability rules
+    - calculate cart total
+  integration:
+    - exercise checkout application flow
+  contract:
+    - verify published availability snapshot shape
+  e2e:
+    - verify user-visible checkout success and rejection flows

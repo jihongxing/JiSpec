@@ -1,0 +1,13 @@
+architecture:
+  - id: CON-ARCH-001
+    rule: Bounded contexts must not share persistence tables directly.
+  - id: CON-ARCH-002
+    rule: Ordering may read published availability views from Catalog but may not mutate Catalog data.
+delivery:
+  - id: CON-DEL-001
+    rule: Every accepted slice must provide a complete trace chain from requirement to evidence.
+  - id: CON-DEL-002
+    rule: Every scenario must map to at least one test unless a waiver is explicitly recorded.
+quality:
+  - id: CON-QLTY-001
+    rule: Domain invariants must be represented in context-level artifacts.

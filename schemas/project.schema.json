@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jispec.dev/schemas/project.schema.json",
+  "title": "JiSpec Project",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "delivery_model",
+    "source_documents",
+    "global_gates"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "delivery_model": {
+      "type": "string"
+    },
+    "source_documents": {
+      "type": "object",
+      "required": [
+        "requirements",
+        "technical_solution"
+      ],
+      "properties": {
+        "requirements": {
+          "type": "string"
+        },
+        "technical_solution": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "global_gates": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

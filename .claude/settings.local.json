@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run jispec -- --help)",
+      "Bash(npm run validate:repo)",
+      "Bash(npm run jispec -- context list)",
+      "Bash(npm run jispec -- slice list)",
+      "Bash(npm run jispec -- slice status ordering-checkout-v1)",
+      "Bash(npm run jispec -- context board ordering)",
+      "Bash(npm run jispec -- slice show ordering-checkout-v1)",
+      "Bash(npm run jispec -- agent run domain ordering-checkout-v1 --dry-run)",
+      "Bash(ls -la tools/jispec/*.ts)",
+      "Bash(node --import tsx ./tools/jispec/cli.ts agent run domain ordering-checkout-v1 --dry-run)",
+      "Bash(npm run jispec -- pipeline run --help)",
+      "Bash(npm run jispec -- pipeline run ordering-checkout-v1 --dry-run)",
+      "Bash(npm install blessed blessed-contrib)",
+      "Skill(autoplan)",
+      "Skill(autoplan:*)"
+    ]
+  }
+}

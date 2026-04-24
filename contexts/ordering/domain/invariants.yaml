@@ -1,0 +1,5 @@
+invariants:
+  - id: INV-ORDER-001
+    statement: An order must not be created from a cart that contains unavailable items.
+  - id: INV-ORDER-002
+    statement: An order must not be created unless the cart total is calculable.

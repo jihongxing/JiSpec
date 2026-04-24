@@ -1,0 +1,22 @@
+terms:
+  - id: TERM-CART
+    term: Cart
+    definition: A temporary collection of items selected by a user before order submission.
+    contexts:
+      - ordering
+  - id: TERM-CHECKOUT
+    term: Checkout
+    definition: The application flow that validates a cart and attempts to create an order.
+    contexts:
+      - ordering
+  - id: TERM-AVAILABILITY
+    term: Availability
+    definition: Whether a product can currently be purchased.
+    contexts:
+      - catalog
+      - ordering
+  - id: TERM-ORDER
+    term: Order
+    definition: A committed purchase record created after successful checkout.
+    contexts:
+      - ordering

@@ -1,0 +1,8 @@
+links:
+  - from:
+      type: requirement
+      id: <REQ-ID>
+    to:
+      type: scenario
+      id: <SCENARIO-ID>
+    relation: verified_by

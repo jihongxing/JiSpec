@@ -1,0 +1,7 @@
+terms:
+  - id: CAT-TERM-PRODUCT
+    term: Product
+    definition: A sellable item managed by the catalog domain.
+  - id: CAT-TERM-SELLABLE
+    term: Sellable
+    definition: A product state indicating the item can be purchased.

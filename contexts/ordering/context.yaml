@@ -1,0 +1,9 @@
+id: ordering
+name: Ordering
+owner: team-ordering
+purpose: Manage carts, checkout validation, order creation, and order lifecycle.
+upstream_contexts:
+  - catalog
+downstream_contexts: []
+active_slices:
+  - ordering-checkout-v1

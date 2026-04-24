@@ -1,0 +1,5 @@
+tasks:
+  - id: <TASK-ID>
+    title: <Task title>
+    owner: build-agent
+    status: pending

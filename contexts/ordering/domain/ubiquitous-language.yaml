@@ -1,0 +1,10 @@
+terms:
+  - id: ORD-TERM-CART
+    term: Cart
+    definition: A candidate purchase assembled before checkout.
+  - id: ORD-TERM-CHECKOUT
+    term: Checkout
+    definition: The process that validates a cart and creates an order.
+  - id: ORD-TERM-ORDER
+    term: Order
+    definition: A committed record of a successful checkout.
