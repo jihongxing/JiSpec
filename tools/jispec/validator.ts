@@ -238,7 +238,8 @@ export function validateSlice(
     return result;
   }
 
-  const state = sliceData.lifecycle?.state;
+  const lifecycle = sliceData.lifecycle;
+  const state = isObject(lifecycle) && typeof lifecycle.state === "string" ? lifecycle.state : undefined;
   if (state && stateAtLeast(state, "behavior-defined")) {
     validateSliceTrace(root, sliceFile, sliceData, schemas.trace, result);
   }

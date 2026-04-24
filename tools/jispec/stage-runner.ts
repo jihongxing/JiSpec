@@ -272,7 +272,7 @@ export class StageRunner {
       stageId: stageConfig.id,
       stageName: stageConfig.name,
       role: stageConfig.agent,
-      lifecycleState: stageConfig.lifecycle_state,
+      lifecycleState: stageConfig.lifecycle_state as LifecycleState,
       inputs,
       outputs,
       gates: stageConfig.gates,

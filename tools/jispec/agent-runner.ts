@@ -230,7 +230,7 @@ export function assembleAgentContext(
   const prompt = assemblePrompt(config, slice, inputs, outputs);
 
   return {
-    role: config.role,
+    role: role,
     sliceId,
     contextId,
     slicePath,
@@ -470,7 +470,6 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
       role: options.role,
       sliceId: options.target,
       output,
-      outputPath,
       validation: {
         ok: outputCheck.passed,
         errors: outputCheck.errors.map((e) => e.message),
