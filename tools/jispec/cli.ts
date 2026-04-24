@@ -11,11 +11,6 @@ import { advanceSlice, createSlice, updateSliceGates } from "./slice-ops";
 import { planSlice } from "./slice-plan";
 import { updateSliceTasks } from "./tasks";
 import { buildTraceReport, validateRepository, validateSlice, validateSliceTraceOnly } from "./validator";
-import { DependencyGraphBuilder } from "./dependency-graph-builder";
-import { ConflictDetector } from "./conflict-detector";
-import { ConflictResolver } from "./conflict-resolver";
-import { ImpactAnalyzer } from "./impact-analyzer";
-import { VersionResolver } from "./version-resolver";
 import * as fs from "fs";
 
 export function buildProgram(): Command {
@@ -805,150 +800,150 @@ export function buildProgram(): Command {
     );
 
   // Phase 4: 跨切片依赖管理命令
-  const dependency = program.command("dependency").description("Manage cross-slice dependencies.");
-
-  dependency
-    .command("analyze")
-    .description("Analyze dependencies between slices.")
-    .option("--root <path>", "Repository root.", ".")
-    .option("--output <path>", "Output directory for reports.", ".jispec/dependencies")
-    .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; output: string; json: boolean }) => {
-      try {
-        const root = path.resolve(options.root);
-        const outputDir = path.resolve(options.output);
-
-        // 加载所有切片
-        const builder = new DependencyGraphBuilder();
-        // TODO: 实际加载切片数据
-
-        // 构建依赖图
-        const analysis = await builder.analyze();
-
-        // 保存报告
-        await builder.saveDependencyGraph(analysis, outputDir);
-
-        if (options.json) {
-          console.log(JSON.stringify({
-            hasCycles: analysis.hasCycles,
-            statistics: analysis.statistics,
-          }, null, 2));
-        } else {
-          console.log("Dependency Analysis Complete");
-          console.log(`Total Nodes: ${analysis.statistics.totalNodes}`);
-          console.log(`Total Edges: ${analysis.statistics.totalEdges}`);
-          console.log(`Max Depth: ${analysis.statistics.maxDepth}`);
-          console.log(`Has Cycles: ${analysis.hasCycles}`);
-          console.log(`\nReports saved to: ${outputDir}`);
-        }
-
-        process.exitCode = 0;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`Dependency analysis failed: ${message}`);
-        process.exitCode = 1;
-      }
-    });
-
-  dependency
-    .command("detect-conflicts")
-    .description("Detect conflicts between slices.")
-    .option("--root <path>", "Repository root.", ".")
-    .option("--output <path>", "Output file for conflict report.", ".jispec/conflicts.json")
-    .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; output: string; json: boolean }) => {
-      try {
-        const detector = new ConflictDetector();
-        // TODO: 加载切片和依赖图
-
-        const result = await detector.detectConflicts();
-
-        await detector.saveConflictReport(result, path.resolve(options.output));
-
-        if (options.json) {
-          console.log(JSON.stringify(result.summary, null, 2));
-        } else {
-          console.log("Conflict Detection Complete");
-          console.log(`Total Conflicts: ${result.summary.totalConflicts}`);
-          console.log(`Critical: ${result.summary.bySeverity.critical}`);
-          console.log(`High: ${result.summary.bySeverity.high}`);
-          console.log(`Auto-resolvable: ${result.summary.autoResolvableCount}`);
-          console.log(`\nReport saved to: ${options.output}`);
-        }
-
-        process.exitCode = result.hasConflicts ? 1 : 0;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`Conflict detection failed: ${message}`);
-        process.exitCode = 1;
-      }
-    });
-
-  dependency
-    .command("impact")
-    .description("Analyze impact of changes to a slice.")
-    .argument("<sliceId>", "Slice ID to analyze.")
-    .option("--root <path>", "Repository root.", ".")
-    .option("--change-type <type>", "Type of change: add, modify, delete, refactor.", "modify")
-    .option("--output <path>", "Output file for impact report.")
-    .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (
-      sliceId: string,
-      options: { root: string; changeType: string; output?: string; json: boolean }
-    ) => {
-      try {
-        const analyzer = new ImpactAnalyzer();
-        // TODO: 加载切片和依赖图
-
-        const report = await analyzer.analyzeImpact(
-          sliceId,
-          options.changeType as any
-        );
-
-        if (options.output) {
-          await analyzer.saveImpactReport(report, path.resolve(options.output));
-        }
-
-        if (options.json) {
-          console.log(JSON.stringify(report, null, 2));
-        } else {
-          const markdown = analyzer.generateMarkdownReport(report);
-          console.log(markdown);
-        }
-
-        process.exitCode = 0;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`Impact analysis failed: ${message}`);
-        process.exitCode = 1;
-      }
-    });
-
-  dependency
-    .command("resolve-versions")
-    .description("Resolve version conflicts across slices.")
-    .option("--root <path>", "Repository root.", ".")
-    .option("--output <path>", "Output file for version lock.", ".jispec/version-lock.json")
-    .option("--report <path>", "Output file for resolution report.", ".jispec/version-report.md")
-    .action(async (options: { root: string; output: string; report: string }) => {
-      try {
-        const resolver = new VersionResolver();
-        // TODO: 加载版本约束
-
-        resolver.saveLockFile(path.resolve(options.output));
-        resolver.saveReport(path.resolve(options.report));
-
-        console.log("Version Resolution Complete");
-        console.log(`Lock file saved to: ${options.output}`);
-        console.log(`Report saved to: ${options.report}`);
-
-        process.exitCode = 0;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        console.error(`Version resolution failed: ${message}`);
-        process.exitCode = 1;
-      }
-    });
+//   const dependency = program.command("dependency").description("Manage cross-slice dependencies.");
+// 
+//   dependency
+//     .command("analyze")
+//     .description("Analyze dependencies between slices.")
+//     .option("--root <path>", "Repository root.", ".")
+//     .option("--output <path>", "Output directory for reports.", ".jispec/dependencies")
+//     .option("--json", "Emit machine-readable JSON output.", false)
+//     .action(async (options: { root: string; output: string; json: boolean }) => {
+//       try {
+//         const root = path.resolve(options.root);
+//         const outputDir = path.resolve(options.output);
+// 
+//         // 加载所有切片
+//         const builder = new DependencyGraphBuilder();
+//         // TODO: 实际加载切片数据
+// 
+//         // 构建依赖图
+//         const analysis = await builder.analyze();
+// 
+//         // 保存报告
+//         await builder.saveDependencyGraph(analysis, outputDir);
+// 
+//         if (options.json) {
+//           console.log(JSON.stringify({
+//             hasCycles: analysis.hasCycles,
+//             statistics: analysis.statistics,
+//           }, null, 2));
+//         } else {
+//           console.log("Dependency Analysis Complete");
+//           console.log(`Total Nodes: ${analysis.statistics.totalNodes}`);
+//           console.log(`Total Edges: ${analysis.statistics.totalEdges}`);
+//           console.log(`Max Depth: ${analysis.statistics.maxDepth}`);
+//           console.log(`Has Cycles: ${analysis.hasCycles}`);
+//           console.log(`\nReports saved to: ${outputDir}`);
+//         }
+// 
+//         process.exitCode = 0;
+//       } catch (error) {
+//         const message = error instanceof Error ? error.message : String(error);
+//         console.error(`Dependency analysis failed: ${message}`);
+//         process.exitCode = 1;
+//       }
+//     });
+// 
+//   dependency
+//     .command("detect-conflicts")
+//     .description("Detect conflicts between slices.")
+//     .option("--root <path>", "Repository root.", ".")
+//     .option("--output <path>", "Output file for conflict report.", ".jispec/conflicts.json")
+//     .option("--json", "Emit machine-readable JSON output.", false)
+//     .action(async (options: { root: string; output: string; json: boolean }) => {
+//       try {
+//         const detector = new ConflictDetector();
+//         // TODO: 加载切片和依赖图
+// 
+//         const result = await detector.detectConflicts();
+// 
+//         await detector.saveConflictReport(result, path.resolve(options.output));
+// 
+//         if (options.json) {
+//           console.log(JSON.stringify(result.summary, null, 2));
+//         } else {
+//           console.log("Conflict Detection Complete");
+//           console.log(`Total Conflicts: ${result.summary.totalConflicts}`);
+//           console.log(`Critical: ${result.summary.bySeverity.critical}`);
+//           console.log(`High: ${result.summary.bySeverity.high}`);
+//           console.log(`Auto-resolvable: ${result.summary.autoResolvableCount}`);
+//           console.log(`\nReport saved to: ${options.output}`);
+//         }
+// 
+//         process.exitCode = result.hasConflicts ? 1 : 0;
+//       } catch (error) {
+//         const message = error instanceof Error ? error.message : String(error);
+//         console.error(`Conflict detection failed: ${message}`);
+//         process.exitCode = 1;
+//       }
+//     });
+// 
+//   dependency
+//     .command("impact")
+//     .description("Analyze impact of changes to a slice.")
+//     .argument("<sliceId>", "Slice ID to analyze.")
+//     .option("--root <path>", "Repository root.", ".")
+//     .option("--change-type <type>", "Type of change: add, modify, delete, refactor.", "modify")
+//     .option("--output <path>", "Output file for impact report.")
+//     .option("--json", "Emit machine-readable JSON output.", false)
+//     .action(async (
+//       sliceId: string,
+//       options: { root: string; changeType: string; output?: string; json: boolean }
+//     ) => {
+//       try {
+//         const analyzer = new ImpactAnalyzer();
+//         // TODO: 加载切片和依赖图
+// 
+//         const report = await analyzer.analyzeImpact(
+//           sliceId,
+//           options.changeType as any
+//         );
+// 
+//         if (options.output) {
+//           await analyzer.saveImpactReport(report, path.resolve(options.output));
+//         }
+// 
+//         if (options.json) {
+//           console.log(JSON.stringify(report, null, 2));
+//         } else {
+//           const markdown = analyzer.generateMarkdownReport(report);
+//           console.log(markdown);
+//         }
+// 
+//         process.exitCode = 0;
+//       } catch (error) {
+//         const message = error instanceof Error ? error.message : String(error);
+//         console.error(`Impact analysis failed: ${message}`);
+//         process.exitCode = 1;
+//       }
+//     });
+// 
+//   dependency
+//     .command("resolve-versions")
+//     .description("Resolve version conflicts across slices.")
+//     .option("--root <path>", "Repository root.", ".")
+//     .option("--output <path>", "Output file for version lock.", ".jispec/version-lock.json")
+//     .option("--report <path>", "Output file for resolution report.", ".jispec/version-report.md")
+//     .action(async (options: { root: string; output: string; report: string }) => {
+//       try {
+//         const resolver = new VersionResolver();
+//         // TODO: 加载版本约束
+// 
+//         resolver.saveLockFile(path.resolve(options.output));
+//         resolver.saveReport(path.resolve(options.report));
+// 
+//         console.log("Version Resolution Complete");
+//         console.log(`Lock file saved to: ${options.output}`);
+//         console.log(`Report saved to: ${options.report}`);
+// 
+//         process.exitCode = 0;
+//       } catch (error) {
+//         const message = error instanceof Error ? error.message : String(error);
+//         console.error(`Version resolution failed: ${message}`);
+//         process.exitCode = 1;
+//       }
+//     });
 
   return program;
 }

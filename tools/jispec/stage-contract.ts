@@ -1,5 +1,6 @@
 import type { AgentRole } from "./agent-runner";
 import type { LifecycleState } from "./validator";
+import type { GateConstraint } from "./gate-checker";
 
 /**
  * 已解析的文件路径（占位符已替换）
@@ -43,7 +44,7 @@ export interface ResolvedStageContract {
   outputs: ResolvedFilePath[];
 
   /** 需要设置的 gates */
-  gates: string[];
+  gates: GateConstraint;
 
   /** 是否需要 trace */
   traceRequired: boolean;
@@ -91,10 +92,14 @@ export class StageContractResolver {
   private context: PlaceholderContext;
 
   constructor(root: string, contextId: string, sliceId: string) {
+    // 构建完整路径
+    const contextPath = `${root}/contexts/${contextId}`;
+    const slicePath = `${contextPath}/slices/${sliceId}`;
+
     this.context = {
       root,
-      context: contextId,
-      slice: sliceId,
+      context: contextPath,
+      slice: slicePath,
     };
   }
 
