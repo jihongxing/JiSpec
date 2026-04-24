@@ -152,7 +152,23 @@ export function assembleAgentContextFromContract(
   // Use contract inputs
   const inputs: ReadonlyFile[] = contract.inputs.map((input) => {
     const exists = fs.existsSync(input.path);
-    const content = exists ? fs.readFileSync(input.path, "utf-8") : "";
+    let content = "";
+
+    if (exists) {
+      const stat = fs.statSync(input.path);
+      if (stat.isDirectory()) {
+        // For directories, list files recursively
+        const files = fs.readdirSync(input.path, { recursive: true, withFileTypes: true });
+        const fileList = files
+          .filter(f => f.isFile())
+          .map(f => path.join(f.path, f.name).replace(/\\/g, '/'))
+          .join('\n');
+        content = `[Directory listing]\n${fileList}`;
+      } else {
+        content = fs.readFileSync(input.path, "utf-8");
+      }
+    }
+
     return {
       path: input.path,
       relativePath: input.relativePath,
