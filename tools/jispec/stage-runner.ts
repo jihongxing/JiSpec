@@ -191,6 +191,20 @@ export class StageRunner {
       }
     }
 
+    // 写入操作（新格式）
+    if (result.writeOperations && result.writeOperations.length > 0) {
+      console.log(`\nWrite Operations (${result.writeOperations.length}):`);
+      for (const op of result.writeOperations) {
+        if (op.type === "directory") {
+          console.log(`  - [DIR] ${op.path}`);
+        } else {
+          console.log(`  - [FILE] ${op.path}`);
+          console.log(`    Encoding: ${op.encoding || "utf-8"}`);
+          console.log(`    Content length: ${op.content?.length || 0} bytes`);
+        }
+      }
+    }
+
     // 门控更新
     if (result.gateUpdates.length > 0) {
       console.log(`\nGate Updates (${result.gateUpdates.length}):`);
@@ -242,6 +256,23 @@ export class StageRunner {
       const encoding = (write.encoding || "utf-8") as BufferEncoding;
       fs.writeFileSync(write.path, write.content, { encoding });
       console.log(`[Apply] ✓ Written`);
+    }
+
+    // 1b. 应用新的写入操作（支持目录创建）
+    if (result.writeOperations && result.writeOperations.length > 0) {
+      for (const op of result.writeOperations) {
+        if (op.type === "directory") {
+          console.log(`[Apply] Creating directory ${op.path}...`);
+          fs.mkdirSync(op.path, { recursive: true });
+          console.log(`[Apply] ✓ Directory created`);
+        } else if (op.type === "file") {
+          console.log(`[Apply] Writing ${op.path}...`);
+          fs.mkdirSync(path.dirname(op.path), { recursive: true });
+          const encoding = (op.encoding || "utf-8") as BufferEncoding;
+          fs.writeFileSync(op.path, op.content || "", { encoding });
+          console.log(`[Apply] ✓ Written`);
+        }
+      }
     }
 
     // 2. 更新门控（先更新，后续验证才能通过）
@@ -315,7 +346,7 @@ export class StageRunner {
     // 7. 记录证据
     if (result.evidence.length > 0) {
       console.log(`\n[Apply] Recording ${result.evidence.length} evidence item(s)...`);
-      // TODO: 实现证据存储机制
+      await this.saveEvidence(sliceId, stageConfig.id, result.evidence);
       console.log(`[Apply] ✓ Evidence recorded`);
     }
 
@@ -415,6 +446,29 @@ export class StageRunner {
    */
   private formatFileList(files: string[]): string {
     return files.map((f) => path.basename(f)).join(", ");
+  }
+
+  /**
+   * 保存证据
+   */
+  private async saveEvidence(sliceId: string, stageId: string, evidence: any[]): Promise<void> {
+    // 创建证据目录
+    const evidenceDir = path.join(this.root, ".jispec", "evidence", sliceId);
+    fs.mkdirSync(evidenceDir, { recursive: true });
+
+    // 生成证据文件名（带时间戳）
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const evidenceFile = path.join(evidenceDir, `${stageId}-${timestamp}.json`);
+
+    // 保存证据
+    const evidenceData = {
+      sliceId,
+      stageId,
+      timestamp: new Date().toISOString(),
+      evidence,
+    };
+
+    fs.writeFileSync(evidenceFile, JSON.stringify(evidenceData, null, 2), "utf-8");
   }
 
   /**

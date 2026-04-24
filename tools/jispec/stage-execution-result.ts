@@ -1,5 +1,20 @@
 /**
- * 文件写入操作
+ * 写入操作类型
+ */
+export type WriteOperationType = "file" | "directory";
+
+/**
+ * 写入操作（支持文件和目录）
+ */
+export interface WriteOperation {
+  type: WriteOperationType;
+  path: string;           // 文件或目录路径
+  content?: string;       // 文件内容（仅 type=file 时使用）
+  encoding?: string;      // 编码（默认 utf-8）
+}
+
+/**
+ * 文件写入操作（向后兼容）
  */
 export interface FileWrite {
   path: string;           // 文件路径
@@ -46,7 +61,8 @@ export interface Evidence {
  */
 export interface StageExecutionResult {
   success: boolean;
-  writes: FileWrite[];
+  writes: FileWrite[];           // 向后兼容，保留 FileWrite[]
+  writeOperations?: WriteOperation[];  // 新的写入操作模型
   gateUpdates: GateUpdate[];
   traceLinks: TraceLink[];
   evidence: Evidence[];
