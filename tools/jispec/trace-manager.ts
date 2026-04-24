@@ -246,7 +246,7 @@ export class TraceManager {
    */
   private findTraceFile(sliceId: string): string {
     // 在 contexts 目录下搜索
-    const contextsDir = path.join(process.cwd(), "contexts");
+    const contextsDir = path.join(this.root, "contexts");
     if (!fs.existsSync(contextsDir)) {
       throw new Error(`Contexts directory not found: ${contextsDir}`);
     }

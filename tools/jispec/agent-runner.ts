@@ -458,11 +458,15 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
 
     // 9. Check and update gates (if configured)
     console.log("\n[Gates] Checking gates...");
-    const gateChecker = GateChecker.create(options.target, {
-      required: options.contract?.gates.required || [],
-      optional: options.contract?.gates.optional || [],
-      autoUpdate: options.contract?.gates.autoUpdate || true,
-    });
+    const gateChecker = GateChecker.create(
+      options.target,
+      {
+        required: options.contract?.gates.required || [],
+        optional: options.contract?.gates.optional || [],
+        autoUpdate: options.contract?.gates.autoUpdate || true,
+      },
+      options.root
+    );
     const gateCheck = await gateChecker.check();
     console.log(GateChecker.formatCheckResult(gateCheck));
 
