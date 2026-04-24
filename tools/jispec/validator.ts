@@ -442,16 +442,23 @@ function validateSliceLifecycle(sliceFile: string, sliceData: unknown, result: V
     return;
   }
 
-  const state = typeof sliceData.status === "string" ? sliceData.status : undefined;
+  // Check for lifecycle.state (new format)
+  const lifecycle = sliceData.lifecycle;
+  if (!isObject(lifecycle)) {
+    result.add("SLICE_LIFECYCLE_MISSING", sliceFile, "`lifecycle` object is required.");
+    return;
+  }
+
+  const state = typeof lifecycle.state === "string" ? lifecycle.state : undefined;
   if (!state) {
-    result.add("SLICE_STATUS_INVALID", sliceFile, "`status` must be a string.");
+    result.add("SLICE_STATE_INVALID", sliceFile, "`lifecycle.state` must be a string.");
     return;
   }
   if (!isLifecycleState(state)) {
     result.add(
-      "SLICE_STATUS_UNKNOWN",
+      "SLICE_STATE_UNKNOWN",
       sliceFile,
-      `\`status\` must be one of ${LIFECYCLE_ORDER.join(", ")}.`,
+      `\`lifecycle.state\` must be one of ${LIFECYCLE_ORDER.join(", ")}.`,
     );
     return;
   }

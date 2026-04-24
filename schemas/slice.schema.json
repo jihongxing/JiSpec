@@ -7,7 +7,7 @@
     "id",
     "title",
     "context_id",
-    "status",
+    "lifecycle",
     "priority",
     "goal",
     "source_refs",
@@ -24,8 +24,30 @@
     "context_id": {
       "type": "string"
     },
-    "status": {
-      "type": "string"
+    "lifecycle": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "proposed",
+            "requirements-defined",
+            "design-defined",
+            "behavior-defined",
+            "test-defined",
+            "implementing",
+            "verifying",
+            "accepted",
+            "released"
+          ]
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
     },
     "priority": {
       "type": "string"
@@ -91,14 +113,10 @@
     },
     "gates": {
       "type": "object",
-      "required": [
-        "design_ready",
-        "behavior_ready",
-        "test_ready",
-        "implementation_ready",
-        "accepted"
-      ],
       "properties": {
+        "requirements_ready": {
+          "type": "boolean"
+        },
         "design_ready": {
           "type": "boolean"
         },
@@ -109,6 +127,9 @@
           "type": "boolean"
         },
         "implementation_ready": {
+          "type": "boolean"
+        },
+        "verification_ready": {
           "type": "boolean"
         },
         "accepted": {
