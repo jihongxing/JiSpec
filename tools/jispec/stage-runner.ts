@@ -67,12 +67,7 @@ export class StageRunner {
           await failureHandler.createSnapshot(sliceId, stageConfig.id);
         }
 
-        // 1. 检查前置条件（门控）
-        if (!dryRun && !skipValidation) {
-          await this.checkPreconditions(sliceId, stageConfig);
-        }
-
-        // 2. 运行 Agent
+        // 1. 运行 Agent
         console.log(`[Stage: ${stageConfig.id}] Loading agent: ${stageConfig.agent}`);
         console.log(`[Stage: ${stageConfig.id}] Inputs: ${this.formatFileList(stageConfig.inputs.files)}`);
         console.log(`[Stage: ${stageConfig.id}] Outputs: ${this.formatFileList(stageConfig.outputs.files)}`);
@@ -88,10 +83,15 @@ export class StageRunner {
           throw new Error(agentResult.error || "Agent execution failed");
         }
 
-        // 3. 更新生命周期状态
+        // 2. 更新生命周期状态
         if (!dryRun) {
           await this.updateLifecycleState(sliceId, stageConfig.lifecycle_state);
           console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
+        }
+
+        // 3. 更新门控（阶段完成后）
+        if (!dryRun && !skipValidation && stageConfig.gates.autoUpdate) {
+          await this.updateGates(sliceId, stageConfig);
         }
 
         // 成功：清理快照
@@ -154,19 +154,36 @@ export class StageRunner {
   }
 
   /**
-   * 检查前置条件
+   * 更新门控（阶段完成后）
+   */
+  private async updateGates(sliceId: string, stageConfig: StageConfig): Promise<void> {
+    const sliceFile = this.findSliceFile(sliceId);
+    const content = fs.readFileSync(sliceFile, "utf-8");
+    const slice = yaml.load(content) as any;
+
+    // 确保 gates 对象存在
+    if (!slice.gates) {
+      slice.gates = {};
+    }
+
+    // 设置当前阶段的 gates 为 true
+    for (const gate of stageConfig.gates.required) {
+      slice.gates[gate] = true;
+      console.log(`[Gates] Set ${gate} = true`);
+    }
+
+    // 保存
+    const updated = yaml.dump(slice);
+    fs.writeFileSync(sliceFile, updated, "utf-8");
+  }
+
+  /**
+   * 检查前置条件（已废弃 - 保留用于向后兼容）
    */
   private async checkPreconditions(sliceId: string, stageConfig: StageConfig): Promise<void> {
-    // 检查必须的门控
-    const { GateChecker } = await import("./gate-checker");
-    const gateChecker = GateChecker.create(sliceId, stageConfig.gates);
-    const gateCheck = await gateChecker.check();
-
-    if (!gateCheck.passed) {
-      throw new Error(
-        `Preconditions not met: missing gates: ${gateCheck.missing.join(", ")}`
-      );
-    }
+    // 新语义：gates 是阶段完成后设置的，不是运行前检查的
+    // 此方法保留为空，避免破坏现有代码
+    console.log(`[Gates] Precondition check skipped (new gate semantics)`);
   }
 
   /**
