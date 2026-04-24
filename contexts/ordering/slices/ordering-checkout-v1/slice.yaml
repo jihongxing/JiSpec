@@ -31,6 +31,6 @@ owners:
 gates:
   design_ready: true
   behavior_ready: true
-  test_ready: false
+  test_ready: true
   implementation_ready: false
   accepted: false

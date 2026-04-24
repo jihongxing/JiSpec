@@ -282,17 +282,23 @@ export class OutputValidator {
         }
 
         // 验证追溯链是否覆盖了输出文件
+        // 新语义：检查 trace.links 中是否有任何 link 的 to.type 匹配输出文件的产物类型
+        // 例如：test-spec.yaml 对应 to.type = "test"
         const outputFileName = path.basename(filePath);
-        const hasTrace = trace.links.some((entry: { from: { id: string } }) =>
-          entry.from?.id?.includes(outputFileName)
-        );
+        const artifactType = this.inferArtifactType(outputFileName);
 
-        if (!hasTrace) {
-          errors.push({
-            file: filePath,
-            type: "trace",
-            message: `Output file ${outputFileName} is not traced in trace.yaml`,
-          });
+        if (artifactType) {
+          const hasTrace = trace.links.some((entry: { to: { type: string } }) =>
+            entry.to?.type === artifactType
+          );
+
+          if (!hasTrace) {
+            errors.push({
+              file: filePath,
+              type: "trace",
+              message: `Output file ${outputFileName} (artifact type: ${artifactType}) is not traced in trace.yaml`,
+            });
+          }
         }
       } catch (error) {
         errors.push({
@@ -305,6 +311,24 @@ export class OutputValidator {
     }
 
     return errors;
+  }
+
+  /**
+   * 推断产物类型（从文件名）
+   */
+  private inferArtifactType(fileName: string): string | null {
+    // 映射文件名到产物类型
+    const mapping: Record<string, string> = {
+      "requirements.md": "requirement",
+      "invariants.md": "invariant",
+      "behaviors.feature": "scenario",
+      "test-spec.yaml": "test",
+      "implementation.ts": "code",
+      "implementation.js": "code",
+      "implementation.py": "code",
+    };
+
+    return mapping[fileName] || null;
   }
 
   /**

@@ -48,3 +48,13 @@ links:
       type: code
       id: src/ordering/checkout-application
     relation: implemented_by
+  - from:
+      type: requirement
+      id: REQ-MOCK-001
+    to:
+      type: test
+      id: TEST-MOCK-001
+    relation: verified_by
+metadata:
+  last_updated: '2026-04-24T22:44:48.155Z'
+  version: '1.0'
