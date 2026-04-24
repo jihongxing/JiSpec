@@ -4,14 +4,16 @@ import Ajv2020 from "ajv/dist/2020";
 import yaml from "js-yaml";
 
 export const REQUIREMENT_ID_PATTERN = /\bREQ-[A-Z0-9-]+-\d+\b/g;
+
+// Unified lifecycle states matching pipeline.yaml
 export const LIFECYCLE_ORDER = [
   "proposed",
-  "framed",
-  "designed",
+  "requirements-defined",
+  "design-defined",
   "behavior-defined",
   "test-defined",
   "implementing",
-  "reviewing",
+  "verifying",
   "accepted",
   "released",
 ] as const;
@@ -19,8 +21,8 @@ export type LifecycleState = (typeof LIFECYCLE_ORDER)[number];
 
 export const REQUIRED_ARTIFACTS_BY_STATE: Record<LifecycleState, string[]> = {
   proposed: ["slice.yaml"],
-  framed: ["slice.yaml", "requirements.md"],
-  designed: ["slice.yaml", "requirements.md", "design.md"],
+  "requirements-defined": ["slice.yaml", "requirements.md"],
+  "design-defined": ["slice.yaml", "requirements.md", "design.md"],
   "behavior-defined": ["slice.yaml", "requirements.md", "design.md", "behaviors.feature", "trace.yaml"],
   "test-defined": ["slice.yaml", "requirements.md", "design.md", "behaviors.feature", "trace.yaml", "test-spec.yaml"],
   implementing: [
@@ -32,7 +34,7 @@ export const REQUIRED_ARTIFACTS_BY_STATE: Record<LifecycleState, string[]> = {
     "test-spec.yaml",
     "tasks.yaml",
   ],
-  reviewing: [
+  verifying: [
     "slice.yaml",
     "requirements.md",
     "design.md",
