@@ -2,47 +2,47 @@ agents:
   - id: domain-agent
     role: Extract domain concepts, language, invariants, and events.
     inputs:
-      - docs/input/requirements.md
-      - jiproject/context-map.yaml
-      - contexts/<context-id>/domain/*
+      - {root}/docs/input/requirements.md
+      - {root}/jiproject/context-map.yaml
+      - {context}/domain/*
     outputs:
-      - contexts/<context-id>/domain/*
+      - {context}/domain/*
   - id: design-agent
     role: Derive slice design, contracts, and module impact.
     inputs:
-      - docs/input/technical-solution.md
-      - contexts/<context-id>/domain/*
-      - contexts/<context-id>/slices/<slice-id>/requirements.md
+      - {root}/docs/input/technical-solution.md
+      - {context}/domain/*
+      - {slice}/requirements.md
     outputs:
-      - contexts/<context-id>/slices/<slice-id>/design.md
-      - contexts/<context-id>/design/contracts.yaml
+      - {slice}/design.md
+      - {context}/design/contracts.yaml
   - id: behavior-agent
     role: Write scenarios and acceptance behavior from requirements and design.
     inputs:
-      - contexts/<context-id>/slices/<slice-id>/design.md
-      - contexts/<context-id>/behavior/journeys.md
+      - {slice}/design.md
+      - {context}/behavior/journeys.md
     outputs:
-      - contexts/<context-id>/slices/<slice-id>/behaviors.feature
+      - {slice}/behaviors.feature
   - id: test-agent
     role: Derive test specifications and scenario coverage.
     inputs:
-      - contexts/<context-id>/slices/<slice-id>/behaviors.feature
-      - contexts/<context-id>/design/contracts.yaml
+      - {slice}/behaviors.feature
+      - {context}/design/contracts.yaml
     outputs:
-      - contexts/<context-id>/slices/<slice-id>/test-spec.yaml
-      - contexts/<context-id>/tests/coverage-map.yaml
+      - {slice}/test-spec.yaml
+      - {context}/tests/coverage-map.yaml
   - id: build-agent
     role: Implement code changes constrained by approved slice artifacts.
     inputs:
-      - contexts/<context-id>/slices/<slice-id>/*
-      - src/
+      - {slice}/*
+      - {root}/src/
     outputs:
-      - src/
-      - tests/
+      - {root}/src/
+      - {root}/tests/
   - id: review-agent
     role: Check trace completeness, drift, and protocol gate readiness.
     inputs:
-      - contexts/<context-id>/slices/<slice-id>/*
+      - {slice}/*
       - changed-files
       - test-results
     outputs:
