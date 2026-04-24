@@ -3,8 +3,8 @@ title: Checkout MVP
 context_id: ordering
 priority: high
 lifecycle:
-  state: behavior-defined
-  updated_at: '2024-01-01T00:00:00Z'
+  state: test-defined
+  updated_at: '2026-04-24T23:04:55.160Z'
 goal: >-
   Allow users to submit an order from a valid cart while rejecting unavailable
   items.
@@ -34,3 +34,4 @@ gates:
   test_ready: true
   implementation_ready: false
   accepted: false
+  ready: true

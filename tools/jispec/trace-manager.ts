@@ -166,10 +166,6 @@ export class TraceManager {
   async save(): Promise<void> {
     const data: TraceData = {
       links: this.links,
-      metadata: {
-        last_updated: new Date().toISOString(),
-        version: "1.0",
-      },
     };
 
     const content = yaml.dump(data);
