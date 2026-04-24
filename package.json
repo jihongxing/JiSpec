@@ -4,7 +4,7 @@
   "private": true,
   "description": "JiSpec protocol CLI and validators",
   "scripts": {
-    "build": "npx tsc --noEmit || echo 'TypeScript check complete'",
+    "build": "npx tsc --noEmit",
     "typecheck": "npx tsc --noEmit",
     "jispec": "node --import tsx ./tools/jispec/cli.ts",
     "validate:repo": "node --import tsx ./tools/jispec/cli.ts validate",
