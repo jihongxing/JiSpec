@@ -80,7 +80,7 @@ export class FailureHandler {
       if (intervention.manualFix) {
         console.log("[Failure] Waiting for manual fix...");
         await this.waitForManualFix();
-        return { shouldRetry: true, delay: 0 };
+        return { shouldRetry: true, shouldRollback: false, delay: 0 };
       }
 
       if (intervention.retry) {

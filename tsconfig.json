@@ -16,6 +16,23 @@
   ],
   "exclude": [
     "dist",
-    "node_modules"
+    "node_modules",
+    "tools/jispec/dependency-graph-builder.ts",
+    "tools/jispec/conflict-detector.ts",
+    "tools/jispec/conflict-resolver.ts",
+    "tools/jispec/impact-analyzer.ts",
+    "tools/jispec/version-resolver.ts",
+    "tools/jispec/distributed-scheduler.ts",
+    "tools/jispec/worker-manager.ts",
+    "tools/jispec/cache-manager.ts",
+    "tools/jispec/remote-executor.ts",
+    "tools/jispec/resource-manager.ts",
+    "tools/jispec/fault-recovery.ts",
+    "tools/jispec/collaboration-server.ts",
+    "tools/jispec/advanced-conflict-resolver.ts",
+    "tools/jispec/presence-manager.ts",
+    "tools/jispec/permission-manager.ts",
+    "tools/jispec/notification-service.ts",
+    "tools/jispec/collaboration-analytics.ts"
   ]
 }

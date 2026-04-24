@@ -1,5 +1,6 @@
 import path from "node:path";
 import { Command } from "commander";
+import * as yaml from "js-yaml";
 import { formatAgentResult, runAgent, type AgentRole } from "./agent-runner";
 import { deriveAll, deriveBehavior, deriveDesign, deriveTests, syncTrace } from "./artifact-ops";
 import { buildContextBoardReport } from "./context-board";
