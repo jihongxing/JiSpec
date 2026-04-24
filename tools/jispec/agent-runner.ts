@@ -442,18 +442,8 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
       }
     }
 
-    // 7b. Apply writes (for backward compatibility, still write files)
-    // TODO: Remove this once StageRunner takes over
-    if (!options.dryRun) {
-      for (const write of writes) {
-        console.log(`\n[Output] Saving to ${write.path}...`);
-        fs.mkdirSync(path.dirname(write.path), { recursive: true });
-        fs.writeFileSync(write.path, write.content, "utf-8");
-        console.log("[Output] ✓ Output saved");
-      }
-    } else {
-      console.log(`\n[Output] Dry-run: would write ${writes.length} file(s)`);
-    }
+    // 7b. No longer write files directly - StageRunner will apply writes
+    console.log(`\n[Output] Collected ${writes.length} file write(s) for StageRunner to apply`);
 
     // 8. Validate output
     console.log("\n[Validation] Validating output...");
