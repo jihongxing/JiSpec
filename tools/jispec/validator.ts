@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Ajv2020 from "ajv/dist/2020";
+import addFormats from "ajv-formats";
 import yaml from "js-yaml";
 
 export const REQUIREMENT_ID_PATTERN = /\bREQ-[A-Z0-9-]+-\d+\b/g;
@@ -930,6 +931,7 @@ function validateFileAgainstSchema(
   }
 
   const ajv = new Ajv2020({ allErrors: true, strict: false });
+  addFormats(ajv);
   const validate = ajv.compile(schema);
   const ok = validate(data);
   if (ok || !validate.errors) {

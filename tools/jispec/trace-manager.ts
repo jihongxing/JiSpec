@@ -65,7 +65,7 @@ export class TraceManager {
   /**
    * 创建追溯管理器
    */
-  static create(sliceId: string, root: string = process.cwd()): TraceManager {
+  static create(sliceId: string, root: string): TraceManager {
     return new TraceManager(sliceId, root);
   }
 

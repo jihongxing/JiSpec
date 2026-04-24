@@ -44,7 +44,7 @@ export class GateChecker {
   /**
    * 创建门控检查器
    */
-  static create(sliceId: string, constraint: GateConstraint, root: string = process.cwd()): GateChecker {
+  static create(sliceId: string, constraint: GateConstraint, root: string): GateChecker {
     return new GateChecker(sliceId, constraint, root);
   }
 

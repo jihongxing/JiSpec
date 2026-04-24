@@ -242,23 +242,40 @@ export class OutputValidator {
         const content = fs.readFileSync(traceFile, "utf-8");
         const trace = yaml.load(content) as any;
 
-        // 验证追溯链格式
-        if (!trace.traces || !Array.isArray(trace.traces)) {
+        // 验证追溯链格式（新结构：links 数组）
+        if (!trace.links || !Array.isArray(trace.links)) {
           errors.push({
             file: traceFile,
             type: "trace",
-            message: "Trace file must contain a 'traces' array",
+            message: "Trace file must contain a 'links' array",
           });
           continue;
         }
 
         // 验证每个追溯条目
-        for (const entry of trace.traces) {
-          if (!entry.from || !entry.to || !entry.type) {
+        for (const entry of trace.links) {
+          if (!entry.from || !entry.to || !entry.relation) {
             errors.push({
               file: traceFile,
               type: "trace",
-              message: "Trace entry must have 'from', 'to', and 'type' fields",
+              message: "Trace entry must have 'from', 'to', and 'relation' fields",
+              details: entry,
+            });
+          }
+          // 验证 from/to 结构
+          if (entry.from && (!entry.from.type || !entry.from.id)) {
+            errors.push({
+              file: traceFile,
+              type: "trace",
+              message: "Trace 'from' must have 'type' and 'id' fields",
+              details: entry,
+            });
+          }
+          if (entry.to && (!entry.to.type || !entry.to.id)) {
+            errors.push({
+              file: traceFile,
+              type: "trace",
+              message: "Trace 'to' must have 'type' and 'id' fields",
               details: entry,
             });
           }
@@ -266,8 +283,8 @@ export class OutputValidator {
 
         // 验证追溯链是否覆盖了输出文件
         const outputFileName = path.basename(filePath);
-        const hasTrace = trace.traces.some((entry: { from: string }) =>
-          entry.from.includes(outputFileName)
+        const hasTrace = trace.links.some((entry: { from: { id: string } }) =>
+          entry.from?.id?.includes(outputFileName)
         );
 
         if (!hasTrace) {
