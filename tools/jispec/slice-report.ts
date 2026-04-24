@@ -300,9 +300,10 @@ function loadSliceContext(root: string, sliceId: string) {
   }
 
   const contextId = typeof raw.context_id === "string" ? raw.context_id : undefined;
-  const state = typeof raw.status === "string" && isLifecycleState(raw.status) ? raw.status : undefined;
+  const lifecycle = isPlainObject(raw.lifecycle) ? raw.lifecycle : undefined;
+  const state = lifecycle && typeof lifecycle.state === "string" && isLifecycleState(lifecycle.state) ? lifecycle.state : undefined;
   if (!contextId || !state) {
-    throw new Error(`Slice file \`${sliceFile}\` is missing required status metadata.`);
+    throw new Error(`Slice file \`${sliceFile}\` is missing required lifecycle.state metadata.`);
   }
 
   const owners = isPlainObject(raw.owners)

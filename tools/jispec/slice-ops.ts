@@ -112,7 +112,11 @@ export function createSlice(options: SliceCreateOptions): SliceCreateResult {
     id: sliceId,
     title,
     context_id: contextId,
-    status: LIFECYCLE_ORDER[0],
+    lifecycle: {
+      state: LIFECYCLE_ORDER[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
     priority: options.priority,
     goal,
     scope: {
@@ -211,9 +215,14 @@ export function advanceSlice(options: SliceAdvanceOptions): SliceAdvanceResult {
     throw new Error(`Slice file \`${sliceFile}\` is not valid YAML.`);
   }
 
-  const currentState = sliceData.status;
+  const lifecycle = sliceData.lifecycle;
+  if (!isPlainObject(lifecycle)) {
+    throw new Error(`Slice \`${options.sliceId}\` is missing lifecycle object.`);
+  }
+
+  const currentState = lifecycle.state;
   if (typeof currentState !== "string" || !isLifecycleState(currentState)) {
-    throw new Error(`Slice \`${options.sliceId}\` has an invalid current status.`);
+    throw new Error(`Slice \`${options.sliceId}\` has an invalid current lifecycle.state.`);
   }
   if (!isLifecycleState(options.toState)) {
     throw new Error(`Target state must be one of ${LIFECYCLE_ORDER.join(", ")}.`);
@@ -236,7 +245,8 @@ export function advanceSlice(options: SliceAdvanceOptions): SliceAdvanceResult {
   enforceArtifactRequirements(sliceFile, options.toState);
   enforceGateRequirements(options.toState, gates, options.sliceId);
 
-  sliceData.status = options.toState;
+  lifecycle.state = options.toState;
+  lifecycle.updated_at = new Date().toISOString();
   sliceData.gates = gates;
 
   const nextContent = yaml.dump(sliceData, { sortKeys: false, lineWidth: 120 });

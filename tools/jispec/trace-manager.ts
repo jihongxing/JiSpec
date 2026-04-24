@@ -53,9 +53,11 @@ export class TraceManager {
   private sliceId: string;
   private traceFile: string;
   private traces: TraceEntry[] = [];
+  private root: string;
 
-  private constructor(sliceId: string) {
+  private constructor(sliceId: string, root: string) {
     this.sliceId = sliceId;
+    this.root = root;
     this.traceFile = this.findTraceFile(sliceId);
     this.loadTraces();
   }
@@ -63,8 +65,8 @@ export class TraceManager {
   /**
    * 创建追溯管理器
    */
-  static create(sliceId: string): TraceManager {
-    return new TraceManager(sliceId);
+  static create(sliceId: string, root: string = process.cwd()): TraceManager {
+    return new TraceManager(sliceId, root);
   }
 
   /**

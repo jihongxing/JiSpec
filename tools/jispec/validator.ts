@@ -67,14 +67,14 @@ export const REQUIRED_ARTIFACTS_BY_STATE: Record<LifecycleState, string[]> = {
 };
 export const REQUIRED_GATES_BY_STATE: Record<LifecycleState, string[]> = {
   proposed: [],
-  framed: [],
-  designed: ["design_ready"],
-  "behavior-defined": ["design_ready", "behavior_ready"],
-  "test-defined": ["design_ready", "behavior_ready", "test_ready"],
-  implementing: ["design_ready", "behavior_ready", "test_ready"],
-  reviewing: ["design_ready", "behavior_ready", "test_ready", "implementation_ready"],
-  accepted: ["design_ready", "behavior_ready", "test_ready", "implementation_ready", "accepted"],
-  released: ["design_ready", "behavior_ready", "test_ready", "implementation_ready", "accepted"],
+  "requirements-defined": ["requirements_ready"],
+  "design-defined": ["requirements_ready", "design_ready"],
+  "behavior-defined": ["requirements_ready", "design_ready", "behavior_ready"],
+  "test-defined": ["requirements_ready", "design_ready", "behavior_ready", "test_ready"],
+  implementing: ["requirements_ready", "design_ready", "behavior_ready", "test_ready"],
+  verifying: ["requirements_ready", "design_ready", "behavior_ready", "test_ready", "implementation_ready"],
+  accepted: ["requirements_ready", "design_ready", "behavior_ready", "test_ready", "implementation_ready", "accepted"],
+  released: ["requirements_ready", "design_ready", "behavior_ready", "test_ready", "implementation_ready", "accepted"],
 };
 
 type JsonObject = Record<string, unknown>;
@@ -238,7 +238,7 @@ export function validateSlice(
     return result;
   }
 
-  const state = typeof sliceData.status === "string" ? sliceData.status : undefined;
+  const state = sliceData.lifecycle?.state;
   if (state && stateAtLeast(state, "behavior-defined")) {
     validateSliceTrace(root, sliceFile, sliceData, schemas.trace, result);
   }

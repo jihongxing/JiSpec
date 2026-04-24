@@ -32,18 +32,20 @@ export class GateChecker {
   private sliceId: string;
   private constraint: GateConstraint;
   private sliceFile: string;
+  private root: string;
 
-  private constructor(sliceId: string, constraint: GateConstraint) {
+  private constructor(sliceId: string, constraint: GateConstraint, root: string) {
     this.sliceId = sliceId;
     this.constraint = constraint;
+    this.root = root;
     this.sliceFile = this.findSliceFile(sliceId);
   }
 
   /**
    * 创建门控检查器
    */
-  static create(sliceId: string, constraint: GateConstraint): GateChecker {
-    return new GateChecker(sliceId, constraint);
+  static create(sliceId: string, constraint: GateConstraint, root: string = process.cwd()): GateChecker {
+    return new GateChecker(sliceId, constraint, root);
   }
 
   /**
@@ -155,7 +157,7 @@ export class GateChecker {
    */
   private findSliceFile(sliceId: string): string {
     // 在 contexts 目录下搜索
-    const contextsDir = path.join(process.cwd(), "contexts");
+    const contextsDir = path.join(this.root, "contexts");
     if (!fs.existsSync(contextsDir)) {
       throw new Error(`Contexts directory not found: ${contextsDir}`);
     }
