@@ -5,6 +5,7 @@ import { runAgent } from "./agent-runner";
 import type { StageConfig, FailureHandlingConfig } from "./pipeline-executor";
 import { FailureHandler } from "./failure-handler";
 import { StageContractResolver, type ResolvedStageContract } from "./stage-contract";
+import type { LifecycleState } from "./validator";
 
 /**
  * 阶段运行选项

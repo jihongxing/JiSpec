@@ -230,7 +230,7 @@ export function assembleAgentContext(
   const prompt = assemblePrompt(config, slice, inputs, outputs);
 
   return {
-    role: role,
+    role: config.role as AgentRole,
     sliceId,
     contextId,
     slicePath,
