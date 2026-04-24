@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import yaml from "js-yaml";
 import { validateSlice } from "./validator";
 
@@ -43,17 +44,22 @@ export interface ValidationError {
 export class OutputValidator {
   private constraint: OutputConstraint;
   private ajv: Ajv;
+  private root: string;
+  private sliceId: string;
 
-  private constructor(constraint: OutputConstraint) {
+  private constructor(constraint: OutputConstraint, root: string, sliceId: string) {
     this.constraint = constraint;
     this.ajv = new Ajv({ allErrors: true });
+    addFormats(this.ajv);
+    this.root = root;
+    this.sliceId = sliceId;
   }
 
   /**
    * 创建验证器
    */
-  static create(constraint: OutputConstraint): OutputValidator {
-    return new OutputValidator(constraint);
+  static create(constraint: OutputConstraint, root: string, sliceId: string): OutputValidator {
+    return new OutputValidator(constraint, root, sliceId);
   }
 
   /**
@@ -182,19 +188,17 @@ export class OutputValidator {
     try {
       // 对于 slice.yaml，使用现有的验证器
       if (path.basename(filePath) === "slice.yaml") {
-        // TODO: Fix validateSlice call - needs root and sliceId parameters
-        // const sliceDir = path.dirname(filePath);
-        // const result = validateSlice(root, sliceId);
-        // if (!result.hasErrors()) {
-        //   for (const issue of result.issues) {
-        //     errors.push({
-        //       file: filePath,
-        //       type: "semantic",
-        //       message: issue.message,
-        //       details: issue,
-        //     });
-        //   }
-        // }
+        const result = validateSlice(this.root, this.sliceId);
+        if (!result.ok) {
+          for (const issue of result.issues) {
+            errors.push({
+              file: filePath,
+              type: "semantic",
+              message: issue.message,
+              details: issue,
+            });
+          }
+        }
       }
 
       // 对于其他文件，可以添加自定义的语义验证

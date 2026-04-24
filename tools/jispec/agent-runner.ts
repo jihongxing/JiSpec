@@ -438,11 +438,15 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
 
     // 8. Validate output
     console.log("\n[Validation] Validating output...");
-    const outputValidator = OutputValidator.create({
-      files: context.outputs.map((f) => f.path),
-      schemas: context.outputs.map((f) => f.expectedSchema).filter(Boolean) as string[],
-      traceRequired: options.contract?.traceRequired || false,
-    });
+    const outputValidator = OutputValidator.create(
+      {
+        files: context.outputs.map((f) => f.path),
+        schemas: context.outputs.map((f) => f.expectedSchema).filter(Boolean) as string[],
+        traceRequired: options.contract?.traceRequired || false,
+      },
+      options.root,
+      context.sliceId
+    );
     const outputCheck = await outputValidator.validate();
     if (!outputCheck.passed) {
       const errorMsg = OutputValidator.formatErrors(outputCheck.errors);
@@ -511,17 +515,17 @@ async function callAI(context: AgentContext): Promise<string> {
 }
 
 /**
- * Load AI configuration from jiproject.yaml
+ * Load AI configuration from jiproject/project.yaml
  */
 function loadAIConfig(slicePath: string): AIConfig | undefined {
-  // Try to find jiproject.yaml by walking up the directory tree
+  // Try to find jiproject/project.yaml by walking up the directory tree
   let currentDir = slicePath;
   const root = path.parse(currentDir).root;
 
   while (currentDir !== root) {
-    const jiprojectPath = path.join(currentDir, "jiproject", "jiproject.yaml");
-    if (fs.existsSync(jiprojectPath)) {
-      const content = fs.readFileSync(jiprojectPath, "utf-8");
+    const projectPath = path.join(currentDir, "jiproject", "project.yaml");
+    if (fs.existsSync(projectPath)) {
+      const content = fs.readFileSync(projectPath, "utf-8");
       const config = yaml.load(content) as any;
       return config?.ai;
     }
