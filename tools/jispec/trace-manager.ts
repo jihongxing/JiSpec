@@ -3,13 +3,28 @@ import path from "node:path";
 import yaml from "js-yaml";
 
 /**
- * 追溯条目
+ * 追溯条目（兼容旧格式）
  */
 export interface TraceEntry {
-  from: string;              // 源产物（例如：behaviors.feature#scenario-1）
-  to: string;                // 目标产物（例如：requirements.md#FR-001）
-  type: string;              // 关系类型（implements, derives, tests, etc.）
+  from: string;              // 源产物（例如：requirement#REQ-ORD-001）
+  to: string;                // 目标产物（例如：scenario#SCN-ORDER-CHECKOUT-VALID）
+  type: string;              // 关系类型（refines, verified_by, covered_by, etc.）
   metadata?: Record<string, unknown>;  // 额外元数据
+}
+
+/**
+ * 追溯链接（新格式，匹配 schema）
+ */
+export interface TraceLink {
+  from: {
+    type: string;
+    id: string;
+  };
+  to: {
+    type: string;
+    id: string;
+  };
+  relation: string;
 }
 
 /**
@@ -30,11 +45,10 @@ export interface TraceError {
 }
 
 /**
- * 追溯链数据结构
+ * 追溯链数据结构（新格式）
  */
 interface TraceData {
-  slice_id: string;
-  traces: TraceEntry[];
+  links: TraceLink[];
   metadata?: {
     last_updated?: string;
     version?: string;
@@ -52,7 +66,7 @@ interface TraceData {
 export class TraceManager {
   private sliceId: string;
   private traceFile: string;
-  private traces: TraceEntry[] = [];
+  private links: TraceLink[] = [];
   private root: string;
 
   private constructor(sliceId: string, root: string) {
@@ -70,16 +84,32 @@ export class TraceManager {
   }
 
   /**
-   * 添加追溯条目
+   * 添加追溯条目（新格式）
    */
   async addTrace(entry: TraceEntry): Promise<void> {
+    // 解析 from/to 格式：type#id
+    const fromParts = entry.from.split('#');
+    const toParts = entry.to.split('#');
+
+    if (fromParts.length !== 2 || toParts.length !== 2) {
+      throw new Error(`Invalid trace entry format. Expected "type#id", got from="${entry.from}", to="${entry.to}"`);
+    }
+
+    const link: TraceLink = {
+      from: { type: fromParts[0], id: fromParts[1] },
+      to: { type: toParts[0], id: toParts[1] },
+      relation: entry.type,
+    };
+
     // 检查是否已存在相同的追溯
-    const exists = this.traces.some(
-      (t) => t.from === entry.from && t.to === entry.to && t.type === entry.type
+    const exists = this.links.some(
+      (l) => l.from.type === link.from.type && l.from.id === link.from.id &&
+             l.to.type === link.to.type && l.to.id === link.to.id &&
+             l.relation === link.relation
     );
 
     if (!exists) {
-      this.traces.push(entry);
+      this.links.push(link);
     }
   }
 
@@ -95,10 +125,17 @@ export class TraceManager {
   /**
    * 移除追溯条目
    */
-  async removeTrace(from: string, to: string, type: string): Promise<void> {
-    this.traces = this.traces.filter(
-      (t) => !(t.from === from && t.to === to && t.type === type)
-    );
+  async removeTrace(from: string, to: string, relation: string): Promise<void> {
+    const fromParts = from.split('#');
+    const toParts = to.split('#');
+
+    if (fromParts.length === 2 && toParts.length === 2) {
+      this.links = this.links.filter(
+        (l) => !(l.from.type === fromParts[0] && l.from.id === fromParts[1] &&
+                 l.to.type === toParts[0] && l.to.id === toParts[1] &&
+                 l.relation === relation)
+      );
+    }
   }
 
   /**
@@ -108,40 +145,11 @@ export class TraceManager {
     const errors: TraceError[] = [];
 
     // 1. 验证追溯条目格式
-    for (const entry of this.traces) {
-      if (!entry.from || !entry.to || !entry.type) {
+    for (const link of this.links) {
+      if (!link.from?.type || !link.from?.id || !link.to?.type || !link.to?.id || !link.relation) {
         errors.push({
           type: "invalid",
-          message: "Trace entry must have 'from', 'to', and 'type' fields",
-          entry,
-        });
-      }
-    }
-
-    // 2. 验证追溯链接的文件是否存在
-    const sliceDir = path.dirname(this.traceFile);
-    for (const entry of this.traces) {
-      // 提取文件路径（去掉 # 后面的锚点）
-      const fromFile = entry.from.split("#")[0];
-      const toFile = entry.to.split("#")[0];
-
-      // 检查源文件
-      const fromPath = path.join(sliceDir, fromFile);
-      if (!fs.existsSync(fromPath)) {
-        errors.push({
-          type: "broken_link",
-          message: `Source file not found: ${fromFile}`,
-          entry,
-        });
-      }
-
-      // 检查目标文件
-      const toPath = path.join(sliceDir, toFile);
-      if (!fs.existsSync(toPath)) {
-        errors.push({
-          type: "broken_link",
-          message: `Target file not found: ${toFile}`,
-          entry,
+          message: "Trace link must have valid 'from', 'to', and 'relation' fields",
         });
       }
     }
@@ -157,8 +165,7 @@ export class TraceManager {
    */
   async save(): Promise<void> {
     const data: TraceData = {
-      slice_id: this.sliceId,
-      traces: this.traces,
+      links: this.links,
       metadata: {
         last_updated: new Date().toISOString(),
         version: "1.0",
@@ -170,10 +177,14 @@ export class TraceManager {
   }
 
   /**
-   * 获取所有追溯条目
+   * 获取所有追溯条目（转换为旧格式以保持兼容性）
    */
   getTraces(): TraceEntry[] {
-    return [...this.traces];
+    return this.links.map(link => ({
+      from: `${link.from.type}#${link.from.id}`,
+      to: `${link.to.type}#${link.to.id}`,
+      type: link.relation,
+    }));
   }
 
   /**
@@ -184,7 +195,7 @@ export class TraceManager {
     to?: string;
     type?: string;
   }): TraceEntry[] {
-    return this.traces.filter((entry) => {
+    return this.getTraces().filter((entry) => {
       if (filter.from && !entry.from.includes(filter.from)) return false;
       if (filter.to && !entry.to.includes(filter.to)) return false;
       if (filter.type && entry.type !== filter.type) return false;
@@ -198,21 +209,21 @@ export class TraceManager {
   generateReport(): string {
     const lines: string[] = [];
     lines.push(`Trace Report for Slice: ${this.sliceId}`);
-    lines.push(`Total traces: ${this.traces.length}`);
+    lines.push(`Total traces: ${this.links.length}`);
     lines.push("");
 
-    // 按类型分组
-    const byType = new Map<string, TraceEntry[]>();
-    for (const entry of this.traces) {
-      const entries = byType.get(entry.type) || [];
-      entries.push(entry);
-      byType.set(entry.type, entries);
+    // 按关系类型分组
+    const byRelation = new Map<string, TraceLink[]>();
+    for (const link of this.links) {
+      const entries = byRelation.get(link.relation) || [];
+      entries.push(link);
+      byRelation.set(link.relation, entries);
     }
 
-    for (const [type, entries] of byType) {
-      lines.push(`${type} (${entries.length}):`);
-      for (const entry of entries) {
-        lines.push(`  ${entry.from} → ${entry.to}`);
+    for (const [relation, entries] of byRelation) {
+      lines.push(`${relation} (${entries.length}):`);
+      for (const link of entries) {
+        lines.push(`  ${link.from.type}:${link.from.id} → ${link.to.type}:${link.to.id}`);
       }
       lines.push("");
     }
@@ -227,13 +238,13 @@ export class TraceManager {
     try {
       if (!fs.existsSync(this.traceFile)) {
         // 如果文件不存在，创建空的追溯链
-        this.traces = [];
+        this.links = [];
         return;
       }
 
       const content = fs.readFileSync(this.traceFile, "utf-8");
       const data = yaml.load(content) as TraceData;
-      this.traces = data.traces || [];
+      this.links = data.links || [];
     } catch (error) {
       throw new Error(
         `Failed to load traces from ${this.traceFile}: ${error instanceof Error ? error.message : String(error)}`

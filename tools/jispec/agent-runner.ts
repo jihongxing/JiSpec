@@ -362,7 +362,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
       ? assembleAgentContextFromContract(options.root, config, options.target, options.contract)
       : assembleAgentContext(options.root, config, options.target);
 
-    // 3. Dry run mode: just show the prompt
+    // 3. Dry run mode: just show the prompt and return execution result
     if (options.dryRun) {
       console.log("\n=== DRY RUN MODE ===\n");
       console.log("Agent Context:");
@@ -385,10 +385,20 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
       console.log(context.prompt);
       console.log("\n=== END DRY RUN ===\n");
 
+      // Return empty execution result for dry-run
+      const executionResult: StageExecutionResult = {
+        success: true,
+        writes: [],
+        gateUpdates: [],
+        traceLinks: [],
+        evidence: [],
+      };
+
       return {
         success: true,
         role: options.role,
         sliceId: options.target,
+        executionResult,
       };
     }
 
@@ -445,67 +455,26 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     // 7b. No longer write files directly - StageRunner will apply writes
     console.log(`\n[Output] Collected ${writes.length} file write(s) for StageRunner to apply`);
 
-    // 8. Validate output
-    console.log("\n[Validation] Validating output...");
-    const outputValidator = OutputValidator.create(
-      {
-        files: context.outputs.map((f) => f.path),
-        schemas: context.outputs.map((f) => f.expectedSchema).filter(Boolean) as string[],
-        traceRequired: options.contract?.traceRequired || false,
-      },
-      options.root,
-      context.sliceId
-    );
-    const outputCheck = await outputValidator.validate();
-    if (!outputCheck.passed) {
-      const errorMsg = OutputValidator.formatErrors(outputCheck.errors);
-      console.error(`[Validation] ✗ Output validation failed:\n${errorMsg}`);
-      // Don't throw, just report
-    } else {
-      console.log("[Validation] ✓ Output validation passed");
-    }
-
-    // 9. Check and update gates (if configured)
-    console.log("\n[Gates] Checking gates...");
-    const gateChecker = GateChecker.create(
-      options.target,
-      {
-        required: options.contract?.gates.required || [],
-        optional: options.contract?.gates.optional || [],
-        autoUpdate: options.contract?.gates.autoUpdate || true,
-      },
-      options.root
-    );
-    const gateCheck = await gateChecker.check();
-    console.log(GateChecker.formatCheckResult(gateCheck));
-
-    // 10. Update trace (if needed)
-    // This will be implemented in Phase 3 when we have pipeline stages
-
-    // 11. Build structured execution result
+    // 8. Build structured execution result (no validation here)
     const executionResult: StageExecutionResult = {
-      success: outputCheck.passed,
+      success: true,  // Generation succeeded
       writes,
-      gateUpdates: [],  // TODO: collect from gateChecker
-      traceLinks: [],   // TODO: collect from TraceManager
+      gateUpdates: [],  // StageRunner will handle gate updates
+      traceLinks: [],   // StageRunner will handle trace links
       evidence: [
         {
-          type: "validation",
-          content: JSON.stringify(outputCheck),
+          type: "agent_execution",
+          content: JSON.stringify({ role: options.role, sliceId: options.target }),
           timestamp: new Date().toISOString(),
         },
       ],
     };
 
     return {
-      success: outputCheck.passed,
+      success: true,  // Generation succeeded
       role: options.role,
       sliceId: options.target,
       output,
-      validation: {
-        ok: outputCheck.passed,
-        errors: outputCheck.errors.map((e) => e.message),
-      },
       executionResult,
     };
   } catch (error) {

@@ -98,7 +98,7 @@ export class StageRunner {
 
         // 2. Apply execution result (writes, gates, traces, evidence)
         if (!dryRun && agentResult.executionResult) {
-          await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult);
+          await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract);
         } else if (dryRun && agentResult.executionResult) {
           // Dry-run: display structured result
           this.displayExecutionResult(agentResult.executionResult);
@@ -230,7 +230,8 @@ export class StageRunner {
   private async applyExecutionResult(
     sliceId: string,
     stageConfig: StageConfig,
-    result: StageExecutionResult
+    result: StageExecutionResult,
+    contract: ResolvedStageContract
   ): Promise<void> {
     console.log(`\n[Apply] Applying execution result...`);
 
@@ -243,12 +244,34 @@ export class StageRunner {
       console.log(`[Apply] ✓ Written`);
     }
 
-    // 2. 验证输出文件
+    // 2. 更新门控（先更新，后续验证才能通过）
+    if (stageConfig.gates.autoUpdate) {
+      console.log(`\n[Apply] Updating gates...`);
+      await this.updateGates(sliceId, stageConfig);
+      console.log(`[Apply] ✓ Gates updated`);
+    }
+
+    // 3. 更新追溯链接（先更新，后续验证才能通过）
+    if (result.traceLinks.length > 0) {
+      console.log(`\n[Apply] Updating trace links...`);
+      const traceManager = TraceManager.create(sliceId, this.root);
+      for (const link of result.traceLinks) {
+        await traceManager.addTrace({
+          from: `${link.from.type}#${link.from.id}`,
+          to: `${link.to.type}#${link.to.id}`,
+          type: link.relation,
+        });
+      }
+      await traceManager.save();
+      console.log(`[Apply] ✓ ${result.traceLinks.length} trace link(s) added`);
+    }
+
+    // 4. 验证输出文件（使用契约解析后的真实路径）
     console.log(`\n[Apply] Validating outputs...`);
     const outputValidator = OutputValidator.create(
       {
-        files: stageConfig.outputs.files,
-        schemas: stageConfig.outputs.schemas || [],
+        files: contract.outputs.map(o => o.path),
+        schemas: contract.outputs.map(o => o.schema).filter(Boolean) as string[],
         traceRequired: stageConfig.outputs.traceRequired || false,
       },
       this.root,
@@ -262,14 +285,7 @@ export class StageRunner {
     }
     console.log(`[Apply] ✓ Output validation passed`);
 
-    // 3. 更新门控
-    if (stageConfig.gates.autoUpdate) {
-      console.log(`\n[Apply] Updating gates...`);
-      await this.updateGates(sliceId, stageConfig);
-      console.log(`[Apply] ✓ Gates updated`);
-    }
-
-    // 4. 验证门控
+    // 5. 验证门控
     console.log(`\n[Apply] Checking gates...`);
     const gateChecker = GateChecker.create(
       sliceId,
@@ -284,21 +300,6 @@ export class StageRunner {
     console.log(GateChecker.formatCheckResult(gateCheck));
     if (!gateCheck.passed) {
       throw new Error(`Gate check failed: ${gateCheck.missing.join(", ")}`);
-    }
-
-    // 5. 更新追溯链接
-    if (result.traceLinks.length > 0) {
-      console.log(`\n[Apply] Updating trace links...`);
-      const traceManager = TraceManager.create(sliceId, this.root);
-      for (const link of result.traceLinks) {
-        await traceManager.addTrace({
-          from: `${link.from.type}#${link.from.id}`,
-          to: `${link.to.type}#${link.to.id}`,
-          type: link.relation,
-        });
-      }
-      await traceManager.save();
-      console.log(`[Apply] ✓ ${result.traceLinks.length} trace link(s) added`);
     }
 
     // 6. 验证 slice
