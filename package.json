@@ -4,7 +4,8 @@
   "private": true,
   "description": "JiSpec protocol CLI and validators",
   "scripts": {
-    "build": "echo 'Build skipped - using tsx for runtime compilation'",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "jispec": "node --import tsx ./tools/jispec/cli.ts",
     "validate:repo": "node --import tsx ./tools/jispec/cli.ts validate",
     "check:jispec": "node --import tsx ./scripts/check-jispec.ts"

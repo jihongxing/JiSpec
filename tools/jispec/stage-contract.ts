@@ -9,6 +9,12 @@ export interface ResolvedFilePath {
   template: string;
   /** 解析后的绝对路径 */
   resolved: string;
+  /** 绝对路径（兼容字段） */
+  path: string;
+  /** 相对路径 */
+  relativePath: string;
+  /** 可选的 schema 路径 */
+  schema?: string;
 }
 
 /**
@@ -41,6 +47,9 @@ export interface ResolvedStageContract {
 
   /** 是否需要 trace */
   traceRequired: boolean;
+
+  /** 约束条件 */
+  constraints?: string[];
 }
 
 /**
@@ -93,19 +102,29 @@ export class StageContractResolver {
    * 解析文件路径列表
    */
   resolveFiles(templates: string[], schemas?: string[]): ResolvedFilePath[] {
-    return templates.map((template) => ({
-      template,
-      resolved: resolvePlaceholders(template, this.context),
-    }));
+    return templates.map((template, index) => {
+      const resolved = resolvePlaceholders(template, this.context);
+      return {
+        template,
+        resolved,
+        path: resolved,
+        relativePath: resolved.replace(this.context.root + "/", ""),
+        schema: schemas?.[index],
+      };
+    });
   }
 
   /**
    * 解析单个文件路径
    */
-  resolveFile(template: string): ResolvedFilePath {
+  resolveFile(template: string, schema?: string): ResolvedFilePath {
+    const resolved = resolvePlaceholders(template, this.context);
     return {
       template,
-      resolved: resolvePlaceholders(template, this.context),
+      resolved,
+      path: resolved,
+      relativePath: resolved.replace(this.context.root + "/", ""),
+      schema,
     };
   }
 }

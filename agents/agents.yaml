@@ -2,47 +2,47 @@ agents:
   - id: domain-agent
     role: Extract domain concepts, language, invariants, and events.
     inputs:
-      - {root}/docs/input/requirements.md
-      - {root}/jiproject/context-map.yaml
-      - {context}/domain/*
+      - "{root}/docs/input/requirements.md"
+      - "{root}/jiproject/context-map.yaml"
+      - "{context}/domain/*"
     outputs:
-      - {context}/domain/*
+      - "{context}/domain/*"
   - id: design-agent
     role: Derive slice design, contracts, and module impact.
     inputs:
-      - {root}/docs/input/technical-solution.md
-      - {context}/domain/*
-      - {slice}/requirements.md
+      - "{root}/docs/input/technical-solution.md"
+      - "{context}/domain/*"
+      - "{slice}/requirements.md"
     outputs:
-      - {slice}/design.md
-      - {context}/design/contracts.yaml
+      - "{slice}/design.md"
+      - "{context}/design/contracts.yaml"
   - id: behavior-agent
     role: Write scenarios and acceptance behavior from requirements and design.
     inputs:
-      - {slice}/design.md
-      - {context}/behavior/journeys.md
+      - "{slice}/design.md"
+      - "{context}/behavior/journeys.md"
     outputs:
-      - {slice}/behaviors.feature
+      - "{slice}/behaviors.feature"
   - id: test-agent
     role: Derive test specifications and scenario coverage.
     inputs:
-      - {slice}/behaviors.feature
-      - {context}/design/contracts.yaml
+      - "{slice}/behaviors.feature"
+      - "{context}/design/contracts.yaml"
     outputs:
-      - {slice}/test-spec.yaml
-      - {context}/tests/coverage-map.yaml
+      - "{slice}/test-spec.yaml"
+      - "{context}/tests/coverage-map.yaml"
   - id: build-agent
     role: Implement code changes constrained by approved slice artifacts.
     inputs:
-      - {slice}/*
-      - {root}/src/
+      - "{slice}/*"
+      - "{root}/src/"
     outputs:
-      - {root}/src/
-      - {root}/tests/
+      - "{root}/src/"
+      - "{root}/tests/"
   - id: review-agent
     role: Check trace completeness, drift, and protocol gate readiness.
     inputs:
-      - {slice}/*
+      - "{slice}/*"
       - changed-files
       - test-results
     outputs:
