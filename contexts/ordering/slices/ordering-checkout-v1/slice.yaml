@@ -34,4 +34,3 @@ gates:
   test_ready: true
   implementation_ready: false
   accepted: false
-  ready: true
