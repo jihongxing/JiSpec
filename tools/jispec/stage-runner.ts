@@ -278,7 +278,16 @@ export class StageRunner {
     // 2. 更新门控（先更新，后续验证才能通过）
     if (stageConfig.gates.autoUpdate) {
       console.log(`\n[Apply] Updating gates...`);
-      await this.updateGates(sliceId, stageConfig);
+
+      // 如果 result 包含 gateUpdates，使用它们；否则使用 stageConfig
+      if (result.gateUpdates && result.gateUpdates.length > 0) {
+        console.log(`[Apply] Using ${result.gateUpdates.length} gate update(s) from execution result`);
+        await this.applyGateUpdates(sliceId, result.gateUpdates);
+      } else {
+        console.log(`[Apply] Using gate config from stage (fallback)`);
+        await this.updateGates(sliceId, stageConfig);
+      }
+
       console.log(`[Apply] ✓ Gates updated`);
     }
 
@@ -370,6 +379,30 @@ export class StageRunner {
     for (const gate of stageConfig.gates.required) {
       slice.gates[gate] = true;
       console.log(`[Gates] Set ${gate} = true`);
+    }
+
+    // 保存
+    const updated = yaml.dump(slice);
+    fs.writeFileSync(sliceFile, updated, "utf-8");
+  }
+
+  /**
+   * 应用门控更新（从执行结果）
+   */
+  private async applyGateUpdates(sliceId: string, gateUpdates: any[]): Promise<void> {
+    const sliceFile = this.findSliceFile(sliceId);
+    const content = fs.readFileSync(sliceFile, "utf-8");
+    const slice = yaml.load(content) as any;
+
+    // 确保 gates 对象存在
+    if (!slice.gates) {
+      slice.gates = {};
+    }
+
+    // 应用每个门控更新
+    for (const update of gateUpdates) {
+      slice.gates[update.gate] = update.passed;
+      console.log(`[Gates] Set ${update.gate} = ${update.passed}${update.reason ? ` (${update.reason})` : ''}`);
     }
 
     // 保存

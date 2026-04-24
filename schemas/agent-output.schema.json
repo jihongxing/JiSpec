@@ -1,0 +1,159 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Output Protocol",
+  "description": "Structured output format for JiSpec agents",
+  "type": "object",
+  "required": ["success", "writes"],
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "description": "Whether the agent execution succeeded"
+    },
+    "writes": {
+      "type": "array",
+      "description": "File write operations (legacy format)",
+      "items": {
+        "type": "object",
+        "required": ["path", "content"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute file path"
+          },
+          "content": {
+            "type": "string",
+            "description": "File content"
+          },
+          "encoding": {
+            "type": "string",
+            "description": "File encoding (default: utf-8)",
+            "default": "utf-8"
+          }
+        }
+      }
+    },
+    "writeOperations": {
+      "type": "array",
+      "description": "Write operations (new format, supports directories)",
+      "items": {
+        "type": "object",
+        "required": ["type", "path"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["file", "directory"],
+            "description": "Operation type"
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute path"
+          },
+          "content": {
+            "type": "string",
+            "description": "File content (only for type=file)"
+          },
+          "encoding": {
+            "type": "string",
+            "description": "File encoding (default: utf-8)",
+            "default": "utf-8"
+          }
+        }
+      }
+    },
+    "gateUpdates": {
+      "type": "array",
+      "description": "Gate updates to apply",
+      "items": {
+        "type": "object",
+        "required": ["gate", "passed"],
+        "properties": {
+          "gate": {
+            "type": "string",
+            "description": "Gate name"
+          },
+          "passed": {
+            "type": "boolean",
+            "description": "Whether the gate passed"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the gate status"
+          }
+        }
+      }
+    },
+    "traceLinks": {
+      "type": "array",
+      "description": "Trace links to add",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "relation"],
+        "properties": {
+          "from": {
+            "type": "object",
+            "required": ["type", "id"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Source artifact type (requirement, invariant, scenario, test, code)"
+              },
+              "id": {
+                "type": "string",
+                "description": "Source artifact ID"
+              }
+            }
+          },
+          "to": {
+            "type": "object",
+            "required": ["type", "id"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Target artifact type"
+              },
+              "id": {
+                "type": "string",
+                "description": "Target artifact ID"
+              }
+            }
+          },
+          "relation": {
+            "type": "string",
+            "description": "Relation type (refines, verified_by, covered_by, implemented_by)"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Evidence items to record",
+      "items": {
+        "type": "object",
+        "required": ["type", "content", "timestamp"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Evidence type (test_output, trace, validation, agent_execution)"
+          },
+          "content": {
+            "type": "string",
+            "description": "Evidence content"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Additional metadata"
+          }
+        }
+      }
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message if success=false"
+    }
+  }
+}

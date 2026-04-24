@@ -427,9 +427,28 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     }
     console.log("[Constraint] ✓ Input files unchanged");
 
-    // 7. Collect writes (don't write yet if we want structured result)
+    // 7. Parse output and collect writes
+    console.log("\n[Output] Parsing agent output...");
     const writes: FileWrite[] = [];
+    let parsedOutput: any = null;
+
+    // Try to parse as structured JSON output
     if (output) {
+      try {
+        parsedOutput = JSON.parse(output);
+        console.log("[Output] ✓ Parsed structured JSON output");
+      } catch (e) {
+        // Not JSON, treat as plain text
+        console.log("[Output] Plain text output (not JSON)");
+      }
+    }
+
+    // If structured output, use it directly
+    if (parsedOutput && typeof parsedOutput === 'object' && 'writes' in parsedOutput) {
+      console.log("[Output] Using structured output protocol");
+      writes.push(...(parsedOutput.writes || []));
+    } else if (output) {
+      // Fallback: treat as plain text and save to output paths
       if (context.outputs.length === 1) {
         // Single output: save to specified path or first output
         const outputPath = options.output || context.outputs[0]?.path;
@@ -459,9 +478,10 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     const executionResult: StageExecutionResult = {
       success: true,  // Generation succeeded
       writes,
-      gateUpdates: [],  // StageRunner will handle gate updates
-      traceLinks: [],   // StageRunner will handle trace links
-      evidence: [
+      writeOperations: parsedOutput?.writeOperations || [],
+      gateUpdates: parsedOutput?.gateUpdates || [],
+      traceLinks: parsedOutput?.traceLinks || [],
+      evidence: parsedOutput?.evidence || [
         {
           type: "agent_execution",
           content: JSON.stringify({ role: options.role, sliceId: options.target }),
