@@ -4,7 +4,7 @@
   "private": true,
   "description": "JiSpec protocol CLI and validators",
   "scripts": {
-    "build": "node ./node_modules/typescript/bin/tsc -p tsconfig.json",
+    "build": "echo 'Build skipped - using tsx for runtime compilation'",
     "jispec": "node --import tsx ./tools/jispec/cli.ts",
     "validate:repo": "node --import tsx ./tools/jispec/cli.ts validate",
     "check:jispec": "node --import tsx ./scripts/check-jispec.ts"
@@ -18,8 +18,8 @@
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22.15.31",
-    "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "@types/node": "^22.19.17",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }

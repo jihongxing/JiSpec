@@ -4,6 +4,7 @@ import yaml from "js-yaml";
 import { runAgent } from "./agent-runner";
 import type { StageConfig, FailureHandlingConfig } from "./pipeline-executor";
 import { FailureHandler } from "./failure-handler";
+import { StageContractResolver, type ResolvedStageContract } from "./stage-contract";
 
 /**
  * 阶段运行选项
@@ -67,7 +68,12 @@ export class StageRunner {
           await failureHandler.createSnapshot(sliceId, stageConfig.id);
         }
 
-        // 1. 运行 Agent
+        // 1. 解析阶段契约
+        console.log(`[Stage: ${stageConfig.id}] Resolving stage contract...`);
+        const contract = this.resolveStageContract(sliceId, stageConfig);
+        console.log(`[Stage: ${stageConfig.id}] Contract resolved: ${contract.inputs.length} inputs, ${contract.outputs.length} outputs`);
+
+        // 2. 运行 Agent
         console.log(`[Stage: ${stageConfig.id}] Loading agent: ${stageConfig.agent}`);
         console.log(`[Stage: ${stageConfig.id}] Inputs: ${this.formatFileList(stageConfig.inputs.files)}`);
         console.log(`[Stage: ${stageConfig.id}] Outputs: ${this.formatFileList(stageConfig.outputs.files)}`);
@@ -77,6 +83,7 @@ export class StageRunner {
           role: stageConfig.agent,
           target: sliceId,
           dryRun,
+          contract,
         });
 
         if (!agentResult.success) {
@@ -246,5 +253,30 @@ export class StageRunner {
    */
   private formatFileList(files: string[]): string {
     return files.map((f) => path.basename(f)).join(", ");
+  }
+
+  /**
+   * 解析阶段契约
+   */
+  private resolveStageContract(sliceId: string, stageConfig: StageConfig): ResolvedStageContract {
+    const sliceFile = this.findSliceFile(sliceId);
+    const content = fs.readFileSync(sliceFile, "utf-8");
+    const slice = yaml.load(content) as any;
+    const contextId = slice.context_id;
+
+    const resolver = new StageContractResolver(this.root, contextId, sliceId);
+    const inputs = resolver.resolveFiles(stageConfig.inputs.files);
+    const outputs = resolver.resolveFiles(stageConfig.outputs.files, stageConfig.outputs.schemas);
+
+    return {
+      stageId: stageConfig.id,
+      stageName: stageConfig.name,
+      role: stageConfig.agent,
+      lifecycleState: stageConfig.lifecycle_state,
+      inputs,
+      outputs,
+      gates: stageConfig.gates,
+      traceRequired: stageConfig.outputs.traceRequired,
+    };
   }
 }

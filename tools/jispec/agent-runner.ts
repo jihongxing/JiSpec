@@ -8,6 +8,7 @@ import { InputConstraintChecker } from "./constraint-checker";
 import { OutputValidator } from "./output-validator";
 import { GateChecker } from "./gate-checker";
 import { TraceManager } from "./trace-manager";
+import type { ResolvedStageContract } from "./stage-contract";
 
 /**
  * Agent role types supported by the system
@@ -20,9 +21,10 @@ export type AgentRole = "domain" | "design" | "behavior" | "test" | "implement" 
 export interface AgentRunOptions {
   root: string;
   role: AgentRole;
-  target: string; // slice-id
+  target: string;
   dryRun?: boolean;
   output?: string;
+  contract?: ResolvedStageContract;
 }
 
 /**
@@ -122,7 +124,62 @@ export function loadAgentConfig(root: string, role: AgentRole): AgentConfig {
 }
 
 /**
- * Assemble execution context for an agent
+ * Assemble execution context from contract (pipeline-driven)
+ */
+export function assembleAgentContextFromContract(
+  root: string,
+  config: AgentConfig,
+  sliceId: string,
+  contract: ResolvedStageContract
+): AgentContext {
+  // Find and load slice metadata
+  const sliceFile = findSliceFile(root, sliceId);
+  if (!sliceFile) {
+    throw new Error(`Slice '${sliceId}' not found`);
+  }
+
+  const sliceContent = fs.readFileSync(sliceFile, "utf-8");
+  const slice = yaml.load(sliceContent) as any;
+
+  const contextId = slice.context_id;
+  const slicePath = path.dirname(sliceFile);
+
+  // Use contract inputs
+  const inputs: ReadonlyFile[] = contract.inputs.map((input) => {
+    const exists = fs.existsSync(input.path);
+    const content = exists ? fs.readFileSync(input.path, "utf-8") : "";
+    return {
+      path: input.path,
+      relativePath: input.relativePath,
+      content,
+      exists,
+    };
+  });
+
+  // Use contract outputs
+  const outputs: WritableFile[] = contract.outputs.map((output) => ({
+    path: output.path,
+    relativePath: output.relativePath,
+    expectedSchema: output.schema,
+  }));
+
+  // Assemble prompt
+  const prompt = assemblePrompt(config, slice, inputs, outputs);
+
+  return {
+    role: contract.role,
+    sliceId,
+    contextId,
+    slicePath,
+    inputs,
+    outputs,
+    constraints: contract.constraints || config.constraints || [],
+    prompt,
+  };
+}
+
+/**
+ * Assemble execution context for an agent (legacy)
  */
 export function assembleAgentContext(
   root: string,
@@ -297,8 +354,10 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     // 1. Load agent configuration
     const config = loadAgentConfig(options.root, options.role);
 
-    // 2. Assemble execution context
-    const context = assembleAgentContext(options.root, config, options.target);
+    // 2. Assemble execution context (use contract if provided)
+    const context = options.contract
+      ? assembleAgentContextFromContract(options.root, config, options.target, options.contract)
+      : assembleAgentContext(options.root, config, options.target);
 
     // 3. Dry run mode: just show the prompt
     if (options.dryRun) {
@@ -355,13 +414,26 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     }
     console.log("[Constraint] ✓ Input files unchanged");
 
-    // 7. Save output
-    const outputPath = options.output || context.outputs[0]?.path;
-    if (outputPath && output) {
-      console.log(`\n[Output] Saving to ${outputPath}...`);
-      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-      fs.writeFileSync(outputPath, output, "utf-8");
-      console.log("[Output] ✓ Output saved");
+    // 7. Save output (handle multiple outputs)
+    if (output) {
+      if (context.outputs.length === 1) {
+        // Single output: save to specified path or first output
+        const outputPath = options.output || context.outputs[0]?.path;
+        if (outputPath) {
+          console.log(`\n[Output] Saving to ${outputPath}...`);
+          fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+          fs.writeFileSync(outputPath, output, "utf-8");
+          console.log("[Output] ✓ Output saved");
+        }
+      } else {
+        // Multiple outputs: save to all output paths
+        console.log(`\n[Output] Saving to ${context.outputs.length} files...`);
+        for (const outputFile of context.outputs) {
+          fs.mkdirSync(path.dirname(outputFile.path), { recursive: true });
+          fs.writeFileSync(outputFile.path, output, "utf-8");
+          console.log(`[Output] ✓ Saved ${outputFile.relativePath}`);
+        }
+      }
     }
 
     // 8. Validate output
@@ -369,7 +441,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     const outputValidator = OutputValidator.create({
       files: context.outputs.map((f) => f.path),
       schemas: context.outputs.map((f) => f.expectedSchema).filter(Boolean) as string[],
-      traceRequired: false, // Will be set based on stage
+      traceRequired: options.contract?.traceRequired || false,
     });
     const outputCheck = await outputValidator.validate();
     if (!outputCheck.passed) {
@@ -383,9 +455,9 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     // 9. Check and update gates (if configured)
     console.log("\n[Gates] Checking gates...");
     const gateChecker = GateChecker.create(options.target, {
-      required: [], // Will be determined by stage
-      optional: [],
-      autoUpdate: true,
+      required: options.contract?.gates.required || [],
+      optional: options.contract?.gates.optional || [],
+      autoUpdate: options.contract?.gates.autoUpdate || true,
     });
     const gateCheck = await gateChecker.check();
     console.log(GateChecker.formatCheckResult(gateCheck));
