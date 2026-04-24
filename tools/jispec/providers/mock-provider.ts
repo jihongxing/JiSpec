@@ -114,6 +114,17 @@ export class MockProvider implements AIProvider {
       encoding: "utf-8"
     }));
 
+    // For src directory, also generate a sample implementation file
+    if (directories.some(d => d === 'src' || d.endsWith('src/'))) {
+      const srcDir = directories.find(d => d === 'src' || d.endsWith('src/'));
+      const srcPath = srcDir === 'src' ? 'src/' : srcDir;
+      writes.push({
+        path: `${srcPath}checkout-service.ts`,
+        content: `// Mock implementation for ${sliceId}\n\nexport class CheckoutService {\n  async checkout(cartId: string): Promise<string> {\n    // Mock implementation\n    return "order-123";\n  }\n}\n`,
+        encoding: "utf-8"
+      });
+    }
+
     // Generate writeOperations for directories
     const writeOperations = directories.map(dir => ({
       type: "directory" as const,
@@ -135,6 +146,20 @@ export class MockProvider implements AIProvider {
             relation: "covered_by"
           };
         });
+      }
+
+      // For src directory, generate trace links from tests to code
+      if (file === 'src' || file.endsWith('src/')) {
+        if (existingScenarios.length > 0) {
+          return existingScenarios.map(scnId => {
+            const testId = `TEST-${scnId.replace('SCN-', '')}-INTEGRATION`;
+            return {
+              from: { type: "test", id: testId },
+              to: { type: "code", id: "src/checkout-service" },
+              relation: "implemented_by"
+            };
+          });
+        }
       }
 
       return [];
