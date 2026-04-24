@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
+import Ajv2020 from "ajv/dist/2020";
+import addFormats from "ajv-formats";
 import type { AIConfig } from "./ai-provider";
 import { AIProviderFactory } from "./ai-provider-factory";
 import { findSliceFile, validateSlice } from "./validator";
@@ -437,14 +439,34 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
       try {
         parsedOutput = JSON.parse(output);
         console.log("[Output] ✓ Parsed structured JSON output");
+
+        // Validate against schema
+        const schemaPath = path.join(options.root, "schemas", "agent-output.schema.json");
+        if (fs.existsSync(schemaPath)) {
+          const schema = JSON.parse(fs.readFileSync(schemaPath, "utf-8"));
+          const ajv = new Ajv2020({ allErrors: true, strict: false });
+          addFormats(ajv);
+          const validate = ajv.compile(schema);
+
+          if (!validate(parsedOutput)) {
+            const errors = validate.errors?.map(e => `${e.instancePath} ${e.message}`).join(", ") || "Unknown error";
+            console.error(`[Output] ✗ Schema validation failed: ${errors}`);
+            throw new Error(`Agent output does not match schema: ${errors}`);
+          }
+          console.log("[Output] ✓ Schema validation passed");
+        }
       } catch (e) {
+        if (e instanceof Error && e.message.includes("schema")) {
+          // Schema validation error, re-throw
+          throw e;
+        }
         // Not JSON, treat as plain text
         console.log("[Output] Plain text output (not JSON)");
       }
     }
 
     // If structured output, use it directly
-    if (parsedOutput && typeof parsedOutput === 'object' && 'writes' in parsedOutput) {
+    if (parsedOutput && typeof parsedOutput === 'object' && ('writes' in parsedOutput || 'writeOperations' in parsedOutput)) {
       console.log("[Output] Using structured output protocol");
       writes.push(...(parsedOutput.writes || []));
     } else if (output) {

@@ -3,7 +3,11 @@
   "title": "Agent Output Protocol",
   "description": "Structured output format for JiSpec agents",
   "type": "object",
-  "required": ["success", "writes"],
+  "required": ["success"],
+  "anyOf": [
+    { "required": ["writes"] },
+    { "required": ["writeOperations"] }
+  ],
   "properties": {
     "success": {
       "type": "boolean",
@@ -63,6 +67,7 @@
     "gateUpdates": {
       "type": "array",
       "description": "Gate updates to apply",
+      "default": [],
       "items": {
         "type": "object",
         "required": ["gate", "passed"],
@@ -85,6 +90,7 @@
     "traceLinks": {
       "type": "array",
       "description": "Trace links to add",
+      "default": [],
       "items": {
         "type": "object",
         "required": ["from", "to", "relation"],
@@ -127,6 +133,7 @@
     "evidence": {
       "type": "array",
       "description": "Evidence items to record",
+      "default": [],
       "items": {
         "type": "object",
         "required": ["type", "content", "timestamp"],
