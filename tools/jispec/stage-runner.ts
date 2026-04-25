@@ -13,6 +13,9 @@ import { validateSlice } from "./validator";
 import { SemanticValidator } from "./semantic-validator";
 import { FilesystemStorage } from "./filesystem-storage";
 import { fromPath, identityEquals, encodeIdentity, type ArtifactIdentity } from "./artifact-identity.js";
+import { CacheManager } from "./cache-manager.js";
+import { computeCacheKey, computeContentHash, type CacheKeyInputs } from "./cache-key.js";
+import { createManifest, type ArtifactSnapshot } from "./cache-manifest.js";
 
 /**
  * 阶段运行选项
@@ -46,10 +49,12 @@ export interface StageRunResult {
 export class StageRunner {
   private root: string;
   private storage: FilesystemStorage;
+  private cacheManager: CacheManager;
 
   private constructor(root: string) {
     this.root = root;
     this.storage = new FilesystemStorage(root);
+    this.cacheManager = new CacheManager(this.storage, root);
   }
 
   /**
@@ -96,11 +101,47 @@ export class StageRunner {
         const contract = this.resolveStageContract(sliceId, stageConfig);
         console.log(`[Stage: ${stageConfig.id}] Contract resolved: ${contract.inputs.length} inputs, ${contract.outputs.length} outputs`);
 
-        // 2. 运行 Agent
+        // 2. 计算缓存键并检查缓存
+        if (!dryRun) {
+          const cacheKey = await this.computeCacheKeyForStage(sliceId, stageConfig, contract);
+
+          console.log(`[Cache] Checking cache for key: ${cacheKey}`);
+          const cachedResult = await this.cacheManager.get(cacheKey);
+
+          if (cachedResult) {
+            console.log(`[Cache] ✓ Cache hit! Reusing cached result`);
+
+            // 应用缓存的执行结果
+            await this.applyExecutionResult(sliceId, stageConfig, cachedResult, contract);
+
+            let nextSliceState = this.buildNextLifecycleState(sliceId, stageConfig.lifecycle_state);
+
+            // 创建快照
+            if (failureHandler && nextSliceState) {
+              await failureHandler.createSnapshot(sliceId, stageConfig.id, nextSliceState);
+            }
+
+            // 更新生命周期状态
+            if (nextSliceState) {
+              this.writeSlice(sliceId, nextSliceState);
+              console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
+            }
+
+            return {
+              success: true,
+              retries: attempt - 1,
+            };
+          }
+
+          console.log(`[Cache] ✗ Cache miss, executing stage`);
+        }
+
+        // 3. 运行 Agent
         console.log(`[Stage: ${stageConfig.id}] Loading agent: ${stageConfig.agent}`);
         console.log(`[Stage: ${stageConfig.id}] Inputs: ${this.formatFileList(stageConfig.inputs.files)}`);
         console.log(`[Stage: ${stageConfig.id}] Outputs: ${this.formatFileList(stageConfig.outputs.files)}`);
 
+        const executionStartTime = Date.now();
         const agentResult = await runAgent({
           root: this.root,
           role: stageConfig.agent,
@@ -113,9 +154,24 @@ export class StageRunner {
           throw new Error(agentResult.error || "Agent execution failed");
         }
 
-        // 2. Apply execution result (writes, gates, traces, evidence)
+        const executionTimeMs = Date.now() - executionStartTime;
+
+        // 4. Apply execution result (writes, gates, traces, evidence)
         if (!dryRun && agentResult.executionResult) {
           await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract);
+
+          // 5. 存储到缓存
+          const cacheKey = await this.computeCacheKeyForStage(sliceId, stageConfig, contract);
+          const keyInputs = await this.buildCacheKeyInputs(sliceId, stageConfig, contract);
+          const inputSnapshots = await this.captureInputSnapshots(contract);
+          const outputSnapshots = await this.captureOutputSnapshots(agentResult.executionResult);
+
+          const manifest = createManifest(cacheKey, keyInputs, inputSnapshots, outputSnapshots, {
+            executionTimeMs,
+          });
+
+          await this.cacheManager.put(manifest, agentResult.executionResult);
+          console.log(`[Cache] ✓ Cached execution result`);
         } else if (dryRun && agentResult.executionResult) {
           // Dry-run: display structured result
           this.displayExecutionResult(agentResult.executionResult);
@@ -653,5 +709,149 @@ export class StageRunner {
       gates: stageConfig.gates,
       traceRequired: stageConfig.outputs.traceRequired,
     };
+  }
+
+  /**
+   * 计算阶段的缓存键
+   */
+  private async computeCacheKeyForStage(
+    sliceId: string,
+    stageConfig: StageConfig,
+    contract: ResolvedStageContract
+  ): Promise<string> {
+    const keyInputs = await this.buildCacheKeyInputs(sliceId, stageConfig, contract);
+    return computeCacheKey(keyInputs);
+  }
+
+  /**
+   * 构建缓存键输入
+   */
+  private async buildCacheKeyInputs(
+    sliceId: string,
+    stageConfig: StageConfig,
+    contract: ResolvedStageContract
+  ): Promise<CacheKeyInputs> {
+    const slice = this.readSlice(sliceId);
+
+    // 计算输入产物哈希
+    const inputArtifacts = [];
+    for (const input of contract.inputs) {
+      if (await this.storage.exists(input.path)) {
+        const content = await this.storage.readFile(input.path);
+        const contentStr = typeof content === 'string' ? content : content.toString('utf8');
+        const contentHash = computeContentHash(contentStr);
+        inputArtifacts.push({
+          identity: fromPath(input.path, stageConfig.id),
+          contentHash,
+        });
+      }
+    }
+
+    // 获取依赖状态
+    const gates: Record<string, boolean> = {};
+    if (slice.gates) {
+      for (const [gateName, gateValue] of Object.entries(slice.gates)) {
+        gates[gateName] = gateValue as boolean;
+      }
+    }
+
+    const dependencyState = {
+      gates,
+      lifecycleState: slice.lifecycle?.state || 'initial',
+    };
+
+    // Provider 配置（暂时硬编码，后续从配置读取）
+    const providerConfig = {
+      provider: 'anthropic',
+      model: 'claude-opus-4',
+    };
+
+    // Contract 版本（暂时使用简单哈希）
+    const contractHash = computeContentHash(JSON.stringify({
+      inputs: contract.inputs.map(i => i.path),
+      outputs: contract.outputs.map(o => o.path),
+      gates: contract.gates,
+    }));
+
+    // 为主输出创建 identity
+    const outputIdentity = contract.outputs[0]
+      ? fromPath(contract.outputs[0].path, stageConfig.id)
+      : {
+          sliceId,
+          stageId: stageConfig.id,
+          artifactType: 'requirements' as const,
+          artifactId: stageConfig.id,
+        };
+
+    return {
+      sliceId,
+      stageId: stageConfig.id,
+      identity: outputIdentity,
+      inputArtifacts,
+      dependencyState,
+      providerConfig,
+      contractVersion: {
+        contractHash,
+        schemaVersion: '1.0.0',
+      },
+    };
+  }
+
+  /**
+   * 捕获输入快照
+   */
+  private async captureInputSnapshots(contract: ResolvedStageContract): Promise<ArtifactSnapshot[]> {
+    const snapshots: ArtifactSnapshot[] = [];
+
+    for (const input of contract.inputs) {
+      if (await this.storage.exists(input.path)) {
+        const content = await this.storage.readFile(input.path);
+        const contentStr = typeof content === 'string' ? content : content.toString('utf8');
+        const contentHash = computeContentHash(contentStr);
+
+        snapshots.push({
+          identity: fromPath(input.path, contract.stageId),
+          contentHash,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    return snapshots;
+  }
+
+  /**
+   * 捕获输出快照
+   */
+  private async captureOutputSnapshots(result: StageExecutionResult): Promise<ArtifactSnapshot[]> {
+    const snapshots: ArtifactSnapshot[] = [];
+
+    // 从 writes 捕获
+    for (const write of result.writes) {
+      if (write.identity) {
+        const contentHash = computeContentHash(write.content);
+        snapshots.push({
+          identity: write.identity,
+          contentHash,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+
+    // 从 writeOperations 捕获
+    if (result.writeOperations) {
+      for (const op of result.writeOperations) {
+        if (op.identity && op.type === 'file' && op.content) {
+          const contentHash = computeContentHash(op.content);
+          snapshots.push({
+            identity: op.identity,
+            contentHash,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    return snapshots;
   }
 }
