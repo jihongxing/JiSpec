@@ -53,6 +53,24 @@ export class StageRunner {
   }
 
   /**
+   * 读取 slice 状态
+   */
+  private readSlice(sliceId: string): any {
+    const sliceFile = this.findSliceFile(sliceId);
+    const content = this.storage.readFileSync(sliceFile, "utf-8") as string;
+    return yaml.load(content);
+  }
+
+  /**
+   * 写入 slice 状态
+   */
+  private writeSlice(sliceId: string, sliceData: any): void {
+    const sliceFile = this.findSliceFile(sliceId);
+    const content = yaml.dump(sliceData);
+    this.storage.writeFileSync(sliceFile, content, "utf-8");
+  }
+
+  /**
    * 创建阶段运行器
    */
   static create(root: string): StageRunner {
@@ -256,9 +274,7 @@ export class StageRunner {
 
     // 0. Semantic validation
     const semanticValidator = new SemanticValidator(this.root);
-    const sliceFile = path.join(this.root, "contexts", sliceId.split("-")[0], "slices", sliceId, "slice.yaml");
-    const sliceContent = fs.readFileSync(sliceFile, "utf-8");
-    const slice = yaml.load(sliceContent) as any;
+    const slice = this.readSlice(sliceId);
 
     const validationContext = {
       sliceId,
@@ -395,9 +411,7 @@ export class StageRunner {
    * 更新门控（阶段完成后）
    */
   private async updateGates(sliceId: string, stageConfig: StageConfig): Promise<void> {
-    const sliceFile = this.findSliceFile(sliceId);
-    const content = fs.readFileSync(sliceFile, "utf-8");
-    const slice = yaml.load(content) as any;
+    const slice = this.readSlice(sliceId);
 
     // 确保 gates 对象存在
     if (!slice.gates) {
@@ -411,17 +425,14 @@ export class StageRunner {
     }
 
     // 保存
-    const updated = yaml.dump(slice);
-    fs.writeFileSync(sliceFile, updated, "utf-8");
+    this.writeSlice(sliceId, slice);
   }
 
   /**
    * 应用门控更新（从执行结果）
    */
   private async applyGateUpdates(sliceId: string, gateUpdates: any[]): Promise<void> {
-    const sliceFile = this.findSliceFile(sliceId);
-    const content = fs.readFileSync(sliceFile, "utf-8");
-    const slice = yaml.load(content) as any;
+    const slice = this.readSlice(sliceId);
 
     // 确保 gates 对象存在
     if (!slice.gates) {
@@ -435,8 +446,7 @@ export class StageRunner {
     }
 
     // 保存
-    const updated = yaml.dump(slice);
-    fs.writeFileSync(sliceFile, updated, "utf-8");
+    this.writeSlice(sliceId, slice);
   }
 
   /**
@@ -452,10 +462,7 @@ export class StageRunner {
    * 更新生命周期状态
    */
   private async updateLifecycleState(sliceId: string, newState: string): Promise<void> {
-    // 查找 slice.yaml
-    const sliceFile = this.findSliceFile(sliceId);
-    const content = fs.readFileSync(sliceFile, "utf-8");
-    const slice = yaml.load(content) as any;
+    const slice = this.readSlice(sliceId);
 
     // 更新状态
     if (!slice.lifecycle) {
@@ -465,8 +472,7 @@ export class StageRunner {
     slice.lifecycle.updated_at = new Date().toISOString();
 
     // 保存
-    const updated = yaml.dump(slice);
-    fs.writeFileSync(sliceFile, updated, "utf-8");
+    this.writeSlice(sliceId, slice);
   }
 
   /**
@@ -474,24 +480,24 @@ export class StageRunner {
    */
   private findSliceFile(sliceId: string): string {
     const contextsDir = path.join(this.root, "contexts");
-    const contexts = fs.readdirSync(contextsDir);
+    const contexts = this.storage.listFilesSync(contextsDir);
 
     for (const context of contexts) {
       const contextDir = path.join(contextsDir, context);
-      if (!fs.statSync(contextDir).isDirectory()) continue;
+      if (!this.storage.existsSync(contextDir)) continue;
 
       const slicesDir = path.join(contextDir, "slices");
-      if (!fs.existsSync(slicesDir)) continue;
+      if (!this.storage.existsSync(slicesDir)) continue;
 
-      const slices = fs.readdirSync(slicesDir);
+      const slices = this.storage.listFilesSync(slicesDir);
       for (const slice of slices) {
         const sliceDir = path.join(slicesDir, slice);
-        if (!fs.statSync(sliceDir).isDirectory()) continue;
+        if (!this.storage.existsSync(sliceDir)) continue;
 
         const sliceFile = path.join(sliceDir, "slice.yaml");
-        if (!fs.existsSync(sliceFile)) continue;
+        if (!this.storage.existsSync(sliceFile)) continue;
 
-        const content = fs.readFileSync(sliceFile, "utf-8");
+        const content = this.storage.readFileSync(sliceFile, "utf-8") as string;
         const sliceData = yaml.load(content) as any;
 
         if (sliceData.id === sliceId) {
@@ -516,7 +522,7 @@ export class StageRunner {
   private async saveEvidence(sliceId: string, stageId: string, evidence: any[]): Promise<void> {
     // 创建证据目录
     const evidenceDir = path.join(this.root, ".jispec", "evidence", sliceId);
-    fs.mkdirSync(evidenceDir, { recursive: true });
+    this.storage.mkdirSync(evidenceDir);
 
     // 生成证据文件名（带时间戳）
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -530,16 +536,14 @@ export class StageRunner {
       evidence,
     };
 
-    fs.writeFileSync(evidenceFile, JSON.stringify(evidenceData, null, 2), "utf-8");
+    this.storage.writeFileSync(evidenceFile, JSON.stringify(evidenceData, null, 2), "utf-8");
   }
 
   /**
    * 解析阶段契约
    */
   private resolveStageContract(sliceId: string, stageConfig: StageConfig): ResolvedStageContract {
-    const sliceFile = this.findSliceFile(sliceId);
-    const content = fs.readFileSync(sliceFile, "utf-8");
-    const slice = yaml.load(content) as any;
+    const slice = this.readSlice(sliceId);
     const contextId = slice.context_id;
 
     const resolver = new StageContractResolver(this.root, contextId, sliceId);
