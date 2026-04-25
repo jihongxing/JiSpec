@@ -5,10 +5,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { StageRunner } from '../stage-runner.js';
 import { FilesystemStorage } from '../filesystem-storage.js';
 import { CacheManager } from '../cache-manager.js';
-import type { StageConfig } from '../pipeline-executor.js';
+import { computeCacheKey, computeContentHash, type CacheKeyInputs } from '../cache-key.js';
+import { createManifest } from '../cache-manifest.js';
 
 console.log('Running Cache Integration Tests...\n');
 
@@ -83,8 +83,8 @@ gates: {}
 
 (async () => {
 
-// Test 1: First execution - cache miss, agent executes
-await test('First execution causes cache miss and agent execution', async () => {
+// Test 1: First execution - cache miss
+await test('First execution causes cache miss', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jispec-cache-integration-'));
 
   try {
@@ -93,27 +93,11 @@ await test('First execution causes cache miss and agent execution', async () => 
     const storage = new FilesystemStorage(tmpDir);
     const cacheManager = new CacheManager(storage, tmpDir);
 
-    const stageConfig: StageConfig = {
-      id: 'requirements',
-      name: 'Requirements',
-      agent: 'domain',
-      lifecycle_state: 'framed',
-      inputs: { files: ['input.txt'] },
-      outputs: { files: ['output.txt'], schemas: [] },
-      gates: { required: [] },
-    };
-
-    // Mock agent execution by creating output
-    const outputPath = path.join(tmpDir, 'contexts', 'test-context', 'slices', 'test-slice', 'output.txt');
-
     // First execution should miss cache
     const manifests = await cacheManager.listManifests();
     if (manifests.length !== 0) {
       throw new Error('Cache should be empty before first execution');
     }
-
-    // Note: Full integration would require mocking agent-runner
-    // For now, verify cache is empty (miss scenario)
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -130,11 +114,7 @@ await test('Second execution with same inputs causes cache hit', async () => {
     const cacheManager = new CacheManager(storage, tmpDir);
 
     // Simulate cached result by manually storing manifest and result
-    const { computeCacheKey } = await import('../cache-key.js');
-    const { createManifest } = await import('../cache-manifest.js');
-    const type = await import('../cache-key.js');
-
-    const keyInputs: typeof type.CacheKeyInputs = {
+    const keyInputs: CacheKeyInputs = {
       sliceId: 'test-slice-v1',
       stageId: 'requirements',
       identity: {
@@ -194,14 +174,10 @@ await test('Input content change invalidates cache', async () => {
     const storage = new FilesystemStorage(tmpDir);
     const cacheManager = new CacheManager(storage, tmpDir);
 
-    const { computeCacheKey, computeContentHash } = await import('../cache-key.js');
-    const { createManifest } = await import('../cache-manifest.js');
-    const type = await import('../cache-key.js');
-
     // Original input hash
     const originalHash = computeContentHash('Initial input content');
 
-    const keyInputs1: typeof type.CacheKeyInputs = {
+    const keyInputs1: CacheKeyInputs = {
       sliceId: 'test-slice-v1',
       stageId: 'requirements',
       identity: {
@@ -238,7 +214,7 @@ await test('Input content change invalidates cache', async () => {
     // Changed input hash
     const changedHash = computeContentHash('Changed input content');
 
-    const keyInputs2: typeof type.CacheKeyInputs = {
+    const keyInputs2: CacheKeyInputs = {
       ...keyInputs1,
       inputArtifacts: [{
         identity: {
@@ -269,10 +245,7 @@ await test('Provider or model change invalidates cache', async () => {
   try {
     createTestProject(tmpDir);
 
-    const { computeCacheKey } = await import('../cache-key.js');
-    const type = await import('../cache-key.js');
-
-    const baseKeyInputs: typeof type.CacheKeyInputs = {
+    const baseKeyInputs: CacheKeyInputs = {
       sliceId: 'test-slice-v1',
       stageId: 'requirements',
       identity: {
