@@ -173,7 +173,7 @@ class RollbackRegressionTest {
 
     // Clean up stage files
     const sliceDir = path.dirname(sliceFile);
-    const filesToRemove = ["design.md", "behaviors.feature", "tests.yaml", "src"];
+    const filesToRemove = ["design.md", "behaviors.feature", "test-spec.yaml", "trace.yaml", "evidence.md", "src"];
     for (const file of filesToRemove) {
       const filePath = path.join(sliceDir, file);
       if (fs.existsSync(filePath)) {
@@ -319,9 +319,9 @@ class RollbackRegressionTest {
 
         // Tests should reference test-spec.yaml
         if (link.from.type === 'test' || link.to.type === 'test') {
-          const testFile = path.join(sliceDir, 'tests.yaml');
+          const testFile = path.join(sliceDir, 'test-spec.yaml');
           if (!fs.existsSync(testFile)) {
-            console.error(`[Trace] Test reference found but tests.yaml doesn't exist`);
+            console.error(`[Trace] Test reference found but test-spec.yaml doesn't exist`);
             return false;
           }
         }

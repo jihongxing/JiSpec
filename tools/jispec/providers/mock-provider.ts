@@ -260,11 +260,13 @@ This slice implements the core functionality using a service-oriented architectu
       // For src directory, generate trace links from tests to code
       if (file === 'src' || file.endsWith('src/')) {
         if (existingScenarios.length > 0) {
+          // Extract service name from slice ID: "ordering-payment-v1" -> "payment-service"
+          const serviceName = sliceId.split('-').slice(1, -1).join('-') + '-service';
           return existingScenarios.map(scnId => {
             const testId = `TEST-${scnId.replace('SCN-', '')}-INTEGRATION`;
             return {
               from: { type: "test", id: testId },
-              to: { type: "code", id: "src/checkout-service" },
+              to: { type: "code", id: `src/${serviceName}` },
               relation: "implemented_by"
             };
           });
