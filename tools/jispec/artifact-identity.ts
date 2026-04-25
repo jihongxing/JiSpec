@@ -99,66 +99,86 @@ export function decodeIdentity(encoded: string): ArtifactIdentity {
 /**
  * Create artifact identity from physical path
  * Infers identity from conventional path structure:
- * contexts/{context}/slices/{sliceId}/{artifactFile}
+ * - contexts/{context}/slices/{sliceId}/{artifactFile} (slice-level)
+ * - contexts/{context}/{artifactFile} (context-level)
  *
  * Supports both POSIX (/) and Windows (\) path separators
  */
-export function fromPath(path: string, stageId: string): ArtifactIdentity {
+export function fromPath(path: string, stageId: string, sliceId?: string): ArtifactIdentity {
   // Normalize path separators to forward slashes for consistent parsing
   const normalizedPath = path.replace(/\\/g, "/");
 
-  // Extract slice ID from path
+  // Extract slice ID from path or use provided sliceId
   const sliceMatch = normalizedPath.match(/slices\/([^\/]+)\//);
-  if (!sliceMatch) {
-    throw new Error(`Cannot extract sliceId from path: ${path}`);
+  const extractedSliceId = sliceMatch ? sliceMatch[1] : sliceId;
+
+  if (!extractedSliceId) {
+    // Context-level artifact (no slice in path)
+    const contextMatch = normalizedPath.match(/contexts\/([^\/]+)\//);
+    if (contextMatch) {
+      const contextId = contextMatch[1];
+      const fileName = normalizedPath.split("/").pop() || "";
+
+      // Context-level artifacts use context ID as sliceId
+      return {
+        sliceId: `context:${contextId}`,
+        stageId,
+        artifactType: inferArtifactType(fileName),
+        artifactId: inferArtifactId(fileName),
+        logicalName: fileName,
+      };
+    }
+
+    throw new Error(`Cannot extract sliceId or contextId from path: ${path}`);
   }
-  const sliceId = sliceMatch[1];
 
   // Extract artifact file name
   const fileName = normalizedPath.split("/").pop() || "";
 
-  // Infer artifact type from file extension/name
-  let artifactType: ArtifactType;
-  let artifactId: string;
-
-  if (fileName === "requirements.md") {
-    artifactType = "requirements";
-    artifactId = "requirements";
-  } else if (fileName === "design.md") {
-    artifactType = "design";
-    artifactId = "design";
-  } else if (fileName === "behaviors.feature") {
-    artifactType = "behavior";
-    artifactId = "behaviors";
-  } else if (fileName === "test-spec.yaml") {
-    artifactType = "test";
-    artifactId = "test-spec";
-  } else if (fileName.endsWith(".test.ts") || fileName.endsWith(".spec.ts")) {
-    artifactType = "test";
-    artifactId = fileName.replace(/\.(test|spec)\.ts$/, "");
-  } else if (fileName.endsWith(".ts") || fileName.endsWith(".js")) {
-    artifactType = "code";
-    artifactId = fileName.replace(/\.(ts|js)$/, "");
-  } else if (fileName === "trace.yaml") {
-    artifactType = "trace";
-    artifactId = "trace";
-  } else if (fileName.endsWith(".txt")) {
-    // Text files are treated as generic artifacts with their base name
-    artifactType = "code";
-    artifactId = fileName.replace(/\.txt$/, "");
-  } else {
-    // Default: use file name as-is
-    artifactType = "code";
-    artifactId = fileName;
-  }
-
   return {
-    sliceId,
+    sliceId: extractedSliceId,
     stageId,
-    artifactType,
-    artifactId,
+    artifactType: inferArtifactType(fileName),
+    artifactId: inferArtifactId(fileName),
     logicalName: fileName,
   };
+}
+
+/**
+ * Infer artifact type from file name
+ */
+function inferArtifactType(fileName: string): ArtifactType {
+  if (fileName === "requirements.md") return "requirements";
+  if (fileName === "design.md") return "design";
+  if (fileName === "behaviors.feature") return "behavior";
+  if (fileName === "test-spec.yaml") return "test";
+  if (fileName.endsWith(".test.ts") || fileName.endsWith(".spec.ts")) return "test";
+  if (fileName === "trace.yaml") return "trace";
+  if (fileName === "context.yaml" || fileName === "contracts.yaml") return "requirements";
+  return "code";
+}
+
+/**
+ * Infer artifact ID from file name
+ */
+function inferArtifactId(fileName: string): string {
+  if (fileName === "requirements.md") return "requirements";
+  if (fileName === "design.md") return "design";
+  if (fileName === "behaviors.feature") return "behaviors";
+  if (fileName === "test-spec.yaml") return "test-spec";
+  if (fileName === "trace.yaml") return "trace";
+  if (fileName === "context.yaml") return "context";
+  if (fileName === "contracts.yaml") return "contracts";
+  if (fileName.endsWith(".test.ts") || fileName.endsWith(".spec.ts")) {
+    return fileName.replace(/\.(test|spec)\.ts$/, "");
+  }
+  if (fileName.endsWith(".ts") || fileName.endsWith(".js")) {
+    return fileName.replace(/\.(ts|js)$/, "");
+  }
+  if (fileName.endsWith(".txt")) {
+    return fileName.replace(/\.txt$/, "");
+  }
+  return fileName;
 }
 
 /**

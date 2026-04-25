@@ -166,7 +166,7 @@ export class StageRunner {
 
           // 5. 存储到缓存（使用执行前计算的 keyInputs）
           if (cacheKey && keyInputs) {
-            const inputSnapshots = await this.captureInputSnapshots(contract);
+            const inputSnapshots = await this.captureInputSnapshots(contract, sliceId);
             const outputSnapshots = await this.captureOutputSnapshots(agentResult.executionResult);
 
             const manifest = createManifest(cacheKey, keyInputs, inputSnapshots, outputSnapshots, {
@@ -762,7 +762,7 @@ export class StageRunner {
         const contentStr = typeof content === 'string' ? content : content.toString('utf8');
         const contentHash = computeContentHash(contentStr);
         inputArtifacts.push({
-          identity: fromPath(input.path, stageConfig.id),
+          identity: fromPath(input.path, stageConfig.id, sliceId),
           contentHash,
         });
       }
@@ -824,7 +824,7 @@ export class StageRunner {
   /**
    * 捕获输入快照
    */
-  private async captureInputSnapshots(contract: ResolvedStageContract): Promise<ArtifactSnapshot[]> {
+  private async captureInputSnapshots(contract: ResolvedStageContract, sliceId: string): Promise<ArtifactSnapshot[]> {
     const snapshots: ArtifactSnapshot[] = [];
 
     for (const input of contract.inputs) {
@@ -834,7 +834,7 @@ export class StageRunner {
         const contentHash = computeContentHash(contentStr);
 
         snapshots.push({
-          identity: fromPath(input.path, contract.stageId),
+          identity: fromPath(input.path, contract.stageId, sliceId),
           contentHash,
           timestamp: new Date().toISOString(),
         });
