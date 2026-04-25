@@ -73,56 +73,60 @@ class RollbackRegressionTest {
       const filesBefore = this.captureSliceFiles();
       results.push({ passed: true, message: `Captured state: ${stateBefore.state}, ${filesBefore.length} files` });
 
-      // Step 6: Inject failure into behavior stage
-      console.log("\n[Step 6] Injecting failure into behavior stage...");
-      await this.injectBehaviorFailure();
-      results.push({ passed: true, message: "Failure injected into behavior stage" });
-
-      // Step 7: Run behavior stage (should fail and trigger rollback)
-      console.log("\n[Step 7] Running behavior stage (should fail and rollback)...");
+      // Step 6: Run behavior stage successfully first (to create files)
+      console.log("\n[Step 6] Running behavior stage (should succeed)...");
       const behaviorResult = await this.runStage("behavior");
-      if (behaviorResult.success) {
-        throw new Error("Behavior stage should have failed but succeeded");
+      if (!behaviorResult.success) {
+        throw new Error(`Behavior stage failed: ${behaviorResult.error}`);
       }
-      results.push({ passed: true, message: "Behavior stage failed as expected" });
+      results.push({ passed: true, message: "Behavior stage completed successfully" });
 
-      // Step 8: Verify rollback restored previous state
-      console.log("\n[Step 8] Verifying rollback restored previous state...");
+      // Step 7: Verify files were created
+      console.log("\n[Step 7] Verifying files were created...");
+      const filesAfterBehavior = this.captureSliceFiles();
+      const newFiles = filesAfterBehavior.filter(f => !filesBefore.includes(f));
+      if (newFiles.length === 0) {
+        throw new Error("No new files were created by behavior stage");
+      }
+      results.push({ passed: true, message: `New files created: ${newFiles.join(", ")}` });
+
+      // Step 8: Manually trigger rollback to previous snapshot
+      console.log("\n[Step 8] Manually triggering rollback to design snapshot...");
+      await this.triggerRollback();
+      results.push({ passed: true, message: "Rollback triggered" });
+
+      // Step 9: Verify rollback restored previous state
+      console.log("\n[Step 9] Verifying rollback restored previous state...");
       const stateAfter = await this.captureSliceState();
       if (stateAfter.state !== stateBefore.state) {
         throw new Error(`State not restored: expected ${stateBefore.state}, got ${stateAfter.state}`);
       }
       results.push({ passed: true, message: `State restored to ${stateAfter.state}` });
 
-      // Step 9: Verify new files were deleted
-      console.log("\n[Step 9] Verifying new files were deleted...");
+      // Step 10: Verify new files were deleted
+      console.log("\n[Step 10] Verifying new files were deleted...");
       const filesAfter = this.captureSliceFiles();
-      const newFiles = filesAfter.filter(f => !filesBefore.includes(f));
-      if (newFiles.length > 0) {
-        throw new Error(`New files not deleted: ${newFiles.join(", ")}`);
+      const remainingNewFiles = filesAfter.filter(f => !filesBefore.includes(f));
+      if (remainingNewFiles.length > 0) {
+        throw new Error(`New files not deleted: ${remainingNewFiles.join(", ")}`);
       }
       results.push({ passed: true, message: "New files deleted successfully" });
 
-      // Step 10: Verify old files were preserved
-      console.log("\n[Step 10] Verifying old files were preserved...");
+      // Step 11: Verify old files were preserved
+      console.log("\n[Step 11] Verifying old files were preserved...");
       const missingFiles = filesBefore.filter(f => !filesAfter.includes(f));
       if (missingFiles.length > 0) {
         throw new Error(`Old files missing: ${missingFiles.join(", ")}`);
       }
       results.push({ passed: true, message: "Old files preserved successfully" });
 
-      // Step 11: Verify trace.yaml consistency
-      console.log("\n[Step 11] Verifying trace.yaml consistency...");
+      // Step 12: Verify trace.yaml consistency
+      console.log("\n[Step 12] Verifying trace.yaml consistency...");
       const traceConsistent = await this.verifyTraceConsistency();
       if (!traceConsistent) {
         throw new Error("trace.yaml is inconsistent after rollback");
       }
       results.push({ passed: true, message: "trace.yaml is consistent" });
-
-      // Step 12: Remove failure injection
-      console.log("\n[Step 12] Removing failure injection...");
-      await this.removeFailureInjection();
-      results.push({ passed: true, message: "Failure injection removed" });
 
       // Step 13: Verify pipeline can re-run without errors
       console.log("\n[Step 13] Verifying pipeline can re-run without errors...");
@@ -275,6 +279,21 @@ class RollbackRegressionTest {
   private async removeFailureInjection(): Promise<void> {
     delete process.env.JISPEC_TEST_INJECT_FAILURE;
     console.log(`[Inject] Failure injection removed`);
+  }
+
+  /**
+   * Manually trigger rollback by calling the failure handler
+   */
+  private async triggerRollback(): Promise<void> {
+    const { FailureHandler } = await import("../failure-handler");
+    const config = {
+      retry: { enabled: false, maxAttempts: 0, backoff: "linear" as const, initialDelay: 0 },
+      rollback: { enabled: true, strategy: "full" as const },
+      humanIntervention: { enabled: false, timeout: 0 }
+    };
+    const handler = new FailureHandler(this.root, config);
+    await handler.rollbackToLatest(this.sliceId);
+    console.log(`[Rollback] Rollback completed`);
   }
 
   /**

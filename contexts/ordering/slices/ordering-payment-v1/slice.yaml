@@ -4,7 +4,7 @@ context_id: ordering
 lifecycle:
   state: behavior-defined
   created_at: '2026-04-25T00:10:29.804Z'
-  updated_at: '2026-04-25T03:59:35.773Z'
+  updated_at: '2026-04-25T04:14:35.188Z'
 priority: high
 goal: Process payment for orders
 scope:

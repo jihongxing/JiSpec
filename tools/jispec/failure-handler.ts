@@ -226,24 +226,45 @@ export class FailureHandler {
    * 回滚到最近的可用 snapshot
    */
   async rollbackToLatest(sliceId: string): Promise<void> {
-    // 查找该 slice 的所有 snapshots
-    const sliceSnapshots: RollbackSnapshot[] = [];
-    for (const [key, snapshot] of this.snapshots.entries()) {
-      if (snapshot.sliceId === sliceId) {
-        sliceSnapshots.push(snapshot);
-      }
-    }
+    // 从磁盘加载该 slice 的所有 snapshots
+    const snapshotDir = path.join(this.root, ".jispec", "snapshots", sliceId);
 
-    if (sliceSnapshots.length === 0) {
+    if (!fs.existsSync(snapshotDir)) {
       console.warn(`[Rollback] No snapshots found for ${sliceId}`);
       return;
     }
 
-    // 按时间戳排序，取最新的
-    sliceSnapshots.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    const latestSnapshot = sliceSnapshots[0];
+    const snapshotFiles = fs.readdirSync(snapshotDir);
+    if (snapshotFiles.length === 0) {
+      console.warn(`[Rollback] No snapshots found for ${sliceId}`);
+      return;
+    }
 
-    console.log(`[Rollback] Rolling back ${sliceId} to latest snapshot: ${latestSnapshot.stageId} (${latestSnapshot.timestamp})`);
+    // 按文件名排序（包含时间戳），取最新的
+    snapshotFiles.sort().reverse();
+    const latestSnapshotFile = snapshotFiles[0];
+    const latestSnapshotPath = path.join(snapshotDir, latestSnapshotFile);
+
+    console.log(`[Rollback] Loading snapshot from disk: ${latestSnapshotFile}`);
+
+    // 解析文件名: stageId-timestamp.json
+    const match = latestSnapshotFile.match(/^(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z)\.json$/);
+    if (!match) {
+      console.error(`[Rollback] Invalid snapshot filename: ${latestSnapshotFile}`);
+      return;
+    }
+
+    const stageId = match[1];
+    const timestamp = match[2].replace(/-/g, ':'); // Convert back to ISO format
+
+    // 加载 snapshot
+    const latestSnapshot = this.loadSnapshotFromDisk(sliceId, stageId, timestamp);
+    if (!latestSnapshot) {
+      console.error(`[Rollback] Failed to load snapshot from ${latestSnapshotPath}`);
+      return;
+    }
+
+    console.log(`[Rollback] Rolling back ${sliceId} to snapshot: ${latestSnapshot.stageId} (${latestSnapshot.timestamp})`);
 
     // 1. 恢复 slice 状态
     const sliceFile = this.findSliceFile(sliceId);
