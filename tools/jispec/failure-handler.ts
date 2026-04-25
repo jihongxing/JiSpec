@@ -158,7 +158,7 @@ export class FailureHandler {
     console.log(`[Snapshot] Creating rollback snapshot for ${sliceId}:${stageId}`);
 
     const sliceFile = this.findSliceFile(sliceId);
-    const sliceContent = fs.readFileSync(sliceFile, "utf-8");
+    const sliceContent = this.storage.readFileSync(sliceFile, "utf-8") as string;
     const sliceState = yaml.load(sliceContent);
 
     const filesBackup = new Map<string, string>();
@@ -170,7 +170,7 @@ export class FailureHandler {
       const files = this.getSliceFiles(sliceDir);
 
       for (const file of files) {
-        const content = fs.readFileSync(file, "utf-8");
+        const content = this.storage.readFileSync(file, "utf-8") as string;
         filesBackup.set(file, content);
         existingFiles.push(file);
       }
@@ -213,12 +213,12 @@ export class FailureHandler {
     // 1. 恢复 slice 状态
     const sliceFile = this.findSliceFile(sliceId);
     const restored = yaml.dump(snapshot.sliceState);
-    fs.writeFileSync(sliceFile, restored, "utf-8");
+    this.storage.writeFileSync(sliceFile, restored, "utf-8");
 
     // 2. 恢复文件（如果是完整回滚）
     if (this.config.rollback.strategy === "full") {
       for (const [file, content] of snapshot.filesBackup) {
-        fs.writeFileSync(file, content, "utf-8");
+        this.storage.writeFileSync(file, content, "utf-8");
       }
     }
 
@@ -232,12 +232,12 @@ export class FailureHandler {
     // 从磁盘加载该 slice 的所有 snapshots
     const snapshotDir = path.join(this.root, ".jispec", "snapshots", sliceId);
 
-    if (!fs.existsSync(snapshotDir)) {
+    if (!this.storage.existsSync(snapshotDir)) {
       console.warn(`[Rollback] No snapshots found for ${sliceId}`);
       return;
     }
 
-    const snapshotFiles = fs.readdirSync(snapshotDir);
+    const snapshotFiles = this.storage.listFilesSync(snapshotDir);
     if (snapshotFiles.length === 0) {
       console.warn(`[Rollback] No snapshots found for ${sliceId}`);
       return;
@@ -272,7 +272,7 @@ export class FailureHandler {
     // 1. 恢复 slice 状态
     const sliceFile = this.findSliceFile(sliceId);
     const restored = yaml.dump(latestSnapshot.sliceState);
-    fs.writeFileSync(sliceFile, restored, "utf-8");
+    this.storage.writeFileSync(sliceFile, restored, "utf-8");
 
     // 2. 恢复文件（如果是完整回滚）
     if (this.config.rollback.strategy === "full") {
@@ -283,15 +283,13 @@ export class FailureHandler {
       for (const file of currentFiles) {
         if (!latestSnapshot.existingFiles.includes(file)) {
           console.log(`[Rollback] Deleting new file: ${file}`);
-          fs.unlinkSync(file);
+          await this.storage.removeFile(file);
         }
       }
 
       // 恢复快照中的文件
       for (const [file, content] of latestSnapshot.filesBackup) {
-        const dir = path.dirname(file);
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(file, content, "utf-8");
+        this.storage.writeFileSync(file, content, "utf-8");
       }
     }
 
@@ -341,24 +339,24 @@ export class FailureHandler {
    */
   private findSliceFile(sliceId: string): string {
     const contextsDir = path.join(this.root, "contexts");
-    const contexts = fs.readdirSync(contextsDir);
+    const contexts = this.storage.listFilesSync(contextsDir);
 
     for (const context of contexts) {
       const contextDir = path.join(contextsDir, context);
-      if (!fs.statSync(contextDir).isDirectory()) continue;
+      if (!this.storage.existsSync(contextDir)) continue;
 
       const slicesDir = path.join(contextDir, "slices");
-      if (!fs.existsSync(slicesDir)) continue;
+      if (!this.storage.existsSync(slicesDir)) continue;
 
-      const slices = fs.readdirSync(slicesDir);
+      const slices = this.storage.listFilesSync(slicesDir);
       for (const slice of slices) {
         const sliceDir = path.join(slicesDir, slice);
-        if (!fs.statSync(sliceDir).isDirectory()) continue;
+        if (!this.storage.existsSync(sliceDir)) continue;
 
         const sliceFile = path.join(sliceDir, "slice.yaml");
-        if (!fs.existsSync(sliceFile)) continue;
+        if (!this.storage.existsSync(sliceFile)) continue;
 
-        const content = fs.readFileSync(sliceFile, "utf-8");
+        const content = this.storage.readFileSync(sliceFile, "utf-8") as string;
         const sliceData = yaml.load(content) as any;
 
         if (sliceData.id === sliceId) {
@@ -377,14 +375,19 @@ export class FailureHandler {
     const files: string[] = [];
 
     const walkDir = (dir: string) => {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const entries = this.storage.listFilesSync(dir);
 
       for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isFile()) {
-          files.push(fullPath);
-        } else if (entry.isDirectory()) {
-          walkDir(fullPath);
+        const fullPath = path.join(dir, entry);
+        if (this.storage.existsSync(fullPath)) {
+          // Check if it's a file by trying to read it
+          try {
+            this.storage.readFileSync(fullPath, "utf-8");
+            files.push(fullPath);
+          } catch {
+            // It's a directory, recurse
+            walkDir(fullPath);
+          }
         }
       }
     };
@@ -398,7 +401,7 @@ export class FailureHandler {
    */
   private saveSnapshotToDisk(snapshot: RollbackSnapshot): void {
     const snapshotDir = path.join(this.root, ".jispec", "snapshots", snapshot.sliceId);
-    fs.mkdirSync(snapshotDir, { recursive: true });
+    this.storage.mkdirSync(snapshotDir);
 
     // Sanitize timestamp for Windows: replace : with -
     const safeTimestamp = snapshot.timestamp.replace(/:/g, '-');
@@ -414,7 +417,7 @@ export class FailureHandler {
       existingFiles: snapshot.existingFiles,
     };
 
-    fs.writeFileSync(snapshotFile, JSON.stringify(serializable, null, 2), "utf-8");
+    this.storage.writeFileSync(snapshotFile, JSON.stringify(serializable, null, 2), "utf-8");
     console.log(`[Snapshot] Saved to: ${snapshotFile}`);
   }
 
@@ -426,11 +429,11 @@ export class FailureHandler {
     const safeTimestamp = timestamp.replace(/:/g, '-');
     const snapshotFile = path.join(this.root, ".jispec", "snapshots", sliceId, `${stageId}-${safeTimestamp}.json`);
 
-    if (!fs.existsSync(snapshotFile)) {
+    if (!this.storage.existsSync(snapshotFile)) {
       return null;
     }
 
-    const content = fs.readFileSync(snapshotFile, "utf-8");
+    const content = this.storage.readFileSync(snapshotFile, "utf-8") as string;
     const data = JSON.parse(content);
 
     return {

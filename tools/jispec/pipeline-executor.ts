@@ -7,6 +7,7 @@ import type { OutputConstraint } from "./output-validator";
 import type { GateConstraint } from "./gate-checker";
 import { ProgressTracker } from "./progress-tracker";
 import { ParallelExecutor } from "./parallel-executor";
+import { FilesystemStorage } from "./filesystem-storage";
 
 /**
  * 阶段配置
@@ -125,10 +126,12 @@ export interface PipelineResult {
 export class PipelineExecutor {
   private root: string;
   private config: PipelineConfig;
+  private storage: FilesystemStorage;
 
   private constructor(root: string, config: PipelineConfig) {
     this.root = root;
     this.config = config;
+    this.storage = new FilesystemStorage(root);
   }
 
   /**
@@ -334,24 +337,24 @@ export class PipelineExecutor {
   private async getCurrentState(sliceId: string): Promise<string> {
     // 查找 slice.yaml
     const contextsDir = path.join(this.root, "contexts");
-    const contexts = fs.readdirSync(contextsDir);
+    const contexts = this.storage.listFilesSync(contextsDir);
 
     for (const context of contexts) {
       const contextDir = path.join(contextsDir, context);
-      if (!fs.statSync(contextDir).isDirectory()) continue;
+      if (!this.storage.existsSync(contextDir)) continue;
 
       const slicesDir = path.join(contextDir, "slices");
-      if (!fs.existsSync(slicesDir)) continue;
+      if (!this.storage.existsSync(slicesDir)) continue;
 
-      const slices = fs.readdirSync(slicesDir);
+      const slices = this.storage.listFilesSync(slicesDir);
       for (const slice of slices) {
         const sliceDir = path.join(slicesDir, slice);
-        if (!fs.statSync(sliceDir).isDirectory()) continue;
+        if (!this.storage.existsSync(sliceDir)) continue;
 
         const sliceFile = path.join(sliceDir, "slice.yaml");
-        if (!fs.existsSync(sliceFile)) continue;
+        if (!this.storage.existsSync(sliceFile)) continue;
 
-        const content = fs.readFileSync(sliceFile, "utf-8");
+        const content = this.storage.readFileSync(sliceFile, "utf-8") as string;
         const sliceData = yaml.load(content) as any;
 
         if (sliceData.id === sliceId) {
@@ -428,12 +431,13 @@ export class PipelineExecutor {
    */
   private static loadConfig(root: string): PipelineConfig {
     const configPath = path.join(root, "agents", "pipeline.yaml");
+    const storage = new FilesystemStorage(root);
 
-    if (!fs.existsSync(configPath)) {
+    if (!storage.existsSync(configPath)) {
       throw new Error(`Pipeline configuration not found: ${configPath}`);
     }
 
-    const content = fs.readFileSync(configPath, "utf-8");
+    const content = storage.readFileSync(configPath, "utf-8") as string;
     const config = yaml.load(content) as any;
 
     return config.pipeline as PipelineConfig;
@@ -478,9 +482,7 @@ export class PipelineExecutor {
    */
   private saveReport(sliceId: string, progressTracker: ProgressTracker): void {
     const reportDir = path.join(this.root, ".jispec", "reports");
-    if (!fs.existsSync(reportDir)) {
-      fs.mkdirSync(reportDir, { recursive: true });
-    }
+    this.storage.mkdirSync(reportDir);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const format = this.config.progress.report_format;
@@ -505,7 +507,7 @@ export class PipelineExecutor {
     }
 
     const reportFile = path.join(reportDir, `${sliceId}-${timestamp}.${extension}`);
-    fs.writeFileSync(reportFile, content, "utf-8");
+    this.storage.writeFileSync(reportFile, content, "utf-8");
 
     console.log(`[Report] Saved to: ${reportFile}`);
   }
