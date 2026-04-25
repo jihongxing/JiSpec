@@ -12,6 +12,7 @@ import { TraceManager } from "./trace-manager";
 import { validateSlice } from "./validator";
 import { SemanticValidator } from "./semantic-validator";
 import { FilesystemStorage } from "./filesystem-storage";
+import { fromPath, identityEquals, encodeIdentity, type ArtifactIdentity } from "./artifact-identity.js";
 
 /**
  * 阶段运行选项
@@ -120,20 +121,26 @@ export class StageRunner {
           this.displayExecutionResult(agentResult.executionResult);
         }
 
-        // 3. 更新生命周期状态
+        let nextSliceState: any | undefined;
+
         if (!dryRun) {
-          await this.updateLifecycleState(sliceId, stageConfig.lifecycle_state);
+          nextSliceState = this.buildNextLifecycleState(sliceId, stageConfig.lifecycle_state);
+        }
+
+        // 3. 成功：先创建快照（带目标 lifecycle），确保后续写状态前已有可回滚点
+        if (failureHandler && !dryRun && nextSliceState) {
+          await failureHandler.createSnapshot(sliceId, stageConfig.id, nextSliceState);
+        }
+
+        // 4. 更新生命周期状态
+        if (!dryRun && nextSliceState) {
+          this.writeSlice(sliceId, nextSliceState);
           console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
         }
 
-        // Test injection point: fail after lifecycle update but before snapshot
+        // Test injection point: fail after lifecycle update
         if (process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE === stageConfig.id) {
           throw new Error(`Injected test failure for stage: ${stageConfig.id}`);
-        }
-
-        // 成功：创建快照供下一个 stage 使用
-        if (failureHandler && !dryRun) {
-          await failureHandler.createSnapshot(sliceId, stageConfig.id);
         }
 
         return {
@@ -163,8 +170,8 @@ export class StageRunner {
 
         // 如果需要回滚
         if (decision.shouldRollback) {
-          // 回滚到最近的可用 snapshot
-          await failureHandler.rollbackToLatest(sliceId);
+          // 回滚到最近的稳定 snapshot（排除当前失败阶段）
+          await failureHandler.rollbackToLatest(sliceId, stageConfig.id);
         }
 
         // 如果不重试，返回失败
@@ -297,15 +304,66 @@ export class StageRunner {
 
     // 1. 写入文件
     for (const write of result.writes) {
-      console.log(`[Apply] Writing ${write.path}...`);
+      let targetPath = write.path;
+
+      // If identity is provided, validate and use identity-first resolution
+      if (write.identity) {
+        const resolvedPath = this.storage.resolveArtifactPath(write.identity);
+
+        // Normalize both paths for comparison
+        const normalizedWritePath = path.normalize(write.path);
+        const normalizedResolvedPath = path.normalize(resolvedPath);
+
+        // Check if resolved path ends with write path (handles absolute vs relative)
+        const pathsMatch = normalizedResolvedPath.endsWith(normalizedWritePath) ||
+                          normalizedWritePath.endsWith(path.basename(normalizedResolvedPath));
+
+        // Validate identity-path consistency
+        if (!pathsMatch) {
+          throw new Error(
+            `Identity-path mismatch for write: identity=${encodeIdentity(write.identity)}, ` +
+            `path=${write.path}, resolved=${resolvedPath}`
+          );
+        }
+
+        targetPath = resolvedPath;
+        console.log(`[Apply] Writing ${write.path} (identity: ${encodeIdentity(write.identity)})...`);
+      } else {
+        console.log(`[Apply] Writing ${write.path}...`);
+      }
+
       const encoding = (write.encoding || "utf-8") as BufferEncoding;
-      this.storage.writeFileSync(write.path, write.content, encoding);
+      this.storage.writeFileSync(targetPath, write.content, encoding);
       console.log(`[Apply] ✓ Written`);
     }
 
     // 1b. 应用新的写入操作（支持目录创建）
     if (result.writeOperations && result.writeOperations.length > 0) {
       for (const op of result.writeOperations) {
+        // Validate identity if provided
+        if (op.identity) {
+          // Verify identity is well-formed
+          if (!op.identity.sliceId || !op.identity.artifactId || !op.identity.artifactType) {
+            throw new Error(
+              `Malformed identity for write operation: ${JSON.stringify(op.identity)}`
+            );
+          }
+
+          // For file operations, validate identity-path consistency
+          if (op.type === "file") {
+            const resolvedPath = this.storage.resolveArtifactPath(op.identity);
+            const normalizedOpPath = path.normalize(op.path);
+            const normalizedResolvedPath = path.normalize(resolvedPath);
+
+            if (normalizedOpPath !== normalizedResolvedPath) {
+              throw new Error(
+                `Identity-path mismatch for writeOperation: identity=${encodeIdentity(op.identity)}, ` +
+                `path=${op.path}, resolved=${resolvedPath}`
+              );
+            }
+          }
+        }
+
         if (op.type === "directory") {
           console.log(`[Apply] Creating directory ${op.path}...`);
           this.storage.mkdirSync(op.path);
@@ -458,9 +516,9 @@ export class StageRunner {
   }
 
   /**
-   * 更新生命周期状态
+   * 构建下一个生命周期状态
    */
-  private async updateLifecycleState(sliceId: string, newState: string): Promise<void> {
+  private buildNextLifecycleState(sliceId: string, newState: string): any {
     const slice = this.readSlice(sliceId);
 
     // 更新状态
@@ -470,8 +528,7 @@ export class StageRunner {
     slice.lifecycle.state = newState;
     slice.lifecycle.updated_at = new Date().toISOString();
 
-    // 保存
-    this.writeSlice(sliceId, slice);
+    return slice;
   }
 
   /**

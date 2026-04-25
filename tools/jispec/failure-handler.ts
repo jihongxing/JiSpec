@@ -149,7 +149,7 @@ export class FailureHandler {
   /**
    * 创建回滚快照
    */
-  async createSnapshot(sliceId: string, stageId: string): Promise<void> {
+  async createSnapshot(sliceId: string, stageId: string, sliceStateOverride?: unknown): Promise<void> {
     if (!this.config.rollback.enabled) {
       return;
     }
@@ -158,7 +158,7 @@ export class FailureHandler {
 
     const sliceFile = this.findSliceFile(sliceId);
     const sliceContent = this.storage.readFileSync(sliceFile, "utf-8") as string;
-    const sliceState = yaml.load(sliceContent);
+    const sliceState = sliceStateOverride ?? yaml.load(sliceContent);
 
     const filesBackup = new Map<string, string>();
     const existingFiles: string[] = [];
@@ -169,7 +169,10 @@ export class FailureHandler {
       const files = this.getSliceFiles(sliceDir);
 
       for (const file of files) {
-        const content = this.storage.readFileSync(file, "utf-8") as string;
+        const content =
+          file === sliceFile && sliceStateOverride
+            ? yaml.dump(sliceState)
+            : (this.storage.readFileSync(file, "utf-8") as string);
         filesBackup.set(file, content);
         existingFiles.push(file);
       }
@@ -227,7 +230,7 @@ export class FailureHandler {
   /**
    * 回滚到最近的可用 snapshot
    */
-  async rollbackToLatest(sliceId: string): Promise<void> {
+  async rollbackToLatest(sliceId: string, excludeStageId?: string): Promise<void> {
     // 从磁盘加载该 slice 的所有 snapshots
     const snapshotDir = path.join(this.root, ".jispec", "snapshots", sliceId);
 
@@ -236,14 +239,22 @@ export class FailureHandler {
       return;
     }
 
-    const snapshotFiles = this.storage.listFilesSync(snapshotDir);
+    const snapshotFiles = this.storage
+      .listFilesSync(snapshotDir)
+      .filter((file) => !excludeStageId || !file.startsWith(`${excludeStageId}-`));
     if (snapshotFiles.length === 0) {
       console.warn(`[Rollback] No snapshots found for ${sliceId}`);
       return;
     }
 
-    // 按文件名排序（包含时间戳），取最新的
-    snapshotFiles.sort().reverse();
+    // 按快照时间戳排序，取最新的
+    snapshotFiles.sort((a, b) => {
+      const aMatch = a.match(/^.+-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z)\.json$/);
+      const bMatch = b.match(/^.+-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z)\.json$/);
+      const aKey = aMatch ? aMatch[1] : "";
+      const bKey = bMatch ? bMatch[1] : "";
+      return bKey.localeCompare(aKey);
+    });
     const latestSnapshotFile = snapshotFiles[0];
     const latestSnapshotPath = path.join(snapshotDir, latestSnapshotFile);
 
@@ -257,10 +268,10 @@ export class FailureHandler {
     }
 
     const stageId = match[1];
-    const timestamp = match[2].replace(/-/g, ':'); // Convert back to ISO format
+    const safeTimestamp = match[2];
 
     // 加载 snapshot
-    const latestSnapshot = this.loadSnapshotFromDisk(sliceId, stageId, timestamp);
+    const latestSnapshot = this.loadSnapshotFromDisk(sliceId, stageId, safeTimestamp);
     if (!latestSnapshot) {
       console.error(`[Rollback] Failed to load snapshot from ${latestSnapshotPath}`);
       return;
@@ -423,9 +434,7 @@ export class FailureHandler {
   /**
    * 从磁盘加载快照
    */
-  private loadSnapshotFromDisk(sliceId: string, stageId: string, timestamp: string): RollbackSnapshot | null {
-    // Sanitize timestamp for Windows: replace : with -
-    const safeTimestamp = timestamp.replace(/:/g, '-');
+  private loadSnapshotFromDisk(sliceId: string, stageId: string, safeTimestamp: string): RollbackSnapshot | null {
     const snapshotFile = path.join(this.root, ".jispec", "snapshots", sliceId, `${stageId}-${safeTimestamp}.json`);
 
     if (!this.storage.existsSync(snapshotFile)) {

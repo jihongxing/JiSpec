@@ -97,6 +97,9 @@ class RollbackRegressionTest {
       }
       results.push({ passed: true, message: `New files created: ${newFiles.join(", ")}` });
 
+      const stateBeforeTest = await this.captureSliceState();
+      const filesBeforeTest = this.captureSliceFiles();
+
       // Step 8: Inject failure and run test stage (should fail and auto-rollback)
       console.log("\n[Step 8] Injecting failure and running test stage (should fail and auto-rollback)...");
       await this.injectStageFailure("test");
@@ -109,15 +112,15 @@ class RollbackRegressionTest {
       // Step 9: Verify rollback restored previous state
       console.log("\n[Step 9] Verifying rollback restored previous state...");
       const stateAfter = await this.captureSliceState();
-      if (stateAfter.state !== "design-defined") {
-        throw new Error(`State not restored: expected design-defined, got ${stateAfter.state}`);
+      if (stateAfter.state !== stateBeforeTest.state) {
+        throw new Error(`State not restored: expected ${stateBeforeTest.state}, got ${stateAfter.state}`);
       }
       results.push({ passed: true, message: `State restored to ${stateAfter.state}` });
 
       // Step 10: Verify new files were deleted
       console.log("\n[Step 10] Verifying new files were deleted...");
       const filesAfter = this.captureSliceFiles();
-      const remainingNewFiles = filesAfter.filter(f => !filesBefore.includes(f));
+      const remainingNewFiles = filesAfter.filter(f => !filesBeforeTest.includes(f));
       if (remainingNewFiles.length > 0) {
         throw new Error(`New files not deleted: ${remainingNewFiles.join(", ")}`);
       }
@@ -125,7 +128,7 @@ class RollbackRegressionTest {
 
       // Step 11: Verify old files were preserved
       console.log("\n[Step 11] Verifying old files were preserved...");
-      const missingFiles = filesBefore.filter(f => !filesAfter.includes(f));
+      const missingFiles = filesBeforeTest.filter(f => !filesAfter.includes(f));
       if (missingFiles.length > 0) {
         throw new Error(`Old files missing: ${missingFiles.join(", ")}`);
       }
@@ -142,11 +145,11 @@ class RollbackRegressionTest {
       // Step 13: Remove failure injection and verify pipeline can re-run without errors
       console.log("\n[Step 13] Removing failure injection and verifying pipeline can re-run...");
       await this.removeFailureInjection();
-      const rerunResult = await this.runStage("behavior");
+      const rerunResult = await this.runStage("test");
       if (!rerunResult.success) {
         throw new Error(`Pipeline re-run failed: ${rerunResult.error}`);
       }
-      results.push({ passed: true, message: "Pipeline re-run succeeded" });
+      results.push({ passed: true, message: "Pipeline re-run from test succeeded" });
 
       // Step 14: Teardown - reset slice to clean state
       console.log("\n[Step 14] Cleaning up test artifacts...");

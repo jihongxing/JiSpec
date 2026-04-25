@@ -1,6 +1,5 @@
 import type { AIProvider, GenerateOptions } from "../ai-provider";
-import { fromPath } from "../artifact-identity";
-import type { ArtifactIdentity } from "../artifact-identity";
+import { createDirectoryIdentity, fromPath } from "../artifact-identity";
 
 /**
  * Mock AI Provider for testing
@@ -212,7 +211,7 @@ This slice implements the core functionality using a service-oriented architectu
     // Generate writeOperations for directories
     const writeOperations = directories.map(dir => {
       const dirPath = dir.endsWith('/') ? dir : `${dir}/`;
-      const dirIdentity = fromPath(dirPath, stageId);
+      const dirIdentity = createDirectoryIdentity(dirPath, sliceId, stageId);
       return {
         type: "directory" as const,
         path: dirPath,
@@ -228,10 +227,9 @@ This slice implements the core functionality using a service-oriented architectu
         // Generate trace links to register requirements in trace.yaml
         // Requirements trace from slice to requirement artifacts
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
-        const reqIdentity = fromPath(file, stageId);
         return [{
           from: { type: "slice", id: sliceId },
-          to: { type: "requirement", id: reqId, identity: reqIdentity },
+          to: { type: "requirement", id: reqId },
           relation: "requires"
         }];
       }
@@ -239,10 +237,9 @@ This slice implements the core functionality using a service-oriented architectu
       if (baseName === "design.md") {
         // Generate trace link from requirement to design
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
-        const designIdentity = fromPath(file, stageId);
         return [{
           from: { type: "requirement", id: reqId },
-          to: { type: "design", id: "design.md", identity: designIdentity },
+          to: { type: "design", id: "design.md" },
           relation: "designed_by"
         }];
       }
@@ -252,16 +249,15 @@ This slice implements the core functionality using a service-oriented architectu
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
         const scnId1 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-VALID`;
         const scnId2 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-INVALID`;
-        const behaviorIdentity = fromPath(file, stageId);
         return [
           {
             from: { type: "requirement", id: reqId },
-            to: { type: "scenario", id: scnId1, identity: behaviorIdentity },
+            to: { type: "scenario", id: scnId1 },
             relation: "verified_by"
           },
           {
             from: { type: "requirement", id: reqId },
-            to: { type: "scenario", id: scnId2, identity: behaviorIdentity },
+            to: { type: "scenario", id: scnId2 },
             relation: "verified_by"
           }
         ];
@@ -269,12 +265,11 @@ This slice implements the core functionality using a service-oriented architectu
 
       if (baseName === "test-spec.yaml" && existingScenarios.length > 0) {
         // Generate trace links from scenarios to tests
-        const testSpecIdentity = fromPath(file, stageId);
         return existingScenarios.map(scnId => {
           const testId = `TEST-${scnId.replace('SCN-', '')}-INTEGRATION`;
           return {
             from: { type: "scenario", id: scnId },
-            to: { type: "test", id: testId, identity: testSpecIdentity },
+            to: { type: "test", id: testId },
             relation: "covered_by"
           };
         });
@@ -286,13 +281,11 @@ This slice implements the core functionality using a service-oriented architectu
           // Extract service name from slice ID: "ordering-payment-v1" -> "payment-service"
           const serviceName = sliceId.split('-').slice(1, -1).join('-') + '-service';
           const srcPath = file === 'src' ? 'src/' : file;
-          const codeFilePath = `${srcPath}${serviceName}.ts`;
-          const codeIdentity = fromPath(codeFilePath, stageId);
           return existingScenarios.map(scnId => {
             const testId = `TEST-${scnId.replace('SCN-', '')}-INTEGRATION`;
             return {
               from: { type: "test", id: testId },
-              to: { type: "code", id: `src/${serviceName}`, identity: codeIdentity },
+              to: { type: "code", id: `src/${serviceName}` },
               relation: "implemented_by"
             };
           });

@@ -38,6 +38,27 @@ export interface ArtifactIdentity {
 }
 
 /**
+ * Create artifact identity for directory/container outputs.
+ */
+export function createDirectoryIdentity(
+  directoryPath: string,
+  sliceId: string,
+  stageId: string,
+  artifactType: ArtifactType = "code"
+): ArtifactIdentity {
+  const normalizedPath = directoryPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const directoryName = normalizedPath.split("/").pop() || "root";
+
+  return {
+    sliceId,
+    stageId,
+    artifactType,
+    artifactId: directoryName,
+    logicalName: directoryName,
+  };
+}
+
+/**
  * Encode artifact identity to a stable string representation
  * Format: sliceId:stageId:artifactType:artifactId[:logicalName]
  */
