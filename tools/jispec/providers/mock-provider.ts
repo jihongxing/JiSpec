@@ -9,6 +9,17 @@ export class MockProvider implements AIProvider {
   name = "mock";
 
   async generate(prompt: string, options?: GenerateOptions): Promise<string> {
+    // Test hook: increment call counter if specified
+    if (process.env.JISPEC_TEST_CALL_COUNTER_FILE) {
+      const fs = await import('node:fs');
+      const counterFile = process.env.JISPEC_TEST_CALL_COUNTER_FILE;
+      let count = 0;
+      if (fs.existsSync(counterFile)) {
+        count = parseInt(fs.readFileSync(counterFile, 'utf-8'), 10) || 0;
+      }
+      fs.writeFileSync(counterFile, String(count + 1), 'utf-8');
+    }
+
     // Parse prompt to extract output file paths
     const outputSection = prompt.match(/## Output Files \(Your Task\)\s+You must generate or update these files:\s+((?:- .+\n?)+)/);
     const outputFiles: string[] = [];

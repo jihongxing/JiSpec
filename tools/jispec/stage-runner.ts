@@ -116,7 +116,7 @@ export class StageRunner {
             console.log(`[Cache] ✓ Cache hit! Reusing cached result`);
 
             // 应用缓存的执行结果
-            await this.applyExecutionResult(sliceId, stageConfig, cachedResult, contract);
+            await this.applyExecutionResult(sliceId, stageConfig, cachedResult, contract, skipValidation);
 
             let nextSliceState = this.buildNextLifecycleState(sliceId, stageConfig.lifecycle_state);
 
@@ -162,7 +162,7 @@ export class StageRunner {
 
         // 4. Apply execution result (writes, gates, traces, evidence)
         if (!dryRun && agentResult.executionResult) {
-          await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract);
+          await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract, skipValidation);
 
           // 5. 存储到缓存（使用执行前计算的 keyInputs）
           if (cacheKey && keyInputs) {
@@ -334,7 +334,8 @@ export class StageRunner {
     sliceId: string,
     stageConfig: StageConfig,
     result: StageExecutionResult,
-    contract: ResolvedStageContract
+    contract: ResolvedStageContract,
+    skipValidation?: boolean
   ): Promise<void> {
     console.log(`\n[Apply] Applying execution result...`);
 
@@ -542,14 +543,18 @@ export class StageRunner {
     }
 
     // 6. 验证 slice
-    console.log(`\n[Apply] Validating slice...`);
-    const sliceValidation = await validateSlice(this.root, sliceId);
-    if (!sliceValidation.ok) {
-      const errorMsg = sliceValidation.issues.map(i => `[${i.code}] ${i.message}`).join("\n");
-      console.error(`[Apply] ✗ Slice validation failed:\n${errorMsg}`);
-      throw new Error(`Slice validation failed: ${errorMsg}`);
+    if (!skipValidation) {
+      console.log(`\n[Apply] Validating slice...`);
+      const sliceValidation = await validateSlice(this.root, sliceId);
+      if (!sliceValidation.ok) {
+        const errorMsg = sliceValidation.issues.map(i => `[${i.code}] ${i.message}`).join("\n");
+        console.error(`[Apply] ✗ Slice validation failed:\n${errorMsg}`);
+        throw new Error(`Slice validation failed: ${errorMsg}`);
+      }
+      console.log(`[Apply] ✓ Slice validation passed`);
+    } else {
+      console.log(`\n[Apply] Skipping slice validation (skipValidation=true)`);
     }
-    console.log(`[Apply] ✓ Slice validation passed`);
 
     // 7. 记录证据
     if (result.evidence.length > 0) {
