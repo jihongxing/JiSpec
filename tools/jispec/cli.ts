@@ -965,6 +965,123 @@ export function buildProgram(): Command {
       }
     });
 
+  dependency
+    .command("impact")
+    .description("Analyze impact of changes to a slice.")
+    .argument("<sliceId>", "Slice ID that changed.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--change-type <type>", "Type of change: content_changed, state_regressed, gate_failed.", "content_changed")
+    .option("--artifacts <artifacts...>", "Changed artifacts: requirements, design, behavior, test, code, evidence.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((sliceId: string, options: { root: string; changeType: string; artifacts?: string[]; json: boolean }) => {
+      try {
+        const { ImpactAnalyzer } = require("./impact-analysis");
+        const analyzer = new ImpactAnalyzer(path.resolve(options.root));
+
+        const changeEvent = {
+          slice_id: sliceId,
+          timestamp: new Date().toISOString(),
+          change_type: options.changeType,
+          changed_artifacts: options.artifacts || ["code"],
+          current_state: "verifying" as any,
+        };
+
+        const result = analyzer.analyzeImpact(changeEvent);
+
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Impact Analysis for ${sliceId}`);
+          console.log(`Change type: ${changeEvent.change_type}`);
+          console.log(`Changed artifacts: ${changeEvent.changed_artifacts.join(", ")}`);
+          console.log();
+
+          if (result.total_impacted === 0) {
+            console.log("No downstream slices impacted.");
+          } else {
+            console.log(`${result.total_impacted} downstream slice(s) impacted:`);
+            console.log();
+
+            for (const impacted of result.impacted_slices) {
+              console.log(`${impacted.slice_id} (${impacted.current_state})`);
+              console.log(`  Reason: ${impacted.impact_reason}`);
+              console.log(`  Action: ${impacted.recommended_action}`);
+              if (impacted.earliest_rerun_stage) {
+                console.log(`  Rerun from: ${impacted.earliest_rerun_stage}`);
+              }
+              console.log();
+            }
+          }
+        }
+
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Impact analysis failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  dependency
+    .command("invalidate")
+    .description("Compute invalidation actions for a changed slice.")
+    .argument("<sliceId>", "Slice ID that changed.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--change-type <type>", "Type of change: content_changed, state_regressed, gate_failed.", "content_changed")
+    .option("--artifacts <artifacts...>", "Changed artifacts: requirements, design, behavior, test, code, evidence.")
+    .option("--dry-run", "Show actions without applying them.", true)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((sliceId: string, options: { root: string; changeType: string; artifacts?: string[]; dryRun: boolean; json: boolean }) => {
+      try {
+        const { ImpactAnalyzer } = require("./impact-analysis");
+        const analyzer = new ImpactAnalyzer(path.resolve(options.root));
+
+        const changeEvent = {
+          slice_id: sliceId,
+          timestamp: new Date().toISOString(),
+          change_type: options.changeType,
+          changed_artifacts: options.artifacts || ["code"],
+          current_state: "verifying" as any,
+        };
+
+        const result = analyzer.computeInvalidationActions(changeEvent, options.dryRun);
+
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Invalidation Plan for ${sliceId}`);
+          console.log(`Dry run: ${result.dry_run}`);
+          console.log();
+
+          if (result.actions.length === 0) {
+            console.log("No invalidation actions needed.");
+          } else {
+            console.log(`${result.actions.length} action(s) to perform:`);
+            console.log();
+
+            for (const action of result.actions) {
+              console.log(`${action.slice_id}:`);
+              console.log(`  Action: ${action.action}`);
+              console.log(`  Reason: ${action.reason}`);
+              if (action.gates_to_invalidate) {
+                console.log(`  Gates: ${action.gates_to_invalidate.join(", ")}`);
+              }
+              if (action.target_state) {
+                console.log(`  Target state: ${action.target_state}`);
+              }
+              console.log();
+            }
+          }
+        }
+
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Invalidation failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
 //
 //   dependency
 //     .command("analyze")
