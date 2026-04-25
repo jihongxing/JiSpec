@@ -815,7 +815,7 @@ export function buildProgram(): Command {
 
         if (options.json) {
           const output = {
-            nodes: Array.from(graph.nodes.values()).map(node => ({
+            nodes: Array.from(graph.nodes.values()).map((node: any) => ({
               sliceId: node.sliceId,
               state: node.state,
               dependencies: node.dependencies,
@@ -1078,6 +1078,54 @@ export function buildProgram(): Command {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Invalidation failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  dependency
+    .command("schedule")
+    .description("Schedule slices for execution based on dependency graph.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--slices <sliceIds...>", "Specific slice IDs to schedule (default: all slices).")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; slices?: string[]; json: boolean }) => {
+      try {
+        const { CrossSliceScheduler } = require("./cross-slice-scheduler");
+        const scheduler = new CrossSliceScheduler(path.resolve(options.root));
+
+        const result = scheduler.schedule(options.slices);
+
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Cross-Slice Execution Schedule`);
+          console.log(`Total slices: ${result.total_slices}`);
+          console.log(`Total batches: ${result.total_batches}`);
+          console.log(`Dry run: ${result.dry_run}`);
+          console.log();
+
+          console.log(`Execution order: ${result.execution_order.join(" → ")}`);
+          console.log();
+
+          for (const batch of result.batches) {
+            console.log(`Batch ${batch.batch_number} (${batch.tasks.length} task(s), can run in parallel):`);
+            for (const task of batch.tasks) {
+              const deps = task.dependencies.length > 0
+                ? ` [depends on: ${task.dependencies.join(", ")}]`
+                : "";
+              const blocked = task.blocked_by && task.blocked_by.length > 0
+                ? ` [blocked by: ${task.blocked_by.join(", ")}]`
+                : "";
+              console.log(`  - ${task.slice_id} (${task.current_state}) [${task.status}]${deps}${blocked}`);
+            }
+            console.log();
+          }
+        }
+
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Scheduling failed: ${message}`);
         process.exitCode = 1;
       }
     });
