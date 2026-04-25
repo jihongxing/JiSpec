@@ -27,6 +27,7 @@ class RollbackRegressionTest {
   private root: string;
   private sliceId: string = "ordering-payment-v1";
   private contextId: string = "ordering";
+  private originalUpdatedAt: string = "";
 
   constructor(root: string) {
     this.root = root;
@@ -41,6 +42,12 @@ class RollbackRegressionTest {
     const results: TestResult[] = [];
 
     try {
+      // Capture original timestamp before any modifications
+      const sliceFile = this.getSliceFile();
+      const sliceContent = fs.readFileSync(sliceFile, "utf-8");
+      const sliceData = yaml.load(sliceContent) as any;
+      this.originalUpdatedAt = sliceData.lifecycle.updated_at;
+
       // Step 1: Reset slice to requirements-defined state
       console.log("[Step 1] Resetting slice to requirements-defined state...");
       await this.resetSliceState();
@@ -177,9 +184,9 @@ class RollbackRegressionTest {
     const content = fs.readFileSync(sliceFile, "utf-8");
     const slice = yaml.load(content) as any;
 
-    // Reset lifecycle state
+    // Reset lifecycle state (use captured original timestamp if available)
     slice.lifecycle.state = "requirements-defined";
-    slice.lifecycle.updated_at = new Date().toISOString();
+    slice.lifecycle.updated_at = this.originalUpdatedAt || slice.lifecycle.updated_at;
 
     // Reset gates
     slice.gates = {
