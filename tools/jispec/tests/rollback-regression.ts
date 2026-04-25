@@ -90,16 +90,20 @@ class RollbackRegressionTest {
       }
       results.push({ passed: true, message: `New files created: ${newFiles.join(", ")}` });
 
-      // Step 8: Manually trigger rollback to previous snapshot
-      console.log("\n[Step 8] Manually triggering rollback to design snapshot...");
-      await this.triggerRollback();
-      results.push({ passed: true, message: "Rollback triggered" });
+      // Step 8: Inject failure and run test stage (should fail and auto-rollback)
+      console.log("\n[Step 8] Injecting failure and running test stage (should fail and auto-rollback)...");
+      await this.injectStageFailure("test");
+      const testResult = await this.runStage("test");
+      if (testResult.success) {
+        throw new Error("Test stage should have failed but succeeded");
+      }
+      results.push({ passed: true, message: "Test stage failed as expected, auto-rollback triggered" });
 
       // Step 9: Verify rollback restored previous state
       console.log("\n[Step 9] Verifying rollback restored previous state...");
       const stateAfter = await this.captureSliceState();
-      if (stateAfter.state !== stateBefore.state) {
-        throw new Error(`State not restored: expected ${stateBefore.state}, got ${stateAfter.state}`);
+      if (stateAfter.state !== "design-defined") {
+        throw new Error(`State not restored: expected design-defined, got ${stateAfter.state}`);
       }
       results.push({ passed: true, message: `State restored to ${stateAfter.state}` });
 
@@ -128,8 +132,9 @@ class RollbackRegressionTest {
       }
       results.push({ passed: true, message: "trace.yaml is consistent" });
 
-      // Step 13: Verify pipeline can re-run without errors
-      console.log("\n[Step 13] Verifying pipeline can re-run without errors...");
+      // Step 13: Remove failure injection and verify pipeline can re-run without errors
+      console.log("\n[Step 13] Removing failure injection and verifying pipeline can re-run...");
+      await this.removeFailureInjection();
       const rerunResult = await this.runStage("behavior");
       if (!rerunResult.success) {
         throw new Error(`Pipeline re-run failed: ${rerunResult.error}`);
@@ -280,35 +285,20 @@ class RollbackRegressionTest {
   }
 
   /**
-   * Inject failure into behavior stage
-   * Use environment variable to control mock provider behavior
+   * Inject failure into a specific stage
+   * Uses environment variable to trigger failure in stage-runner.ts
    */
-  private async injectBehaviorFailure(): Promise<void> {
-    process.env.JISPEC_TEST_INJECT_FAILURE = 'true';
-    console.log(`[Inject] Failure injected via environment variable`);
+  private async injectStageFailure(stageId: string): Promise<void> {
+    process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE = stageId;
+    console.log(`[Inject] Failure injection set for stage: ${stageId}`);
   }
 
   /**
    * Remove failure injection
    */
   private async removeFailureInjection(): Promise<void> {
-    delete process.env.JISPEC_TEST_INJECT_FAILURE;
+    delete process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE;
     console.log(`[Inject] Failure injection removed`);
-  }
-
-  /**
-   * Manually trigger rollback by calling the failure handler
-   */
-  private async triggerRollback(): Promise<void> {
-    const { FailureHandler } = await import("../failure-handler");
-    const config = {
-      retry: { enabled: false, max_attempts: 0, backoff: "linear" as const, initial_delay: 0, max_delay: 0 },
-      rollback: { enabled: true, strategy: "full" as const },
-      human_intervention: { enabled: false, prompt_on_failure: false, allow_skip: false, allow_manual_fix: false }
-    };
-    const handler = new FailureHandler(this.root, config);
-    await handler.rollbackToLatest(this.sliceId);
-    console.log(`[Rollback] Rollback completed`);
   }
 
   /**

@@ -105,6 +105,11 @@ export class StageRunner {
           console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
         }
 
+        // Test injection point: fail after lifecycle update but before snapshot
+        if (process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE === stageConfig.id) {
+          throw new Error(`Injected test failure for stage: ${stageConfig.id}`);
+        }
+
         // 成功：创建快照供下一个 stage 使用
         if (failureHandler && !dryRun) {
           await failureHandler.createSnapshot(sliceId, stageConfig.id);
