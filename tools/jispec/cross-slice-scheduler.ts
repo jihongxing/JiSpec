@@ -330,8 +330,8 @@ export class CrossSliceScheduler {
       batch.status = "running";
       batch.started_at = new Date().toISOString();
 
-      // Execute tasks in batch concurrently
-      const taskPromises = batch.tasks.map(async (task) => {
+      // Execute tasks in batch with concurrency limit
+      const executeTask = async (task: ExecutionTask) => {
         // Check readiness before execution
         const completed = new Map<string, ExecutionTask>();
         for (const [id, t] of allTasks.entries()) {
@@ -368,10 +368,14 @@ export class CrossSliceScheduler {
           const affected = this.propagateFailure(task, graph, allTasks);
           totalBlocked += affected.length;
         }
-      });
+      };
 
-      // Wait for all tasks in batch to complete
-      await Promise.all(taskPromises);
+      // Execute tasks with concurrency limit
+      const tasks = batch.tasks;
+      for (let j = 0; j < tasks.length; j += maxConcurrent) {
+        const chunk = tasks.slice(j, j + maxConcurrent);
+        await Promise.all(chunk.map(executeTask));
+      }
 
       batch.completed_at = new Date().toISOString();
       this.updateBatchStatus(batch);
@@ -392,7 +396,10 @@ export class CrossSliceScheduler {
 
     const duration = Date.now() - startTime;
 
-    return {
+    // Mark schedule as executed (not dry-run)
+    schedule.dry_run = false;
+
+    const result: ExecutionResult = {
       scheduler_result: schedule,
       total_executed: totalExecuted,
       total_succeeded: totalSucceeded,
@@ -402,6 +409,28 @@ export class CrossSliceScheduler {
       duration_ms: duration,
       timestamp: new Date().toISOString(),
     };
+
+    // Persist execution result
+    await this.saveExecutionResult(result);
+
+    return result;
+  }
+
+  /**
+   * Save execution result to disk
+   */
+  private async saveExecutionResult(result: ExecutionResult): Promise<void> {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+
+    const executionsDir = path.join(this.root, ".jispec", "executions");
+    await fs.mkdir(executionsDir, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filename = `execution-${timestamp}.json`;
+    const filepath = path.join(executionsDir, filename);
+
+    await fs.writeFile(filepath, JSON.stringify(result, null, 2), "utf-8");
   }
 
   /**
