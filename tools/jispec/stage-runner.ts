@@ -12,6 +12,7 @@ import { GateChecker } from "./gate-checker";
 import { TraceManager } from "./trace-manager";
 import { validateSlice } from "./validator";
 import { SemanticValidator } from "./semantic-validator";
+import { FilesystemStorage } from "./filesystem-storage";
 
 /**
  * 阶段运行选项
@@ -44,9 +45,11 @@ export interface StageRunResult {
  */
 export class StageRunner {
   private root: string;
+  private storage: FilesystemStorage;
 
   private constructor(root: string) {
     this.root = root;
+    this.storage = new FilesystemStorage(root);
   }
 
   /**
@@ -280,9 +283,8 @@ export class StageRunner {
     // 1. 写入文件
     for (const write of result.writes) {
       console.log(`[Apply] Writing ${write.path}...`);
-      fs.mkdirSync(path.dirname(write.path), { recursive: true });
       const encoding = (write.encoding || "utf-8") as BufferEncoding;
-      fs.writeFileSync(write.path, write.content, { encoding });
+      this.storage.writeFileSync(write.path, write.content, encoding);
       console.log(`[Apply] ✓ Written`);
     }
 
@@ -291,13 +293,12 @@ export class StageRunner {
       for (const op of result.writeOperations) {
         if (op.type === "directory") {
           console.log(`[Apply] Creating directory ${op.path}...`);
-          fs.mkdirSync(op.path, { recursive: true });
+          this.storage.mkdirSync(op.path);
           console.log(`[Apply] ✓ Directory created`);
         } else if (op.type === "file") {
           console.log(`[Apply] Writing ${op.path}...`);
-          fs.mkdirSync(path.dirname(op.path), { recursive: true });
           const encoding = (op.encoding || "utf-8") as BufferEncoding;
-          fs.writeFileSync(op.path, op.content || "", { encoding });
+          this.storage.writeFileSync(op.path, op.content || "", encoding);
           console.log(`[Apply] ✓ Written`);
         }
       }

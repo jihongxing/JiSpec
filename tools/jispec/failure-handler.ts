@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 import type { FailureHandlingConfig } from "./pipeline-executor";
+import { FilesystemStorage } from "./filesystem-storage";
 
 /**
  * 失败上下文
@@ -48,10 +49,12 @@ export class FailureHandler {
   private config: FailureHandlingConfig;
   private root: string;
   private snapshots: Map<string, RollbackSnapshot> = new Map();
+  private storage: FilesystemStorage;
 
   constructor(root: string, config: FailureHandlingConfig) {
     this.root = root;
     this.config = config;
+    this.storage = new FilesystemStorage(root);
   }
 
   /**
