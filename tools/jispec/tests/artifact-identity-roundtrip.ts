@@ -210,6 +210,46 @@ test("identityEquals works correctly", () => {
   }
 });
 
+// Test 8: Windows path round-trip
+test("Windows path round-trip", () => {
+  const windowsPath = "contexts\\ordering\\slices\\ordering-payment-v1\\design.md";
+  const identity = fromPath(windowsPath, "design");
+
+  if (identity.sliceId !== "ordering-payment-v1") {
+    throw new Error(`Wrong sliceId from Windows path: ${identity.sliceId}`);
+  }
+
+  if (identity.artifactType !== "design") {
+    throw new Error(`Wrong artifactType from Windows path: ${identity.artifactType}`);
+  }
+
+  if (identity.artifactId !== "design") {
+    throw new Error(`Wrong artifactId from Windows path: ${identity.artifactId}`);
+  }
+
+  if (identity.logicalName !== "design.md") {
+    throw new Error(`Wrong logicalName from Windows path: ${identity.logicalName}`);
+  }
+});
+
+// Test 9: Mixed path separators
+test("Mixed path separators", () => {
+  const mixedPath = "contexts/ordering\\slices/ordering-payment-v1\\behaviors.feature";
+  const identity = fromPath(mixedPath, "behavior");
+
+  if (identity.sliceId !== "ordering-payment-v1") {
+    throw new Error(`Wrong sliceId from mixed path: ${identity.sliceId}`);
+  }
+
+  if (identity.artifactType !== "behavior") {
+    throw new Error(`Wrong artifactType from mixed path: ${identity.artifactType}`);
+  }
+
+  if (identity.logicalName !== "behaviors.feature") {
+    throw new Error(`Wrong logicalName from mixed path: ${identity.logicalName}`);
+  }
+});
+
 console.log("\n=== Test Summary ===\n");
 console.log(`Total: ${passed + failed} tests`);
 console.log(`Passed: ${passed}`);

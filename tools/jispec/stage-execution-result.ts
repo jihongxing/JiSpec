@@ -1,3 +1,5 @@
+import type { ArtifactIdentity } from "./artifact-identity";
+
 /**
  * 写入操作类型
  */
@@ -11,6 +13,7 @@ export interface WriteOperation {
   path: string;           // 文件或目录路径
   content?: string;       // 文件内容（仅 type=file 时使用）
   encoding?: string;      // 编码（默认 utf-8）
+  identity?: ArtifactIdentity;  // 逻辑身份（可选，用于 identity-first 模式）
 }
 
 /**
@@ -20,6 +23,7 @@ export interface FileWrite {
   path: string;           // 文件路径
   content: string;        // 文件内容
   encoding?: string;      // 编码（默认 utf-8）
+  identity?: ArtifactIdentity;  // 逻辑身份（可选，用于 identity-first 模式）
 }
 
 /**
@@ -38,10 +42,12 @@ export interface TraceLink {
   from: {
     type: string;         // 源类型（requirement, invariant, scenario, test, code）
     id: string;           // 源 ID
+    identity?: ArtifactIdentity;  // 逻辑身份（可选，用于 identity-first 模式）
   };
   to: {
     type: string;         // 目标类型
     id: string;           // 目标 ID
+    identity?: ArtifactIdentity;  // 逻辑身份（可选，用于 identity-first 模式）
   };
   relation: string;       // 关系类型（refines, verified_by, covered_by, implemented_by）
 }
@@ -54,6 +60,7 @@ export interface Evidence {
   content: string;        // 证据内容
   timestamp: string;      // 时间戳
   metadata?: Record<string, unknown>;  // 额外元数据
+  identity?: ArtifactIdentity;  // 逻辑身份（可选，用于 identity-first 模式）
 }
 
 /**

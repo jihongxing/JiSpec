@@ -79,17 +79,22 @@ export function decodeIdentity(encoded: string): ArtifactIdentity {
  * Create artifact identity from physical path
  * Infers identity from conventional path structure:
  * contexts/{context}/slices/{sliceId}/{artifactFile}
+ *
+ * Supports both POSIX (/) and Windows (\) path separators
  */
 export function fromPath(path: string, stageId: string): ArtifactIdentity {
+  // Normalize path separators to forward slashes for consistent parsing
+  const normalizedPath = path.replace(/\\/g, "/");
+
   // Extract slice ID from path
-  const sliceMatch = path.match(/slices\/([^\/]+)\//);
+  const sliceMatch = normalizedPath.match(/slices\/([^\/]+)\//);
   if (!sliceMatch) {
     throw new Error(`Cannot extract sliceId from path: ${path}`);
   }
   const sliceId = sliceMatch[1];
 
   // Extract artifact file name
-  const fileName = path.split("/").pop() || "";
+  const fileName = normalizedPath.split("/").pop() || "";
 
   // Infer artifact type from file extension/name
   let artifactType: ArtifactType;
