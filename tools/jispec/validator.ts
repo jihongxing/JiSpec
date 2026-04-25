@@ -437,6 +437,17 @@ function validateSliceSemantics(
   if (contextId && !(contextId in contextIndex)) {
     result.add("SLICE_CONTEXT_UNKNOWN", sliceFile, `Referenced context \`${contextId}\` does not exist.`);
   }
+
+  // Validate dependencies
+  const dependencies = sliceData.dependencies;
+  if (dependencies !== undefined && !Array.isArray(dependencies)) {
+    result.add("SLICE_DEPENDENCIES_INVALID", sliceFile, "`dependencies` must be an array.");
+    return;
+  }
+
+  if (Array.isArray(dependencies)) {
+    validateSliceDependencies(sliceFile, sliceData, dependencies, result);
+  }
 }
 
 function validateSliceLifecycle(sliceFile: string, sliceData: unknown, result: ValidationResult): void {
@@ -470,6 +481,85 @@ function validateSliceLifecycle(sliceFile: string, sliceData: unknown, result: V
     const artifactPath = artifact === "slice.yaml" ? sliceFile : path.join(sliceDir, artifact);
     if (!fs.existsSync(artifactPath)) {
       result.add("SLICE_ARTIFACT_MISSING", artifactPath, `Slice state \`${state}\` requires \`${artifact}\`.`);
+    }
+  }
+}
+
+function validateSliceDependencies(
+  sliceFile: string,
+  sliceData: JsonObject,
+  dependencies: unknown[],
+  result: ValidationResult,
+): void {
+  const sliceId = typeof sliceData.id === "string" ? sliceData.id : undefined;
+  const root = path.resolve(path.dirname(sliceFile), "../../../..");
+  const seenDeps = new Set<string>();
+
+  for (const [index, dep] of dependencies.entries()) {
+    if (!isObject(dep)) {
+      result.add("SLICE_DEPENDENCY_INVALID", sliceFile, `Dependency at index ${index} must be an object.`);
+      continue;
+    }
+
+    const targetSliceId = typeof dep.slice_id === "string" ? dep.slice_id : undefined;
+    const kind = typeof dep.kind === "string" ? dep.kind : undefined;
+    const requiredState = typeof dep.required_state === "string" ? dep.required_state : undefined;
+
+    if (!targetSliceId) {
+      result.add("SLICE_DEPENDENCY_MISSING_SLICE_ID", sliceFile, `Dependency at index ${index} missing \`slice_id\`.`);
+      continue;
+    }
+
+    if (!kind) {
+      result.add("SLICE_DEPENDENCY_MISSING_KIND", sliceFile, `Dependency at index ${index} missing \`kind\`.`);
+      continue;
+    }
+
+    if (!requiredState) {
+      result.add("SLICE_DEPENDENCY_MISSING_STATE", sliceFile, `Dependency at index ${index} missing \`required_state\`.`);
+      continue;
+    }
+
+    // Check self-dependency
+    if (targetSliceId === sliceId) {
+      result.add(
+        "SLICE_DEPENDENCY_SELF",
+        sliceFile,
+        `Slice \`${sliceId}\` cannot depend on itself.`,
+      );
+      continue;
+    }
+
+    // Check duplicate dependencies
+    const depKey = `${targetSliceId}:${kind}`;
+    if (seenDeps.has(depKey)) {
+      result.add(
+        "SLICE_DEPENDENCY_DUPLICATE",
+        sliceFile,
+        `Duplicate dependency on \`${targetSliceId}\` with kind \`${kind}\`.`,
+      );
+      continue;
+    }
+    seenDeps.add(depKey);
+
+    // Check target slice exists
+    const targetSliceFile = findSliceFile(root, targetSliceId);
+    if (!targetSliceFile) {
+      result.add(
+        "SLICE_DEPENDENCY_TARGET_MISSING",
+        sliceFile,
+        `Dependency references non-existent slice \`${targetSliceId}\`.`,
+      );
+      continue;
+    }
+
+    // Validate required_state is a valid lifecycle state
+    if (!isLifecycleState(requiredState)) {
+      result.add(
+        "SLICE_DEPENDENCY_INVALID_STATE",
+        sliceFile,
+        `Dependency at index ${index} has invalid \`required_state\` \`${requiredState}\`. Must be one of ${LIFECYCLE_ORDER.join(", ")}.`,
+      );
     }
   }
 }

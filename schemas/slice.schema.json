@@ -137,6 +137,46 @@
         }
       },
       "additionalProperties": false
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slice_id", "kind", "required_state"],
+        "properties": {
+          "slice_id": {
+            "type": "string",
+            "description": "Target slice ID"
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["requirements", "design", "behavior", "test", "code", "evidence"],
+            "description": "Type of artifact dependency"
+          },
+          "required_state": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "requirements-defined",
+              "design-defined",
+              "behavior-defined",
+              "test-defined",
+              "implementing",
+              "verifying",
+              "accepted",
+              "released"
+            ],
+            "description": "Minimum lifecycle state required from upstream slice"
+          },
+          "optional": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether this dependency is optional"
+          }
+        },
+        "additionalProperties": false
+      },
+      "default": []
     }
   },
   "additionalProperties": true

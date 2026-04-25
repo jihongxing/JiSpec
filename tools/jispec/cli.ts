@@ -800,8 +800,172 @@ export function buildProgram(): Command {
     );
 
   // Phase 4: 跨切片依赖管理命令
-//   const dependency = program.command("dependency").description("Manage cross-slice dependencies.");
-// 
+  const dependency = program.command("dependency").description("Manage cross-slice dependencies.");
+
+  dependency
+    .command("graph")
+    .description("Display the dependency graph for all slices.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const { DependencyGraphBuilder } = require("./dependency-graph");
+        const builder = new DependencyGraphBuilder(path.resolve(options.root));
+        const graph = builder.build();
+
+        if (options.json) {
+          const output = {
+            nodes: Array.from(graph.nodes.values()).map(node => ({
+              sliceId: node.sliceId,
+              state: node.state,
+              dependencies: node.dependencies,
+            })),
+            edges: graph.edges,
+          };
+          console.log(JSON.stringify(output, null, 2));
+        } else {
+          console.log(`Dependency Graph`);
+          console.log(`Total slices: ${graph.nodes.size}`);
+          console.log(`Total dependencies: ${graph.edges.length}`);
+          console.log();
+
+          for (const node of graph.nodes.values()) {
+            console.log(`${node.sliceId} (${node.state})`);
+            if (node.dependencies.length > 0) {
+              for (const dep of node.dependencies) {
+                const optional = dep.optional ? " [optional]" : "";
+                console.log(`  → ${dep.slice_id} (${dep.kind}, requires: ${dep.required_state})${optional}`);
+              }
+            } else {
+              console.log(`  (no dependencies)`);
+            }
+          }
+        }
+
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Dependency graph failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  dependency
+    .command("check")
+    .description("Check for dependency issues (cycles, missing slices, etc.).")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const { DependencyGraphBuilder } = require("./dependency-graph");
+        const builder = new DependencyGraphBuilder(path.resolve(options.root));
+        const graph = builder.build();
+
+        const cycles = builder.findCycles(graph);
+        const issues: string[] = [];
+
+        if (cycles.length > 0) {
+          for (const cycle of cycles) {
+            issues.push(`Cycle detected: ${cycle.join(" → ")}`);
+          }
+        }
+
+        if (options.json) {
+          console.log(JSON.stringify({ ok: issues.length === 0, issues }, null, 2));
+        } else {
+          if (issues.length === 0) {
+            console.log("✓ No dependency issues found.");
+          } else {
+            console.log(`✗ Found ${issues.length} issue(s):`);
+            for (const issue of issues) {
+              console.log(`  - ${issue}`);
+            }
+          }
+        }
+
+        process.exitCode = issues.length === 0 ? 0 : 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Dependency check failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  dependency
+    .command("explain")
+    .description("Explain dependencies for a specific slice.")
+    .argument("<sliceId>", "Slice ID to explain.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((sliceId: string, options: { root: string; json: boolean }) => {
+      try {
+        const { DependencyGraphBuilder } = require("./dependency-graph");
+        const builder = new DependencyGraphBuilder(path.resolve(options.root));
+        const graph = builder.build();
+
+        const node = graph.nodes.get(sliceId);
+        if (!node) {
+          throw new Error(`Slice '${sliceId}' not found.`);
+        }
+
+        const upstream = builder.getUpstream(graph, sliceId);
+        const downstream = builder.getDownstream(graph, sliceId);
+
+        if (options.json) {
+          console.log(JSON.stringify({
+            sliceId: node.sliceId,
+            state: node.state,
+            dependencies: node.dependencies,
+            upstream,
+            downstream,
+          }, null, 2));
+        } else {
+          console.log(`Slice: ${node.sliceId}`);
+          console.log(`State: ${node.state}`);
+          console.log();
+
+          console.log(`Direct dependencies (${node.dependencies.length}):`);
+          if (node.dependencies.length > 0) {
+            for (const dep of node.dependencies) {
+              const optional = dep.optional ? " [optional]" : "";
+              console.log(`  → ${dep.slice_id} (${dep.kind}, requires: ${dep.required_state})${optional}`);
+            }
+          } else {
+            console.log(`  (none)`);
+          }
+          console.log();
+
+          console.log(`All upstream dependencies (${upstream.length}):`);
+          if (upstream.length > 0) {
+            for (const upstreamId of upstream) {
+              const upstreamNode = graph.nodes.get(upstreamId);
+              console.log(`  → ${upstreamId} (${upstreamNode?.state || "unknown"})`);
+            }
+          } else {
+            console.log(`  (none)`);
+          }
+          console.log();
+
+          console.log(`All downstream dependents (${downstream.length}):`);
+          if (downstream.length > 0) {
+            for (const downstreamId of downstream) {
+              const downstreamNode = graph.nodes.get(downstreamId);
+              console.log(`  ← ${downstreamId} (${downstreamNode?.state || "unknown"})`);
+            }
+          } else {
+            console.log(`  (none)`);
+          }
+        }
+
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Dependency explain failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+//
 //   dependency
 //     .command("analyze")
 //     .description("Analyze dependencies between slices.")
