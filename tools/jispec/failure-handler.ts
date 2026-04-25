@@ -211,6 +211,44 @@ export class FailureHandler {
   }
 
   /**
+   * 回滚到最近的可用 snapshot
+   */
+  async rollbackToLatest(sliceId: string): Promise<void> {
+    // 查找该 slice 的所有 snapshots
+    const sliceSnapshots: RollbackSnapshot[] = [];
+    for (const [key, snapshot] of this.snapshots.entries()) {
+      if (snapshot.sliceId === sliceId) {
+        sliceSnapshots.push(snapshot);
+      }
+    }
+
+    if (sliceSnapshots.length === 0) {
+      console.warn(`[Rollback] No snapshots found for ${sliceId}`);
+      return;
+    }
+
+    // 按时间戳排序，取最新的
+    sliceSnapshots.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    const latestSnapshot = sliceSnapshots[0];
+
+    console.log(`[Rollback] Rolling back ${sliceId} to latest snapshot: ${latestSnapshot.stageId} (${latestSnapshot.timestamp})`);
+
+    // 1. 恢复 slice 状态
+    const sliceFile = this.findSliceFile(sliceId);
+    const restored = yaml.dump(latestSnapshot.sliceState);
+    fs.writeFileSync(sliceFile, restored, "utf-8");
+
+    // 2. 恢复文件（如果是完整回滚）
+    if (this.config.rollback.strategy === "full") {
+      for (const [file, content] of latestSnapshot.filesBackup) {
+        fs.writeFileSync(file, content, "utf-8");
+      }
+    }
+
+    console.log(`[Rollback] Rollback completed`);
+  }
+
+  /**
    * 清理快照
    */
   clearSnapshot(sliceId: string, stageId: string): void {

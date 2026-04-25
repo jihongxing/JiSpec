@@ -146,7 +146,7 @@ pipeline:
       max_delay: 10000
     rollback:
       enabled: true
-      strategy: state_only
+      strategy: full
     human_intervention:
       enabled: true
       prompt_on_failure: true

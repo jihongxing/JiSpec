@@ -69,11 +69,6 @@ export class StageRunner {
       attempt++;
 
       try {
-        // 创建快照（如果启用回滚）
-        if (failureHandler && attempt === 1) {
-          await failureHandler.createSnapshot(sliceId, stageConfig.id);
-        }
-
         // 1. 解析阶段契约
         console.log(`[Stage: ${stageConfig.id}] Resolving stage contract...`);
         const contract = this.resolveStageContract(sliceId, stageConfig);
@@ -110,9 +105,9 @@ export class StageRunner {
           console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
         }
 
-        // 成功：清理快照
-        if (failureHandler) {
-          failureHandler.clearSnapshot(sliceId, stageConfig.id);
+        // 成功：创建快照供下一个 stage 使用
+        if (failureHandler && !dryRun) {
+          await failureHandler.createSnapshot(sliceId, stageConfig.id);
         }
 
         return {
@@ -142,7 +137,8 @@ export class StageRunner {
 
         // 如果需要回滚
         if (decision.shouldRollback) {
-          await failureHandler.rollback(sliceId, stageConfig.id);
+          // 回滚到最近的可用 snapshot
+          await failureHandler.rollbackToLatest(sliceId);
         }
 
         // 如果不重试，返回失败
