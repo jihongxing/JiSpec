@@ -83,6 +83,69 @@ export class MockProvider implements AIProvider {
     const generateContent = (file: string): string => {
       const baseName = file.split('/').pop() || file;
 
+      if (baseName === "requirements.md") {
+        // Generate requirements.md with proper requirement IDs
+        const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
+        return `# Requirements for ${sliceId}
+
+## Functional Requirements
+
+### ${reqId}: Core Functionality
+The system shall provide the core functionality for ${sliceId}.
+
+**Acceptance Criteria:**
+- AC1: System accepts valid inputs
+- AC2: System produces expected outputs
+- AC3: System handles error cases gracefully
+
+**Priority:** High
+**Status:** Draft
+`;
+      }
+
+      if (baseName === "design.md") {
+        // Generate design.md
+        return `# Design for ${sliceId}
+
+## Architecture Overview
+This slice implements the core functionality using a service-oriented architecture.
+
+## Components
+- **Service Layer**: Handles business logic
+- **Data Layer**: Manages persistence
+- **API Layer**: Exposes endpoints
+
+## Data Flow
+1. Request received at API layer
+2. Service layer processes request
+3. Data layer persists changes
+4. Response returned to client
+
+## Technology Stack
+- TypeScript
+- Node.js
+- Express
+`;
+      }
+
+      if (baseName === "behaviors.feature") {
+        // Generate behaviors.feature with proper scenario IDs
+        const scnId1 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-VALID`;
+        const scnId2 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-INVALID`;
+        return `Feature: ${sliceId}
+
+  Scenario: ${scnId1} - Valid operation
+    Given a valid input
+    When the operation is performed
+    Then the result is successful
+
+  Scenario: ${scnId2} - Invalid operation
+    Given an invalid input
+    When the operation is performed
+    Then an error is returned
+`;
+      }
+
       if (baseName === "test-spec.yaml") {
         // Generate valid test-spec.yaml
         const tests = existingScenarios.map((scnId, idx) => {
@@ -135,6 +198,55 @@ export class MockProvider implements AIProvider {
     const traceLinks = outputFiles.flatMap(file => {
       const baseName = file.split('/').pop() || file;
       const artifactType = inferArtifactType(baseName);
+
+      if (baseName === "requirements.md") {
+        // Generate trace link for requirements.md
+        const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
+        return [{
+          from: { type: "requirement", id: reqId },
+          to: { type: "requirement", id: "requirements.md" },
+          relation: "defined_in"
+        }];
+      }
+
+      if (baseName === "design.md") {
+        // Generate trace link for design.md
+        const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
+        return [{
+          from: { type: "requirement", id: reqId },
+          to: { type: "design", id: "design.md" },
+          relation: "designed_by"
+        }];
+      }
+
+      if (baseName === "behaviors.feature") {
+        // Generate trace links for scenarios
+        const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
+        const scnId1 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-VALID`;
+        const scnId2 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-INVALID`;
+        return [
+          {
+            from: { type: "requirement", id: reqId },
+            to: { type: "scenario", id: scnId1 },
+            relation: "verified_by"
+          },
+          {
+            from: { type: "requirement", id: reqId },
+            to: { type: "scenario", id: scnId2 },
+            relation: "verified_by"
+          },
+          {
+            from: { type: "scenario", id: scnId1 },
+            to: { type: "scenario", id: "behaviors.feature" },
+            relation: "defined_in"
+          },
+          {
+            from: { type: "scenario", id: scnId2 },
+            to: { type: "scenario", id: "behaviors.feature" },
+            relation: "defined_in"
+          }
+        ];
+      }
 
       if (baseName === "test-spec.yaml" && existingScenarios.length > 0) {
         // Generate trace links from scenarios to tests

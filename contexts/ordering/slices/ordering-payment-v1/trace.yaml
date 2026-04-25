@@ -1,8 +1,8 @@
 links:
   - from:
       type: requirement
-      id: REQ-TBD-001
+      id: REQ-ORDERING-PAYMENT-V1-001
     to:
-      type: scenario
-      id: SCN-ORDERING-PAYMENT-V1-001
-    relation: verified_by
+      type: requirement
+      id: requirements.md
+    relation: defined_in
