@@ -38,6 +38,10 @@ export class MockProvider implements AIProvider {
     const sliceIdMatch = prompt.match(/- Slice ID: (.+)/);
     const sliceId = sliceIdMatch ? sliceIdMatch[1] : "unknown";
 
+    // Extract context ID from prompt
+    const contextIdMatch = prompt.match(/- Context ID: (.+)/);
+    const contextId = contextIdMatch ? contextIdMatch[1] : null;
+
     // Extract stage ID from prompt
     const stageIdMatch = prompt.match(/- Stage: (.+)/);
     const stageId = stageIdMatch ? stageIdMatch[1] : "unknown";

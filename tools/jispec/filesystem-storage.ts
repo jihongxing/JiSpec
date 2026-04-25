@@ -22,8 +22,16 @@ export class FilesystemStorage implements StorageAdapter {
   resolveArtifactPath(identity: ArtifactIdentity): string {
     const { sliceId, artifactType, logicalName } = identity;
 
-    // Extract context from sliceId (e.g., "ordering" from "ordering-payment-v1")
-    const contextId = sliceId.split("-")[0];
+    // Extract context from sliceId
+    // For context-level artifacts: sliceId = "context:{contextId}"
+    // For slice-level artifacts: sliceId = actual slice ID, need to extract context
+    let contextId: string;
+    if (sliceId.startsWith("context:")) {
+      contextId = sliceId.substring(8); // Remove "context:" prefix
+    } else {
+      // Extract context from sliceId (e.g., "ordering" from "ordering-payment-v1")
+      contextId = sliceId.split("-")[0];
+    }
 
     switch (artifactType) {
       case "requirements":

@@ -312,6 +312,7 @@ function assemblePrompt(
   // Slice context
   sections.push(`## Slice Context`);
   sections.push(`- Slice ID: ${slice.id}`);
+  sections.push(`- Context ID: ${slice.context_id || "unknown"}`);
   sections.push(`- Title: ${slice.title || slice.id}`);
   sections.push(`- Goal: ${slice.goal || "N/A"}`);
   sections.push(`- Current State: ${slice.lifecycle?.state || slice.status || "unknown"}`);

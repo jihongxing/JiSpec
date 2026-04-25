@@ -762,7 +762,7 @@ export class StageRunner {
         const contentStr = typeof content === 'string' ? content : content.toString('utf8');
         const contentHash = computeContentHash(contentStr);
         inputArtifacts.push({
-          identity: fromPath(input.path, stageConfig.id, sliceId),
+          identity: fromPath(input.path, stageConfig.id),
           contentHash,
         });
       }
@@ -834,7 +834,7 @@ export class StageRunner {
         const contentHash = computeContentHash(contentStr);
 
         snapshots.push({
-          identity: fromPath(input.path, contract.stageId, sliceId),
+          identity: fromPath(input.path, contract.stageId),
           contentHash,
           timestamp: new Date().toISOString(),
         });
