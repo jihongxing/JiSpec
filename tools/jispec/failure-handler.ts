@@ -23,6 +23,7 @@ export interface RollbackSnapshot {
   timestamp: string;
   sliceState: any;
   filesBackup: Map<string, string>;
+  existingFiles: string[]; // 快照时已存在的文件列表，用于回滚时删除新文件
 }
 
 /**
@@ -158,6 +159,7 @@ export class FailureHandler {
     const sliceState = yaml.load(sliceContent);
 
     const filesBackup = new Map<string, string>();
+    const existingFiles: string[] = [];
 
     // 备份 slice 目录下的关键文件
     if (this.config.rollback.strategy === "full") {
@@ -167,6 +169,7 @@ export class FailureHandler {
       for (const file of files) {
         const content = fs.readFileSync(file, "utf-8");
         filesBackup.set(file, content);
+        existingFiles.push(file);
       }
     }
 
@@ -176,7 +179,11 @@ export class FailureHandler {
       timestamp: new Date().toISOString(),
       sliceState,
       filesBackup,
+      existingFiles,
     };
+
+    // 持久化快照到磁盘
+    this.saveSnapshotToDisk(snapshot);
 
     this.snapshots.set(`${sliceId}:${stageId}`, snapshot);
   }
@@ -240,7 +247,21 @@ export class FailureHandler {
 
     // 2. 恢复文件（如果是完整回滚）
     if (this.config.rollback.strategy === "full") {
+      const sliceDir = path.dirname(sliceFile);
+      const currentFiles = this.getSliceFiles(sliceDir);
+
+      // 删除快照后新增的文件
+      for (const file of currentFiles) {
+        if (!latestSnapshot.existingFiles.includes(file)) {
+          console.log(`[Rollback] Deleting new file: ${file}`);
+          fs.unlinkSync(file);
+        }
+      }
+
+      // 恢复快照中的文件
       for (const [file, content] of latestSnapshot.filesBackup) {
+        const dir = path.dirname(file);
+        fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(file, content, "utf-8");
       }
     }
@@ -321,19 +342,71 @@ export class FailureHandler {
   }
 
   /**
-   * 获取 slice 目录下的所有文件
+   * 获取 slice 目录下的所有文件（递归）
    */
   private getSliceFiles(sliceDir: string): string[] {
     const files: string[] = [];
-    const entries = fs.readdirSync(sliceDir, { withFileTypes: true });
 
-    for (const entry of entries) {
-      const fullPath = path.join(sliceDir, entry.name);
-      if (entry.isFile()) {
-        files.push(fullPath);
+    const walkDir = (dir: string) => {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isFile()) {
+          files.push(fullPath);
+        } else if (entry.isDirectory()) {
+          walkDir(fullPath);
+        }
       }
+    };
+
+    walkDir(sliceDir);
+    return files;
+  }
+
+  /**
+   * 保存快照到磁盘
+   */
+  private saveSnapshotToDisk(snapshot: RollbackSnapshot): void {
+    const snapshotDir = path.join(this.root, ".jispec", "snapshots", snapshot.sliceId);
+    fs.mkdirSync(snapshotDir, { recursive: true });
+
+    const snapshotFile = path.join(snapshotDir, `${snapshot.stageId}-${snapshot.timestamp}.json`);
+
+    // 将 Map 转换为普通对象以便序列化
+    const serializable = {
+      sliceId: snapshot.sliceId,
+      stageId: snapshot.stageId,
+      timestamp: snapshot.timestamp,
+      sliceState: snapshot.sliceState,
+      filesBackup: Array.from(snapshot.filesBackup.entries()),
+      existingFiles: snapshot.existingFiles,
+    };
+
+    fs.writeFileSync(snapshotFile, JSON.stringify(serializable, null, 2), "utf-8");
+    console.log(`[Snapshot] Saved to: ${snapshotFile}`);
+  }
+
+  /**
+   * 从磁盘加载快照
+   */
+  private loadSnapshotFromDisk(sliceId: string, stageId: string, timestamp: string): RollbackSnapshot | null {
+    const snapshotFile = path.join(this.root, ".jispec", "snapshots", sliceId, `${stageId}-${timestamp}.json`);
+
+    if (!fs.existsSync(snapshotFile)) {
+      return null;
     }
 
-    return files;
+    const content = fs.readFileSync(snapshotFile, "utf-8");
+    const data = JSON.parse(content);
+
+    return {
+      sliceId: data.sliceId,
+      stageId: data.stageId,
+      timestamp: data.timestamp,
+      sliceState: data.sliceState,
+      filesBackup: new Map(data.filesBackup),
+      existingFiles: data.existingFiles,
+    };
   }
 }
