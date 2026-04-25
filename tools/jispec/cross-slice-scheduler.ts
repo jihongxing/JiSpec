@@ -290,4 +290,137 @@ export class CrossSliceScheduler {
       batch.status = "running";
     }
   }
+
+  /**
+   * Execute slices based on the schedule
+   */
+  async execute(
+    sliceIds?: string[],
+    options?: {
+      maxConcurrent?: number;
+      fromBatch?: number;
+    }
+  ): Promise<ExecutionResult> {
+    const startTime = Date.now();
+
+    // First, generate the schedule
+    const schedule = this.schedule(sliceIds);
+    const graph = this.graphBuilder.build();
+    const allTasks = new Map<string, ExecutionTask>();
+
+    // Build task map from schedule
+    for (const batch of schedule.batches) {
+      for (const task of batch.tasks) {
+        allTasks.set(task.slice_id, task);
+      }
+    }
+
+    const maxConcurrent = options?.maxConcurrent || 10;
+    const fromBatch = options?.fromBatch || 0;
+
+    let totalExecuted = 0;
+    let totalSucceeded = 0;
+    let totalFailed = 0;
+    let totalBlocked = 0;
+    let totalSkipped = 0;
+
+    // Execute batches sequentially
+    for (let i = fromBatch; i < schedule.batches.length; i++) {
+      const batch = schedule.batches[i];
+      batch.status = "running";
+      batch.started_at = new Date().toISOString();
+
+      // Execute tasks in batch concurrently
+      const taskPromises = batch.tasks.map(async (task) => {
+        // Check readiness before execution
+        const completed = new Map<string, ExecutionTask>();
+        for (const [id, t] of allTasks.entries()) {
+          if (t.status === "completed") {
+            completed.set(id, t);
+          }
+        }
+
+        const readinessCheck = this.checkReadiness(task, graph, completed);
+        if (!readinessCheck.ready) {
+          task.status = "blocked";
+          task.blocked_by = [readinessCheck.reason || "Unknown reason"];
+          totalBlocked++;
+          return;
+        }
+
+        // Execute the task
+        task.status = "running";
+        task.started_at = new Date().toISOString();
+        totalExecuted++;
+
+        try {
+          await this.executeTask(task);
+          task.status = "completed";
+          task.completed_at = new Date().toISOString();
+          totalSucceeded++;
+        } catch (error) {
+          task.status = "failed";
+          task.error = error instanceof Error ? error.message : String(error);
+          task.completed_at = new Date().toISOString();
+          totalFailed++;
+
+          // Propagate failure to downstream tasks
+          const affected = this.propagateFailure(task, graph, allTasks);
+          totalBlocked += affected.length;
+        }
+      });
+
+      // Wait for all tasks in batch to complete
+      await Promise.all(taskPromises);
+
+      batch.completed_at = new Date().toISOString();
+      this.updateBatchStatus(batch);
+
+      // If any task in batch failed, stop execution
+      const batchHasFailures = batch.tasks.some(t => t.status === "failed");
+      if (batchHasFailures) {
+        // Mark remaining tasks as skipped
+        for (let j = i + 1; j < schedule.batches.length; j++) {
+          for (const task of schedule.batches[j].tasks) {
+            task.status = "skipped";
+            totalSkipped++;
+          }
+        }
+        break;
+      }
+    }
+
+    const duration = Date.now() - startTime;
+
+    return {
+      scheduler_result: schedule,
+      total_executed: totalExecuted,
+      total_succeeded: totalSucceeded,
+      total_failed: totalFailed,
+      total_blocked: totalBlocked,
+      total_skipped: totalSkipped,
+      duration_ms: duration,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Execute a single task (slice pipeline)
+   */
+  private async executeTask(task: ExecutionTask): Promise<void> {
+    // Import PipelineExecutor dynamically to avoid circular dependency
+    const { PipelineExecutor } = await import("./pipeline-executor");
+    const executor = PipelineExecutor.create(this.root);
+
+    // Run the pipeline for this slice
+    const result = await executor.run(task.slice_id, {
+      dryRun: false,
+      skipValidation: false,
+      useTUI: false,
+    });
+
+    if (!result.success) {
+      throw new Error(`Pipeline execution failed: ${result.error || "Unknown error"}`);
+    }
+  }
 }

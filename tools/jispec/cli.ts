@@ -1087,42 +1087,92 @@ export function buildProgram(): Command {
     .description("Schedule slices for execution based on dependency graph.")
     .option("--root <path>", "Repository root.", ".")
     .option("--slices <sliceIds...>", "Specific slice IDs to schedule (default: all slices).")
+    .option("--execute", "Execute the schedule (default: dry-run only).", false)
+    .option("--max-concurrent <n>", "Maximum concurrent tasks per batch.", "10")
+    .option("--from-batch <n>", "Start execution from a specific batch number.", "0")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; slices?: string[]; json: boolean }) => {
+    .action(async (options: {
+      root: string;
+      slices?: string[];
+      execute: boolean;
+      maxConcurrent: string;
+      fromBatch: string;
+      json: boolean;
+    }) => {
       try {
         const { CrossSliceScheduler } = require("./cross-slice-scheduler");
         const scheduler = new CrossSliceScheduler(path.resolve(options.root));
 
-        const result = scheduler.schedule(options.slices);
+        if (options.execute) {
+          // Execute the schedule
+          const result = await scheduler.execute(options.slices, {
+            maxConcurrent: parseInt(options.maxConcurrent, 10),
+            fromBatch: parseInt(options.fromBatch, 10),
+          });
 
-        if (options.json) {
-          console.log(JSON.stringify(result, null, 2));
-        } else {
-          console.log(`Cross-Slice Execution Schedule`);
-          console.log(`Total slices: ${result.total_slices}`);
-          console.log(`Total batches: ${result.total_batches}`);
-          console.log(`Dry run: ${result.dry_run}`);
-          console.log();
-
-          console.log(`Execution order: ${result.execution_order.join(" → ")}`);
-          console.log();
-
-          for (const batch of result.batches) {
-            console.log(`Batch ${batch.batch_number} (${batch.tasks.length} task(s), can run in parallel):`);
-            for (const task of batch.tasks) {
-              const deps = task.dependencies.length > 0
-                ? ` [depends on: ${task.dependencies.join(", ")}]`
-                : "";
-              const blocked = task.blocked_by && task.blocked_by.length > 0
-                ? ` [blocked by: ${task.blocked_by.join(", ")}]`
-                : "";
-              console.log(`  - ${task.slice_id} (${task.current_state}) [${task.status}]${deps}${blocked}`);
-            }
+          if (options.json) {
+            console.log(JSON.stringify(result, null, 2));
+          } else {
+            console.log(`Cross-Slice Execution Result`);
+            console.log(`Total executed: ${result.total_executed}`);
+            console.log(`Succeeded: ${result.total_succeeded}`);
+            console.log(`Failed: ${result.total_failed}`);
+            console.log(`Blocked: ${result.total_blocked}`);
+            console.log(`Skipped: ${result.total_skipped}`);
+            console.log(`Duration: ${result.duration_ms}ms`);
             console.log();
-          }
-        }
 
-        process.exitCode = 0;
+            for (const batch of result.scheduler_result.batches) {
+              console.log(`Batch ${batch.batch_number} [${batch.status}]:`);
+              for (const task of batch.tasks) {
+                const status = task.status === "completed" ? "✓" :
+                              task.status === "failed" ? "✗" :
+                              task.status === "blocked" ? "⊘" :
+                              task.status === "skipped" ? "⊗" : "○";
+                const error = task.error ? ` (${task.error})` : "";
+                const blocked = task.blocked_by && task.blocked_by.length > 0
+                  ? ` [blocked by: ${task.blocked_by.join(", ")}]`
+                  : "";
+                console.log(`  ${status} ${task.slice_id} [${task.status}]${error}${blocked}`);
+              }
+              console.log();
+            }
+          }
+
+          process.exitCode = result.total_failed > 0 ? 1 : 0;
+        } else {
+          // Dry-run: just show the schedule
+          const result = scheduler.schedule(options.slices);
+
+          if (options.json) {
+            console.log(JSON.stringify(result, null, 2));
+          } else {
+            console.log(`Cross-Slice Execution Schedule`);
+            console.log(`Total slices: ${result.total_slices}`);
+            console.log(`Total batches: ${result.total_batches}`);
+            console.log(`Dry run: ${result.dry_run}`);
+            console.log();
+
+            console.log(`Execution order: ${result.execution_order.join(" → ")}`);
+            console.log();
+
+            for (const batch of result.batches) {
+              console.log(`Batch ${batch.batch_number} (${batch.tasks.length} task(s), can run in parallel):`);
+              for (const task of batch.tasks) {
+                const deps = task.dependencies.length > 0
+                  ? ` [depends on: ${task.dependencies.join(", ")}]`
+                  : "";
+                const blocked = task.blocked_by && task.blocked_by.length > 0
+                  ? ` [blocked by: ${task.blocked_by.join(", ")}]`
+                  : "";
+                console.log(`  - ${task.slice_id} (${task.current_state}) [${task.status}]${deps}${blocked}`);
+              }
+              console.log();
+            }
+          }
+
+          process.exitCode = 0;
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Scheduling failed: ${message}`);
