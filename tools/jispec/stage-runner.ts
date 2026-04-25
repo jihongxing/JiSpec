@@ -11,6 +11,7 @@ import { OutputValidator } from "./output-validator";
 import { GateChecker } from "./gate-checker";
 import { TraceManager } from "./trace-manager";
 import { validateSlice } from "./validator";
+import { SemanticValidator } from "./semantic-validator";
 
 /**
  * 阶段运行选项
@@ -249,6 +250,32 @@ export class StageRunner {
     contract: ResolvedStageContract
   ): Promise<void> {
     console.log(`\n[Apply] Applying execution result...`);
+
+    // 0. Semantic validation
+    const semanticValidator = new SemanticValidator(this.root);
+    const sliceFile = path.join(this.root, "contexts", sliceId.split("-")[0], "slices", sliceId, "slice.yaml");
+    const sliceContent = fs.readFileSync(sliceFile, "utf-8");
+    const slice = yaml.load(sliceContent) as any;
+
+    const validationContext = {
+      sliceId,
+      stageId: stageConfig.id,
+      contextId: slice.context_id,
+      serviceId: slice.service_id
+    };
+
+    const semanticResult = semanticValidator.validateExecutionResult(validationContext, result);
+    if (!semanticResult.valid) {
+      console.error(`[Apply] ✗ Semantic validation failed:`);
+      for (const error of semanticResult.errors) {
+        console.error(`  - [${error.type}] ${error.message}`);
+        if (error.details) {
+          console.error(`    Details: ${JSON.stringify(error.details)}`);
+        }
+      }
+      throw new Error(`Semantic validation failed with ${semanticResult.errors.length} error(s)`);
+    }
+    console.log(`[Apply] ✓ Semantic validation passed`);
 
     // 1. 写入文件
     for (const write of result.writes) {
