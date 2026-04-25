@@ -120,40 +120,57 @@ export class CrossSliceScheduler {
   }
 
   /**
-   * Compute execution batches using topological sort
+   * Compute execution batches using topological sort with readiness checking
    */
   private computeBatches(
     graph: DependencyGraph,
     tasks: Map<string, ExecutionTask>
   ): ExecutionBatch[] {
     const batches: ExecutionBatch[] = [];
-    const completed = new Set<string>();
+    const completed = new Map<string, ExecutionTask>();
     const remaining = new Set(tasks.keys());
 
     let batchNumber = 0;
     while (remaining.size > 0) {
-      // Find tasks with all dependencies completed
+      // Find tasks with all dependencies completed and state requirements met
       const readyTasks: ExecutionTask[] = [];
 
       for (const sliceId of remaining) {
         const task = tasks.get(sliceId)!;
+
+        // Check if all dependencies are completed (or not in this task set)
         const allDepsCompleted = task.dependencies.every(depId =>
           completed.has(depId) || !tasks.has(depId)
         );
 
-        if (allDepsCompleted) {
+        if (!allDepsCompleted) {
+          continue;
+        }
+
+        // Check readiness based on upstream state requirements
+        const readinessCheck = this.checkReadiness(task, graph, completed);
+
+        if (readinessCheck.ready) {
           task.status = "ready";
           readyTasks.push(task);
+        } else {
+          // Task has dependencies completed but state requirements not met
+          task.status = "blocked";
+          if (readinessCheck.reason) {
+            task.blocked_by = [readinessCheck.reason];
+          }
         }
       }
 
-      // If no tasks are ready, we have a cycle or missing dependency
+      // If no tasks are ready, we have a cycle or unmet state requirements
       if (readyTasks.length === 0) {
         // Mark remaining tasks as blocked
         for (const sliceId of remaining) {
           const task = tasks.get(sliceId)!;
-          task.status = "blocked";
-          task.blocked_by = task.dependencies.filter(depId => !completed.has(depId));
+          if (task.status !== "blocked") {
+            task.status = "blocked";
+            task.blocked_by = task.dependencies.filter(depId => !completed.has(depId));
+          }
         }
         break;
       }
@@ -165,9 +182,10 @@ export class CrossSliceScheduler {
         status: "pending",
       });
 
-      // Mark tasks as completed for next iteration
+      // Mark tasks as completed for next iteration (simulate completion)
       for (const task of readyTasks) {
-        completed.add(task.slice_id);
+        const completedTask = { ...task, status: "completed" as TaskStatus };
+        completed.set(task.slice_id, completedTask);
         remaining.delete(task.slice_id);
       }
     }
@@ -177,6 +195,8 @@ export class CrossSliceScheduler {
 
   /**
    * Check if a task is ready to execute based on upstream state requirements
+   * For dry-run scheduling: checks if upstream is in task set or already at required state
+   * For real execution: checks if upstream completed successfully
    */
   checkReadiness(
     task: ExecutionTask,
@@ -190,19 +210,27 @@ export class CrossSliceScheduler {
 
     // Check each dependency
     for (const dep of node.dependencies) {
+      // If upstream is in completed tasks, check its status
       const upstreamTask = completedTasks.get(dep.slice_id);
-
-      // Check if upstream task exists and completed
-      if (!upstreamTask || upstreamTask.status !== "completed") {
-        return {
-          ready: false,
-          reason: `Upstream slice ${dep.slice_id} not completed`
-        };
+      if (upstreamTask) {
+        if (upstreamTask.status !== "completed") {
+          return {
+            ready: false,
+            reason: `Upstream slice ${dep.slice_id} not completed`
+          };
+        }
+        // Upstream completed, assume it reached required state
+        continue;
       }
 
-      // Check if upstream state meets requirement
+      // Upstream not in completed tasks - check current state in graph
       const upstreamNode = graph.nodes.get(dep.slice_id);
-      if (!upstreamNode) continue;
+      if (!upstreamNode) {
+        return {
+          ready: false,
+          reason: `Upstream slice ${dep.slice_id} not found`
+        };
+      }
 
       const upstreamStateIndex = LIFECYCLE_ORDER.indexOf(upstreamNode.state);
       const requiredStateIndex = LIFECYCLE_ORDER.indexOf(dep.required_state);
