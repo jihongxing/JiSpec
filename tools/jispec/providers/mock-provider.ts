@@ -197,20 +197,15 @@ This slice implements the core functionality using a service-oriented architectu
     // Generate trace links for outputs
     const traceLinks = outputFiles.flatMap(file => {
       const baseName = file.split('/').pop() || file;
-      const artifactType = inferArtifactType(baseName);
 
       if (baseName === "requirements.md") {
-        // Generate trace link for requirements.md
-        const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
-        return [{
-          from: { type: "requirement", id: reqId },
-          to: { type: "requirement", id: "requirements.md" },
-          relation: "defined_in"
-        }];
+        // No trace links needed for requirements.md itself
+        // Requirements are extracted from the file content
+        return [];
       }
 
       if (baseName === "design.md") {
-        // Generate trace link for design.md
+        // Generate trace link from requirement to design
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
         return [{
           from: { type: "requirement", id: reqId },
@@ -220,7 +215,7 @@ This slice implements the core functionality using a service-oriented architectu
       }
 
       if (baseName === "behaviors.feature") {
-        // Generate trace links for scenarios
+        // Generate trace links from requirements to scenarios
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
         const scnId1 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-VALID`;
         const scnId2 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-INVALID`;
@@ -234,16 +229,6 @@ This slice implements the core functionality using a service-oriented architectu
             from: { type: "requirement", id: reqId },
             to: { type: "scenario", id: scnId2 },
             relation: "verified_by"
-          },
-          {
-            from: { type: "scenario", id: scnId1 },
-            to: { type: "scenario", id: "behaviors.feature" },
-            relation: "defined_in"
-          },
-          {
-            from: { type: "scenario", id: scnId2 },
-            to: { type: "scenario", id: "behaviors.feature" },
-            relation: "defined_in"
           }
         ];
       }

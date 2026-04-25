@@ -3,6 +3,6 @@ links:
       type: requirement
       id: REQ-ORDERING-PAYMENT-V1-001
     to:
-      type: requirement
-      id: requirements.md
-    relation: defined_in
+      type: design
+      id: design.md
+    relation: designed_by
