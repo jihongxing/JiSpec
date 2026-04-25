@@ -136,6 +136,11 @@ class RollbackRegressionTest {
       }
       results.push({ passed: true, message: "Pipeline re-run succeeded" });
 
+      // Step 14: Teardown - reset slice to clean state
+      console.log("\n[Step 14] Cleaning up test artifacts...");
+      await this.resetSliceState();
+      results.push({ passed: true, message: "Test artifacts cleaned up" });
+
       // Print summary
       this.printSummary(results);
 
@@ -145,6 +150,16 @@ class RollbackRegressionTest {
         message: error instanceof Error ? error.message : String(error),
       });
       this.printSummary(results);
+
+      // Teardown even on failure
+      console.log("\n[Teardown] Cleaning up after test failure...");
+      try {
+        await this.resetSliceState();
+        console.log("[Teardown] ✓ Cleanup completed");
+      } catch (cleanupError) {
+        console.error("[Teardown] ✗ Cleanup failed:", cleanupError);
+      }
+
       process.exit(1);
     }
   }
