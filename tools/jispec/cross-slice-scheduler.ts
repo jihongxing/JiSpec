@@ -437,15 +437,24 @@ export class CrossSliceScheduler {
    * Execute a single task (slice pipeline)
    */
   private async executeTask(task: ExecutionTask): Promise<void> {
+    // Check if slice is already in a terminal state
+    const terminalStates: LifecycleState[] = ["verifying", "accepted", "released"];
+    if (terminalStates.includes(task.current_state)) {
+      // Slice is already complete, skip execution
+      console.log(`[Scheduler] Slice ${task.slice_id} is already in ${task.current_state} state, skipping execution.`);
+      return;
+    }
+
     // Import PipelineExecutor dynamically to avoid circular dependency
     const { PipelineExecutor } = await import("./pipeline-executor");
     const executor = PipelineExecutor.create(this.root);
 
-    // Run the pipeline for this slice
+    // Run the pipeline for this slice (let it auto-determine the starting stage)
     const result = await executor.run(task.slice_id, {
       dryRun: false,
       skipValidation: false,
       useTUI: false,
+      // Don't specify 'from' - let pipeline determine based on current state
     });
 
     if (!result.success) {
