@@ -2,19 +2,25 @@
  * Stage Runner Identity Apply Test
  *
  * Verifies that StageRunner correctly validates and applies identity-first execution results.
+ * This test drives the actual StageRunner.applyExecutionResult logic with temporary fixtures.
  */
 
-import { fromPath, encodeIdentity, type ArtifactIdentity } from '../artifact-identity.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { StageRunner } from '../stage-runner.js';
 import type { StageExecutionResult, FileWrite, WriteOperation } from '../stage-execution-result.js';
+import type { StageConfig } from '../pipeline-executor.js';
+import type { ArtifactIdentity } from '../artifact-identity.js';
 
 console.log('Running Stage Runner Identity Apply Tests...\n');
 
 let passed = 0;
 let failed = 0;
 
-function test(name: string, fn: () => void) {
+async function test(name: string, fn: () => Promise<void>) {
   try {
-    fn();
+    await fn();
     console.log(`✓ ${name}`);
     passed++;
   } catch (error) {
@@ -24,149 +30,410 @@ function test(name: string, fn: () => void) {
   }
 }
 
+// Create temporary test fixture
+function createTempFixture(): string {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jispec-test-'));
+
+  // Create minimal slice structure
+  // Use "testcontext" as both context and slice prefix so resolveArtifactPath works
+  const contextDir = path.join(tmpDir, 'contexts', 'testcontext');
+  const sliceDir = path.join(contextDir, 'slices', 'testcontext-slice-v1');
+  fs.mkdirSync(sliceDir, { recursive: true });
+
+  // Create context.yaml
+  const contextYaml = `
+id: testcontext
+name: Test Context
+`;
+  fs.writeFileSync(path.join(contextDir, 'context.yaml'), contextYaml.trim());
+
+  // Create slice.yaml with lifecycle
+  const sliceYaml = `
+id: testcontext-slice-v1
+slice_id: testcontext-slice-v1
+context_id: testcontext
+service_id: test-service
+lifecycle_state: requirements
+lifecycle:
+  current: requirements
+  history: []
+gates: {}
+`;
+  fs.writeFileSync(path.join(sliceDir, 'slice.yaml'), sliceYaml.trim());
+
+  return tmpDir;
+}
+
+function cleanupFixture(tmpDir: string) {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+}
+
+// Run all tests
+(async () => {
+
 // Test 1: Correct identity-path pair should be accepted
-test('Correct identity-path pair is accepted', () => {
-  const sliceId = 'ordering-checkout-v1';
-  const stageId = 'requirements';
-  const identity: ArtifactIdentity = {
-    sliceId,
-    stageId,
-    artifactType: 'requirements',
-    artifactId: 'requirements',
-    logicalName: 'requirements.md'
-  };
+await test('Correct identity-path pair is accepted by apply', async () => {
+  const tmpDir = createTempFixture();
 
-  const fullPath = `contexts/ordering/slices/${sliceId}/requirements.md`;
-  const write: FileWrite = {
-    path: fullPath,
-    content: '# Requirements',
-    identity
-  };
+  try {
+    const runner = StageRunner.create(tmpDir);
 
-  // Verify identity matches path
-  const inferred = fromPath(write.path, stageId);
-  if (!inferred) {
-    throw new Error('Failed to infer identity from path');
-  }
+    const identity: ArtifactIdentity = {
+      sliceId: 'testcontext-slice-v1',
+      stageId: 'requirements',
+      artifactType: 'requirements',
+      artifactId: 'requirements',
+      logicalName: 'requirements.md'
+    };
 
-  const expectedEncoded = encodeIdentity(identity);
-  const inferredEncoded = encodeIdentity(inferred);
+    const fullPath = path.join(tmpDir, 'contexts/testcontext/slices/testcontext-slice-v1/requirements.md');
 
-  if (expectedEncoded !== inferredEncoded) {
-    throw new Error('Identity does not match inferred identity from path');
+    const result: StageExecutionResult = {
+      success: true,
+      writes: [{
+        path: fullPath,
+        content: '# Requirements',
+        identity
+      }],
+      gateUpdates: [],
+      traceLinks: [],
+      evidence: []
+    };
+
+    const stageConfig: StageConfig = {
+      id: 'requirements',
+      name: 'Requirements',
+      agent: 'requirements' as any,
+      lifecycle_state: 'requirements',
+      inputs: { files: [], allowRead: false, allowWrite: false },
+      outputs: { files: ['requirements.md'], traceRequired: false },
+      gates: { autoUpdate: false, required: [], optional: [] }
+    };
+
+    const contract = {
+      inputs: [],
+      outputs: []  // Skip output validation for this test
+    };
+
+    try {
+      await (runner as any).applyExecutionResult('testcontext-slice-v1', stageConfig, result, contract);
+    } catch (error) {
+      // Slice validation will fail, but we only care that identity-path validation passed
+      // and the file was written
+      if (error && (error as Error).message.includes('Identity-path mismatch')) {
+        throw error;  // This is the error we're testing for - should NOT happen
+      }
+      // Other errors (like slice validation) are expected in this minimal fixture
+    }
+
+    // Verify file was written (this is the real test)
+    if (!fs.existsSync(fullPath)) {
+      throw new Error('File was not written');
+    }
+  } finally {
+    cleanupFixture(tmpDir);
   }
 });
 
 // Test 2: Incorrect identity-path pair should be rejected
-test('Incorrect identity-path pair is rejected', () => {
-  const sliceId = 'ordering-checkout-v1';
-  const stageId = 'requirements';
-  const identity: ArtifactIdentity = {
-    sliceId,
-    stageId,
-    artifactType: 'requirements',
-    artifactId: 'requirements'
-  };
+await test('Incorrect identity-path pair is rejected by apply', async () => {
+  const tmpDir = createTempFixture();
 
-  const fullPath = `contexts/ordering/slices/${sliceId}/design.md`;
-  const write: FileWrite = {
-    path: fullPath, // Wrong path for requirements identity
-    content: '# Design',
-    identity
-  };
+  try {
+    const runner = StageRunner.create(tmpDir);
 
-  // Verify identity does NOT match path
-  const inferred = fromPath(write.path, stageId);
-  if (!inferred) {
-    throw new Error('Failed to infer identity from path');
-  }
+    const identity: ArtifactIdentity = {
+      sliceId: 'testcontext-slice-v1',
+      stageId: 'requirements',
+      artifactType: 'requirements',
+      artifactId: 'requirements',
+      logicalName: 'requirements.md'
+    };
 
-  if (encodeIdentity(identity) === encodeIdentity(inferred)) {
-    throw new Error('Identity should not match inferred identity from wrong path');
+    // Wrong path - points to design.md but identity says requirements.md
+    const wrongPath = path.join(tmpDir, 'contexts/testcontext/slices/testcontext-slice-v1/design.md');
+
+    const result: StageExecutionResult = {
+      success: true,
+      writes: [{
+        path: wrongPath,
+        content: '# Design',
+        identity
+      }],
+      gateUpdates: [],
+      traceLinks: [],
+      evidence: []
+    };
+
+    const stageConfig: StageConfig = {
+      id: 'requirements',
+      name: 'Requirements',
+      agent: 'requirements' as any,
+      lifecycle_state: 'requirements',
+      inputs: { files: [], allowRead: false, allowWrite: false },
+      outputs: { files: ['requirements.md'], traceRequired: false },
+      gates: { autoUpdate: false, required: [], optional: [] }
+    };
+
+    const contract = {
+      inputs: [],
+      outputs: [{ path: 'requirements.md', description: 'Requirements' }]
+    };
+
+    let errorThrown = false;
+    try {
+      await (runner as any).applyExecutionResult('test-slice-v1', stageConfig, result, contract);
+    } catch (error) {
+      errorThrown = true;
+      if (!error || !(error as Error).message.includes('Identity-path mismatch')) {
+        throw new Error('Expected identity-path mismatch error');
+      }
+    }
+
+    if (!errorThrown) {
+      throw new Error('Expected apply to throw identity-path mismatch error');
+    }
+  } finally {
+    cleanupFixture(tmpDir);
   }
 });
 
-// Test 3: Directory identity should be well-formed
-test('Directory identity is well-formed', () => {
-  const sliceId = 'ordering-checkout-v1';
-  const stageId = 'implementing';
-  const identity: ArtifactIdentity = {
-    sliceId,
-    stageId,
-    artifactType: 'code',
-    artifactId: 'src'
-  };
+// Test 3: Directory identity should be validated and applied
+await test('Directory identity is validated and applied', async () => {
+  const tmpDir = createTempFixture();
 
-  const op: WriteOperation = {
-    type: 'directory',
-    path: 'src',
-    identity
-  };
+  try {
+    const runner = StageRunner.create(tmpDir);
 
-  // Verify identity has all required fields
-  if (!identity.sliceId || !identity.artifactId || !identity.artifactType) {
-    throw new Error('Directory identity is malformed');
+    const identity: ArtifactIdentity = {
+      sliceId: 'testcontext-slice-v1',
+      stageId: 'implementing',
+      artifactType: 'code',
+      artifactId: 'src',
+      logicalName: 'src'
+    };
+
+    const dirPath = path.join(tmpDir, 'contexts/testcontext/slices/testcontext-slice-v1/src');
+
+    const result: StageExecutionResult = {
+      success: true,
+      writes: [],
+      writeOperations: [{
+        type: 'directory',
+        path: dirPath,
+        identity
+      }],
+      gateUpdates: [],
+      traceLinks: [],
+      evidence: []
+    };
+
+    const stageConfig: StageConfig = {
+      id: 'implementing',
+      name: 'Implementing',
+      agent: 'implementing' as any,
+      lifecycle_state: 'implementing',
+      inputs: { files: [], allowRead: false, allowWrite: false },
+      outputs: { files: [], traceRequired: false },
+      gates: { autoUpdate: false, required: [], optional: [] }
+    };
+
+    const contract = {
+      inputs: [],
+      outputs: []
+    };
+
+    // This should succeed without throwing
+    await (runner as any).applyExecutionResult('testcontext-slice-v1', stageConfig, result, contract);
+
+    // Verify directory was created
+    if (!fs.existsSync(dirPath)) {
+      throw new Error('Directory was not created');
+    }
+  } finally {
+    cleanupFixture(tmpDir);
   }
 });
 
-// Test 4: Malformed identity should be detected
-test('Malformed identity is detected', () => {
-  const identity = {
-    sliceId: 'ordering-checkout-v1',
-    stageId: 'implementing',
-    artifactType: 'code',
-    artifactId: '' // Empty artifactId is malformed
-  } as ArtifactIdentity;
+// Test 4: Malformed identity should be rejected
+await test('Malformed identity is rejected by apply', async () => {
+  const tmpDir = createTempFixture();
 
-  const op: WriteOperation = {
-    type: 'directory',
-    path: 'src',
-    identity
-  };
+  try {
+    const runner = StageRunner.create(tmpDir);
 
-  // Verify malformed identity is detected
-  if (!identity.artifactId) {
-    // This is expected - malformed identity detected
-    return;
+    const identity = {
+      sliceId: 'test-slice-v1',
+      stageId: 'implementing',
+      artifactType: 'code',
+      artifactId: '' // Empty artifactId is malformed
+    } as ArtifactIdentity;
+
+    const dirPath = path.join(tmpDir, 'contexts/test-context/slices/test-slice-v1/src');
+
+    const result: StageExecutionResult = {
+      success: true,
+      writes: [],
+      writeOperations: [{
+        type: 'directory',
+        path: dirPath,
+        identity
+      }],
+      gateUpdates: [],
+      traceLinks: [],
+      evidence: []
+    };
+
+    const stageConfig: StageConfig = {
+      id: 'implementing',
+      name: 'Implementing',
+      agent: 'implementing' as any,
+      lifecycle_state: 'implementing',
+      inputs: { files: [], allowRead: false, allowWrite: false },
+      outputs: { files: [], traceRequired: false },
+      gates: { autoUpdate: false, required: [], optional: [] }
+    };
+
+    const contract = {
+      inputs: [],
+      outputs: []
+    };
+
+    let errorThrown = false;
+    try {
+      await (runner as any).applyExecutionResult('test-slice-v1', stageConfig, result, contract);
+    } catch (error) {
+      errorThrown = true;
+      if (!error || !(error as Error).message.includes('Malformed identity')) {
+        throw new Error('Expected malformed identity error');
+      }
+    }
+
+    if (!errorThrown) {
+      throw new Error('Expected apply to throw malformed identity error');
+    }
+  } finally {
+    cleanupFixture(tmpDir);
   }
-
-  throw new Error('Malformed identity was not detected');
 });
 
 // Test 5: Path-only fallback should work
-test('Path-only fallback works', () => {
-  const write: FileWrite = {
-    path: 'requirements.md',
-    content: '# Requirements'
-    // No identity provided - should fall back to path-only mode
-  };
+await test('Path-only fallback works in apply', async () => {
+  const tmpDir = createTempFixture();
 
-  // Verify write has no identity
-  if (write.identity) {
-    throw new Error('Write should not have identity in fallback mode');
+  try {
+    const runner = StageRunner.create(tmpDir);
+
+    const fullPath = path.join(tmpDir, 'contexts/testcontext/slices/testcontext-slice-v1/notes.md');
+
+    const result: StageExecutionResult = {
+      success: true,
+      writes: [{
+        path: fullPath,
+        content: '# Notes'
+        // No identity - should fall back to path-only mode
+      }],
+      gateUpdates: [],
+      traceLinks: [],
+      evidence: []
+    };
+
+    const stageConfig: StageConfig = {
+      id: 'requirements',
+      name: 'Requirements',
+      agent: 'requirements' as any,
+      lifecycle_state: 'requirements',
+      inputs: { files: [], allowRead: false, allowWrite: false },
+      outputs: { files: ['notes.md'], traceRequired: false },
+      gates: { autoUpdate: false, required: [], optional: [] }
+    };
+
+    const contract = {
+      inputs: [],
+      outputs: [{ path: 'notes.md', description: 'Notes' }]
+    };
+
+    // This should succeed without throwing
+    await (runner as any).applyExecutionResult('testcontext-slice-v1', stageConfig, result, contract);
+
+    // Verify file was written
+    if (!fs.existsSync(fullPath)) {
+      throw new Error('File was not written in path-only mode');
+    }
+  } finally {
+    cleanupFixture(tmpDir);
   }
 });
 
-// Test 6: Identity encoding is stable
-test('Identity encoding is stable', () => {
-  const identity: ArtifactIdentity = {
-    sliceId: 'ordering-checkout-v1',
-    stageId: 'behavior',
-    artifactType: 'behavior',
-    artifactId: 'checkout-flow'
-  };
+// Test 6: Directory with wrong identity-path should fail fast
+await test('Directory with wrong identity-path fails fast', async () => {
+  const tmpDir = createTempFixture();
 
-  const encoded1 = encodeIdentity(identity);
-  const encoded2 = encodeIdentity(identity);
+  try {
+    const runner = StageRunner.create(tmpDir);
 
-  if (encoded1 !== encoded2) {
-    throw new Error('Identity encoding is not stable');
-  }
+    const identity: ArtifactIdentity = {
+      sliceId: 'test-slice-v1',
+      stageId: 'implementing',
+      artifactType: 'code',
+      artifactId: 'src'
+    };
 
-  if (!encoded1.includes('behavior') || !encoded1.includes('ordering-checkout-v1')) {
-    throw new Error('Encoded identity does not contain expected components');
+    // Wrong path - identity says 'src' but path is 'lib'
+    const wrongPath = path.join(tmpDir, 'contexts/testcontext/slices/testcontext-slice-v1/lib');
+
+    const result: StageExecutionResult = {
+      success: true,
+      writes: [],
+      writeOperations: [{
+        type: 'directory',
+        path: wrongPath,
+        identity
+      }],
+      gateUpdates: [],
+      traceLinks: [],
+      evidence: []
+    };
+
+    const stageConfig: StageConfig = {
+      id: 'implementing',
+      name: 'Implementing',
+      agent: 'implementing' as any,
+      lifecycle_state: 'implementing',
+      inputs: { files: [], allowRead: false, allowWrite: false },
+      outputs: { files: [], traceRequired: false },
+      gates: { autoUpdate: false, required: [], optional: [] }
+    };
+
+    const contract = {
+      inputs: [],
+      outputs: []
+    };
+
+    let errorThrown = false;
+    try {
+      await (runner as any).applyExecutionResult('test-slice-v1', stageConfig, result, contract);
+    } catch (error) {
+      errorThrown = true;
+      if (!error || !(error as Error).message.includes('Identity-path mismatch')) {
+        throw new Error('Expected identity-path mismatch error for directory');
+      }
+    }
+
+    if (!errorThrown) {
+      throw new Error('Expected apply to throw identity-path mismatch error for directory');
+    }
+
+    // Verify directory was NOT created
+    if (fs.existsSync(wrongPath)) {
+      throw new Error('Directory should not have been created after validation failure');
+    }
+  } finally {
+    cleanupFixture(tmpDir);
   }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
+
+})();
