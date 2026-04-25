@@ -287,9 +287,9 @@ class RollbackRegressionTest {
   private async triggerRollback(): Promise<void> {
     const { FailureHandler } = await import("../failure-handler");
     const config = {
-      retry: { enabled: false, maxAttempts: 0, backoff: "linear" as const, initialDelay: 0 },
+      retry: { enabled: false, max_attempts: 0, backoff: "linear" as const, initial_delay: 0, max_delay: 0 },
       rollback: { enabled: true, strategy: "full" as const },
-      humanIntervention: { enabled: false, timeout: 0 }
+      human_intervention: { enabled: false, prompt_on_failure: false, allow_skip: false, allow_manual_fix: false }
     };
     const handler = new FailureHandler(this.root, config);
     await handler.rollbackToLatest(this.sliceId);
