@@ -183,7 +183,12 @@ export class FailureHandler {
     };
 
     // 持久化快照到磁盘
-    this.saveSnapshotToDisk(snapshot);
+    try {
+      this.saveSnapshotToDisk(snapshot);
+    } catch (error) {
+      console.error(`[Snapshot] Failed to save snapshot to disk: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`[Snapshot] Snapshot will only be available in memory for this session`);
+    }
 
     this.snapshots.set(`${sliceId}:${stageId}`, snapshot);
   }
