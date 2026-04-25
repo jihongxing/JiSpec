@@ -101,9 +101,13 @@ export class StageRunner {
         const contract = this.resolveStageContract(sliceId, stageConfig);
         console.log(`[Stage: ${stageConfig.id}] Contract resolved: ${contract.inputs.length} inputs, ${contract.outputs.length} outputs`);
 
-        // 2. 计算缓存键并检查缓存
+        // 2. 计算缓存键并检查缓存（在执行前，使用当前状态）
+        let cacheKey: string | null = null;
+        let keyInputs: CacheKeyInputs | null = null;
+
         if (!dryRun) {
-          const cacheKey = await this.computeCacheKeyForStage(sliceId, stageConfig, contract);
+          keyInputs = await this.buildCacheKeyInputs(sliceId, stageConfig, contract);
+          cacheKey = computeCacheKey(keyInputs);
 
           console.log(`[Cache] Checking cache for key: ${cacheKey}`);
           const cachedResult = await this.cacheManager.get(cacheKey);
@@ -160,18 +164,18 @@ export class StageRunner {
         if (!dryRun && agentResult.executionResult) {
           await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract);
 
-          // 5. 存储到缓存
-          const cacheKey = await this.computeCacheKeyForStage(sliceId, stageConfig, contract);
-          const keyInputs = await this.buildCacheKeyInputs(sliceId, stageConfig, contract);
-          const inputSnapshots = await this.captureInputSnapshots(contract);
-          const outputSnapshots = await this.captureOutputSnapshots(agentResult.executionResult);
+          // 5. 存储到缓存（使用执行前计算的 keyInputs）
+          if (cacheKey && keyInputs) {
+            const inputSnapshots = await this.captureInputSnapshots(contract);
+            const outputSnapshots = await this.captureOutputSnapshots(agentResult.executionResult);
 
-          const manifest = createManifest(cacheKey, keyInputs, inputSnapshots, outputSnapshots, {
-            executionTimeMs,
-          });
+            const manifest = createManifest(cacheKey, keyInputs, inputSnapshots, outputSnapshots, {
+              executionTimeMs,
+            });
 
-          await this.cacheManager.put(manifest, agentResult.executionResult);
-          console.log(`[Cache] ✓ Cached execution result`);
+            await this.cacheManager.put(manifest, agentResult.executionResult);
+            console.log(`[Cache] ✓ Cached execution result`);
+          }
         } else if (dryRun && agentResult.executionResult) {
           // Dry-run: display structured result
           this.displayExecutionResult(agentResult.executionResult);
@@ -689,6 +693,18 @@ export class StageRunner {
   }
 
   /**
+   * 加载项目配置
+   */
+  private loadProjectConfig(): any {
+    const projectFile = path.join(this.root, 'jiproject', 'project.yaml');
+    if (!this.storage.existsSync(projectFile)) {
+      return { ai: { provider: 'mock', model: 'default' } };
+    }
+    const content = this.storage.readFileSync(projectFile, 'utf-8') as string;
+    return yaml.load(content);
+  }
+
+  /**
    * 解析阶段契约
    */
   private resolveStageContract(sliceId: string, stageConfig: StageConfig): ResolvedStageContract {
@@ -760,10 +776,13 @@ export class StageRunner {
       lifecycleState: slice.lifecycle?.state || 'initial',
     };
 
-    // Provider 配置（暂时硬编码，后续从配置读取）
+    // Provider 配置（从项目配置读取）
+    const projectConfig = this.loadProjectConfig();
     const providerConfig = {
-      provider: 'anthropic',
-      model: 'claude-opus-4',
+      provider: projectConfig.ai?.provider || 'mock',
+      model: projectConfig.ai?.model || 'default',
+      temperature: projectConfig.ai?.options?.temperature,
+      maxTokens: projectConfig.ai?.options?.maxTokens,
     };
 
     // Contract 版本（暂时使用简单哈希）
