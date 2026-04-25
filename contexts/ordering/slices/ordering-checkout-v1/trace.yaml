@@ -41,3 +41,17 @@ links:
       type: test
       id: TEST-ORDER-CHECKOUT-OUT-OF-STOCK-INTEGRATION
     relation: covered_by
+  - from:
+      type: test
+      id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+    to:
+      type: code
+      id: src/checkout-service
+    relation: implemented_by
+  - from:
+      type: test
+      id: TEST-ORDER-CHECKOUT-OUT-OF-STOCK-INTEGRATION
+    to:
+      type: code
+      id: src/checkout-service
+    relation: implemented_by

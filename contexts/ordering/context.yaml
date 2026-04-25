@@ -7,3 +7,5 @@ upstream_contexts:
 downstream_contexts: []
 active_slices:
   - ordering-checkout-v1
+  - ordering-payment-v1
+  - ordering-shipment-v1

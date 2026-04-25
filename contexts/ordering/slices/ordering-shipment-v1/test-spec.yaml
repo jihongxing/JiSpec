@@ -1,0 +1,6 @@
+tests:
+  - id: TEST-ORDERING-SHIPMENT-V1-001
+    type: unit
+    verifies:
+      - SCN-ORDERING-SHIPMENT-V1-001
+    target: ordering-service

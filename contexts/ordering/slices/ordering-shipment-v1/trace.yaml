@@ -1,0 +1,8 @@
+links:
+  - from:
+      type: requirement
+      id: REQ-TBD-001
+    to:
+      type: scenario
+      id: SCN-ORDERING-SHIPMENT-V1-001
+    relation: verified_by
