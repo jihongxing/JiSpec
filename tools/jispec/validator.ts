@@ -613,7 +613,11 @@ function validateSliceTrace(
     return;
   }
 
-  const requirementIds = collectRequirementIds(path.join(root, "docs", "input", "requirements.md"));
+  // Collect requirement IDs from both global and slice-level requirements.md
+  const globalRequirementIds = collectRequirementIds(path.join(root, "docs", "input", "requirements.md"));
+  const sliceRequirementIds = collectRequirementIds(path.join(sliceDir, "requirements.md"));
+  const requirementIds = new Set([...globalRequirementIds, ...sliceRequirementIds]);
+
   const testIds = collectTestIds(path.join(sliceDir, "test-spec.yaml"), result);
   const scenarioIds = collectScenarioIds(root, contextId, sliceDir);
   const invariantIds = collectInvariantIds(root, contextId, result);

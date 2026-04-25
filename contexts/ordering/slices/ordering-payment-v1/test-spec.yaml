@@ -1,0 +1,6 @@
+tests:
+  - id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+    type: integration
+    verifies:
+      - SCN-ORDER-CHECKOUT-VALID
+    target: checkout-service

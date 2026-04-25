@@ -199,9 +199,14 @@ This slice implements the core functionality using a service-oriented architectu
       const baseName = file.split('/').pop() || file;
 
       if (baseName === "requirements.md") {
-        // No trace links needed for requirements.md itself
-        // Requirements are extracted from the file content
-        return [];
+        // Generate trace links to register requirements in trace.yaml
+        // Requirements trace from slice to requirement artifacts
+        const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
+        return [{
+          from: { type: "slice", id: sliceId },
+          to: { type: "requirement", id: reqId },
+          relation: "requires"
+        }];
       }
 
       if (baseName === "design.md") {
