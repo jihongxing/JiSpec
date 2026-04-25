@@ -484,6 +484,14 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
     // If structured output, use it directly
     if (parsedOutput && typeof parsedOutput === 'object' && ('writes' in parsedOutput || 'writeOperations' in parsedOutput)) {
       console.log("[Output] Using structured output protocol");
+
+      // Check if the agent reported failure
+      if (parsedOutput.success === false) {
+        const errorMsg = parsedOutput.error || "Agent reported failure";
+        console.error(`[Output] ✗ Agent execution failed: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
       writes.push(...(parsedOutput.writes || []));
     } else if (output) {
       // Fallback: treat as plain text and save to output paths

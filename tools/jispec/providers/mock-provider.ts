@@ -289,7 +289,8 @@ This slice implements the core functionality using a service-oriented architectu
 
     // Generate structured output
     const output = {
-      success: true,
+      success: process.env.JISPEC_TEST_INJECT_FAILURE === 'true' ? false : true,
+      error: process.env.JISPEC_TEST_INJECT_FAILURE === 'true' ? 'Injected test failure' : undefined,
       writes,
       writeOperations,
       gateUpdates,
