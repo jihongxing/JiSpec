@@ -8,13 +8,9 @@
  * - Distributed cache (Phase 5.2+)
  */
 
-export interface ArtifactIdentity {
-  sliceId: string;
-  stageId: string;
-  artifactType: "requirements" | "design" | "behavior" | "test" | "code" | "evidence" | "trace" | "snapshot" | "report";
-  artifactId: string;
-  logicalName?: string;
-}
+import type { ArtifactIdentity } from "./artifact-identity";
+
+export type { ArtifactIdentity };
 
 export interface StorageAdapter {
   /**

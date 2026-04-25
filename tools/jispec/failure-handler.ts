@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 import type { FailureHandlingConfig } from "./pipeline-executor";
