@@ -433,6 +433,72 @@ await test('Directory with wrong identity-path fails fast', async () => {
   }
 });
 
+// Test 7: Correct absolute path file writeOperation should succeed
+await test('Correct absolute path file writeOperation is accepted', async () => {
+  const tmpDir = createTempFixture();
+
+  try {
+    const runner = StageRunner.create(tmpDir);
+
+    const identity: ArtifactIdentity = {
+      sliceId: 'testcontext-slice-v1',
+      stageId: 'implementing',
+      artifactType: 'code',
+      artifactId: 'right',
+      logicalName: 'right.ts'
+    };
+
+    // Use absolute path (resolveArtifactPath returns absolute)
+    const absolutePath = path.join(tmpDir, 'contexts/testcontext/slices/testcontext-slice-v1/right.ts');
+
+    const result: StageExecutionResult = {
+      success: true,
+      writes: [],
+      writeOperations: [{
+        type: 'file',
+        path: absolutePath,
+        content: '// Right file',
+        identity
+      }],
+      gateUpdates: [],
+      traceLinks: [],
+      evidence: []
+    };
+
+    const stageConfig: StageConfig = {
+      id: 'implementing',
+      name: 'Implementing',
+      agent: 'implementing' as any,
+      lifecycle_state: 'implementing',
+      inputs: { files: [], allowRead: false, allowWrite: false },
+      outputs: { files: [], traceRequired: false },
+      gates: { autoUpdate: false, required: [], optional: [] }
+    };
+
+    const contract = {
+      inputs: [],
+      outputs: []
+    };
+
+    try {
+      await (runner as any).applyExecutionResult('testcontext-slice-v1', stageConfig, result, contract);
+    } catch (error) {
+      // Slice validation will fail, but we only care that identity-path validation passed
+      if (error && (error as Error).message.includes('Identity-path mismatch')) {
+        throw error;  // This is the error we're testing for - should NOT happen
+      }
+      // Other errors (like slice validation) are expected in this minimal fixture
+    }
+
+    // Verify file was written to the correct location
+    if (!fs.existsSync(absolutePath)) {
+      throw new Error('File was not written to the correct location');
+    }
+  } finally {
+    cleanupFixture(tmpDir);
+  }
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
 

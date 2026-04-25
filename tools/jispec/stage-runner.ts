@@ -344,20 +344,6 @@ export class StageRunner {
               `Malformed identity for write operation: ${JSON.stringify(op.identity)}`
             );
           }
-
-          // For file operations, validate identity-path consistency
-          if (op.type === "file") {
-            const resolvedPath = this.storage.resolveArtifactPath(op.identity);
-            const normalizedOpPath = path.normalize(op.path);
-            const normalizedResolvedPath = path.normalize(resolvedPath);
-
-            if (normalizedOpPath !== normalizedResolvedPath) {
-              throw new Error(
-                `Identity-path mismatch for writeOperation: identity=${encodeIdentity(op.identity)}, ` +
-                `path=${op.path}, resolved=${resolvedPath}`
-              );
-            }
-          }
         }
 
         if (op.type === "directory") {
@@ -388,9 +374,32 @@ export class StageRunner {
           this.storage.mkdirSync(targetPath);
           console.log(`[Apply] ✓ Directory created`);
         } else if (op.type === "file") {
-          console.log(`[Apply] Writing ${op.path}...`);
+          let targetPath = op.path;
+
+          // If identity is provided, use identity-first resolution
+          if (op.identity) {
+            const resolvedPath = this.storage.resolveArtifactPath(op.identity);
+
+            // Normalize both paths for strict comparison
+            const normalizedOpPath = path.resolve(op.path);
+            const normalizedResolvedPath = path.resolve(resolvedPath);
+
+            // Strict path equality check
+            if (normalizedOpPath !== normalizedResolvedPath) {
+              throw new Error(
+                `Identity-path mismatch for file writeOperation: identity=${encodeIdentity(op.identity)}, ` +
+                `path=${op.path}, resolved=${resolvedPath}`
+              );
+            }
+
+            targetPath = resolvedPath;
+            console.log(`[Apply] Writing ${op.path} (identity: ${encodeIdentity(op.identity)})...`);
+          } else {
+            console.log(`[Apply] Writing ${op.path}...`);
+          }
+
           const encoding = (op.encoding || "utf-8") as BufferEncoding;
-          this.storage.writeFileSync(op.path, op.content || "", encoding);
+          this.storage.writeFileSync(targetPath, op.content || "", encoding);
           console.log(`[Apply] ✓ Written`);
         }
       }
