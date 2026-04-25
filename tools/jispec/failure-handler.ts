@@ -371,7 +371,9 @@ export class FailureHandler {
     const snapshotDir = path.join(this.root, ".jispec", "snapshots", snapshot.sliceId);
     fs.mkdirSync(snapshotDir, { recursive: true });
 
-    const snapshotFile = path.join(snapshotDir, `${snapshot.stageId}-${snapshot.timestamp}.json`);
+    // Sanitize timestamp for Windows: replace : with -
+    const safeTimestamp = snapshot.timestamp.replace(/:/g, '-');
+    const snapshotFile = path.join(snapshotDir, `${snapshot.stageId}-${safeTimestamp}.json`);
 
     // 将 Map 转换为普通对象以便序列化
     const serializable = {
@@ -391,7 +393,9 @@ export class FailureHandler {
    * 从磁盘加载快照
    */
   private loadSnapshotFromDisk(sliceId: string, stageId: string, timestamp: string): RollbackSnapshot | null {
-    const snapshotFile = path.join(this.root, ".jispec", "snapshots", sliceId, `${stageId}-${timestamp}.json`);
+    // Sanitize timestamp for Windows: replace : with -
+    const safeTimestamp = timestamp.replace(/:/g, '-');
+    const snapshotFile = path.join(this.root, ".jispec", "snapshots", sliceId, `${stageId}-${safeTimestamp}.json`);
 
     if (!fs.existsSync(snapshotFile)) {
       return null;
