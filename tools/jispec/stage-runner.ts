@@ -311,7 +311,10 @@ export class StageRunner {
         const resolvedPath = this.storage.resolveArtifactPath(write.identity);
 
         // Normalize both paths for strict comparison
-        const normalizedWritePath = path.resolve(write.path);
+        // If write.path is relative, resolve it relative to root
+        const normalizedWritePath = path.isAbsolute(write.path)
+          ? path.resolve(write.path)
+          : path.resolve(this.root, write.path);
         const normalizedResolvedPath = path.resolve(resolvedPath);
 
         // Strict path equality check
@@ -354,7 +357,10 @@ export class StageRunner {
             const resolvedPath = this.storage.resolveArtifactPath(op.identity);
 
             // For directories, we need to validate the path matches
-            const normalizedOpPath = path.resolve(op.path);
+            // If op.path is relative, resolve it relative to root
+            const normalizedOpPath = path.isAbsolute(op.path)
+              ? path.resolve(op.path)
+              : path.resolve(this.root, op.path);
             const normalizedResolvedPath = path.resolve(resolvedPath);
 
             // Strict path equality check
@@ -381,7 +387,10 @@ export class StageRunner {
             const resolvedPath = this.storage.resolveArtifactPath(op.identity);
 
             // Normalize both paths for strict comparison
-            const normalizedOpPath = path.resolve(op.path);
+            // If op.path is relative, resolve it relative to root
+            const normalizedOpPath = path.isAbsolute(op.path)
+              ? path.resolve(op.path)
+              : path.resolve(this.root, op.path);
             const normalizedResolvedPath = path.resolve(resolvedPath);
 
             // Strict path equality check
