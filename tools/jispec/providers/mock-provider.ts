@@ -1,4 +1,6 @@
 import type { AIProvider, GenerateOptions } from "../ai-provider";
+import { fromPath } from "../artifact-identity";
+import type { ArtifactIdentity } from "../artifact-identity";
 
 /**
  * Mock AI Provider for testing
@@ -25,6 +27,10 @@ export class MockProvider implements AIProvider {
     // Extract slice ID
     const sliceIdMatch = prompt.match(/- Slice ID: (.+)/);
     const sliceId = sliceIdMatch ? sliceIdMatch[1] : "unknown";
+
+    // Extract stage ID from prompt
+    const stageIdMatch = prompt.match(/- Stage: (.+)/);
+    const stageId = stageIdMatch ? stageIdMatch[1] : "unknown";
 
     // Extract existing requirement IDs from prompt
     const reqMatches = prompt.match(/REQ-[A-Z]+-\d+/g) || [];
@@ -172,12 +178,16 @@ This slice implements the core functionality using a service-oriented architectu
     const files = outputFiles.filter(f => !f.endsWith('/') && f !== 'src');
     const directories = outputFiles.filter(f => f.endsWith('/') || f === 'src');
 
-    // Generate writes for files
-    const writes = files.map(file => ({
-      path: file,
-      content: generateContent(file),
-      encoding: "utf-8"
-    }));
+    // Generate writes for files with identity
+    const writes = files.map(file => {
+      const identity = fromPath(file, stageId);
+      return {
+        path: file,
+        content: generateContent(file),
+        encoding: "utf-8",
+        identity
+      };
+    });
 
     // For src directory, also generate a sample implementation file
     if (directories.some(d => d === 'src' || d.endsWith('src/'))) {
@@ -188,18 +198,27 @@ This slice implements the core functionality using a service-oriented architectu
       const serviceName = sliceId.split('-').slice(1, -1).join('-') + '-service';
       const className = serviceName.split('-').slice(0, -1).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('') + 'Service';
 
+      const srcFilePath = `${srcPath}${serviceName}.ts`;
+      const srcIdentity = fromPath(srcFilePath, stageId);
+
       writes.push({
-        path: `${srcPath}${serviceName}.ts`,
+        path: srcFilePath,
         content: `// Mock implementation for ${sliceId}\n\nexport class ${className} {\n  async process(input: string): Promise<string> {\n    // Mock implementation\n    return "result-123";\n  }\n}\n`,
-        encoding: "utf-8"
+        encoding: "utf-8",
+        identity: srcIdentity
       });
     }
 
     // Generate writeOperations for directories
-    const writeOperations = directories.map(dir => ({
-      type: "directory" as const,
-      path: dir.endsWith('/') ? dir : `${dir}/`,
-    }));
+    const writeOperations = directories.map(dir => {
+      const dirPath = dir.endsWith('/') ? dir : `${dir}/`;
+      const dirIdentity = fromPath(dirPath, stageId);
+      return {
+        type: "directory" as const,
+        path: dirPath,
+        identity: dirIdentity
+      };
+    });
 
     // Generate trace links for outputs
     const traceLinks = outputFiles.flatMap(file => {
@@ -209,9 +228,10 @@ This slice implements the core functionality using a service-oriented architectu
         // Generate trace links to register requirements in trace.yaml
         // Requirements trace from slice to requirement artifacts
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
+        const reqIdentity = fromPath(file, stageId);
         return [{
           from: { type: "slice", id: sliceId },
-          to: { type: "requirement", id: reqId },
+          to: { type: "requirement", id: reqId, identity: reqIdentity },
           relation: "requires"
         }];
       }
@@ -219,9 +239,10 @@ This slice implements the core functionality using a service-oriented architectu
       if (baseName === "design.md") {
         // Generate trace link from requirement to design
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
+        const designIdentity = fromPath(file, stageId);
         return [{
           from: { type: "requirement", id: reqId },
-          to: { type: "design", id: "design.md" },
+          to: { type: "design", id: "design.md", identity: designIdentity },
           relation: "designed_by"
         }];
       }
@@ -231,15 +252,16 @@ This slice implements the core functionality using a service-oriented architectu
         const reqId = `REQ-${sliceId.toUpperCase().replace(/-/g, '-')}-001`;
         const scnId1 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-VALID`;
         const scnId2 = `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-INVALID`;
+        const behaviorIdentity = fromPath(file, stageId);
         return [
           {
             from: { type: "requirement", id: reqId },
-            to: { type: "scenario", id: scnId1 },
+            to: { type: "scenario", id: scnId1, identity: behaviorIdentity },
             relation: "verified_by"
           },
           {
             from: { type: "requirement", id: reqId },
-            to: { type: "scenario", id: scnId2 },
+            to: { type: "scenario", id: scnId2, identity: behaviorIdentity },
             relation: "verified_by"
           }
         ];
@@ -247,11 +269,12 @@ This slice implements the core functionality using a service-oriented architectu
 
       if (baseName === "test-spec.yaml" && existingScenarios.length > 0) {
         // Generate trace links from scenarios to tests
+        const testSpecIdentity = fromPath(file, stageId);
         return existingScenarios.map(scnId => {
           const testId = `TEST-${scnId.replace('SCN-', '')}-INTEGRATION`;
           return {
             from: { type: "scenario", id: scnId },
-            to: { type: "test", id: testId },
+            to: { type: "test", id: testId, identity: testSpecIdentity },
             relation: "covered_by"
           };
         });
@@ -262,11 +285,14 @@ This slice implements the core functionality using a service-oriented architectu
         if (existingScenarios.length > 0) {
           // Extract service name from slice ID: "ordering-payment-v1" -> "payment-service"
           const serviceName = sliceId.split('-').slice(1, -1).join('-') + '-service';
+          const srcPath = file === 'src' ? 'src/' : file;
+          const codeFilePath = `${srcPath}${serviceName}.ts`;
+          const codeIdentity = fromPath(codeFilePath, stageId);
           return existingScenarios.map(scnId => {
             const testId = `TEST-${scnId.replace('SCN-', '')}-INTEGRATION`;
             return {
               from: { type: "test", id: testId },
-              to: { type: "code", id: `src/${serviceName}` },
+              to: { type: "code", id: `src/${serviceName}`, identity: codeIdentity },
               relation: "implemented_by"
             };
           });
@@ -301,7 +327,13 @@ This slice implements the core functionality using a service-oriented architectu
         {
           type: "agent_execution",
           content: JSON.stringify({ provider: "mock", sliceId }),
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          identity: {
+            sliceId,
+            stageId,
+            artifactType: "evidence",
+            artifactId: "mock-execution"
+          }
         }
       ]
     };

@@ -109,6 +109,9 @@ export function fromPath(path: string, stageId: string): ArtifactIdentity {
   } else if (fileName === "behaviors.feature") {
     artifactType = "behavior";
     artifactId = "behaviors";
+  } else if (fileName === "test-spec.yaml") {
+    artifactType = "test";
+    artifactId = "test-spec";
   } else if (fileName.endsWith(".test.ts") || fileName.endsWith(".spec.ts")) {
     artifactType = "test";
     artifactId = fileName.replace(/\.(test|spec)\.ts$/, "");
