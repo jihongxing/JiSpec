@@ -37,11 +37,11 @@ export class MockProvider implements AIProvider {
     // Generate scenario IDs from scenario titles
     for (const line of scenarioLines) {
       const title = line.replace('Scenario: ', '').trim();
-      // Convert "Successful checkout creates an order" -> "SCN-ORDER-CHECKOUT-VALID"
-      // Convert "Checkout rejects an unavailable item" -> "SCN-ORDER-CHECKOUT-OUT-OF-STOCK"
+      // Convert "Successful checkout creates an order" -> "SCN-ORDERING-PAYMENT-V1-VALID"
+      // Convert "Checkout rejects an unavailable item" -> "SCN-ORDERING-PAYMENT-V1-INVALID"
       const scnId = title.toLowerCase().includes('reject') || title.toLowerCase().includes('unavailable')
-        ? 'SCN-ORDER-CHECKOUT-OUT-OF-STOCK'
-        : 'SCN-ORDER-CHECKOUT-VALID';
+        ? `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-INVALID`
+        : `SCN-${sliceId.toUpperCase().replace(/-/g, '-')}-VALID`;
       if (!existingScenarios.includes(scnId)) {
         existingScenarios.push(scnId);
       }
@@ -149,12 +149,14 @@ This slice implements the core functionality using a service-oriented architectu
       if (baseName === "test-spec.yaml") {
         // Generate valid test-spec.yaml
         const tests = existingScenarios.map((scnId, idx) => {
+          // Extract service name from slice ID: "ordering-payment-v1" -> "payment-service"
+          const serviceName = sliceId.split('-').slice(1, -1).join('-') + '-service';
           const testId = `TEST-${scnId.replace('SCN-', '')}-INTEGRATION`;
           return {
             id: testId,
             type: "integration",
             verifies: [scnId],
-            target: "checkout-service"
+            target: serviceName
           };
         });
 
@@ -181,9 +183,14 @@ This slice implements the core functionality using a service-oriented architectu
     if (directories.some(d => d === 'src' || d.endsWith('src/'))) {
       const srcDir = directories.find(d => d === 'src' || d.endsWith('src/'));
       const srcPath = srcDir === 'src' ? 'src/' : srcDir;
+
+      // Extract service name from slice ID: "ordering-payment-v1" -> "payment-service"
+      const serviceName = sliceId.split('-').slice(1, -1).join('-') + '-service';
+      const className = serviceName.split('-').slice(0, -1).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('') + 'Service';
+
       writes.push({
-        path: `${srcPath}checkout-service.ts`,
-        content: `// Mock implementation for ${sliceId}\n\nexport class CheckoutService {\n  async checkout(cartId: string): Promise<string> {\n    // Mock implementation\n    return "order-123";\n  }\n}\n`,
+        path: `${srcPath}${serviceName}.ts`,
+        content: `// Mock implementation for ${sliceId}\n\nexport class ${className} {\n  async process(input: string): Promise<string> {\n    // Mock implementation\n    return "result-123";\n  }\n}\n`,
         encoding: "utf-8"
       });
     }

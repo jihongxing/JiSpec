@@ -1,18 +1,18 @@
 links:
   - from:
-      type: requirement
-      id: REQ-ORDERING-PAYMENT-V1-001
-    to:
-      type: design
-      id: design.md
-    relation: designed_by
-  - from:
       type: slice
       id: ordering-payment-v1
     to:
       type: requirement
       id: REQ-ORDERING-PAYMENT-V1-001
     relation: requires
+  - from:
+      type: requirement
+      id: REQ-ORDERING-PAYMENT-V1-001
+    to:
+      type: design
+      id: design.md
+    relation: designed_by
   - from:
       type: requirement
       id: REQ-ORDERING-PAYMENT-V1-001
@@ -29,14 +29,14 @@ links:
     relation: verified_by
   - from:
       type: scenario
-      id: SCN-ORDER-CHECKOUT-VALID
+      id: SCN-ORDERING-PAYMENT-V1-VALID
     to:
       type: test
-      id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+      id: TEST-ORDERING-PAYMENT-V1-VALID-INTEGRATION
     relation: covered_by
   - from:
       type: test
-      id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+      id: TEST-ORDERING-PAYMENT-V1-VALID-INTEGRATION
     to:
       type: code
       id: src/checkout-service

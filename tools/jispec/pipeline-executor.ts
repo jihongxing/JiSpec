@@ -168,6 +168,23 @@ export class PipelineExecutor {
 
       // 2. 确定起始阶段
       const startStage = options.from || this.getNextStage(currentState);
+
+      // 末态检查：如果已完成，直接返回成功
+      if (!startStage) {
+        console.log(`[Pipeline] Slice is in terminal state (${currentState}). Nothing to execute.\n`);
+        const now = new Date().toISOString();
+        return {
+          success: true,
+          sliceId,
+          startTime: now,
+          endTime: now,
+          duration: 0,
+          stagesCompleted: 0,
+          stagesTotal: 0,
+          stageResults: [],
+        };
+      }
+
       console.log(`[Pipeline] Starting from stage: ${startStage}\n`);
 
       // 3. 获取阶段序列
@@ -357,8 +374,13 @@ export class PipelineExecutor {
       "behavior-defined": "test",
       "test-defined": "implementing",
       "implementing": "verifying",
-      "verifying": "accepted",
     };
+
+    // 末态：verifying/accepted/released 无需执行
+    const terminalStates = ["verifying", "accepted", "released"];
+    if (terminalStates.includes(currentState)) {
+      return ""; // 返回空字符串表示无需执行
+    }
 
     return stateToStage[currentState] || "requirements";
   }

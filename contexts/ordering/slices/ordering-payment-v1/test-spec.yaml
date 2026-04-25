@@ -1,6 +1,6 @@
 tests:
-  - id: TEST-ORDER-CHECKOUT-VALID-INTEGRATION
+  - id: TEST-ORDERING-PAYMENT-V1-VALID-INTEGRATION
     type: integration
     verifies:
-      - SCN-ORDER-CHECKOUT-VALID
-    target: checkout-service
+      - SCN-ORDERING-PAYMENT-V1-VALID
+    target: payment-service
