@@ -310,16 +310,12 @@ export class StageRunner {
       if (write.identity) {
         const resolvedPath = this.storage.resolveArtifactPath(write.identity);
 
-        // Normalize both paths for comparison
-        const normalizedWritePath = path.normalize(write.path);
-        const normalizedResolvedPath = path.normalize(resolvedPath);
+        // Normalize both paths for strict comparison
+        const normalizedWritePath = path.resolve(write.path);
+        const normalizedResolvedPath = path.resolve(resolvedPath);
 
-        // Check if resolved path ends with write path (handles absolute vs relative)
-        const pathsMatch = normalizedResolvedPath.endsWith(normalizedWritePath) ||
-                          normalizedWritePath.endsWith(path.basename(normalizedResolvedPath));
-
-        // Validate identity-path consistency
-        if (!pathsMatch) {
+        // Strict path equality check
+        if (normalizedWritePath !== normalizedResolvedPath) {
           throw new Error(
             `Identity-path mismatch for write: identity=${encodeIdentity(write.identity)}, ` +
             `path=${write.path}, resolved=${resolvedPath}`
@@ -365,8 +361,31 @@ export class StageRunner {
         }
 
         if (op.type === "directory") {
-          console.log(`[Apply] Creating directory ${op.path}...`);
-          this.storage.mkdirSync(op.path);
+          let targetPath = op.path;
+
+          // If identity is provided, use identity-first resolution
+          if (op.identity) {
+            const resolvedPath = this.storage.resolveArtifactPath(op.identity);
+
+            // For directories, we need to validate the path matches
+            const normalizedOpPath = path.resolve(op.path);
+            const normalizedResolvedPath = path.resolve(resolvedPath);
+
+            // Strict path equality check
+            if (normalizedOpPath !== normalizedResolvedPath) {
+              throw new Error(
+                `Identity-path mismatch for directory: identity=${encodeIdentity(op.identity)}, ` +
+                `path=${op.path}, resolved=${resolvedPath}`
+              );
+            }
+
+            targetPath = resolvedPath;
+            console.log(`[Apply] Creating directory ${op.path} (identity: ${encodeIdentity(op.identity)})...`);
+          } else {
+            console.log(`[Apply] Creating directory ${op.path}...`);
+          }
+
+          this.storage.mkdirSync(targetPath);
           console.log(`[Apply] ✓ Directory created`);
         } else if (op.type === "file") {
           console.log(`[Apply] Writing ${op.path}...`);
