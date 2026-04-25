@@ -790,10 +790,10 @@ export class StageRunner {
       maxTokens: projectConfig.ai?.options?.maxTokens,
     };
 
-    // Contract 版本（暂时使用简单哈希）
+    // Contract 版本（使用模板路径确保可移植性）
     const contractHash = computeContentHash(JSON.stringify({
-      inputs: contract.inputs.map(i => i.path),
-      outputs: contract.outputs.map(o => o.path),
+      inputs: contract.inputs.map(i => i.template),
+      outputs: contract.outputs.map(o => o.template),
       gates: contract.gates,
     }));
 

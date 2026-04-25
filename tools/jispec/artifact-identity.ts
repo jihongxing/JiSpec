@@ -142,6 +142,10 @@ export function fromPath(path: string, stageId: string): ArtifactIdentity {
   } else if (fileName === "trace.yaml") {
     artifactType = "trace";
     artifactId = "trace";
+  } else if (fileName.endsWith(".txt")) {
+    // Text files are treated as generic artifacts with their base name
+    artifactType = "code";
+    artifactId = fileName.replace(/\.txt$/, "");
   } else {
     // Default: use file name as-is
     artifactType = "code";

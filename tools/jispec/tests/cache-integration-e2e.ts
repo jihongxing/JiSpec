@@ -44,14 +44,14 @@ ai:
 `
   );
 
-  // contexts/test-context/slices/test-slice/slice.yaml
-  const sliceDir = path.join(tmpDir, 'contexts', 'test-context', 'slices', 'test-slice');
+  // contexts/test/slices/test-slice-v1/slice.yaml
+  const sliceDir = path.join(tmpDir, 'contexts', 'test', 'slices', 'test-slice-v1');
   fs.mkdirSync(sliceDir, { recursive: true });
 
   fs.writeFileSync(
     path.join(sliceDir, 'slice.yaml'),
     `id: test-slice-v1
-context_id: test-context
+context_id: test
 service_id: test-service
 lifecycle:
   state: proposed
@@ -108,8 +108,8 @@ await test('First execution causes cache miss and calls agent', async () => {
       name: 'Requirements',
       agent: 'domain' as const,
       lifecycle_state: 'framed',
-      inputs: { files: ['contexts/test-context/slices/test-slice/input.txt'], allowRead: true, allowWrite: false },
-      outputs: { files: ['contexts/test-context/slices/test-slice/output.txt'], schemas: [], traceRequired: false },
+      inputs: { files: ['{slice}/input.txt'], allowRead: true, allowWrite: false },
+      outputs: { files: ['{slice}/output.txt'], schemas: [], traceRequired: false },
       gates: { required: [], optional: [], autoUpdate: false },
     };
 
@@ -151,8 +151,8 @@ await test('Second execution with same inputs causes cache hit and skips agent',
       name: 'Requirements',
       agent: 'domain' as const,
       lifecycle_state: 'framed',
-      inputs: { files: ['contexts/test-context/slices/test-slice/input.txt'], allowRead: true, allowWrite: false },
-      outputs: { files: ['contexts/test-context/slices/test-slice/output.txt'], schemas: [], traceRequired: false },
+      inputs: { files: ['{slice}/input.txt'], allowRead: true, allowWrite: false },
+      outputs: { files: ['{slice}/output.txt'], schemas: [], traceRequired: false },
       gates: { required: [], optional: [], autoUpdate: false },
     };
 
@@ -172,7 +172,20 @@ await test('Second execution with same inputs causes cache hit and skips agent',
       throw new Error(`Expected 1 agent call after first run, got ${callCountAfterFirst}`);
     }
 
-    // Second run with same inputs
+    // Restore slice to initial state (proposed) to match cache key
+    const sliceDir = path.join(tmpDir, 'contexts', 'test', 'slices', 'test-slice-v1');
+    fs.writeFileSync(
+      path.join(sliceDir, 'slice.yaml'),
+      `id: test-slice-v1
+context_id: test
+service_id: test-service
+lifecycle:
+  state: proposed
+gates: {}
+`
+    );
+
+    // Second run with same inputs and restored state
     const result2 = await runner.run({
       sliceId: 'test-slice-v1',
       stageConfig,
@@ -211,8 +224,8 @@ await test('Input content change causes cache miss and re-executes agent', async
       name: 'Requirements',
       agent: 'domain' as const,
       lifecycle_state: 'framed',
-      inputs: { files: ['contexts/test-context/slices/test-slice/input.txt'], allowRead: true, allowWrite: false },
-      outputs: { files: ['contexts/test-context/slices/test-slice/output.txt'], schemas: [], traceRequired: false },
+      inputs: { files: ['{slice}/input.txt'], allowRead: true, allowWrite: false },
+      outputs: { files: ['{slice}/output.txt'], schemas: [], traceRequired: false },
       gates: { required: [], optional: [], autoUpdate: false },
     };
 
@@ -232,15 +245,33 @@ await test('Input content change causes cache miss and re-executes agent', async
       throw new Error(`Expected 1 agent call after first run, got ${callCountAfterFirst}`);
     }
 
+    // Restore slice to initial state (proposed) to match cache key
+    const sliceDir = path.join(tmpDir, 'contexts', 'test', 'slices', 'test-slice-v1');
+    fs.writeFileSync(
+      path.join(sliceDir, 'slice.yaml'),
+      `id: test-slice-v1
+context_id: test
+service_id: test-service
+lifecycle:
+  state: proposed
+gates: {}
+`
+    );
+
     // Modify input file
-    const sliceDir = path.join(tmpDir, 'contexts', 'test-context', 'slices', 'test-slice');
     fs.writeFileSync(
       path.join(sliceDir, 'input.txt'),
       'Changed input content'
     );
 
+    // Reset call counter for second run
+    fs.writeFileSync(counterFile, '0', 'utf-8');
+
+    // Create new runner to pick up changed input
+    const runner2 = await StageRunner.create(tmpDir);
+
     // Second run with changed input
-    const result2 = await runner.run({
+    const result2 = await runner2.run({
       sliceId: 'test-slice-v1',
       stageConfig,
       skipValidation: true,
@@ -251,8 +282,8 @@ await test('Input content change causes cache miss and re-executes agent', async
     }
 
     const callCountAfterSecond = readCallCounter(counterFile);
-    if (callCountAfterSecond !== 2) {
-      throw new Error(`Expected 2 agent calls after input change, got ${callCountAfterSecond}`);
+    if (callCountAfterSecond !== 1) {
+      throw new Error(`Expected 1 agent call after input change (cache miss), got ${callCountAfterSecond}`);
     }
   } finally {
     delete process.env.JISPEC_TEST_CALL_COUNTER_FILE;
@@ -278,8 +309,8 @@ await test('Provider or model change causes cache miss and re-executes agent', a
       name: 'Requirements',
       agent: 'domain' as const,
       lifecycle_state: 'framed',
-      inputs: { files: ['contexts/test-context/slices/test-slice/input.txt'], allowRead: true, allowWrite: false },
-      outputs: { files: ['contexts/test-context/slices/test-slice/output.txt'], schemas: [], traceRequired: false },
+      inputs: { files: ['{slice}/input.txt'], allowRead: true, allowWrite: false },
+      outputs: { files: ['{slice}/output.txt'], schemas: [], traceRequired: false },
       gates: { required: [], optional: [], autoUpdate: false },
     };
 
@@ -299,6 +330,19 @@ await test('Provider or model change causes cache miss and re-executes agent', a
       throw new Error(`Expected 1 agent call after first run, got ${callCountAfterFirst}`);
     }
 
+    // Restore slice to initial state (proposed) to match cache key
+    const sliceDir = path.join(tmpDir, 'contexts', 'test', 'slices', 'test-slice-v1');
+    fs.writeFileSync(
+      path.join(sliceDir, 'slice.yaml'),
+      `id: test-slice-v1
+context_id: test
+service_id: test-service
+lifecycle:
+  state: proposed
+gates: {}
+`
+    );
+
     // Change provider/model in project.yaml
     const jiprojectDir = path.join(tmpDir, 'jiproject');
     fs.writeFileSync(
@@ -308,13 +352,19 @@ name: Test Project
 version: 0.1.0
 delivery_model: bounded-context-slice
 ai:
-  provider: anthropic
-  model: claude-opus-4
+  provider: mock
+  model: different-model
 `
     );
 
+    // Reset call counter for second run
+    fs.writeFileSync(counterFile, '0', 'utf-8');
+
+    // Create new runner to pick up changed provider config
+    const runner2 = await StageRunner.create(tmpDir);
+
     // Second run with changed provider/model
-    const result2 = await runner.run({
+    const result2 = await runner2.run({
       sliceId: 'test-slice-v1',
       stageConfig,
       skipValidation: true,
@@ -325,8 +375,8 @@ ai:
     }
 
     const callCountAfterSecond = readCallCounter(counterFile);
-    if (callCountAfterSecond !== 2) {
-      throw new Error(`Expected 2 agent calls after provider change, got ${callCountAfterSecond}`);
+    if (callCountAfterSecond !== 1) {
+      throw new Error(`Expected 1 agent call after provider change (cache miss), got ${callCountAfterSecond}`);
     }
   } finally {
     delete process.env.JISPEC_TEST_CALL_COUNTER_FILE;

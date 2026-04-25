@@ -70,7 +70,12 @@ export class OutputValidator {
 
     // 1. 验证文件存在
     for (const filePath of this.constraint.files) {
-      if (!fs.existsSync(filePath)) {
+      // Resolve relative paths against root
+      const absolutePath = path.isAbsolute(filePath)
+        ? filePath
+        : path.join(this.root, filePath);
+
+      if (!fs.existsSync(absolutePath)) {
         errors.push({
           file: filePath,
           type: "missing",
