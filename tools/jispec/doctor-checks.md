@@ -23,13 +23,13 @@
   - `readFileSync()` returns correct types
   - `writeFileSync()` creates files
   - `mkdirSync()` creates directories
-  - No direct `fs` imports in core files (stage-runner, pipeline-executor, cache-manager)
+  - No direct `fs` imports in core files (stage-runner, pipeline-executor, cache-manager, failure-handler)
 
 ### 3. Artifact Identity System
 - **Check**: Identity encoding/decoding roundtrip
 - **Validates**:
-  - `toPath()` produces Windows-safe filenames (no colons, slashes)
-  - `fromPath()` correctly parses identities
+  - `encodeIdentity()` produces Windows-safe filenames (no colons, slashes)
+  - `decodeIdentity()` correctly parses encoded identities
   - `identityEquals()` semantic comparison works
   - Context-level vs slice-level scoping
 
@@ -80,7 +80,7 @@
   - FilesystemStorage contract compliant
 
 ✓ Artifact Identity System
-  - toPath/fromPath roundtrip: OK
+  - encodeIdentity/decodeIdentity roundtrip: OK
   - Windows-safe naming: OK
 
 ✓ Cache Key Computation
