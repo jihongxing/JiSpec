@@ -16,7 +16,7 @@ interface TestSuite {
 }
 
 const TEST_SUITES: TestSuite[] = [
-  { name: 'Rollback Regression', file: 'rollback-regression.ts', expectedTests: 3 },
+  { name: 'Rollback Regression', file: 'rollback-regression.ts', expectedTests: 5 },
   { name: 'Semantic Validation', file: 'semantic-validation-negative.ts', expectedTests: 5 },
   { name: 'Stage Runner Identity', file: 'stage-runner-identity-apply.ts', expectedTests: 8 },
   { name: 'Cache Key Spec', file: 'cache-key-spec.ts', expectedTests: 10 },

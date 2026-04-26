@@ -1,126 +1,174 @@
 /**
  * Rollback Regression Test
  *
- * Simplified test that verifies rollback transaction persistence works correctly.
- * This test focuses on the core rollback mechanism without requiring full pipeline execution.
+ * Tests real failure-triggered rollback chain: StageRunner → FailureHandler → rollback from snapshot.
+ * Verifies that when a stage fails, the system correctly restores previous state from snapshots.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import yaml from "js-yaml";
+import { StageRunner } from "../stage-runner.js";
 
-async function testSnapshotCreation() {
+async function testRealRollbackChain() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-rollback-"));
 
   try {
-    // Create snapshot directory
-    const snapshotDir = path.join(tmpDir, ".jispec", "snapshots", "test-slice-v1");
-    fs.mkdirSync(snapshotDir, { recursive: true });
+    // Create complete fixture matching cache-integration-e2e structure
+    const jiprojectDir = path.join(tmpDir, "jiproject");
+    fs.mkdirSync(jiprojectDir, { recursive: true });
 
-    // Create a test snapshot
-    const snapshot = {
-      timestamp: new Date().toISOString(),
+    fs.writeFileSync(
+      path.join(jiprojectDir, "project.yaml"),
+      `id: test-project
+name: Test Project
+version: 0.1.0
+delivery_model: bounded-context-slice
+ai:
+  provider: mock
+  model: test-model
+`
+    );
+
+    const sliceDir = path.join(tmpDir, "contexts", "test", "slices", "test-slice-v1");
+    fs.mkdirSync(sliceDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(sliceDir, "slice.yaml"),
+      `id: test-slice-v1
+context_id: test
+service_id: test-service
+lifecycle:
+  state: proposed
+gates: {}
+`
+    );
+
+    fs.writeFileSync(path.join(sliceDir, "requirements.md"), "# Requirements\nTest requirements", "utf-8");
+
+    const agentsDir = path.join(tmpDir, "agents");
+    fs.mkdirSync(agentsDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(agentsDir, "agents.yaml"),
+      `agents:
+  - id: domain-agent
+    role: Domain expert
+    inputs: []
+    outputs: []
+`
+    );
+
+    // Initialize real components
+    const runner = StageRunner.create(tmpDir);
+
+    // Step 1: Run design stage successfully
+    await runner.run({
       sliceId: "test-slice-v1",
-      lifecycle: { state: "requirements-defined" },
-      gates: { requirements_ready: true },
-      files: ["requirements.md"],
-    };
-
-    const snapshotFile = path.join(snapshotDir, `snapshot-${Date.now()}.json`);
-    fs.writeFileSync(snapshotFile, JSON.stringify(snapshot, null, 2), "utf-8");
+      stageConfig: {
+        id: "design",
+        name: "Design",
+        agent: "domain" as const,
+        lifecycle_state: "design-defined",
+        inputs: { files: ["{slice}/requirements.md"], allowRead: true, allowWrite: false },
+        outputs: { files: ["{slice}/design.md"], schemas: [], traceRequired: false },
+        gates: { required: [], optional: [], autoUpdate: false },
+      },
+      skipValidation: true,
+      failureConfig: {
+        retry: { enabled: false, max_attempts: 1, backoff: "fixed", initial_delay: 0, max_delay: 0 },
+        rollback: { enabled: true, strategy: "full" },
+        human_intervention: { enabled: false, prompt_on_failure: false, allow_skip: false, allow_manual_fix: false },
+      },
+    });
 
     // Verify snapshot was created
-    if (!fs.existsSync(snapshotFile)) {
-      throw new Error("Snapshot file was not created");
-    }
-
-    // Verify snapshot can be read back
-    const readSnapshot = JSON.parse(fs.readFileSync(snapshotFile, "utf-8"));
-    if (readSnapshot.sliceId !== "test-slice-v1") {
-      throw new Error("Snapshot data mismatch");
-    }
-
-    console.log("✓ Test 1: Snapshot creation and persistence works");
-
-    // Cleanup
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    return true;
-  } catch (error) {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    throw error;
-  }
-}
-
-async function testSnapshotRetrieval() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-rollback-"));
-
-  try {
-    // Create multiple snapshots
     const snapshotDir = path.join(tmpDir, ".jispec", "snapshots", "test-slice-v1");
-    fs.mkdirSync(snapshotDir, { recursive: true });
-
-    const snapshots = [
-      { timestamp: "2024-01-01T10:00:00Z", state: "requirements-defined" },
-      { timestamp: "2024-01-01T11:00:00Z", state: "design-defined" },
-      { timestamp: "2024-01-01T12:00:00Z", state: "behavior-defined" },
-    ];
-
-    for (const snap of snapshots) {
-      const snapshotFile = path.join(snapshotDir, `snapshot-${snap.timestamp.replace(/:/g, "-")}.json`);
-      fs.writeFileSync(snapshotFile, JSON.stringify(snap, null, 2), "utf-8");
+    const snapshots = fs.existsSync(snapshotDir) ? fs.readdirSync(snapshotDir) : [];
+    if (snapshots.length === 0) {
+      throw new Error("No snapshot created after design stage");
     }
 
-    // Retrieve all snapshots
-    const files = fs.readdirSync(snapshotDir).filter(f => f.startsWith("snapshot-"));
-
-    if (files.length !== 3) {
-      throw new Error(`Expected 3 snapshots, found ${files.length}`);
+    // Verify lifecycle advanced
+    const sliceAfterDesign = yaml.load(fs.readFileSync(path.join(sliceDir, "slice.yaml"), "utf-8")) as any;
+    if (sliceAfterDesign.lifecycle.state !== "design-defined") {
+      throw new Error(`Expected design-defined, got ${sliceAfterDesign.lifecycle.state}`);
     }
 
-    // Verify latest snapshot
-    const latestFile = files.sort().reverse()[0];
-    const latest = JSON.parse(fs.readFileSync(path.join(snapshotDir, latestFile), "utf-8"));
-
-    if (latest.state !== "behavior-defined") {
-      throw new Error("Latest snapshot is not the most recent one");
+    // Verify design.md was created
+    if (!fs.existsSync(path.join(sliceDir, "design.md"))) {
+      throw new Error("design.md was not created");
     }
 
-    console.log("✓ Test 2: Snapshot retrieval and ordering works");
+    console.log("✓ Test 1: Design stage succeeds and creates snapshot");
+
+    // Step 2: Inject failure for behavior stage
+    process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE = "behavior";
+
+    let behaviorFailed = false;
+    try {
+      const result = await runner.run({
+        sliceId: "test-slice-v1",
+        stageConfig: {
+          id: "behavior",
+          name: "Behavior",
+          agent: "domain" as const,
+          lifecycle_state: "behavior-defined",
+          inputs: { files: ["{slice}/design.md"], allowRead: true, allowWrite: false },
+          outputs: { files: ["{slice}/behavior.md"], schemas: [], traceRequired: false },
+          gates: { required: [], optional: [], autoUpdate: false },
+        },
+        skipValidation: true,
+        failureConfig: {
+          retry: { enabled: false, max_attempts: 1, backoff: "fixed", initial_delay: 0, max_delay: 0 },
+          rollback: { enabled: true, strategy: "full" },
+          human_intervention: { enabled: false, prompt_on_failure: false, allow_skip: false, allow_manual_fix: false },
+        },
+      });
+
+      // Check if result indicates failure
+      if (!result.success) {
+        behaviorFailed = true;
+      }
+    } catch (error: any) {
+      behaviorFailed = true;
+    }
+
+    if (!behaviorFailed) {
+      throw new Error("Behavior stage should have failed but didn't");
+    }
+
+    console.log("✓ Test 2: Behavior stage fails as expected");
+
+    // Step 3: Verify rollback occurred
+    const sliceAfterRollback = yaml.load(fs.readFileSync(path.join(sliceDir, "slice.yaml"), "utf-8")) as any;
+    if (sliceAfterRollback.lifecycle.state !== "design-defined") {
+      throw new Error(`Rollback failed: expected design-defined, got ${sliceAfterRollback.lifecycle.state}`);
+    }
+
+    console.log("✓ Test 3: Lifecycle rolled back to design-defined");
+
+    // Step 4: Verify previous stage files are preserved
+    if (!fs.existsSync(path.join(sliceDir, "design.md"))) {
+      throw new Error("design.md was lost after rollback");
+    }
+
+    console.log("✓ Test 4: Previous stage files preserved after rollback");
+
+    // Step 5: Verify behavior.md was not created
+    if (fs.existsSync(path.join(sliceDir, "behavior.md"))) {
+      throw new Error("behavior.md should not exist after rollback");
+    }
+
+    console.log("✓ Test 5: Failed stage artifacts cleaned up");
 
     // Cleanup
+    delete process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     return true;
   } catch (error) {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    throw error;
-  }
-}
-
-async function testWindowsSafeFilenames() {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-rollback-"));
-
-  try {
-    const snapshotDir = path.join(tmpDir, ".jispec", "snapshots", "test-slice-v1");
-    fs.mkdirSync(snapshotDir, { recursive: true });
-
-    // Test that timestamps with colons are sanitized
-    const timestamp = "2024-01-01T12:34:56Z";
-    const safeTimestamp = timestamp.replace(/:/g, "-");
-    const snapshotFile = path.join(snapshotDir, `snapshot-${safeTimestamp}.json`);
-
-    fs.writeFileSync(snapshotFile, JSON.stringify({ timestamp }, null, 2), "utf-8");
-
-    if (!fs.existsSync(snapshotFile)) {
-      throw new Error("Snapshot with sanitized filename was not created");
-    }
-
-    console.log("✓ Test 3: Windows-safe snapshot filenames work");
-
-    // Cleanup
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-    return true;
-  } catch (error) {
+    delete process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE;
     fs.rmSync(tmpDir, { recursive: true, force: true });
     throw error;
   }
@@ -133,27 +181,11 @@ async function main() {
   let failed = 0;
 
   try {
-    await testSnapshotCreation();
-    passed++;
+    await testRealRollbackChain();
+    passed += 5; // This test has 5 internal assertions
   } catch (error: any) {
-    console.error("✗ Test 1 failed:", error.message);
-    failed++;
-  }
-
-  try {
-    await testSnapshotRetrieval();
-    passed++;
-  } catch (error: any) {
-    console.error("✗ Test 2 failed:", error.message);
-    failed++;
-  }
-
-  try {
-    await testWindowsSafeFilenames();
-    passed++;
-  } catch (error: any) {
-    console.error("✗ Test 3 failed:", error.message);
-    failed++;
+    console.error("✗ Rollback chain test failed:", error.message);
+    failed += 5;
   }
 
   console.log(`\n${passed}/${passed + failed} tests passed`);

@@ -439,7 +439,8 @@ export class PipelineExecutor {
     const content = storage.readFileSync(configPath, "utf-8") as string;
     const config = yaml.load(content) as any;
 
-    return config.pipeline as PipelineConfig;
+    // Support both formats: { pipeline: { ... } } and flat { name, stages, ... }
+    return (config.pipeline || config) as PipelineConfig;
   }
 
   /**
