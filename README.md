@@ -478,22 +478,20 @@ The `ordering` context includes one complete example slice:
 
 ## Key docs
 
-- V1 completion checklist:
-  [docs/v1-mainline-completion-checklist.md](docs/v1-mainline-completion-checklist.md)
 - V1 mainline stable contract:
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
+- V1 completion checklist:
+  [docs/v1-mainline-completion-checklist.md](docs/v1-mainline-completion-checklist.md)
 - Remaining-task roadmap:
   [docs/remaining-tasks-roadmap.md](docs/remaining-tasks-roadmap.md)
-- Business plan and engineering direction:
+- Business plan and product direction:
   [docs/spec-driven-ai-pipeline-business-plan.md](docs/spec-driven-ai-pipeline-business-plan.md)
-- Long-term runtime roadmap:
+- Change / implement mode decision:
+  [docs/change-implement-mode-decision.md](docs/change-implement-mode-decision.md)
+- Long-term roadmap:
   [docs/long-term-roadmap-v0.1.md](docs/long-term-roadmap-v0.1.md)
+- V1 minimal sample repo:
+  [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
 - Real legacy repo takeover demos:
   [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
   [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
-- Earlier implementation summaries:
-  [docs/phase-1-summary.md](docs/phase-1-summary.md)
-  [docs/phase-2-summary.md](docs/phase-2-summary.md)
-  [docs/phase-3-summary.md](docs/phase-3-summary.md)
-- V1 minimal sample repo:
-  [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
