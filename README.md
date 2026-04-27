@@ -1,5 +1,7 @@
 # JiSpec
 
+English | [中文](./README.zh-CN.md)
+
 JiSpec is building a `contract-driven AI delivery gate` for small AI-native engineering teams.
 
 The product surface is converging on:

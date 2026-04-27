@@ -1,0 +1,508 @@
+# JiSpec
+
+中文 | [English](./README.md)
+
+JiSpec 正在为小型 AI 原生工程团队构建一个 `contract-driven AI delivery gate`。
+
+当前产品面正在收敛到：
+
+- `JiSpec-CLI`
+  本地优先的契约验证与开发者工作流命令面
+- `JiSpec-Console`
+  团队级 policy、audit、waiver 与 contract drift 控制平面
+
+当前仓库已经包含较深的协议层与流水线引擎能力。代码库仍然暴露 legacy `slice/context` 命令面，但主要产品方向已经收敛为：
+
+`bootstrap discover -> bootstrap draft -> adopt -> verify -> change -> implement`
+
+## V1 发布状态
+
+基于当前主线、黄金路径 E2E 验收以及两次真实旧仓库接管演示，这个仓库现在已经处于可以发布为一个**范围明确的 V1 主线版本**的状态。
+
+这意味着：
+
+- V1 主线已经真实存在并且可运行：
+  `bootstrap discover -> bootstrap draft -> adopt -> verify -> ci:verify -> change -> implement`
+- 产品已经在真实仓库上证明了 V1 的 `Aha Moment`：
+  它可以足够快地生成第一批契约草稿，让人类做认领和重锚，而不是从零手写整套规范
+- `verify` 已经能理解历史债务、延后 spec debt 和当前 blocking issue 之间的区别
+
+这**不**意味着：
+
+- 这还不是一个“高质量全自动契约生成”的发布版本
+- 在复杂仓库里，`domain/api` 在 adopt 阶段仍然需要人类引导纠偏
+- 在高噪声仓库里，`feature` 草稿目前明显弱于 `domain` 和 `api`
+
+这版产品的正确发布口径应该是：
+
+- `V1 mainline`
+- `human-guided legacy repo takeover`
+- `local-first contract verification and CI gate`
+
+而不应该是：
+
+- `fully automatic legacy repo understanding`
+- `LLM-first blocking gate`
+- `mature console/distributed/collaboration product suite`
+
+真实世界证据：
+
+- [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
+- [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
+
+## 人类可读产物缺口
+
+两次 `C8` 还暴露出了另一个重要事实：
+
+主线现在已经能够写出正确的产物，但其中很多产物仍然是 `machine-first`，而不是 `human-first`。
+
+当前 JiSpec 已经能够落盘：
+
+- 完整的 bootstrap evidence graph
+- draft session manifest
+- adopted contract
+- spec-debt record
+- verify JSON report
+- CI summary
+
+这在技术上很有价值，但还不等于：
+
+- 一份人类几分钟内就能扫完的 takeover brief
+- 一份能清楚解释 accept / edit / defer 的 adopt 决策摘要
+- 一份能把历史债务、延后债务和新增 blocking drift 分开的 verify digest
+
+换句话说：
+
+- 引擎已经把数据落下来了
+- 但操作者仍然需要阅读太多原始产物
+
+所以产品的下一步不只是“提升 discovery 质量”，还包括“提升 explanation 质量”。
+
+理想的输出模型应该变成：
+
+1. `Machine-readable artifacts`
+
+- 完整 JSON 和 contract 文件仍然是系统记录真相源
+- 自动化、CI 和未来的 policy engine 继续依赖它们
+
+2. `Human-readable companion artifacts`
+
+- 主线的每一个关键步骤，都应默认额外产出一层紧凑解释材料
+- 例如：
+  `bootstrap-summary.md`
+  `adopt-summary.md`
+  `verify-summary.md`
+  `takeover-brief.md`
+
+终局规则是：
+
+`raw evidence for machines, distilled decision packets for humans`
+
+## Discover 优化路线
+
+两次 `C8` 暴露出的最大缺口，不是“主线缺失”，而是“在复杂仓库里 discover 的证据质量仍然太吵”。
+
+当前的失败模式：
+
+- vendor 依赖、审计镜像、缓存目录和生成资产会主导 evidence ranking
+- `discover` 目前更擅长生成广义 inventory，而不是尖锐的 takeover summary
+- 当 evidence graph 被非产品文件数量主导时，`draft` 质量就会明显下降
+
+优化路线应该分三步走：
+
+1. `Noise suppression`
+
+- 默认更激进地忽略 vendored、mirrored、cache、build、audit、dependency-bundle 目录
+- 像 `artifacts/dpi-audit/.pydeps/**` 这类目录，除非用户显式 opt in，否则应视作默认排除候选
+- 将 `inventory evidence` 与 `adoption-ranked evidence` 分层，避免大仓库淹没首次 takeover 回路
+
+2. `Boundary-first ranking`
+
+- 让 `README`、governance doc、protocol doc、manifest、controller、service entrypoint、schema truth source 的权重高于单纯文件数量
+- bounded context 的推断应更多依赖组件结构，而不是 route/file 频率
+- 明确区分 `explicit endpoint`、`module surface inference` 与 `weak candidate`，避免 draft 把所有证据压成同一类
+
+3. `Takeover-grade summaries`
+
+- 在完整 evidence graph 之外，再生成一个紧凑的“首次接管关键证据”产物
+- 默认 draft 输入应限制在最高价值的 contract signal 上，除非用户显式要求 exhaustive mode
+- 默认输出一份人类可读的 takeover brief，而不是只落一个大体量 machine-oriented evidence graph
+- 让 `discover` 回答：
+  “这次最值得接管的 3-10 个资产是什么？”
+  而不只是：
+  “扫描器看到了哪些文件？”
+
+简短总结：
+
+`discover` 应该从 `repository inventory` 演进为 `takeover-oriented evidence prioritization`。
+
+## 产品终局演化
+
+这个产品应该被理解为一条有意分阶段推进的演化路线，而不是一堆彼此孤立的能力表面。
+
+### Stage 1: 当前 V1 主线
+
+目标：
+
+- 帮助一个小型 AI 原生团队接管旧仓库，而不是要求他们先从零手写第一批契约
+
+工作闭环：
+
+- `discover -> draft -> adopt -> verify -> ci:verify`
+- 日常小改动继续走 `change -> implement -> verify`
+
+人类角色：
+
+- 审阅并重锚第一批契约
+- 决定哪些进入 adopted contract，哪些进入 spec debt
+
+### Stage 2: 更强的 takeover intelligence
+
+目标：
+
+- 减少 adopt 阶段需要的人类修复量
+
+预期改进：
+
+- 更高信号的 discover ranking
+- 更强的 deterministic draft 质量
+- 更好的 behavior-contract synthesis
+- 更少的噪声资产进入首次 adoption bundle
+- 人类可读摘要成为一等输出，而不是事后解释文档
+
+人类角色：
+
+- 仍然在环，但编辑工作会更轻、更聚焦
+
+### Stage 3: Execute-default mainline
+
+目标：
+
+- 让 `change / implement` 变成一条真正连贯的工作流，而不是两个相邻命令
+
+预期产品形态：
+
+- `prompt` 与 `execute` 都保留
+- `execute` 成为默认产品姿态
+- bootstrap 状态、verify gate、lane 决策和 implementation handoff 全部说同一套稳定契约语言
+
+人类角色：
+
+- 选择模式、确认边界，而不是手工串起每一步
+
+### Stage 4: 终局产品
+
+目标：
+
+- 让 JiSpec 成为 AI 原生团队在真实仓库上长期运行的 contract control layer
+
+终局特征：
+
+- 首次 takeover 足够快
+- 持续变更始终运行在 contract-aware lane 内
+- verify 是确定性的、CI 原生的
+- policy、waiver、facts 构成稳定治理面
+- console 与 collaboration 建立在已经被证明的主线之上，而不是用来弥补薄弱核心
+
+关键排序规则是：
+
+`core mainline first, surrounding surfaces second`
+
+这也是为什么在 takeover-and-gate 核心更强之前，`console / distributed / collaboration / direct LLM blocking path` 会被有意延后。
+
+## 当前可用能力
+
+当前构建中的一等 CLI 入口是：
+
+```bash
+npm run verify
+npm run jispec-cli -- change "Update checkout copy"
+npm run jispec-cli -- implement
+npm run jispec-cli -- implement --fast
+npm run jispec-cli -- bootstrap discover
+npm run jispec-cli -- bootstrap draft
+npm run jispec-cli -- adopt --interactive
+npm run jispec-cli -- verify --json
+npm run jispec-cli -- policy migrate
+npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor phase5
+npm run ci:verify
+```
+
+它们分别做什么：
+
+- `bootstrap discover`
+  扫描仓库，并将结构化 evidence graph 写入 `.spec/facts/bootstrap/`。
+- `bootstrap draft`
+  将 bootstrap evidence 转成 session 级别的 draft bundle，写入 `.spec/sessions/`。
+- `adopt --interactive`
+  允许你将这批草稿 accept、reject、edit 或 defer 到 `.spec/contracts/` 与 `.spec/spec-debt/`。
+- `change`
+  记录 change intent，对当前 diff 做 fast/strict lane 分类，并写出 active change session。
+- `implement`
+  针对当前 active change session 运行本地预算受控的实现循环，然后回到 verify。
+- `verify`
+  运行当前确定性的仓库验证路径；若存在 `.spec/policy.yaml` 会自动加载，并输出新的四态 verdict 面。
+- `policy migrate`
+  在 `.spec/policy.yaml` 脚手架化或标准化最小 YAML policy 面，并把它固定到当前 facts contract 版本。
+- `doctor v1`
+  运行 V1 主线 readiness 检查，不让延后的 distributed/collaboration surface 直接阻断结果。
+- `doctor phase5`
+  运行更广义的 Phase 5.1 readiness 与当前 runtime/pipeline 栈健康诊断。
+- `ci:verify`
+  为 CI 使用包装仓库 verify 路径。
+
+## Quickstart
+
+安装依赖：
+
+```bash
+npm install
+```
+
+查看当前 CLI 命令面：
+
+```bash
+npm run jispec-cli -- --help
+```
+
+本地运行仓库验证：
+
+```bash
+npm run verify
+```
+
+记录一个 change，让 JiSpec 判定 lane：
+
+```bash
+npm run jispec-cli -- change "Add order refund validation"
+```
+
+以 prompt 模式记录 change，并手工查看下一步提示：
+
+```bash
+npm run jispec-cli -- change "Add order refund validation" --mode prompt
+```
+
+以 execute 模式记录 change，让 JiSpec 在 lane 允许时继续进入 implement/verify：
+
+```bash
+npm run jispec-cli -- change "Add order refund validation" --mode execute
+```
+
+运行严格本地实现循环：
+
+```bash
+npm run jispec-cli -- implement
+```
+
+对停留在 fast lane 的 session 运行快速实现循环：
+
+```bash
+npm run jispec-cli -- implement --fast
+```
+
+查看机器可读的 verify contract：
+
+```bash
+npm run jispec-cli -- verify --json
+```
+
+生成或刷新最小 policy 文件：
+
+```bash
+npm run jispec-cli -- policy migrate
+```
+
+运行 bootstrap discovery：
+
+```bash
+npm run jispec-cli -- bootstrap discover
+```
+
+生成第一批 contract bundle：
+
+```bash
+npm run jispec-cli -- bootstrap draft
+```
+
+认领这批 draft：
+
+```bash
+npm run jispec-cli -- adopt --interactive
+```
+
+运行 CI wrapper：
+
+```bash
+npm run ci:verify
+```
+
+重放最小 legacy-repo takeover 样板：
+
+```bash
+node --import tsx ./scripts/run-v1-sample-repo.ts --workspace ./.tmp/v1-sample-run
+```
+
+运行健康检查：
+
+```bash
+npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor phase5
+```
+
+运行更广义的 Phase 5.1 健康检查：
+
+```bash
+npm run jispec-cli -- doctor phase5
+```
+
+## Verify verdict
+
+`verify` 现在返回稳定的四态 verdict contract：
+
+- `PASS`
+- `FAIL_BLOCKING`
+- `WARN_ADVISORY`
+- `ERROR_NONBLOCKING`
+
+对于本地脚本与未来的 CI/automation 消费者来说，`npm run jispec-cli -- verify --json` 是稳定的机器可读入口。`npm run ci:verify` 仍然是当前团队工作流使用的 wrapper。
+
+当 `.spec/policy.yaml` 存在时，`verify` 会自动加载它。可以使用 `npm run jispec-cli -- verify --facts-out .spec/facts/latest-canonical.json` 来快照 policy evaluation 实际读取的 canonical facts 面。
+
+## 兼容命令面
+
+当前仓库仍然暴露一个可工作的 legacy protocol/runtime 层，围绕：
+
+- `slice`
+- `context`
+- `trace`
+- `artifact`
+- `agent`
+- `pipeline`
+- `template`
+- `dependency`
+
+示例：
+
+```bash
+npm run jispec-cli -- slice check ordering-checkout-v1
+npm run jispec-cli -- slice plan ordering-checkout-v1 --force
+npm run jispec-cli -- context board ordering
+npm run jispec-cli -- trace show ordering-checkout-v1
+npm run jispec-cli -- artifact derive-all ordering-checkout-v1 --force
+npm run jispec-cli -- pipeline run ordering-checkout-v1
+```
+
+这套命令面仍然有价值，也依然支持，但应被理解为较新的 `JiSpec-CLI` 产品方向之下的兼容/runtime 层，而不是首要用户入口。
+
+为旧工作流保留的兼容别名：
+
+```bash
+npm run jispec -- <command>
+npm run validate:repo
+npm run check:jispec
+npm run jispec-cli -- validate
+```
+
+## Change And Implement
+
+`change` 与 `implement` 现在已经进入一等 CLI 工作流。
+
+当前现实状态：
+
+- `change` 目前仍主要是一个 prompt-style 步骤：它持久化 lane/session 状态，并返回 next-step hint
+- `implement` 已经具备 post-implement verify handoff
+- 目标终局是一个用户可选 `prompt / execute` 的主线，其中 `execute` 会在编排路径稳定后成为默认形态
+
+当前模式拆分：
+
+- `change --mode prompt`
+  写出 change session，完成 lane 分类，并返回 `nextCommands`，但不会执行下游步骤。
+- `change --mode execute`
+  尝试自动继续主线：
+  fast lane 会运行 `implement --fast -> verify --fast`，而 strict lane 会进入 `implement -> verify`，或者在仍有 bootstrap draft 未处理时停在显式 `adopt` 边界。
+
+- `change`
+  将当前 diff 分类与 lane 决策持久化到 `.jispec/change-session.json`。
+- `implement`
+  使用 active change session，遵守 strict/fast lane，并在结束后自动运行 post-implement verify。
+- `implement --fast`
+  只是本地开发加速器。若 verify 发现 contract-critical change，它仍然可能自动升级回 strict。
+
+## 命令语言
+
+对外，JiSpec 正在向以下用户语言收敛：
+
+- `Contract`
+- `Asset`
+- `Policy`
+- `Fact`
+- `Lane`
+- `Waiver`
+
+对内，你仍然会看到一些 legacy 实现术语，例如：
+
+- `slice`
+- `stage`
+
+这在当前阶段是预期内的；仓库正处于从旧 runtime 词汇向新产品命令面受控迁移的过程中。
+
+## Scripts
+
+主脚本：
+
+```bash
+npm run jispec-cli -- <command>
+npm run verify
+npm run ci:verify
+```
+
+兼容脚本：
+
+```bash
+npm run jispec -- <command>
+npm run validate:repo
+npm run check:jispec
+```
+
+## 当前仓库状态
+
+当前仓库包含：
+
+- `jiproject/` 中的 project-level protocol file
+- `contexts/` 中的 bounded context asset
+- `templates/` 中的可复用模板
+- `schemas/` 中的 machine-checkable schema
+- `docs/input/` 中的样例输入文档
+- `agents/` 中的 AI 与 pipeline 定义
+- `tools/jispec/` 中的 CLI/runtime 实现
+
+当前样例建模了一个 commerce 项目，包含两个 bounded context：
+
+- `catalog`
+- `ordering`
+
+其中 `ordering` context 包含一个完整样例 slice：
+
+- `ordering-checkout-v1`
+
+## 核心文档
+
+- V1 主线稳定契约：
+  [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
+- V1 完成清单：
+  [docs/v1-mainline-completion-checklist.md](docs/v1-mainline-completion-checklist.md)
+- 剩余任务路线图：
+  [docs/remaining-tasks-roadmap.md](docs/remaining-tasks-roadmap.md)
+- 商业计划与产品方向：
+  [docs/spec-driven-ai-pipeline-business-plan.md](docs/spec-driven-ai-pipeline-business-plan.md)
+- Change / implement 模式决策：
+  [docs/change-implement-mode-decision.md](docs/change-implement-mode-decision.md)
+- 长期路线图：
+  [docs/long-term-roadmap-v0.1.md](docs/long-term-roadmap-v0.1.md)
+- V1 最小样板仓库：
+  [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
+- 真实旧仓库接管演示：
+  [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
+  [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
