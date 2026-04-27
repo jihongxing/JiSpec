@@ -20,7 +20,7 @@ export type ResourceType = "document" | "slice" | "stage" | "project";
  */
 const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   owner: ["read", "write", "delete", "admin", "lock", "unlock"],
-  admin: ["read", "write", "delete", "lock", "unlock"],
+  admin: ["read", "write", "delete", "admin", "lock", "unlock"],
   editor: ["read", "write", "lock", "unlock"],
   viewer: ["read"],
   guest: ["read"],

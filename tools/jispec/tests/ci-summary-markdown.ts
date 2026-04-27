@@ -1,0 +1,138 @@
+import assert from "node:assert/strict";
+import { renderCiSummaryMarkdown, renderCiSummaryText } from "../ci/ci-summary";
+import type { VerifyReport } from "../ci/verify-report";
+
+async function main(): Promise<void> {
+  console.log("=== CI Summary Markdown Tests ===\n");
+
+  let passed = 0;
+  let failed = 0;
+
+  try {
+    const report: VerifyReport = {
+      version: 1,
+      generatedAt: "2026-04-27T00:00:00.000Z",
+      verdict: "FAIL_BLOCKING",
+      ok: false,
+      counts: {
+        total: 6,
+        blocking: 2,
+        advisory: 3,
+        nonblockingError: 1,
+      },
+      issues: [
+        {
+          code: "SLICE_ARTIFACT_MISSING",
+          severity: "blocking",
+          path: "contexts/a/evidence.md",
+          message: "Evidence is missing.",
+          fingerprint: "a".repeat(64),
+        },
+        {
+          code: "DOMAIN_CONTRACT_SECTION_MISSING",
+          severity: "blocking",
+          path: ".spec/contracts/domain.yaml",
+          message: "Domain contract is missing a required section.",
+          fingerprint: "b".repeat(64),
+        },
+        {
+          code: "BOOTSTRAP_SPEC_DEBT_PENDING",
+          severity: "advisory",
+          path: ".spec/spec-debt/bootstrap/api.json",
+          message: "Bootstrap draft deferred this contract as spec debt.",
+          fingerprint: "c".repeat(64),
+        },
+        {
+          code: "HISTORICAL_SCHEMA_MISSING",
+          severity: "advisory",
+          path: "schemas/order.json",
+          message: "[HISTORICAL_DEBT] Schema coverage is still incomplete.",
+          fingerprint: "d".repeat(64),
+        },
+        {
+          code: "POLICY_CORE_CONTRACTS",
+          severity: "advisory",
+          message: "Core contracts still require review.",
+          ruleId: "core-contracts",
+          fingerprint: "e".repeat(64),
+        },
+        {
+          code: "VERIFY_RUNTIME_ERROR",
+          severity: "nonblocking_error",
+          path: "policy-engine",
+          message: "Verify source 'policy-engine' failed: timeout.",
+          fingerprint: "f".repeat(64),
+        },
+      ],
+      factsContractVersion: "1.0",
+      matchedPolicyRules: ["bootstrap-debt-observe", "core-contracts"],
+      modes: {
+        baselineApplied: true,
+        baselineMatchCount: 2,
+        waiversApplied: 1,
+        observeMode: true,
+        observeBlockingDowngraded: 2,
+        originalVerdict: "FAIL_BLOCKING",
+      },
+      context: {
+        repoRoot: "D:/codeSpace/JiSpec",
+        repoSlug: "acme/warehouse",
+        provider: "github",
+        pullRequestNumber: "42",
+        branch: "main",
+        commitSha: "abc123",
+      },
+      links: {
+        consoleUrl: "https://console.example.test/repos/acme%2Fwarehouse/verify",
+        waiverUrl: "https://console.example.test/repos/acme%2Fwarehouse/waivers/new?pr=42",
+      },
+    };
+
+    const markdown = renderCiSummaryMarkdown(report);
+    assert.ok(markdown.startsWith("# ❌ JiSpec Verify: FAIL_BLOCKING"));
+    assert.ok(markdown.includes("| Blocking | 2 |"));
+    assert.ok(markdown.includes("Facts contract: `1.0`"));
+    assert.ok(markdown.includes("Matched policy rules: `bootstrap-debt-observe`, `core-contracts`"));
+    assert.ok(markdown.includes("- Baseline applied (2 matched)"));
+    assert.ok(markdown.includes("- Observe mode enabled (2 blocking downgraded)"));
+    assert.ok(markdown.includes("- 1 waiver(s) matched"));
+    assert.ok(markdown.includes("## Links"));
+    assert.ok(markdown.includes("[Create Waiver](https://console.example.test/repos/acme%2Fwarehouse/waivers/new?pr=42)"));
+    console.log("✓ Test 1: markdown summary includes contract, policy, mitigation, and deep-link sections");
+    passed++;
+
+    const topIssueLines = markdown
+      .split("\n")
+      .filter((line) => line.startsWith("- ") && line.includes("**"));
+    assert.equal(topIssueLines.length, 5);
+    assert.ok(markdown.includes("_... and 1 more issue(s)_"));
+    assert.ok(topIssueLines[0].includes("SLICE_ARTIFACT_MISSING"));
+    assert.ok(topIssueLines[1].includes("DOMAIN_CONTRACT_SECTION_MISSING"));
+    console.log("✓ Test 2: markdown summary caps issue highlights and keeps blocking issues first");
+    passed++;
+
+    const text = renderCiSummaryText(report);
+    assert.ok(text.includes("JiSpec Verify: FAIL_BLOCKING"));
+    assert.ok(text.includes("Facts Contract: 1.0"));
+    assert.ok(text.includes("Matched Policy Rules: bootstrap-debt-observe, core-contracts"));
+    assert.ok(text.includes("Next Action: Fix 2 blocking issue(s) before merging."));
+    assert.ok(text.includes("Console: https://console.example.test/repos/acme%2Fwarehouse/verify"));
+    console.log("✓ Test 3: text summary stays concise while preserving operator-facing guidance");
+    passed++;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ Test ${passed + failed + 1} failed: ${message}`);
+    failed++;
+  }
+
+  console.log(`\n${passed}/${passed + failed} tests passed`);
+
+  if (failed > 0) {
+    process.exit(1);
+  }
+}
+
+void main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

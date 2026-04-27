@@ -2,12 +2,15 @@
   "name": "jispec",
   "version": "0.1.0",
   "private": true,
-  "description": "JiSpec protocol CLI and validators",
+  "description": "JiSpec-CLI: contract-driven AI delivery gate and protocol validators",
   "scripts": {
     "build": "npx tsc --noEmit",
     "typecheck": "npx tsc --noEmit",
+    "jispec-cli": "node --import tsx ./tools/jispec/cli.ts",
     "jispec": "node --import tsx ./tools/jispec/cli.ts",
-    "validate:repo": "node --import tsx ./tools/jispec/cli.ts validate",
+    "verify": "node --import tsx ./tools/jispec/cli.ts verify",
+    "validate:repo": "node --import tsx ./tools/jispec/cli.ts verify",
+    "ci:verify": "node --import tsx ./scripts/check-jispec.ts",
     "check:jispec": "node --import tsx ./scripts/check-jispec.ts"
   },
   "dependencies": {

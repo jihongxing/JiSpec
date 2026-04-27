@@ -9,6 +9,10 @@ export class MockProvider implements AIProvider {
   name = "mock";
 
   async generate(prompt: string, options?: GenerateOptions): Promise<string> {
+    if (prompt.includes("## Bootstrap Draft Mode")) {
+      return JSON.stringify(buildBootstrapDraftBundle(prompt), null, 2);
+    }
+
     // Test hook: increment call counter if specified
     if (process.env.JISPEC_TEST_CALL_COUNTER_FILE) {
       const fs = await import('node:fs');
@@ -359,4 +363,257 @@ This slice implements the core functionality using a service-oriented architectu
   async isAvailable(): Promise<boolean> {
     return true;
   }
+}
+
+function buildBootstrapDraftBundle(prompt: string): {
+  artifacts: Array<{
+    kind: "domain" | "api" | "feature";
+    relativePath: string;
+    content: string;
+    sourceFiles: string[];
+    confidenceScore: number;
+    provenanceNote: string;
+  }>;
+  warnings: string[];
+} {
+  const summaryMatch = prompt.match(/## Ranked Evidence Summary\s+```json\s*([\s\S]+?)\s*```/);
+  const rankedSummary = summaryMatch ? safeParseJSON(summaryMatch[1]) : undefined;
+  const graphMatch = prompt.match(/## Evidence Graph JSON\s+```json\s*([\s\S]+?)\s*```/);
+  const graph = graphMatch ? safeParseJSON(graphMatch[1]) : undefined;
+  const rankedRouteSignals = Array.isArray(rankedSummary?.routeSignalsUsed) ? rankedSummary.routeSignalsUsed.slice(0, 4) : [];
+  const rankedSchemaSignals = Array.isArray(rankedSummary?.schemaSignalsUsed) ? rankedSummary.schemaSignalsUsed.slice(0, 4) : [];
+  const rankedTestSignals = Array.isArray(rankedSummary?.testSignalsUsed) ? rankedSummary.testSignalsUsed.slice(0, 4) : [];
+  const topDocumentPaths = Array.isArray(rankedSummary?.documentSignalsUsed)
+    ? rankedSummary.documentSignalsUsed.map((entry: string) => entry.split(" (")[0]).slice(0, 3)
+    : [];
+  const topManifestPaths = Array.isArray(rankedSummary?.manifestSignalsUsed)
+    ? rankedSummary.manifestSignalsUsed.map((entry: string) => entry.split(" (")[0]).slice(0, 2)
+    : [];
+  const rankedRouteKeys = rankedRouteSignals
+    .map((entry: string) => {
+      const match = entry.match(/^([A-Z]+)\s+(\S+)/);
+      return match ? `${match[1]} ${match[2]}` : undefined;
+    })
+    .filter((value: string | undefined): value is string => typeof value === "string");
+  const rankedSchemaPaths = rankedSchemaSignals
+    .map((entry: string) => entry.split(" (")[0])
+    .filter((value: string) => value.length > 0);
+  const rankedTestPaths = rankedTestSignals
+    .map((entry: string) => entry.split(" (")[0])
+    .filter((value: string) => value.length > 0);
+  const rankedRoutes = Array.isArray(graph?.routes)
+    ? [...graph.routes].sort((left: any, right: any) => {
+        const leftKey = `${String(left?.method || "UNKNOWN").toUpperCase()} ${String(left?.path || "/")}`;
+        const rightKey = `${String(right?.method || "UNKNOWN").toUpperCase()} ${String(right?.path || "/")}`;
+        const leftIndex = rankedRouteKeys.indexOf(leftKey);
+        const rightIndex = rankedRouteKeys.indexOf(rightKey);
+        if (leftIndex !== -1 || rightIndex !== -1) {
+          if (leftIndex === -1) return 1;
+          if (rightIndex === -1) return -1;
+          return leftIndex - rightIndex;
+        }
+        return leftKey.localeCompare(rightKey);
+      })
+    : [];
+  const rankedSchemas = Array.isArray(graph?.schemas)
+    ? [...graph.schemas].sort((left: any, right: any) => {
+        const leftIndex = rankedSchemaPaths.indexOf(String(left?.path || ""));
+        const rightIndex = rankedSchemaPaths.indexOf(String(right?.path || ""));
+        if (leftIndex !== -1 || rightIndex !== -1) {
+          if (leftIndex === -1) return 1;
+          if (rightIndex === -1) return -1;
+          return leftIndex - rightIndex;
+        }
+        return String(left?.path || "").localeCompare(String(right?.path || ""));
+      })
+    : [];
+  const rankedTests = Array.isArray(graph?.tests)
+    ? [...graph.tests].sort((left: any, right: any) => {
+        const leftIndex = rankedTestPaths.indexOf(String(left?.path || ""));
+        const rightIndex = rankedTestPaths.indexOf(String(right?.path || ""));
+        if (leftIndex !== -1 || rightIndex !== -1) {
+          if (leftIndex === -1) return 1;
+          if (rightIndex === -1) return -1;
+          return leftIndex - rightIndex;
+        }
+        return String(left?.path || "").localeCompare(String(right?.path || ""));
+      })
+    : [];
+  const sourceFiles = uniqueSorted([
+    ...rankedRoutes.slice(0, 4).flatMap((route: any) => route.sourceFiles || []),
+    ...rankedSchemas.slice(0, 4).map((schema: any) => schema.path),
+    ...rankedTests.slice(0, 4).map((test: any) => test.path),
+    ...topDocumentPaths,
+    ...topManifestPaths,
+  ]);
+  const primaryContexts = Array.isArray(rankedSummary?.primaryContextNames) ? rankedSummary.primaryContextNames : [];
+  const evidenceStrength = typeof rankedSummary?.evidenceStrength === "string" ? rankedSummary.evidenceStrength : "moderate";
+
+  const domainContent = `metadata:
+  source_files:
+${sourceFiles.slice(0, 8).map((file) => `    - ${file}`).join("\n") || "    - bootstrap/evidence-graph.json"}
+  confidence_score: 0.81
+  provenance_note: Mock provider synthesized this domain draft from ranked bootstrap evidence.
+domain:
+  repo_root: ${graph?.repoRoot || "unknown"}
+  evidence_strength: ${evidenceStrength}
+  primary_contexts:
+${primaryContexts.map((name: string) => `    - ${name}`).join("\n") || "    - bootstrap"}
+  route_count: ${Array.isArray(graph?.routes) ? graph.routes.length : 0}
+  schema_count: ${Array.isArray(graph?.schemas) ? graph.schemas.length : 0}
+  test_count: ${Array.isArray(graph?.tests) ? graph.tests.length : 0}`;
+
+  const apiEndpoints = rankedRoutes.length > 0
+    ? rankedRoutes.slice(0, 4).map((route: any, index: number) => {
+        const supportingSchemas = rankedSchemas
+          .filter((schema: any) => routeMatchesArtifact(route, schema?.path))
+          .slice(0, 3)
+          .map((schema: any) => ({
+            path: schema.path,
+            format: schema.format || "unknown",
+          }));
+        return ({
+        id: `${String(route.method || "unknown").toLowerCase()}-route-${index + 1}`,
+        method: route.method || "UNKNOWN",
+        path: route.path || `/draft-${index + 1}`,
+        source_files: uniqueSorted(route.sourceFiles || []),
+        confidence_score: 0.79,
+        provenance_note: "Mock provider synthesized this endpoint from bootstrap route evidence.",
+        supporting_schemas: supportingSchemas,
+      });
+      })
+    : [
+        {
+          id: "unknown-route-1",
+          method: "UNKNOWN",
+          path: "/",
+          source_files: sourceFiles.slice(0, 3),
+          confidence_score: 0.45,
+          provenance_note: "Mock provider synthesized a placeholder endpoint because no route evidence was found.",
+        },
+      ];
+
+  const featureLines = [
+    `# source_files: ${JSON.stringify(sourceFiles.slice(0, 6))}`,
+    "# confidence_score: 0.76",
+    "# provenance_note: Mock provider synthesized this feature draft from ranked bootstrap evidence.",
+    "Feature: Bootstrap drafted behaviors",
+    "",
+  ];
+
+  const featureRoutes = rankedRoutes.slice(0, 2);
+  if (featureRoutes.length > 0) {
+    for (const route of featureRoutes) {
+      const routeKey = `${String(route.method || "UNKNOWN").toUpperCase()} ${String(route.path || "/")}`;
+      const relatedTest = rankedTests.find((test: any) => routeMatchesArtifact(route, test?.path));
+      featureLines.push(`  Scenario: ${routeKey} remains reviewable during adoption`);
+      featureLines.push(`    Given bootstrap discover prioritized ${routeKey}`);
+      featureLines.push(`    And supporting source files include "${(route.sourceFiles || [])[0] || sourceFiles[0] || "unknown"}"`);
+      if (relatedTest?.path) {
+        featureLines.push(`    And test evidence includes "${relatedTest.path}"`);
+      }
+      featureLines.push("    When the first contract bundle is reviewed");
+      featureLines.push("    Then the drafted behavior stays available for adoption");
+      featureLines.push("");
+    }
+  } else {
+    featureLines.push("  Scenario: Drafted contract remains visible to adopters");
+    featureLines.push(
+      `    Given bootstrap discover prioritized ${rankedRouteSignals[0] || `${Array.isArray(graph?.routes) ? graph.routes.length : 0} route candidates`}`,
+    );
+    featureLines.push(`    And supporting source files include "${sourceFiles[0] || "unknown"}"`);
+    featureLines.push("    When the first contract bundle is reviewed");
+    featureLines.push("    Then the drafted behavior stays available for adoption");
+  }
+
+  return {
+    artifacts: [
+      {
+        kind: "domain",
+        relativePath: "drafts/domain.yaml",
+        content: domainContent,
+        sourceFiles: sourceFiles.slice(0, 10),
+        confidenceScore: 0.81,
+        provenanceNote: "Mock provider synthesized this domain draft from bootstrap evidence.",
+      },
+      {
+        kind: "api",
+        relativePath: "drafts/api_spec.json",
+        content: JSON.stringify(
+          {
+            metadata: {
+              source_files: sourceFiles.slice(0, 10),
+              confidence_score: 0.79,
+              provenance_note: "Mock provider synthesized this API draft from bootstrap evidence.",
+            },
+            api_spec: {
+              title: "Mock Bootstrap API Draft",
+              version: "0.1.0-draft",
+              endpoints: apiEndpoints,
+            },
+          },
+          null,
+          2,
+        ),
+        sourceFiles: sourceFiles.slice(0, 10),
+        confidenceScore: 0.79,
+        provenanceNote: "Mock provider synthesized this API draft from bootstrap evidence.",
+      },
+      {
+        kind: "feature",
+        relativePath: "drafts/behaviors.feature",
+        content: featureLines.join("\n"),
+        sourceFiles: sourceFiles.slice(0, 10),
+        confidenceScore: 0.76,
+        provenanceNote: "Mock provider synthesized this feature draft from bootstrap evidence.",
+      },
+    ],
+    warnings: [],
+  };
+}
+
+function safeParseJSON(input: string): any {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return undefined;
+  }
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+}
+
+function routeMatchesArtifact(route: any, candidatePath: string | undefined): boolean {
+  if (!candidatePath || typeof route?.path !== "string") {
+    return false;
+  }
+
+  const keywords = extractRouteKeywords(route.path);
+  const lowerCandidatePath = candidatePath.toLowerCase();
+  return keywords.some((keyword) => lowerCandidatePath.includes(keyword));
+}
+
+function extractRouteKeywords(routePath: string): string[] {
+  const words = routePath
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((part) => part.length >= 3 && !["api", "v1", "v2", "health", "status"].includes(part));
+  const expanded = new Set<string>();
+
+  for (const word of words) {
+    expanded.add(word);
+    if (word.endsWith("ies") && word.length > 4) {
+      expanded.add(`${word.slice(0, -3)}y`);
+    }
+    if (word.endsWith("s") && word.length > 4) {
+      expanded.add(word.slice(0, -1));
+    } else if (word.length > 3) {
+      expanded.add(`${word}s`);
+    }
+  }
+
+  return [...expanded];
 }

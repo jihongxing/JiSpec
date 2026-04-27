@@ -18,6 +18,45 @@ interface TestSuite {
 const TEST_SUITES: TestSuite[] = [
   { name: 'Rollback Regression', file: 'rollback-regression.ts', expectedTests: 5 },
   { name: 'Semantic Validation', file: 'semantic-validation-negative.ts', expectedTests: 5 },
+  { name: 'CLI Help Surface', file: 'cli-help-surface.ts', expectedTests: 3 },
+  { name: 'CLI Legacy Surface Hint', file: 'cli-legacy-surface-hint.ts', expectedTests: 2 },
+  { name: 'Verify Runner Pass', file: 'verify-runner-pass.ts', expectedTests: 3 },
+  { name: 'Verify Runner Fail Blocking', file: 'verify-runner-fail-blocking.ts', expectedTests: 3 },
+  { name: 'Verify Runner Warn Advisory', file: 'verify-runner-warn-advisory.ts', expectedTests: 3 },
+  { name: 'Verify Runner Runtime Soft Fail', file: 'verify-runner-runtime-soft-fail.ts', expectedTests: 3 },
+  { name: 'Verify JSON Contract', file: 'verify-json-contract.ts', expectedTests: 2 },
+  { name: 'Facts Contract Roundtrip', file: 'facts-contract-roundtrip.ts', expectedTests: 3 },
+  { name: 'Policy Engine Basic', file: 'policy-engine-basic.ts', expectedTests: 3 },
+  { name: 'Policy Unknown Fact', file: 'policy-unknown-fact.ts', expectedTests: 3 },
+  { name: 'Verify Policy Integration', file: 'verify-policy-integration.ts', expectedTests: 3 },
+  { name: 'Verify Report Contract', file: 'verify-report-contract.ts', expectedTests: 3 },
+  { name: 'Verify Issue Fingerprint Stability', file: 'verify-issue-fingerprint-stability.ts', expectedTests: 2 },
+  { name: 'V1 Mainline Golden Path', file: 'v1-mainline-golden-path.ts', expectedTests: 4 },
+  { name: 'Doctor V1 Readiness', file: 'doctor-v1-readiness.ts', expectedTests: 3 },
+  { name: 'V1 Sample Repo Smoke', file: 'v1-sample-repo-smoke.ts', expectedTests: 3 },
+  { name: 'Bootstrap Discover Smoke', file: 'bootstrap-discover-smoke.ts', expectedTests: 3 },
+  { name: 'Bootstrap Discover Empty Repo', file: 'bootstrap-discover-empty-repo.ts', expectedTests: 2 },
+  { name: 'Bootstrap Discover Signal Filtering', file: 'bootstrap-discover-signal-filtering.ts', expectedTests: 3 },
+  { name: 'Bootstrap Discover Unknown Layout', file: 'bootstrap-discover-unknown-layout.ts', expectedTests: 2 },
+  { name: 'Bootstrap Draft Mock', file: 'bootstrap-draft-mock.ts', expectedTests: 5 },
+  { name: 'Bootstrap Draft Fallback', file: 'bootstrap-draft-fallback.ts', expectedTests: 2 },
+  { name: 'Bootstrap Draft Quality', file: 'bootstrap-draft-quality.ts', expectedTests: 3 },
+  { name: 'Adopt CLI Surface', file: 'adopt-cli-surface.ts', expectedTests: 3 },
+  { name: 'Bootstrap Adopt Atomic', file: 'bootstrap-adopt-atomic.ts', expectedTests: 3 },
+  { name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 3 },
+  { name: 'Bootstrap Spec Debt', file: 'bootstrap-spec-debt.ts', expectedTests: 3 },
+  { name: 'Verify Contract-Aware Core', file: 'verify-contract-aware-core.ts', expectedTests: 3 },
+  { name: 'Verify Bootstrap Takeover', file: 'verify-bootstrap-takeover.ts', expectedTests: 3 },
+  { name: 'Verify Baseline Hardening', file: 'verify-baseline-hardening.ts', expectedTests: 3 },
+  { name: 'Verify Waiver Hardening', file: 'verify-waiver-hardening.ts', expectedTests: 3 },
+  { name: 'Verify Mitigation Stacking', file: 'verify-mitigation-stacking.ts', expectedTests: 2 },
+  { name: 'CI Verify Wrapper', file: 'ci-verify-wrapper.ts', expectedTests: 3 },
+  { name: 'CI Summary Markdown', file: 'ci-summary-markdown.ts', expectedTests: 3 },
+  { name: 'Package Script Surface', file: 'package-script-surface.ts', expectedTests: 3 },
+  { name: 'Change Dual Mode', file: 'change-dual-mode.ts', expectedTests: 3 },
+  { name: 'Change Mainline Hints', file: 'change-mainline-hints.ts', expectedTests: 2 },
+  { name: 'Implement Mainline Lane', file: 'implement-mainline-lane.ts', expectedTests: 3 },
+  { name: 'Implement Handoff Mainline', file: 'implement-handoff-mainline.ts', expectedTests: 1 },
   { name: 'Stage Runner Identity', file: 'stage-runner-identity-apply.ts', expectedTests: 8 },
   { name: 'Cache Key Spec', file: 'cache-key-spec.ts', expectedTests: 10 },
   { name: 'Cache Manifest Spec', file: 'cache-manifest-spec.ts', expectedTests: 10 },
@@ -28,6 +67,20 @@ const TEST_SUITES: TestSuite[] = [
   { name: 'Cache Cross-Slice Context', file: 'cache-cross-slice-context.ts', expectedTests: 1 },
   { name: 'Windows-Safe Naming', file: 'windows-safe-naming.ts', expectedTests: 3 },
   { name: 'Terminal State Rerun', file: 'terminal-state-rerun.ts', expectedTests: 2 },
+  { name: 'Stable Snapshot Gates', file: 'stable-snapshot-gates.ts', expectedTests: 1 },
+  { name: 'Evidence Cleanup', file: 'evidence-cleanup.ts', expectedTests: 2 },
+  { name: 'Distributed Scheduler MVP', file: 'distributed-scheduler-mvp.ts', expectedTests: 5 },
+  { name: 'Distributed Cache MVP', file: 'distributed-cache-mvp.ts', expectedTests: 3 },
+  { name: 'Distributed Cache Invalidation & Warmup', file: 'distributed-cache-invalidation-warmup.ts', expectedTests: 3 },
+  { name: 'Remote Runtime MVP', file: 'remote-runtime-mvp.ts', expectedTests: 3 },
+  { name: 'Resource Management', file: 'resource-management.ts', expectedTests: 3 },
+  { name: 'Fault Recovery', file: 'fault-recovery.ts', expectedTests: 4 },
+  { name: 'Collaboration MVP', file: 'collaboration-mvp.ts', expectedTests: 4 },
+  { name: 'Conflict Resolution MVP', file: 'conflict-resolution-mvp.ts', expectedTests: 4 },
+  { name: 'Collaboration Awareness MVP', file: 'collaboration-awareness-mvp.ts', expectedTests: 3 },
+  { name: 'Collaboration Locking MVP', file: 'collaboration-locking-mvp.ts', expectedTests: 3 },
+  { name: 'Collaboration Notifications MVP', file: 'collaboration-notifications-mvp.ts', expectedTests: 3 },
+  { name: 'Collaboration Analytics MVP', file: 'collaboration-analytics-mvp.ts', expectedTests: 3 },
 ];
 
 interface TestResult {
@@ -134,7 +187,7 @@ async function runTestSuite(suite: TestSuite): Promise<TestResult> {
 }
 
 async function main() {
-  console.log('=== Phase 5.1 Regression Test Matrix ===\n');
+  console.log('=== JiSpec Unified Regression Test Matrix ===\n');
 
   const results: TestResult[] = [];
 

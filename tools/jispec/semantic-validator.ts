@@ -186,30 +186,100 @@ export class SemanticValidator {
   ): SemanticValidationError[] {
     const errors: SemanticValidationError[] = [];
 
-    // Trace link should reference artifacts that belong to current slice
-    if (link.from && typeof link.from === "string") {
-      // Check if 'from' artifact belongs to current slice
-      if (!this.isArtifactInSlice(context, link.from)) {
-        errors.push({
-          type: "trace_link_invalid",
-          message: `Trace link 'from' artifact "${link.from}" does not belong to slice "${context.sliceId}"`,
-          details: { from: link.from, sliceId: context.sliceId }
-        });
-      }
+    if (!link || typeof link !== "object") {
+      errors.push({
+        type: "trace_link_invalid",
+        message: "Trace link must be an object",
+        details: { link }
+      });
+      return errors;
     }
 
-    if (link.to && typeof link.to === "string") {
-      // Check if 'to' artifact belongs to current slice
-      if (!this.isArtifactInSlice(context, link.to)) {
+    if (typeof link.relation !== "string" || !link.relation.trim()) {
+      errors.push({
+        type: "trace_link_invalid",
+        message: "Trace link relation must be a non-empty string",
+        details: { relation: link.relation }
+      });
+    }
+
+    errors.push(...this.validateTraceNode(context, link.from, "from"));
+    errors.push(...this.validateTraceNode(context, link.to, "to"));
+
+    return errors;
+  }
+
+  private validateTraceNode(
+    context: ValidationContext,
+    node: any,
+    side: "from" | "to"
+  ): SemanticValidationError[] {
+    const errors: SemanticValidationError[] = [];
+
+    if (!node || typeof node !== "object") {
+      errors.push({
+        type: "trace_link_invalid",
+        message: `Trace link '${side}' must be an object with type and id`,
+        details: { side, node }
+      });
+      return errors;
+    }
+
+    if (typeof node.type !== "string" || !node.type.trim()) {
+      errors.push({
+        type: "trace_link_invalid",
+        message: `Trace link '${side}.type' must be a non-empty string`,
+        details: { side, type: node.type }
+      });
+    }
+
+    if (typeof node.id !== "string" || !node.id.trim()) {
+      errors.push({
+        type: "trace_link_invalid",
+        message: `Trace link '${side}.id' must be a non-empty string`,
+        details: { side, id: node.id }
+      });
+      return errors;
+    }
+
+    if (!this.isTraceNodeInSlice(context, node.type, node.id)) {
+      errors.push({
+        type: "trace_link_invalid",
+        message: `Trace link '${side}' artifact "${node.id}" does not belong to slice "${context.sliceId}"`,
+        details: { side, type: node.type, id: node.id, sliceId: context.sliceId }
+      });
+    }
+
+    if (node.identity && typeof node.identity === "object") {
+      if (typeof node.identity.sliceId === "string" && node.identity.sliceId !== context.sliceId) {
         errors.push({
           type: "trace_link_invalid",
-          message: `Trace link 'to' artifact "${link.to}" does not belong to slice "${context.sliceId}"`,
-          details: { to: link.to, sliceId: context.sliceId }
+          message: `Trace link '${side}' identity slice "${node.identity.sliceId}" does not match "${context.sliceId}"`,
+          details: { side, identitySliceId: node.identity.sliceId, sliceId: context.sliceId }
         });
       }
     }
 
     return errors;
+  }
+
+  private isTraceNodeInSlice(
+    context: ValidationContext,
+    nodeType: string,
+    nodeId: string
+  ): boolean {
+    const normalizedType = nodeType.toLowerCase();
+
+    // Only some trace node types encode slice ownership in their IDs.
+    if (normalizedType === "slice") {
+      return nodeId === context.sliceId;
+    }
+
+    if (normalizedType === "scenario" || normalizedType === "test" || normalizedType === "code") {
+      return this.isArtifactInSlice(context, nodeId);
+    }
+
+    return true;
   }
 
   /**

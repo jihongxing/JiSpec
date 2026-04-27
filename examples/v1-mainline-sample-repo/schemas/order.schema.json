@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["orderId", "status"],
+  "properties": {
+    "orderId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  }
+}

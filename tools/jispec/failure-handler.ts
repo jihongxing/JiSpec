@@ -2,6 +2,7 @@ import path from "node:path";
 import yaml from "js-yaml";
 import type { FailureHandlingConfig } from "./pipeline-executor";
 import { FilesystemStorage } from "./filesystem-storage";
+import { buildSnapshotName, toPortableTimestamp } from "./portable-naming";
 
 /**
  * 失败上下文
@@ -248,9 +249,10 @@ export class FailureHandler {
     }
 
     // 按快照时间戳排序，取最新的
+    // New format: stageId-YYYYMMDDTHHmmss-NNNms.json
     snapshotFiles.sort((a, b) => {
-      const aMatch = a.match(/^.+-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z)\.json$/);
-      const bMatch = b.match(/^.+-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z)\.json$/);
+      const aMatch = a.match(/^.+-(\d{8}T\d{6}-\d{3}ms)\.json$/);
+      const bMatch = b.match(/^.+-(\d{8}T\d{6}-\d{3}ms)\.json$/);
       const aKey = aMatch ? aMatch[1] : "";
       const bKey = bMatch ? bMatch[1] : "";
       return bKey.localeCompare(aKey);
@@ -260,18 +262,18 @@ export class FailureHandler {
 
     console.log(`[Rollback] Loading snapshot from disk: ${latestSnapshotFile}`);
 
-    // 解析文件名: stageId-timestamp.json
-    const match = latestSnapshotFile.match(/^(.+)-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z)\.json$/);
+    // 解析文件名: stageId-YYYYMMDDTHHmmss-NNNms.json
+    const match = latestSnapshotFile.match(/^(.+)-(\d{8}T\d{6}-\d{3}ms)\.json$/);
     if (!match) {
       console.error(`[Rollback] Invalid snapshot filename: ${latestSnapshotFile}`);
       return;
     }
 
     const stageId = match[1];
-    const safeTimestamp = match[2];
+    const portableTimestamp = match[2];
 
     // 加载 snapshot
-    const latestSnapshot = this.loadSnapshotFromDisk(sliceId, stageId, safeTimestamp);
+    const latestSnapshot = this.loadSnapshotFromDisk(sliceId, stageId, portableTimestamp);
     if (!latestSnapshot) {
       console.error(`[Rollback] Failed to load snapshot from ${latestSnapshotPath}`);
       return;
@@ -300,6 +302,25 @@ export class FailureHandler {
       // 恢复快照中的文件
       for (const [file, content] of latestSnapshot.filesBackup) {
         this.storage.writeFileSync(file, content, "utf-8");
+      }
+    }
+
+    // 3. 清理 evidence 目录中失败阶段的残留文件
+    const evidenceDir = path.join(this.root, ".jispec", "evidence", sliceId);
+    if (this.storage.existsSync(evidenceDir)) {
+      const evidenceFiles = this.storage.listFilesSync(evidenceDir);
+      const snapshotTimestamp = new Date(latestSnapshot.timestamp).getTime();
+
+      for (const file of evidenceFiles) {
+        const evidenceFilePath = path.join(evidenceDir, file);
+        const evidenceMatch = file.match(/^(.+)-(\d+)\.json$/);
+        if (evidenceMatch) {
+          const evidenceTimestamp = parseInt(evidenceMatch[2], 10);
+          if (evidenceTimestamp > snapshotTimestamp) {
+            console.log(`[Rollback] Removing evidence file: ${file}`);
+            await this.storage.removeFile(evidenceFilePath);
+          }
+        }
       }
     }
 
@@ -413,9 +434,10 @@ export class FailureHandler {
     const snapshotDir = path.join(this.root, ".jispec", "snapshots", snapshot.sliceId);
     this.storage.mkdirSync(snapshotDir);
 
-    // Sanitize timestamp for Windows: replace : with -
-    const safeTimestamp = snapshot.timestamp.replace(/:/g, '-');
-    const snapshotFile = path.join(snapshotDir, `${snapshot.stageId}-${safeTimestamp}.json`);
+    // Use portable naming for snapshot file
+    const timestamp = new Date(snapshot.timestamp);
+    const snapshotFileName = buildSnapshotName(snapshot.sliceId, snapshot.stageId, timestamp);
+    const snapshotFile = path.join(snapshotDir, snapshotFileName);
 
     // 将 Map 转换为普通对象以便序列化
     const serializable = {
@@ -434,8 +456,8 @@ export class FailureHandler {
   /**
    * 从磁盘加载快照
    */
-  private loadSnapshotFromDisk(sliceId: string, stageId: string, safeTimestamp: string): RollbackSnapshot | null {
-    const snapshotFile = path.join(this.root, ".jispec", "snapshots", sliceId, `${stageId}-${safeTimestamp}.json`);
+  private loadSnapshotFromDisk(sliceId: string, stageId: string, portableTimestamp: string): RollbackSnapshot | null {
+    const snapshotFile = path.join(this.root, ".jispec", "snapshots", sliceId, `${stageId}-${portableTimestamp}.json`);
 
     if (!this.storage.existsSync(snapshotFile)) {
       return null;

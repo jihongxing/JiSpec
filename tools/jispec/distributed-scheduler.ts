@@ -1,5 +1,5 @@
-import * as EventEmitter from "events";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "crypto";
+import { EventEmitter } from "events";
 
 /**
  * 任务状态
@@ -86,6 +86,10 @@ export interface SchedulingStats {
   workerUtilization: Map<string, number>;
 }
 
+export interface SubmitTaskOptions {
+  maxRetries?: number;
+}
+
 /**
  * 分布式任务调度器 (Master 节点)
  */
@@ -144,10 +148,11 @@ export class DistributedScheduler extends EventEmitter {
     stageId: string,
     payload: any,
     requirements: ResourceRequirements,
-    priority: TaskPriority = "normal"
+    priority: TaskPriority = "normal",
+    options: SubmitTaskOptions = {}
   ): string {
     const task: DistributedTask = {
-      id: uuidv4(),
+      id: randomUUID(),
       sliceId,
       stageId,
       priority,
@@ -155,7 +160,7 @@ export class DistributedScheduler extends EventEmitter {
       payload,
       resourceRequirements: requirements,
       retryCount: 0,
-      maxRetries: 3,
+      maxRetries: options.maxRetries ?? 3,
       createdAt: new Date(),
     };
 
@@ -238,13 +243,16 @@ export class DistributedScheduler extends EventEmitter {
     task.status = "completed";
     task.completedAt = new Date();
     task.result = result;
+    task.error = undefined;
 
     // 更新 Worker 信息
     if (task.workerId) {
       const worker = this.workers.get(task.workerId);
       if (worker) {
+        this.releaseWorkerResources(worker, task);
         worker.runningTasks = worker.runningTasks.filter((id) => id !== taskId);
         worker.totalTasksCompleted++;
+        worker.status = worker.runningTasks.length === 0 ? "idle" : "busy";
       }
     }
 
@@ -265,8 +273,10 @@ export class DistributedScheduler extends EventEmitter {
     if (task.workerId) {
       const worker = this.workers.get(task.workerId);
       if (worker) {
+        this.releaseWorkerResources(worker, task);
         worker.runningTasks = worker.runningTasks.filter((id) => id !== taskId);
         worker.totalTasksFailed++;
+        worker.status = worker.runningTasks.length === 0 ? "idle" : "busy";
       }
     }
 
@@ -274,7 +284,10 @@ export class DistributedScheduler extends EventEmitter {
     if (task.retryCount < task.maxRetries) {
       task.status = "pending";
       task.workerId = undefined;
+      task.assignedAt = undefined;
+      task.startedAt = undefined;
       this.taskQueue.push(task);
+      this.sortTaskQueue();
       this.emit("task:retry", task);
     } else {
       task.status = "failed";
@@ -288,6 +301,15 @@ export class DistributedScheduler extends EventEmitter {
   cancelTask(taskId: string): void {
     const task = this.tasks.get(taskId);
     if (!task) return;
+
+    if (task.workerId) {
+      const worker = this.workers.get(task.workerId);
+      if (worker) {
+        this.releaseWorkerResources(worker, task);
+        worker.runningTasks = worker.runningTasks.filter((id) => id !== taskId);
+        worker.status = worker.runningTasks.length === 0 ? "idle" : "busy";
+      }
+    }
 
     task.status = "cancelled";
 
@@ -439,6 +461,12 @@ export class DistributedScheduler extends EventEmitter {
     this.emit("task:assigned", { task, worker });
   }
 
+  private releaseWorkerResources(worker: WorkerInfo, task: DistributedTask): void {
+    worker.currentLoad.cpu = Math.max(0, worker.currentLoad.cpu - task.resourceRequirements.cpu);
+    worker.currentLoad.memory = Math.max(0, worker.currentLoad.memory - task.resourceRequirements.memory);
+    worker.currentLoad.disk = Math.max(0, worker.currentLoad.disk - task.resourceRequirements.disk);
+  }
+
   /**
    * 检查 Worker 心跳
    */
@@ -485,6 +513,13 @@ export class DistributedScheduler extends EventEmitter {
    */
   getTask(taskId: string): DistributedTask | undefined {
     return this.tasks.get(taskId);
+  }
+
+  /**
+   * 获取所有任务
+   */
+  getAllTasks(): DistributedTask[] {
+    return Array.from(this.tasks.values());
   }
 
   /**
@@ -550,5 +585,12 @@ export class DistributedScheduler extends EventEmitter {
   setStrategy(strategy: SchedulingStrategy): void {
     this.strategy = strategy;
     this.emit("strategy:changed", strategy);
+  }
+
+  /**
+   * 立即执行一次调度循环
+   */
+  scheduleNow(): void {
+    this.scheduleTasks();
   }
 }

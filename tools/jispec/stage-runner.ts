@@ -16,6 +16,7 @@ import { fromPath, identityEquals, encodeIdentity, type ArtifactIdentity } from 
 import { CacheManager } from "./cache-manager.js";
 import { computeCacheKey, computeContentHash, type CacheKeyInputs } from "./cache-key.js";
 import { createManifest, type ArtifactSnapshot } from "./cache-manifest.js";
+import { TransactionManager } from "./transaction-manager.js";
 
 /**
  * 阶段运行选项
@@ -50,11 +51,19 @@ export class StageRunner {
   private root: string;
   private storage: FilesystemStorage;
   private cacheManager: CacheManager;
+  private transactionManager: TransactionManager;
+  private useTransactionManager: boolean;
 
   private constructor(root: string) {
     this.root = root;
     this.storage = new FilesystemStorage(root);
     this.cacheManager = new CacheManager(this.storage, root);
+    this.transactionManager = new TransactionManager(root);
+    this.useTransactionManager = process.env.JISPEC_USE_TRANSACTION_MANAGER === "true";
+
+    if (this.useTransactionManager) {
+      console.log("[StageRunner] TransactionManager enabled (shadow mode)");
+    }
   }
 
   /**
@@ -115,20 +124,45 @@ export class StageRunner {
           if (cachedResult) {
             console.log(`[Cache] ✓ Cache hit! Reusing cached result`);
 
-            // 应用缓存的执行结果
-            await this.applyExecutionResult(sliceId, stageConfig, cachedResult, contract, skipValidation);
-
             let nextSliceState = this.buildNextLifecycleState(sliceId, stageConfig.lifecycle_state);
 
-            // 创建快照
-            if (failureHandler && nextSliceState) {
-              await failureHandler.createSnapshot(sliceId, stageConfig.id, nextSliceState);
-            }
+            // Shadow integration: use TransactionManager if enabled
+            if (this.useTransactionManager) {
+              console.log(`[Transaction] Beginning transaction for cached result...`);
 
-            // 更新生命周期状态
-            if (nextSliceState) {
-              this.writeSlice(sliceId, nextSliceState);
-              console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
+              // Pre-transaction validation
+              await this.validateExecutionResult(sliceId, stageConfig, cachedResult, contract, skipValidation);
+
+              const tx = await this.transactionManager.begin({
+                sliceId,
+                stageId: stageConfig.id,
+                targetLifecycleState: nextSliceState,
+              });
+
+              try {
+                await tx.prepareSnapshot();
+                await tx.apply(cachedResult);
+                await tx.commit();
+                console.log(`[Transaction] ✓ Cached result applied via transaction`);
+              } catch (txError) {
+                console.error(`[Transaction] ✗ Failed to apply cached result, rolling back...`);
+                await tx.rollback();
+                throw txError;
+              }
+            } else {
+              // Legacy path: apply cached result
+              await this.applyExecutionResult(sliceId, stageConfig, cachedResult, contract, skipValidation);
+
+              // Create snapshot
+              if (failureHandler && nextSliceState) {
+                await failureHandler.createSnapshot(sliceId, stageConfig.id, nextSliceState);
+              }
+
+              // Update lifecycle state
+              if (nextSliceState) {
+                this.writeSlice(sliceId, nextSliceState);
+                console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
+              }
             }
 
             return {
@@ -160,11 +194,66 @@ export class StageRunner {
 
         const executionTimeMs = Date.now() - executionStartTime;
 
-        // 4. Apply execution result (writes, gates, traces, evidence)
+        // 4. Apply execution result with optional transaction semantics
         if (!dryRun && agentResult.executionResult) {
-          await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract, skipValidation);
+          const nextSliceState = this.buildNextLifecycleState(sliceId, stageConfig.lifecycle_state);
 
-          // 5. 存储到缓存（使用执行前计算的 keyInputs）
+          // Shadow integration: use TransactionManager if enabled
+          if (this.useTransactionManager) {
+            console.log(`[Transaction] Beginning transaction for ${stageConfig.id}...`);
+
+            // Pre-transaction validation (outside transaction boundary)
+            await this.validateExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract, skipValidation);
+
+            const tx = await this.transactionManager.begin({
+              sliceId,
+              stageId: stageConfig.id,
+              targetLifecycleState: nextSliceState,
+            });
+
+            try {
+              // Phase 1: Prepare snapshot
+              await tx.prepareSnapshot();
+              console.log(`[Transaction] Snapshot prepared`);
+
+              // Phase 2: Apply execution result (tx.apply handles all side effects)
+              await tx.apply(agentResult.executionResult);
+              console.log(`[Transaction] Execution result applied`);
+
+              // Phase 3: Commit (updates lifecycle state)
+              await tx.commit();
+              console.log(`[Transaction] ✓ Transaction committed`);
+
+              // Phase 4: Create post-commit stable snapshot for recovery
+              // Read the actual committed state from disk (includes updated gates from tx.apply)
+              if (failureHandler) {
+                const committedSliceState = this.readSlice(sliceId);
+                await failureHandler.createSnapshot(sliceId, stageConfig.id, committedSliceState);
+                console.log(`[Transaction] ✓ Post-commit stable snapshot created`);
+              }
+            } catch (txError) {
+              console.error(`[Transaction] ✗ Transaction failed, rolling back...`);
+              await tx.rollback();
+              console.log(`[Transaction] ✓ Rolled back to snapshot`);
+              throw txError;
+            }
+          } else {
+            // Legacy path: use existing FailureHandler
+            await this.applyExecutionResult(sliceId, stageConfig, agentResult.executionResult, contract, skipValidation);
+
+            // Create snapshot before lifecycle update
+            if (failureHandler && nextSliceState) {
+              await failureHandler.createSnapshot(sliceId, stageConfig.id, nextSliceState);
+            }
+
+            // Update lifecycle state
+            if (nextSliceState) {
+              this.writeSlice(sliceId, nextSliceState);
+              console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
+            }
+          }
+
+          // 5. Store to cache (using pre-execution keyInputs)
           if (cacheKey && keyInputs) {
             const inputSnapshots = await this.captureInputSnapshots(contract, sliceId);
             const outputSnapshots = await this.captureOutputSnapshots(agentResult.executionResult);
@@ -181,23 +270,6 @@ export class StageRunner {
           this.displayExecutionResult(agentResult.executionResult);
         }
 
-        let nextSliceState: any | undefined;
-
-        if (!dryRun) {
-          nextSliceState = this.buildNextLifecycleState(sliceId, stageConfig.lifecycle_state);
-        }
-
-        // 3. 成功：先创建快照（带目标 lifecycle），确保后续写状态前已有可回滚点
-        if (failureHandler && !dryRun && nextSliceState) {
-          await failureHandler.createSnapshot(sliceId, stageConfig.id, nextSliceState);
-        }
-
-        // 4. 更新生命周期状态
-        if (!dryRun && nextSliceState) {
-          this.writeSlice(sliceId, nextSliceState);
-          console.log(`[Lifecycle] Advancing to: ${stageConfig.lifecycle_state}`);
-        }
-
         // Test injection point: fail after lifecycle update
         if (process.env.JISPEC_TEST_FAIL_AFTER_LIFECYCLE === stageConfig.id) {
           throw new Error(`Injected test failure for stage: ${stageConfig.id}`);
@@ -210,6 +282,25 @@ export class StageRunner {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
+        // In transaction mode, check if we need post-commit recovery
+        if (this.useTransactionManager) {
+          console.log(`[Transaction] Stage failed`);
+
+          // If we have a failure handler, use it to rollback to latest stable snapshot
+          if (failureHandler) {
+            console.log(`[Transaction] Rolling back to latest stable snapshot...`);
+            await failureHandler.rollbackToLatest(sliceId, stageConfig.id);
+            console.log(`[Transaction] ✓ Rolled back to stable state`);
+          }
+
+          return {
+            success: false,
+            retries: attempt - 1,
+            error: lastError.message,
+          };
+        }
+
+        // Legacy path: use failure handler
         // 如果没有失败处理器，直接返回失败
         if (!failureHandler) {
           return {
@@ -325,6 +416,90 @@ export class StageRunner {
     }
 
     console.log(`\n=== END EXECUTION RESULT ===\n`);
+  }
+
+  /**
+   * 验证执行结果（不执行副作用）
+   * 用于 TransactionManager 路径的事务前验证
+   */
+  private async validateExecutionResult(
+    sliceId: string,
+    stageConfig: StageConfig,
+    result: StageExecutionResult,
+    contract: ResolvedStageContract,
+    skipValidation?: boolean
+  ): Promise<void> {
+    console.log(`\n[Validate] Validating execution result...`);
+
+    // 1. Semantic validation
+    const semanticValidator = new SemanticValidator(this.root);
+    const slice = this.readSlice(sliceId);
+
+    const validationContext = {
+      sliceId,
+      stageId: stageConfig.id,
+      contextId: slice.context_id,
+      serviceId: slice.service_id
+    };
+
+    const semanticResult = semanticValidator.validateExecutionResult(validationContext, result);
+    if (!semanticResult.valid) {
+      console.error(`[Validate] ✗ Semantic validation failed:`);
+      for (const error of semanticResult.errors) {
+        console.error(`  - [${error.type}] ${error.message}`);
+        if (error.details) {
+          console.error(`    Details: ${JSON.stringify(error.details)}`);
+        }
+      }
+      throw new Error(`Semantic validation failed with ${semanticResult.errors.length} error(s)`);
+    }
+    console.log(`[Validate] ✓ Semantic validation passed`);
+
+    // 2. Validate identity-path consistency for writes
+    for (const write of result.writes) {
+      if (write.identity) {
+        const resolvedPath = this.storage.resolveArtifactPath(write.identity);
+        const normalizedWritePath = path.isAbsolute(write.path)
+          ? path.resolve(write.path)
+          : path.resolve(this.root, write.path);
+        const normalizedResolvedPath = path.resolve(resolvedPath);
+
+        if (normalizedWritePath !== normalizedResolvedPath) {
+          throw new Error(
+            `Identity-path mismatch for write: identity=${encodeIdentity(write.identity)}, ` +
+            `path=${write.path}, resolved=${resolvedPath}`
+          );
+        }
+      }
+    }
+
+    // 3. Validate identity-path consistency for writeOperations
+    if (result.writeOperations) {
+      for (const op of result.writeOperations) {
+        if (op.identity) {
+          if (!op.identity.sliceId || !op.identity.artifactId || !op.identity.artifactType) {
+            throw new Error(
+              `Malformed identity for write operation: ${JSON.stringify(op.identity)}`
+            );
+          }
+
+          const resolvedPath = this.storage.resolveArtifactPath(op.identity);
+          const normalizedOpPath = path.isAbsolute(op.path)
+            ? path.resolve(op.path)
+            : path.resolve(this.root, op.path);
+          const normalizedResolvedPath = path.resolve(resolvedPath);
+
+          if (normalizedOpPath !== normalizedResolvedPath) {
+            throw new Error(
+              `Identity-path mismatch for ${op.type}: identity=${encodeIdentity(op.identity)}, ` +
+              `path=${op.path}, resolved=${resolvedPath}`
+            );
+          }
+        }
+      }
+    }
+
+    console.log(`[Validate] ✓ All pre-execution validations passed`);
   }
 
   /**

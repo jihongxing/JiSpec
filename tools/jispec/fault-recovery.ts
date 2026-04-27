@@ -1,311 +1,222 @@
-import * as fs from "fs";
-import * as path from "path";
-import { DistributedTask } from "./distributed-scheduler";
+import fs from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import type { DistributedTask, ResourceRequirements } from "./distributed-scheduler";
 
-/**
- * 检查点
- */
-export interface Checkpoint {
+export type RecoveryStrategy = "retry" | "migrate" | "checkpoint" | "degrade" | "skip";
+
+export type FailureType =
+  | "worker_offline"
+  | "network_error"
+  | "task_timeout"
+  | "task_error"
+  | "resource_exhausted";
+
+export interface CheckpointRecord {
   id: string;
   taskId: string;
-  timestamp: Date;
-  state: any;
-  metadata?: Record<string, any>;
+  timestamp: string;
+  state: unknown;
+  metadata?: Record<string, unknown>;
 }
 
-/**
- * 故障恢复策略
- */
-export type RecoveryStrategy = "retry" | "migrate" | "checkpoint" | "skip";
-
-/**
- * 故障类型
- */
-export type FailureType = "worker_offline" | "task_timeout" | "task_error" | "resource_exhausted";
-
-/**
- * 故障记录
- */
 export interface FailureRecord {
   id: string;
   taskId: string;
-  type: FailureType;
-  timestamp: Date;
-  error: string;
   workerId?: string;
-  recoveryStrategy: RecoveryStrategy;
+  type: FailureType;
+  error: string;
+  timestamp: string;
+  strategy: RecoveryStrategy;
   recovered: boolean;
-  recoveredAt?: Date;
+  recoveredAt?: string;
+  metadata?: Record<string, unknown>;
 }
 
-/**
- * 故障恢复配置
- */
+export interface RecoveryAction {
+  strategy: RecoveryStrategy;
+  nextRequirements?: ResourceRequirements;
+  checkpointState?: unknown;
+}
+
+export interface RecoveryStats {
+  totalFailures: number;
+  recoveredFailures: number;
+  recoveryRate: number;
+  byType: Record<FailureType, number>;
+  byStrategy: Record<RecoveryStrategy, number>;
+}
+
 export interface FaultRecoveryConfig {
   maxRetries: number;
-  retryDelay: number;
-  checkpointInterval: number;
+  retryDelayMs: number;
   enableMigration: boolean;
   enableCheckpoint: boolean;
+  enableDegradedRetry: boolean;
+  degradedRetryFactor: number;
 }
 
-/**
- * 故障恢复管理器
- */
+const DEFAULT_CONFIG: FaultRecoveryConfig = {
+  maxRetries: 3,
+  retryDelayMs: 25,
+  enableMigration: true,
+  enableCheckpoint: true,
+  enableDegradedRetry: true,
+  degradedRetryFactor: 0.5,
+};
+
+function ensureDirectory(dirPath: string): void {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function serializeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class FaultRecoveryManager {
-  private checkpoints: Map<string, Checkpoint[]> = new Map();
-  private failures: Map<string, FailureRecord[]> = new Map();
-  private config: FaultRecoveryConfig;
-  private checkpointDir: string;
+  private readonly config: FaultRecoveryConfig;
+  private readonly checkpointDir: string;
+  private readonly failures = new Map<string, FailureRecord[]>();
+  private readonly checkpoints = new Map<string, CheckpointRecord[]>();
 
-  constructor(
-    config: Partial<FaultRecoveryConfig> = {},
-    checkpointDir: string = ".jispec/checkpoints"
-  ) {
+  constructor(root: string, config: Partial<FaultRecoveryConfig> = {}) {
     this.config = {
-      maxRetries: config.maxRetries ?? 3,
-      retryDelay: config.retryDelay ?? 5000,
-      checkpointInterval: config.checkpointInterval ?? 60000,
-      enableMigration: config.enableMigration ?? true,
-      enableCheckpoint: config.enableCheckpoint ?? true,
+      ...DEFAULT_CONFIG,
+      ...config,
     };
-    this.checkpointDir = checkpointDir;
-
-    if (!fs.existsSync(this.checkpointDir)) {
-      fs.mkdirSync(this.checkpointDir, { recursive: true });
-    }
+    this.checkpointDir = path.join(root, ".jispec", "checkpoints");
+    ensureDirectory(this.checkpointDir);
   }
 
-  createCheckpoint(taskId: string, state: any, metadata?: Record<string, any>): Checkpoint {
+  createCheckpoint(taskId: string, state: unknown, metadata?: Record<string, unknown>): CheckpointRecord {
     if (!this.config.enableCheckpoint) {
-      throw new Error("Checkpoint is disabled");
+      throw new Error("Checkpoint support is disabled");
     }
 
-    const checkpoint: Checkpoint = {
-      id: `checkpoint-${Date.now()}-${Math.random()}`,
+    const checkpoint: CheckpointRecord = {
+      id: randomUUID(),
       taskId,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       state,
       metadata,
     };
 
-    if (!this.checkpoints.has(taskId)) {
-      this.checkpoints.set(taskId, []);
-    }
+    const existing = this.checkpoints.get(taskId) ?? [];
+    existing.push(checkpoint);
+    this.checkpoints.set(taskId, existing);
 
-    this.checkpoints.get(taskId)!.push(checkpoint);
-    this.saveCheckpoint(checkpoint);
+    fs.writeFileSync(
+      path.join(this.checkpointDir, `${taskId}-${checkpoint.id}.json`),
+      JSON.stringify(checkpoint, null, 2),
+      "utf8"
+    );
 
     return checkpoint;
   }
 
-  private saveCheckpoint(checkpoint: Checkpoint): void {
-    const filePath = path.join(
-      this.checkpointDir,
-      `${checkpoint.taskId}-${checkpoint.id}.json`
-    );
-
-    fs.writeFileSync(filePath, JSON.stringify(checkpoint, null, 2));
-  }
-
-  loadCheckpoint(taskId: string, checkpointId?: string): Checkpoint | null {
-    const checkpoints = this.checkpoints.get(taskId);
-    if (checkpoints && checkpoints.length > 0) {
-      if (checkpointId) {
-        return checkpoints.find((c) => c.id === checkpointId) || null;
-      }
-      return checkpoints[checkpoints.length - 1];
+  getLatestCheckpoint(taskId: string): CheckpointRecord | undefined {
+    const inMemory = this.checkpoints.get(taskId);
+    if (inMemory && inMemory.length > 0) {
+      return inMemory[inMemory.length - 1];
     }
 
-    const files = fs.readdirSync(this.checkpointDir);
-    const taskCheckpoints = files
-      .filter((f) => f.startsWith(`${taskId}-`))
-      .map((f) => {
-        const data = fs.readFileSync(path.join(this.checkpointDir, f), "utf-8");
-        return JSON.parse(data) as Checkpoint;
-      })
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const files = fs.readdirSync(this.checkpointDir)
+      .filter((file) => file.startsWith(`${taskId}-`) && file.endsWith(".json"))
+      .sort();
 
-    if (taskCheckpoints.length > 0) {
-      if (checkpointId) {
-        return taskCheckpoints.find((c) => c.id === checkpointId) || null;
-      }
-      return taskCheckpoints[0];
+    if (files.length === 0) {
+      return undefined;
     }
 
-    return null;
+    const latestFile = files[files.length - 1];
+    const checkpoint = JSON.parse(
+      fs.readFileSync(path.join(this.checkpointDir, latestFile), "utf8")
+    ) as CheckpointRecord;
+
+    const existing = this.checkpoints.get(taskId) ?? [];
+    existing.push(checkpoint);
+    this.checkpoints.set(taskId, existing);
+    return checkpoint;
   }
 
-  deleteCheckpoint(taskId: string, checkpointId?: string): void {
-    if (checkpointId) {
-      const checkpoints = this.checkpoints.get(taskId);
-      if (checkpoints) {
-        const index = checkpoints.findIndex((c) => c.id === checkpointId);
-        if (index !== -1) {
-          checkpoints.splice(index, 1);
-        }
-      }
-
-      const filePath = path.join(this.checkpointDir, `${taskId}-${checkpointId}.json`);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } else {
-      this.checkpoints.delete(taskId);
-
-      const files = fs.readdirSync(this.checkpointDir);
-      files
-        .filter((f) => f.startsWith(`${taskId}-`))
-        .forEach((f) => {
-          fs.unlinkSync(path.join(this.checkpointDir, f));
-        });
-    }
-  }
-
-  recordFailure(
-    taskId: string,
-    type: FailureType,
-    error: string,
-    workerId?: string
-  ): FailureRecord {
+  recordFailure(input: {
+    task: DistributedTask;
+    type: FailureType;
+    error: unknown;
+    workerId?: string;
+    metadata?: Record<string, unknown>;
+  }): FailureRecord {
+    const failureHistory = this.failures.get(input.task.id) ?? [];
     const failure: FailureRecord = {
-      id: `failure-${Date.now()}-${Math.random()}`,
-      taskId,
-      type,
-      timestamp: new Date(),
-      error,
-      workerId,
-      recoveryStrategy: this.selectRecoveryStrategy(taskId, type),
+      id: randomUUID(),
+      taskId: input.task.id,
+      workerId: input.workerId ?? input.task.workerId,
+      type: input.type,
+      error: serializeError(input.error),
+      timestamp: new Date().toISOString(),
+      strategy: this.selectRecoveryStrategy(input.task, input.type, failureHistory.length),
       recovered: false,
+      metadata: input.metadata,
     };
 
-    if (!this.failures.has(taskId)) {
-      this.failures.set(taskId, []);
-    }
-
-    this.failures.get(taskId)!.push(failure);
+    failureHistory.push(failure);
+    this.failures.set(input.task.id, failureHistory);
 
     return failure;
   }
 
-  private selectRecoveryStrategy(taskId: string, type: FailureType): RecoveryStrategy {
-    const failures = this.failures.get(taskId) || [];
-    const retryCount = failures.filter((f) => f.recoveryStrategy === "retry").length;
-
-    switch (type) {
-      case "worker_offline":
-        return this.config.enableMigration ? "migrate" : "retry";
-
-      case "task_timeout":
-        if (this.config.enableCheckpoint && this.hasCheckpoint(taskId)) {
-          return "checkpoint";
-        }
-        return retryCount < this.config.maxRetries ? "retry" : "skip";
-
-      case "task_error":
-        return retryCount < this.config.maxRetries ? "retry" : "skip";
-
-      case "resource_exhausted":
-        return retryCount < this.config.maxRetries ? "retry" : "skip";
-
-      default:
-        return "retry";
+  async waitBeforeRetry(): Promise<void> {
+    if (this.config.retryDelayMs <= 0) {
+      return;
     }
+
+    await new Promise((resolve) => setTimeout(resolve, this.config.retryDelayMs));
   }
 
-  private hasCheckpoint(taskId: string): boolean {
-    return this.loadCheckpoint(taskId) !== null;
-  }
-
-  async recoverTask(
-    task: DistributedTask,
-    failure: FailureRecord
-  ): Promise<{ success: boolean; state?: any }> {
-    switch (failure.recoveryStrategy) {
-      case "retry":
-        return this.retryTask(task, failure);
-
+  async recoverTask(task: DistributedTask, failure: FailureRecord): Promise<RecoveryAction> {
+    switch (failure.strategy) {
       case "migrate":
-        return this.migrateTask(task, failure);
+        this.markRecovered(failure);
+        return { strategy: "migrate" };
 
-      case "checkpoint":
-        return this.recoverFromCheckpoint(task, failure);
+      case "checkpoint": {
+        const checkpoint = this.getLatestCheckpoint(task.id);
+        if (!checkpoint) {
+          return { strategy: "skip" };
+        }
+        this.markRecovered(failure);
+        return { strategy: "checkpoint", checkpointState: checkpoint.state };
+      }
+
+      case "degrade": {
+        const nextRequirements = this.buildDegradedRequirements(task.resourceRequirements);
+        task.resourceRequirements = nextRequirements;
+        this.markRecovered(failure);
+        return { strategy: "degrade", nextRequirements };
+      }
+
+      case "retry":
+        this.markRecovered(failure);
+        return { strategy: "retry" };
 
       case "skip":
-        return { success: false };
-
       default:
-        return { success: false };
+        return { strategy: "skip" };
     }
-  }
-
-  private async retryTask(
-    task: DistributedTask,
-    failure: FailureRecord
-  ): Promise<{ success: boolean }> {
-    await new Promise((resolve) => setTimeout(resolve, this.config.retryDelay));
-
-    failure.recovered = true;
-    failure.recoveredAt = new Date();
-
-    return { success: true };
-  }
-
-  private async migrateTask(
-    task: DistributedTask,
-    failure: FailureRecord
-  ): Promise<{ success: boolean }> {
-    if (!this.config.enableMigration) {
-      return { success: false };
-    }
-
-    task.workerId = undefined;
-    task.status = "pending";
-
-    failure.recovered = true;
-    failure.recoveredAt = new Date();
-
-    return { success: true };
-  }
-
-  private async recoverFromCheckpoint(
-    task: DistributedTask,
-    failure: FailureRecord
-  ): Promise<{ success: boolean; state?: any }> {
-    if (!this.config.enableCheckpoint) {
-      return { success: false };
-    }
-
-    const checkpoint = this.loadCheckpoint(task.id);
-    if (!checkpoint) {
-      return { success: false };
-    }
-
-    failure.recovered = true;
-    failure.recoveredAt = new Date();
-
-    return { success: true, state: checkpoint.state };
   }
 
   getFailureHistory(taskId: string): FailureRecord[] {
-    return this.failures.get(taskId) || [];
+    return [...(this.failures.get(taskId) ?? [])];
   }
 
-  getCheckpointHistory(taskId: string): Checkpoint[] {
-    return this.checkpoints.get(taskId) || [];
+  getCheckpointHistory(taskId: string): CheckpointRecord[] {
+    return [...(this.checkpoints.get(taskId) ?? [])];
   }
 
-  getRecoveryStats(): {
-    totalFailures: number;
-    recoveredFailures: number;
-    recoveryRate: number;
-    byType: Record<FailureType, number>;
-    byStrategy: Record<RecoveryStrategy, number>;
-  } {
-    let totalFailures = 0;
-    let recoveredFailures = 0;
+  getRecoveryStats(): RecoveryStats {
     const byType: Record<FailureType, number> = {
       worker_offline: 0,
+      network_error: 0,
       task_timeout: 0,
       task_error: 0,
       resource_exhausted: 0,
@@ -314,71 +225,86 @@ export class FaultRecoveryManager {
       retry: 0,
       migrate: 0,
       checkpoint: 0,
+      degrade: 0,
       skip: 0,
     };
 
-    for (const failures of this.failures.values()) {
-      for (const failure of failures) {
-        totalFailures++;
+    let totalFailures = 0;
+    let recoveredFailures = 0;
+
+    for (const failureList of this.failures.values()) {
+      for (const failure of failureList) {
+        totalFailures += 1;
+        byType[failure.type] += 1;
+        byStrategy[failure.strategy] += 1;
         if (failure.recovered) {
-          recoveredFailures++;
+          recoveredFailures += 1;
         }
-        byType[failure.type]++;
-        byStrategy[failure.recoveryStrategy]++;
       }
     }
-
-    const recoveryRate = totalFailures > 0 ? recoveredFailures / totalFailures : 0;
 
     return {
       totalFailures,
       recoveredFailures,
-      recoveryRate,
+      recoveryRate: totalFailures === 0 ? 0 : recoveredFailures / totalFailures,
       byType,
       byStrategy,
     };
   }
 
-  cleanupOldCheckpoints(maxAge: number = 86400000): void {
-    const now = Date.now();
+  cleanupTaskArtifacts(taskId: string): void {
+    const files = fs.readdirSync(this.checkpointDir)
+      .filter((file) => file.startsWith(`${taskId}-`) && file.endsWith(".json"));
 
-    for (const [taskId, checkpoints] of this.checkpoints) {
-      const validCheckpoints = checkpoints.filter(
-        (c) => now - new Date(c.timestamp).getTime() < maxAge
-      );
-
-      if (validCheckpoints.length === 0) {
-        this.checkpoints.delete(taskId);
-      } else {
-        this.checkpoints.set(taskId, validCheckpoints);
-      }
+    for (const file of files) {
+      fs.rmSync(path.join(this.checkpointDir, file), { force: true });
     }
 
-    const files = fs.readdirSync(this.checkpointDir);
-    for (const file of files) {
-      const filePath = path.join(this.checkpointDir, file);
-      const stat = fs.statSync(filePath);
-      if (now - stat.mtime.getTime() > maxAge) {
-        fs.unlinkSync(filePath);
-      }
+    this.checkpoints.delete(taskId);
+    this.failures.delete(taskId);
+  }
+
+  private selectRecoveryStrategy(
+    task: DistributedTask,
+    type: FailureType,
+    priorFailureCount: number
+  ): RecoveryStrategy {
+    if (priorFailureCount >= task.maxRetries) {
+      return "skip";
+    }
+
+    switch (type) {
+      case "worker_offline":
+      case "network_error":
+        return this.config.enableMigration ? "migrate" : "retry";
+
+      case "task_timeout":
+        if (this.config.enableCheckpoint && this.getLatestCheckpoint(task.id)) {
+          return "checkpoint";
+        }
+        return "retry";
+
+      case "resource_exhausted":
+        return this.config.enableDegradedRetry ? "degrade" : "retry";
+
+      case "task_error":
+      default:
+        return "retry";
     }
   }
 
-  saveRecoveryReport(outputPath: string): void {
-    const report = {
-      timestamp: new Date().toISOString(),
-      stats: this.getRecoveryStats(),
-      failures: Array.from(this.failures.entries()).map(([taskId, failures]) => ({
-        taskId,
-        failures,
-      })),
-      checkpoints: Array.from(this.checkpoints.entries()).map(([taskId, checkpoints]) => ({
-        taskId,
-        checkpointCount: checkpoints.length,
-        latestCheckpoint: checkpoints[checkpoints.length - 1],
-      })),
+  private buildDegradedRequirements(requirements: ResourceRequirements): ResourceRequirements {
+    const factor = this.config.degradedRetryFactor;
+    return {
+      ...requirements,
+      cpu: Math.max(1, Math.floor(requirements.cpu * factor)),
+      memory: Math.max(32, Math.floor(requirements.memory * factor)),
+      disk: Math.max(32, Math.floor(requirements.disk * factor)),
     };
+  }
 
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2));
+  private markRecovered(failure: FailureRecord): void {
+    failure.recovered = true;
+    failure.recoveredAt = new Date().toISOString();
   }
 }

@@ -1,4 +1,4 @@
-import * as EventEmitter from "events";
+import { EventEmitter } from "events";
 import * as os from "os";
 import { DistributedTask, WorkerInfo, ResourceRequirements } from "./distributed-scheduler";
 
@@ -15,6 +15,7 @@ export interface WorkerConfig {
     maxDisk?: number;
   };
   heartbeatInterval?: number;
+  autoRegister?: boolean;
 }
 
 /**
@@ -22,20 +23,32 @@ export interface WorkerConfig {
  */
 export type TaskExecutor = (task: DistributedTask) => Promise<any>;
 
+export interface WorkerTransport {
+  registerWorker(worker: Omit<WorkerInfo, "status" | "runningTasks" | "lastHeartbeat" | "totalTasksCompleted" | "totalTasksFailed">): Promise<void>;
+  unregisterWorker(workerId: string): Promise<void>;
+  sendHeartbeat(workerId: string, load: WorkerInfo["currentLoad"]): Promise<void>;
+  reportTaskCompleted(taskId: string, result: any): Promise<void>;
+  reportTaskFailed(taskId: string, error: string): Promise<void>;
+}
+
 /**
  * Worker 管理器 (Worker 节点)
  */
 export class WorkerManager extends EventEmitter {
   private config: WorkerConfig;
   private executor: TaskExecutor;
+  private transport?: WorkerTransport;
   private runningTasks: Map<string, DistributedTask> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
+  private completedTasks = 0;
+  private failedTasks = 0;
 
-  constructor(config: WorkerConfig, executor: TaskExecutor) {
+  constructor(config: WorkerConfig, executor: TaskExecutor, transport?: WorkerTransport) {
     super();
     this.config = config;
     this.executor = executor;
+    this.transport = transport;
 
     // 设置默认能力
     if (!this.config.capabilities) {
@@ -49,6 +62,10 @@ export class WorkerManager extends EventEmitter {
     if (!this.config.heartbeatInterval) {
       this.config.heartbeatInterval = 5000; // 5 秒
     }
+
+    if (this.config.autoRegister === undefined) {
+      this.config.autoRegister = true;
+    }
   }
 
   /**
@@ -60,7 +77,9 @@ export class WorkerManager extends EventEmitter {
     }
 
     // 注册到 Master
-    await this.registerToMaster();
+    if (this.config.autoRegister) {
+      await this.registerToMaster();
+    }
 
     // 启动心跳
     this.startHeartbeat();
@@ -84,7 +103,9 @@ export class WorkerManager extends EventEmitter {
     await this.waitForTasksCompletion();
 
     // 注销
-    await this.unregisterFromMaster();
+    if (this.config.autoRegister) {
+      await this.unregisterFromMaster();
+    }
 
     this.isRunning = false;
     this.emit("worker:stopped");
@@ -113,17 +134,23 @@ export class WorkerManager extends EventEmitter {
       // 执行任务
       const result = await this.executeWithTimeout(task);
 
-      // 通知 Master 任务完成
+      this.runningTasks.delete(task.id);
+      this.completedTasks++;
+
+      // 先释放本地运行态，再通知 Master，避免重调度看到旧状态
       await this.notifyTaskCompleted(task.id, result);
 
-      this.runningTasks.delete(task.id);
       this.emit("task:completed", { taskId: task.id, result });
     } catch (error) {
       // 通知 Master 任务失败
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.notifyTaskFailed(task.id, errorMessage);
 
       this.runningTasks.delete(task.id);
+      this.failedTasks++;
+
+      // 先释放本地运行态，再通知 Master，避免重试命中旧任务
+      await this.notifyTaskFailed(task.id, errorMessage);
+
       this.emit("task:failed", { taskId: task.id, error: errorMessage });
     }
   }
@@ -193,8 +220,9 @@ export class WorkerManager extends EventEmitter {
       currentLoad: { cpu: 0, memory: 0, disk: 0 },
     };
 
-    // TODO: 实际的 HTTP/gRPC 调用
-    console.log(`Registering worker ${this.config.id} to master`);
+    if (this.transport) {
+      await this.transport.registerWorker(workerInfo);
+    }
     this.emit("worker:registered", workerInfo);
   }
 
@@ -202,8 +230,9 @@ export class WorkerManager extends EventEmitter {
    * 注销
    */
   private async unregisterFromMaster(): Promise<void> {
-    // TODO: 实际的 HTTP/gRPC 调用
-    console.log(`Unregistering worker ${this.config.id} from master`);
+    if (this.transport) {
+      await this.transport.unregisterWorker(this.config.id);
+    }
     this.emit("worker:unregistered");
   }
 
@@ -232,7 +261,9 @@ export class WorkerManager extends EventEmitter {
   private async sendHeartbeat(): Promise<void> {
     const currentLoad = this.getCurrentLoad();
 
-    // TODO: 实际的 HTTP/gRPC 调用
+    if (this.transport) {
+      await this.transport.sendHeartbeat(this.config.id, currentLoad);
+    }
     this.emit("heartbeat:sent", { workerId: this.config.id, currentLoad });
   }
 
@@ -240,8 +271,9 @@ export class WorkerManager extends EventEmitter {
    * 通知任务完成
    */
   private async notifyTaskCompleted(taskId: string, result: any): Promise<void> {
-    // TODO: 实际的 HTTP/gRPC 调用
-    console.log(`Task ${taskId} completed`);
+    if (this.transport) {
+      await this.transport.reportTaskCompleted(taskId, result);
+    }
     this.emit("task:notified:completed", { taskId, result });
   }
 
@@ -249,8 +281,9 @@ export class WorkerManager extends EventEmitter {
    * 通知任务失败
    */
   private async notifyTaskFailed(taskId: string, error: string): Promise<void> {
-    // TODO: 实际的 HTTP/gRPC 调用
-    console.log(`Task ${taskId} failed: ${error}`);
+    if (this.transport) {
+      await this.transport.reportTaskFailed(taskId, error);
+    }
     this.emit("task:notified:failed", { taskId, error });
   }
 
@@ -288,8 +321,8 @@ export class WorkerManager extends EventEmitter {
       currentLoad: this.getCurrentLoad(),
       runningTasks: Array.from(this.runningTasks.keys()),
       lastHeartbeat: new Date(),
-      totalTasksCompleted: 0, // TODO: 持久化统计
-      totalTasksFailed: 0,
+      totalTasksCompleted: this.completedTasks,
+      totalTasksFailed: this.failedTasks,
     };
   }
 
@@ -313,6 +346,13 @@ export class WorkerManager extends EventEmitter {
     this.runningTasks.delete(taskId);
     this.emit("task:cancelled", taskId);
   }
+
+  getConfig(): WorkerConfig {
+    return {
+      ...this.config,
+      capabilities: this.config.capabilities ? { ...this.config.capabilities } : undefined,
+    };
+  }
 }
 
 /**
@@ -321,9 +361,11 @@ export class WorkerManager extends EventEmitter {
 export class WorkerPoolManager {
   private workers: Map<string, WorkerManager> = new Map();
   private executor: TaskExecutor;
+  private transport?: WorkerTransport;
 
-  constructor(executor: TaskExecutor) {
+  constructor(executor: TaskExecutor, transport?: WorkerTransport) {
     this.executor = executor;
+    this.transport = transport;
   }
 
   /**
@@ -334,7 +376,7 @@ export class WorkerPoolManager {
       throw new Error(`Worker ${config.id} already exists`);
     }
 
-    const worker = new WorkerManager(config, this.executor);
+    const worker = new WorkerManager(config, this.executor, this.transport);
     this.workers.set(config.id, worker);
 
     return worker;

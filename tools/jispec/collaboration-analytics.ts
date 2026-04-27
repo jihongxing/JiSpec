@@ -1,544 +1,529 @@
-import { UserPresence, ActivityEvent } from "./presence-manager";
-import { Conflict, ConflictResolution } from "./advanced-conflict-resolver";
-import { Notification } from "./notification-service";
+import type { ActivityEvent, ActivityType, UserPresence } from "./presence-manager";
+import type {
+  ConflictResolverStats,
+  ConflictType,
+  OperationConflict,
+  ResolutionStrategy,
+} from "./advanced-conflict-resolver";
+import type { Notification, NotificationType } from "./notification-service";
 
-/**
- * 协作指标
- */
-export interface CollaborationMetrics {
-  timestamp: Date;
+export interface CollaborationOverview {
+  period: { start: Date; end: Date };
   activeUsers: number;
+  totalActivities: number;
   totalEdits: number;
+  totalComments: number;
+  totalConflicts: number;
+  conflictRate: number;
+  notificationCount: number;
+  unreadNotificationCount: number;
+  activityByType: Record<ActivityType, number>;
+  topDocuments: Array<{
+    documentId: string;
+    activities: number;
+    users: number;
+  }>;
+  collaborationScore: number;
+}
+
+export interface UserContributionInsight {
+  userId: string;
+  username?: string;
+  totalActivities: number;
+  edits: number;
+  comments: number;
+  views: number;
+  conflictsInvolved: number;
+  notificationsReceived: number;
+  unreadNotifications: number;
+  activeDocuments: string[];
+  contributionScore: number;
+}
+
+export interface DocumentCollaborationInsight {
+  documentId: string;
+  uniqueUsers: number;
+  totalActivities: number;
+  edits: number;
+  comments: number;
+  conflicts: number;
+  notifications: number;
+  activityByType: Partial<Record<ActivityType, number>>;
+  hotspots: Array<{ bucket: number; edits: number }>;
+}
+
+export interface ConflictInsight {
   totalConflicts: number;
   resolvedConflicts: number;
-  averageResolutionTime: number;
-  collaborationScore: number;
-}
-
-/**
- * 用户协作统计
- */
-export interface UserCollaborationStats {
-  userId: string;
-  username: string;
-  totalEdits: number;
-  totalConflicts: number;
-  conflictsCreated: number;
-  conflictsResolved: number;
-  averageResponseTime: number;
-  collaborationScore: number;
-  topCollaborators: Array<{ userId: string; interactions: number }>;
-}
-
-/**
- * 文档协作统计
- */
-export interface DocumentCollaborationStats {
-  documentId: string;
-  totalEdits: number;
-  uniqueUsers: number;
-  totalConflicts: number;
-  conflictRate: number;
-  averageResolutionTime: number;
-  hotspots: Array<{ position: number; editCount: number }>;
-}
-
-/**
- * 协作效率分析
- */
-export interface CollaborationEfficiencyAnalysis {
-  period: { start: Date; end: Date };
-  totalUsers: number;
-  activeUsers: number;
-  totalEdits: number;
-  editsPerUser: number;
-  conflictRate: number;
+  unresolvedConflicts: number;
   resolutionRate: number;
-  averageResolutionTime: number;
-  peakHours: Array<{ hour: number; activity: number }>;
-  efficiency: number; // 0-100
-}
-
-/**
- * 冲突分析
- */
-export interface ConflictAnalysis {
-  totalConflicts: number;
-  byType: Record<string, number>;
-  byUser: Record<string, number>;
+  byType: Record<ConflictType, number>;
+  byStrategy: Record<ResolutionStrategy, number>;
   byDocument: Record<string, number>;
-  resolutionStrategies: Record<string, number>;
-  averageResolutionTime: number;
-  resolutionRate: number;
-  trends: Array<{ date: Date; count: number }>;
+  averageConfidence: number;
 }
 
-/**
- * 协作分析器
- */
+export interface NotificationInsight {
+  totalNotifications: number;
+  unreadNotifications: number;
+  byType: Partial<Record<NotificationType, number>>;
+  byUser: Record<string, number>;
+  averageReadLatencyMs: number;
+}
+
+export interface CollaborationReport {
+  overview: CollaborationOverview;
+  topContributors: UserContributionInsight[];
+  documents: DocumentCollaborationInsight[];
+  conflicts: ConflictInsight;
+  notifications: NotificationInsight;
+  recommendations: string[];
+}
+
 export class CollaborationAnalytics {
-  private metrics: CollaborationMetrics[] = [];
-  private maxMetricsHistory: number = 10000;
+  buildOverview(
+    start: Date,
+    end: Date,
+    activities: ActivityEvent[],
+    presences: UserPresence[],
+    conflicts: OperationConflict[],
+    notifications: Notification[]
+  ): CollaborationOverview {
+    const scopedActivities = this.filterByPeriod(activities, start, end);
+    const scopedConflicts = this.filterConflictsByPeriod(conflicts, start, end);
+    const scopedNotifications = this.filterNotificationsByPeriod(notifications, start, end);
 
-  /**
-   * 记录指标
-   */
-  recordMetrics(
-    activeUsers: number,
-    totalEdits: number,
-    totalConflicts: number,
-    resolvedConflicts: number,
-    averageResolutionTime: number
-  ): CollaborationMetrics {
-    const collaborationScore = this.calculateCollaborationScore(
-      activeUsers,
-      totalEdits,
-      totalConflicts,
-      resolvedConflicts
-    );
+    const activityByType = this.emptyActivityCounts();
+    const documentUsers = new Map<string, Set<string>>();
+    const documentCounts = new Map<string, number>();
 
-    const metrics: CollaborationMetrics = {
-      timestamp: new Date(),
-      activeUsers,
-      totalEdits,
-      totalConflicts,
-      resolvedConflicts,
-      averageResolutionTime,
-      collaborationScore,
-    };
-
-    this.metrics.push(metrics);
-
-    if (this.metrics.length > this.maxMetricsHistory) {
-      this.metrics.shift();
+    for (const activity of scopedActivities) {
+      activityByType[activity.type] += 1;
+      if (!documentUsers.has(activity.documentId)) {
+        documentUsers.set(activity.documentId, new Set());
+      }
+      documentUsers.get(activity.documentId)!.add(activity.userId);
+      documentCounts.set(activity.documentId, (documentCounts.get(activity.documentId) || 0) + 1);
     }
 
-    return metrics;
+    const totalEdits = activityByType.edit;
+    const totalComments = activityByType.comment;
+    const totalConflicts = scopedConflicts.length;
+    const activeUsers = new Set(scopedActivities.map((activity) => activity.userId)).size;
+    const conflictRate = totalEdits > 0 ? totalConflicts / totalEdits : 0;
+
+    const topDocuments = Array.from(documentCounts.entries())
+      .map(([documentId, count]) => ({
+        documentId,
+        activities: count,
+        users: documentUsers.get(documentId)?.size ?? 0,
+      }))
+      .sort((left, right) => right.activities - left.activities)
+      .slice(0, 5);
+
+    return {
+      period: { start, end },
+      activeUsers,
+      totalActivities: scopedActivities.length,
+      totalEdits,
+      totalComments,
+      totalConflicts,
+      conflictRate,
+      notificationCount: scopedNotifications.length,
+      unreadNotificationCount: scopedNotifications.filter((notification) => !notification.readAt).length,
+      activityByType,
+      topDocuments,
+      collaborationScore: this.calculateCollaborationScore(
+        activeUsers,
+        scopedActivities.length,
+        totalConflicts,
+        scopedNotifications.length
+      ),
+    };
   }
 
-  /**
-   * 计算协作分数
-   */
+  buildUserInsights(
+    activities: ActivityEvent[],
+    presences: UserPresence[],
+    conflicts: OperationConflict[],
+    notifications: Notification[]
+  ): UserContributionInsight[] {
+    const usernameByUserId = new Map<string, string>();
+    for (const presence of presences) {
+      usernameByUserId.set(presence.userId, presence.username);
+    }
+
+    const activityByUser = new Map<string, ActivityEvent[]>();
+    for (const activity of activities) {
+      const current = activityByUser.get(activity.userId) ?? [];
+      current.push(activity);
+      activityByUser.set(activity.userId, current);
+    }
+
+    const allUserIds = new Set<string>([
+      ...activityByUser.keys(),
+      ...notifications.map((notification) => notification.userId),
+      ...conflicts.flatMap((conflict) => conflict.operations.map((operation) => operation.userId)),
+    ]);
+
+    return Array.from(allUserIds)
+      .map((userId) => {
+        const userActivities = activityByUser.get(userId) ?? [];
+        const edits = userActivities.filter((activity) => activity.type === "edit").length;
+        const comments = userActivities.filter((activity) => activity.type === "comment").length;
+        const views = userActivities.filter((activity) => activity.type === "view").length;
+        const userConflicts = conflicts.filter((conflict) =>
+          conflict.operations.some((operation) => operation.userId === userId)
+        );
+        const userNotifications = notifications.filter((notification) => notification.userId === userId);
+        const activeDocuments = Array.from(new Set(userActivities.map((activity) => activity.documentId))).filter(Boolean);
+
+        return {
+          userId,
+          username: usernameByUserId.get(userId),
+          totalActivities: userActivities.length,
+          edits,
+          comments,
+          views,
+          conflictsInvolved: userConflicts.length,
+          notificationsReceived: userNotifications.length,
+          unreadNotifications: userNotifications.filter((notification) => !notification.readAt).length,
+          activeDocuments,
+          contributionScore: this.calculateContributionScore(
+            userActivities.length,
+            edits,
+            comments,
+            userConflicts.length,
+            activeDocuments.length
+          ),
+        };
+      })
+      .sort((left, right) => right.contributionScore - left.contributionScore);
+  }
+
+  buildDocumentInsights(
+    activities: ActivityEvent[],
+    conflicts: OperationConflict[],
+    notifications: Notification[]
+  ): DocumentCollaborationInsight[] {
+    const documentIds = new Set<string>([
+      ...activities.map((activity) => activity.documentId),
+      ...notifications.map((notification) => notification.resourceId || "").filter(Boolean),
+      ...conflicts.flatMap((conflict) => this.extractConflictDocumentIds(conflict)),
+    ]);
+
+    return Array.from(documentIds)
+      .filter(Boolean)
+      .map((documentId) => {
+        const documentActivities = activities.filter((activity) => activity.documentId === documentId);
+        const documentConflicts = conflicts.filter((conflict) =>
+          this.extractConflictDocumentIds(conflict).includes(documentId)
+        );
+        const documentNotifications = notifications.filter((notification) => notification.resourceId === documentId);
+        const activityByType = this.countActivityTypes(documentActivities);
+        const hotspots = this.buildEditHotspots(documentActivities);
+
+        return {
+          documentId,
+          uniqueUsers: new Set(documentActivities.map((activity) => activity.userId)).size,
+          totalActivities: documentActivities.length,
+          edits: activityByType.edit ?? 0,
+          comments: activityByType.comment ?? 0,
+          conflicts: documentConflicts.length,
+          notifications: documentNotifications.length,
+          activityByType,
+          hotspots,
+        };
+      })
+      .sort((left, right) => right.totalActivities - left.totalActivities);
+  }
+
+  buildConflictInsight(
+    conflicts: OperationConflict[],
+    stats?: ConflictResolverStats
+  ): ConflictInsight {
+    const byType: Record<ConflictType, number> = {
+      concurrent_edit: 0,
+      delete_edit: 0,
+      replace_edit: 0,
+      semantic: 0,
+    };
+
+    const byStrategy: Record<ResolutionStrategy, number> = {
+      operational_transform: 0,
+      crdt_merge: 0,
+      three_way_merge: 0,
+      last_write_wins: 0,
+      first_write_wins: 0,
+      manual: 0,
+    };
+
+    const byDocument: Record<string, number> = {};
+    const confidences: number[] = [];
+
+    for (const conflict of conflicts) {
+      byType[conflict.type] += 1;
+      if (conflict.resolution) {
+        byStrategy[conflict.resolution.strategy] += 1;
+        confidences.push(conflict.resolution.confidence);
+      }
+
+      for (const documentId of this.extractConflictDocumentIds(conflict)) {
+        byDocument[documentId] = (byDocument[documentId] || 0) + 1;
+      }
+    }
+
+    const resolvedConflicts = stats?.resolvedConflicts ?? conflicts.filter((conflict) => conflict.resolved).length;
+    const unresolvedConflicts = stats?.unresolvedConflicts ?? conflicts.filter((conflict) => !conflict.resolved).length;
+    const totalConflicts = stats?.totalConflicts ?? conflicts.length;
+
+    return {
+      totalConflicts,
+      resolvedConflicts,
+      unresolvedConflicts,
+      resolutionRate: totalConflicts > 0 ? resolvedConflicts / totalConflicts : 0,
+      byType,
+      byStrategy,
+      byDocument,
+      averageConfidence: confidences.length > 0
+        ? confidences.reduce((sum, confidence) => sum + confidence, 0) / confidences.length
+        : 0,
+    };
+  }
+
+  buildNotificationInsight(notifications: Notification[]): NotificationInsight {
+    const byType: Partial<Record<NotificationType, number>> = {};
+    const byUser: Record<string, number> = {};
+    const readLatencies: number[] = [];
+
+    for (const notification of notifications) {
+      byType[notification.type] = (byType[notification.type] || 0) + 1;
+      byUser[notification.userId] = (byUser[notification.userId] || 0) + 1;
+
+      if (notification.readAt) {
+        readLatencies.push(notification.readAt.getTime() - notification.createdAt.getTime());
+      }
+    }
+
+    return {
+      totalNotifications: notifications.length,
+      unreadNotifications: notifications.filter((notification) => !notification.readAt).length,
+      byType,
+      byUser,
+      averageReadLatencyMs: readLatencies.length > 0
+        ? readLatencies.reduce((sum, latency) => sum + latency, 0) / readLatencies.length
+        : 0,
+    };
+  }
+
+  generateReport(input: {
+    start: Date;
+    end: Date;
+    activities: ActivityEvent[];
+    presences: UserPresence[];
+    conflicts: OperationConflict[];
+    notifications: Notification[];
+    conflictStats?: ConflictResolverStats;
+  }): CollaborationReport {
+    const scopedActivities = this.filterByPeriod(input.activities, input.start, input.end);
+    const scopedConflicts = this.filterConflictsByPeriod(input.conflicts, input.start, input.end);
+    const scopedNotifications = this.filterNotificationsByPeriod(input.notifications, input.start, input.end);
+
+    const overview = this.buildOverview(
+      input.start,
+      input.end,
+      scopedActivities,
+      input.presences,
+      scopedConflicts,
+      scopedNotifications
+    );
+    const topContributors = this.buildUserInsights(
+      scopedActivities,
+      input.presences,
+      scopedConflicts,
+      scopedNotifications
+    ).slice(0, 5);
+    const documents = this.buildDocumentInsights(scopedActivities, scopedConflicts, scopedNotifications);
+    const conflicts = this.buildConflictInsight(scopedConflicts, input.conflictStats);
+    const notifications = this.buildNotificationInsight(scopedNotifications);
+
+    return {
+      overview,
+      topContributors,
+      documents,
+      conflicts,
+      notifications,
+      recommendations: this.buildRecommendations(overview, conflicts, notifications),
+    };
+  }
+
+  formatReport(report: CollaborationReport): string {
+    const lines: string[] = [];
+
+    lines.push("# Collaboration Insight Report");
+    lines.push("");
+    lines.push(`Period: ${report.overview.period.start.toISOString()} - ${report.overview.period.end.toISOString()}`);
+    lines.push(`Active Users: ${report.overview.activeUsers}`);
+    lines.push(`Activities: ${report.overview.totalActivities}`);
+    lines.push(`Conflicts: ${report.overview.totalConflicts}`);
+    lines.push(`Notifications: ${report.overview.notificationCount}`);
+    lines.push(`Collaboration Score: ${report.overview.collaborationScore}`);
+    lines.push("");
+    lines.push("Top Contributors:");
+    for (const user of report.topContributors) {
+      lines.push(`- ${user.username ?? user.userId}: score ${user.contributionScore}, edits ${user.edits}, comments ${user.comments}`);
+    }
+    lines.push("");
+    lines.push("Recommendations:");
+    for (const recommendation of report.recommendations) {
+      lines.push(`- ${recommendation}`);
+    }
+
+    return lines.join("\n");
+  }
+
+  private filterByPeriod(activities: ActivityEvent[], start: Date, end: Date): ActivityEvent[] {
+    return activities.filter((activity) => activity.timestamp >= start && activity.timestamp <= end);
+  }
+
+  private filterConflictsByPeriod(conflicts: OperationConflict[], start: Date, end: Date): OperationConflict[] {
+    return conflicts.filter((conflict) => {
+      const detectedAt = new Date(conflict.detectedAt);
+      return detectedAt >= start && detectedAt <= end;
+    });
+  }
+
+  private filterNotificationsByPeriod(notifications: Notification[], start: Date, end: Date): Notification[] {
+    return notifications.filter((notification) => notification.createdAt >= start && notification.createdAt <= end);
+  }
+
+  private emptyActivityCounts(): Record<ActivityType, number> {
+    return {
+      cursor: 0,
+      selection: 0,
+      edit: 0,
+      view: 0,
+      join: 0,
+      leave: 0,
+      comment: 0,
+      conflict: 0,
+      sync: 0,
+    };
+  }
+
+  private countActivityTypes(activities: ActivityEvent[]): Partial<Record<ActivityType, number>> {
+    const counts: Partial<Record<ActivityType, number>> = {};
+    for (const activity of activities) {
+      counts[activity.type] = (counts[activity.type] || 0) + 1;
+    }
+    return counts;
+  }
+
+  private buildEditHotspots(activities: ActivityEvent[]): Array<{ bucket: number; edits: number }> {
+    const hotspots = new Map<number, number>();
+    for (const activity of activities) {
+      if (activity.type !== "edit") {
+        continue;
+      }
+
+      const position = this.extractOperationPosition(activity.data);
+      if (position === undefined) {
+        continue;
+      }
+
+      const bucket = Math.floor(position / 50) * 50;
+      hotspots.set(bucket, (hotspots.get(bucket) || 0) + 1);
+    }
+
+    return Array.from(hotspots.entries())
+      .map(([bucket, edits]) => ({ bucket, edits }))
+      .sort((left, right) => right.edits - left.edits)
+      .slice(0, 5);
+  }
+
+  private extractOperationPosition(data: unknown): number | undefined {
+    if (!data || typeof data !== "object") {
+      return undefined;
+    }
+
+    const candidate = data as { position?: unknown };
+    return typeof candidate.position === "number" ? candidate.position : undefined;
+  }
+
+  private extractConflictDocumentIds(conflict: OperationConflict): string[] {
+    return Array.from(
+      new Set(
+        conflict.operations
+          .map((operation) => {
+            const candidate = operation as { metadata?: { documentId?: string } };
+            return candidate.metadata?.documentId;
+          })
+          .filter((documentId): documentId is string => typeof documentId === "string" && documentId.length > 0)
+      )
+    );
+  }
+
   private calculateCollaborationScore(
     activeUsers: number,
-    totalEdits: number,
+    totalActivities: number,
     totalConflicts: number,
-    resolvedConflicts: number
+    notificationCount: number
   ): number {
-    if (activeUsers === 0 || totalEdits === 0) {
+    if (activeUsers === 0 || totalActivities === 0) {
       return 0;
     }
 
-    // 基础分数：编辑活跃度
-    const activityScore = Math.min(totalEdits / activeUsers / 10, 40);
+    const activityScore = Math.min((totalActivities / activeUsers) * 4, 45);
+    const conflictPenalty = Math.min(totalConflicts * 5, 25);
+    const responsivenessScore = Math.min(notificationCount * 2, 20);
+    const breadthScore = Math.min(activeUsers * 2, 20);
 
-    // 冲突处理分数
-    const conflictScore = totalConflicts > 0
-      ? (resolvedConflicts / totalConflicts) * 30
-      : 30;
-
-    // 协作广度分数
-    const breadthScore = Math.min(activeUsers * 3, 30);
-
-    return Math.round(activityScore + conflictScore + breadthScore);
+    return Math.max(0, Math.round(activityScore + responsivenessScore + breadthScore - conflictPenalty));
   }
 
-  /**
-   * 分析用户协作
-   */
-  analyzeUserCollaboration(
-    userId: string,
-    username: string,
-    activities: ActivityEvent[],
-    conflicts: Conflict[]
-  ): UserCollaborationStats {
-    const userActivities = activities.filter(a => a.userId === userId);
-    const totalEdits = userActivities.filter(a => a.type === "edit").length;
-
-    const userConflicts = conflicts.filter(c =>
-      c.operations.some(op => op.userId === userId)
-    );
-
-    const conflictsCreated = userConflicts.filter(c =>
-      c.operations[0].userId === userId
-    ).length;
-
-    const conflictsResolved = userConflicts.filter(c => c.resolved).length;
-
-    // 计算平均响应时间
-    const responseTimes: number[] = [];
-    for (const conflict of userConflicts) {
-      if (conflict.resolved && conflict.resolution) {
-        const responseTime = conflict.resolution.timestamp.getTime() - conflict.timestamp.getTime();
-        responseTimes.push(responseTime);
-      }
-    }
-    const averageResponseTime = responseTimes.length > 0
-      ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
-      : 0;
-
-    // 找出主要协作者
-    const collaborators = new Map<string, number>();
-    for (const activity of userActivities) {
-      const sameDocActivities = activities.filter(
-        a => a.documentId === activity.documentId && a.userId !== userId
-      );
-      for (const other of sameDocActivities) {
-        collaborators.set(other.userId, (collaborators.get(other.userId) || 0) + 1);
-      }
-    }
-
-    const topCollaborators = Array.from(collaborators.entries())
-      .map(([userId, interactions]) => ({ userId, interactions }))
-      .sort((a, b) => b.interactions - a.interactions)
-      .slice(0, 5);
-
-    const collaborationScore = this.calculateUserCollaborationScore(
-      totalEdits,
-      userConflicts.length,
-      conflictsResolved,
-      topCollaborators.length
-    );
-
-    return {
-      userId,
-      username,
-      totalEdits,
-      totalConflicts: userConflicts.length,
-      conflictsCreated,
-      conflictsResolved,
-      averageResponseTime,
-      collaborationScore,
-      topCollaborators,
-    };
-  }
-
-  /**
-   * 计算用户协作分数
-   */
-  private calculateUserCollaborationScore(
-    totalEdits: number,
-    totalConflicts: number,
-    conflictsResolved: number,
-    collaboratorCount: number
+  private calculateContributionScore(
+    totalActivities: number,
+    edits: number,
+    comments: number,
+    conflicts: number,
+    documents: number
   ): number {
-    const activityScore = Math.min(totalEdits / 5, 40);
-    const resolutionScore = totalConflicts > 0
-      ? (conflictsResolved / totalConflicts) * 30
-      : 30;
-    const collaborationScore = Math.min(collaboratorCount * 6, 30);
+    const activityScore = Math.min(totalActivities * 3, 35);
+    const editScore = Math.min(edits * 4, 30);
+    const commentScore = Math.min(comments * 5, 20);
+    const breadthScore = Math.min(documents * 5, 15);
+    const conflictPenalty = Math.min(conflicts * 4, 20);
 
-    return Math.round(activityScore + resolutionScore + collaborationScore);
+    return Math.max(0, Math.round(activityScore + editScore + commentScore + breadthScore - conflictPenalty));
   }
 
-  /**
-   * 分析文档协作
-   */
-  analyzeDocumentCollaboration(
-    documentId: string,
-    activities: ActivityEvent[],
-    conflicts: Conflict[]
-  ): DocumentCollaborationStats {
-    const docActivities = activities.filter(a => a.documentId === documentId);
-    const totalEdits = docActivities.filter(a => a.type === "edit").length;
-    const uniqueUsers = new Set(docActivities.map(a => a.userId)).size;
+  private buildRecommendations(
+    overview: CollaborationOverview,
+    conflicts: ConflictInsight,
+    notifications: NotificationInsight
+  ): string[] {
+    const recommendations: string[] = [];
 
-    const docConflicts = conflicts.filter(c =>
-      c.operations.some(op => op.metadata?.documentId === documentId)
-    );
-    const totalConflicts = docConflicts.length;
-    const conflictRate = totalEdits > 0 ? totalConflicts / totalEdits : 0;
-
-    // 计算平均解决时间
-    const resolutionTimes: number[] = [];
-    for (const conflict of docConflicts) {
-      if (conflict.resolved && conflict.resolution) {
-        const time = conflict.resolution.timestamp.getTime() - conflict.timestamp.getTime();
-        resolutionTimes.push(time);
-      }
-    }
-    const averageResolutionTime = resolutionTimes.length > 0
-      ? resolutionTimes.reduce((a, b) => a + b, 0) / resolutionTimes.length
-      : 0;
-
-    // 找出编辑热点
-    const positionCounts = new Map<number, number>();
-    for (const activity of docActivities) {
-      if (activity.type === "edit" && activity.data?.position !== undefined) {
-        const pos = Math.floor(activity.data.position / 100) * 100;
-        positionCounts.set(pos, (positionCounts.get(pos) || 0) + 1);
-      }
+    if (conflicts.resolutionRate < 0.7 && conflicts.totalConflicts > 0) {
+      recommendations.push("Increase review bandwidth around contested documents to improve conflict resolution rate.");
     }
 
-    const hotspots = Array.from(positionCounts.entries())
-      .map(([position, editCount]) => ({ position, editCount }))
-      .sort((a, b) => b.editCount - a.editCount)
-      .slice(0, 10);
-
-    return {
-      documentId,
-      totalEdits,
-      uniqueUsers,
-      totalConflicts,
-      conflictRate,
-      averageResolutionTime,
-      hotspots,
-    };
-  }
-
-  /**
-   * 分析协作效率
-   */
-  analyzeCollaborationEfficiency(
-    startDate: Date,
-    endDate: Date,
-    activities: ActivityEvent[],
-    conflicts: Conflict[],
-    presences: UserPresence[]
-  ): CollaborationEfficiencyAnalysis {
-    const periodActivities = activities.filter(
-      a => a.timestamp >= startDate && a.timestamp <= endDate
-    );
-
-    const totalUsers = new Set(periodActivities.map(a => a.userId)).size;
-    const activeUsers = presences.filter(p => p.status === "online").length;
-    const totalEdits = periodActivities.filter(a => a.type === "edit").length;
-    const editsPerUser = totalUsers > 0 ? totalEdits / totalUsers : 0;
-
-    const periodConflicts = conflicts.filter(
-      c => c.timestamp >= startDate && c.timestamp <= endDate
-    );
-    const totalConflicts = periodConflicts.length;
-    const resolvedConflicts = periodConflicts.filter(c => c.resolved).length;
-    const conflictRate = totalEdits > 0 ? totalConflicts / totalEdits : 0;
-    const resolutionRate = totalConflicts > 0 ? resolvedConflicts / totalConflicts : 0;
-
-    // 计算平均解决时间
-    const resolutionTimes: number[] = [];
-    for (const conflict of periodConflicts) {
-      if (conflict.resolved && conflict.resolution) {
-        const time = conflict.resolution.timestamp.getTime() - conflict.timestamp.getTime();
-        resolutionTimes.push(time);
-      }
-    }
-    const averageResolutionTime = resolutionTimes.length > 0
-      ? resolutionTimes.reduce((a, b) => a + b, 0) / resolutionTimes.length
-      : 0;
-
-    // 分析高峰时段
-    const hourCounts = new Array(24).fill(0);
-    for (const activity of periodActivities) {
-      const hour = activity.timestamp.getHours();
-      hourCounts[hour]++;
-    }
-    const peakHours = hourCounts
-      .map((activity, hour) => ({ hour, activity }))
-      .sort((a, b) => b.activity - a.activity)
-      .slice(0, 5);
-
-    // 计算效率分数
-    const efficiency = this.calculateEfficiencyScore(
-      editsPerUser,
-      conflictRate,
-      resolutionRate,
-      averageResolutionTime
-    );
-
-    return {
-      period: { start: startDate, end: endDate },
-      totalUsers,
-      activeUsers,
-      totalEdits,
-      editsPerUser,
-      conflictRate,
-      resolutionRate,
-      averageResolutionTime,
-      peakHours,
-      efficiency,
-    };
-  }
-
-  /**
-   * 计算效率分数
-   */
-  private calculateEfficiencyScore(
-    editsPerUser: number,
-    conflictRate: number,
-    resolutionRate: number,
-    averageResolutionTime: number
-  ): number {
-    // 编辑效率分数
-    const editScore = Math.min(editsPerUser * 5, 30);
-
-    // 冲突控制分数
-    const conflictScore = Math.max(30 - conflictRate * 100, 0);
-
-    // 解决效率分数
-    const resolutionScore = resolutionRate * 20;
-
-    // 响应速度分数
-    const speedScore = averageResolutionTime > 0
-      ? Math.max(20 - averageResolutionTime / 60000, 0)
-      : 20;
-
-    return Math.round(editScore + conflictScore + resolutionScore + speedScore);
-  }
-
-  /**
-   * 分析冲突
-   */
-  analyzeConflicts(conflicts: Conflict[]): ConflictAnalysis {
-    const byType: Record<string, number> = {};
-    const byUser: Record<string, number> = {};
-    const byDocument: Record<string, number> = {};
-    const resolutionStrategies: Record<string, number> = {};
-
-    for (const conflict of conflicts) {
-      byType[conflict.type] = (byType[conflict.type] || 0) + 1;
-
-      for (const op of conflict.operations) {
-        byUser[op.userId] = (byUser[op.userId] || 0) + 1;
-
-        const docId = op.metadata?.documentId || "unknown";
-        byDocument[docId] = (byDocument[docId] || 0) + 1;
-      }
-
-      if (conflict.resolution) {
-        const strategy = conflict.resolution.strategy;
-        resolutionStrategies[strategy] = (resolutionStrategies[strategy] || 0) + 1;
-      }
+    if (overview.conflictRate > 0.3) {
+      recommendations.push("Hot documents show elevated edit contention; consider temporary locks or ownership rotation.");
     }
 
-    const resolvedConflicts = conflicts.filter(c => c.resolved);
-    const resolutionTimes: number[] = [];
-    for (const conflict of resolvedConflicts) {
-      if (conflict.resolution) {
-        const time = conflict.resolution.timestamp.getTime() - conflict.timestamp.getTime();
-        resolutionTimes.push(time);
-      }
-    }
-    const averageResolutionTime = resolutionTimes.length > 0
-      ? resolutionTimes.reduce((a, b) => a + b, 0) / resolutionTimes.length
-      : 0;
-
-    const resolutionRate = conflicts.length > 0
-      ? resolvedConflicts.length / conflicts.length
-      : 0;
-
-    // 生成趋势数据
-    const trends = this.generateConflictTrends(conflicts);
-
-    return {
-      totalConflicts: conflicts.length,
-      byType,
-      byUser,
-      byDocument,
-      resolutionStrategies,
-      averageResolutionTime,
-      resolutionRate,
-      trends,
-    };
-  }
-
-  /**
-   * 生成冲突趋势
-   */
-  private generateConflictTrends(conflicts: Conflict[]): Array<{ date: Date; count: number }> {
-    const dateCounts = new Map<string, number>();
-
-    for (const conflict of conflicts) {
-      const dateKey = conflict.timestamp.toISOString().split("T")[0];
-      dateCounts.set(dateKey, (dateCounts.get(dateKey) || 0) + 1);
+    if (notifications.unreadNotifications > 0) {
+      recommendations.push("Unread collaboration notifications are accumulating; encourage triage to reduce response lag.");
     }
 
-    return Array.from(dateCounts.entries())
-      .map(([dateStr, count]) => ({ date: new Date(dateStr), count }))
-      .sort((a, b) => a.date.getTime() - b.date.getTime());
-  }
-
-  /**
-   * 获取指标历史
-   */
-  getMetricsHistory(limit?: number): CollaborationMetrics[] {
-    if (limit) {
-      return this.metrics.slice(-limit);
+    if (overview.activeUsers <= 1 && overview.totalActivities > 0) {
+      recommendations.push("Activity is concentrated in a single contributor; pair review or handoff could improve resilience.");
     }
-    return [...this.metrics];
-  }
 
-  /**
-   * 获取协作趋势
-   */
-  getCollaborationTrends(days: number = 7): {
-    dates: Date[];
-    activeUsers: number[];
-    totalEdits: number[];
-    conflicts: number[];
-    scores: number[];
-  } {
-    const cutoff = Date.now() - days * 86400000;
-    const recentMetrics = this.metrics.filter(m => m.timestamp.getTime() >= cutoff);
+    if (recommendations.length === 0) {
+      recommendations.push("Collaboration signals look healthy; continue tracking conflict and notification trends for drift.");
+    }
 
-    return {
-      dates: recentMetrics.map(m => m.timestamp),
-      activeUsers: recentMetrics.map(m => m.activeUsers),
-      totalEdits: recentMetrics.map(m => m.totalEdits),
-      conflicts: recentMetrics.map(m => m.totalConflicts),
-      scores: recentMetrics.map(m => m.collaborationScore),
-    };
-  }
-
-  /**
-   * 生成协作报告
-   */
-  generateReport(
-    startDate: Date,
-    endDate: Date,
-    activities: ActivityEvent[],
-    conflicts: Conflict[],
-    presences: UserPresence[]
-  ): string {
-    const efficiency = this.analyzeCollaborationEfficiency(
-      startDate,
-      endDate,
-      activities,
-      conflicts,
-      presences
-    );
-
-    const conflictAnalysis = this.analyzeConflicts(conflicts);
-
-    return `
-# 协作分析报告
-
-**时间段**: ${startDate.toISOString()} - ${endDate.toISOString()}
-
-## 总体指标
-
-- 总用户数: ${efficiency.totalUsers}
-- 活跃用户数: ${efficiency.activeUsers}
-- 总编辑次数: ${efficiency.totalEdits}
-- 人均编辑次数: ${efficiency.editsPerUser.toFixed(2)}
-- 协作效率分数: ${efficiency.efficiency}/100
-
-## 冲突分析
-
-- 总冲突数: ${conflictAnalysis.totalConflicts}
-- 冲突率: ${(efficiency.conflictRate * 100).toFixed(2)}%
-- 解决率: ${(conflictAnalysis.resolutionRate * 100).toFixed(2)}%
-- 平均解决时间: ${(conflictAnalysis.averageResolutionTime / 1000).toFixed(2)}秒
-
-## 高峰时段
-
-${efficiency.peakHours.map(h => `- ${h.hour}:00 - ${h.activity} 次活动`).join("\n")}
-
-## 冲突类型分布
-
-${Object.entries(conflictAnalysis.byType).map(([type, count]) => `- ${type}: ${count}`).join("\n")}
-
-## 解决策略分布
-
-${Object.entries(conflictAnalysis.resolutionStrategies).map(([strategy, count]) => `- ${strategy}: ${count}`).join("\n")}
-`;
+    return recommendations;
   }
 }

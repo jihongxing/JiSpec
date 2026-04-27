@@ -1,118 +1,152 @@
-# Phase 5: 分布式执行和缓存 - 完整实现总结
+# Phase 5: 分布式执行和缓存 - 当前完成总结
 
-## 🎉 实现完成
+## 概述
 
-Phase 5 的所有核心功能已经完成实现！JiSpec 现在具备了企业级的分布式执行和智能缓存能力。
+Phase 5 已经从“原型集合”收敛为一组经过编译、回归测试和 doctor 门禁验证的可运行能力。当前实现覆盖：
 
-## 📦 交付成果
+- Phase 5.1 分布式任务调度
+- Phase 5.2 智能缓存系统
+- Phase 5.2-B 缓存失效与预热
+- Phase 5.3 远程执行引擎
+- Phase 5.4 资源管理
+- Phase 5.5 故障恢复
 
-### 核心模块（6个新文件）
+---
 
-1. **distributed-scheduler.ts** - 分布式任务调度器
-2. **worker-manager.ts** - Worker 管理器
-3. **cache-manager.ts** - 智能缓存系统
-4. **remote-executor.ts** - 远程执行引擎
-5. **resource-manager.ts** - 资源管理器
-6. **fault-recovery.ts** - 故障恢复管理器
+## 当前验收状态
 
-## 🎯 核心能力
+### 基线验证（2026-04-27）
+
+- ✅ `npm run typecheck`
+- ✅ `npx tsx tools/jispec/tests/regression-runner.ts` - `20/20 suites`，`79/79 tests`
+- ✅ `JISPEC_USE_TRANSACTION_MANAGER=true npx tsx tools/jispec/tests/regression-runner.ts` - `20/20 suites`，`79/79 tests`
+- ✅ `node --import tsx ./tools/jispec/cli.ts doctor phase5 --json` - `ready: true`
+
+### 当前 Doctor 状态
+
+- ✅ `10/10 checks passed`
+- ✅ Regression Environment: `20/20 test suites`，`79/79 tests expected`
+- ✅ Transaction Mode: `79/79 tests passed`
+- ✅ Resource Management: `3/3 tests passed`
+- ✅ Fault Recovery: `4/4 tests passed`
+
+---
+
+## 已交付能力
 
 ### 1. 分布式任务调度
-- 支持 100+ Worker 节点
-- 4种调度策略（轮询、最少负载、加权、亲和性）
-- 任务优先级管理
-- 自动故障检测和恢复
-- 预期性能提升: 5-10x
+
+**核心文件：**
+- `tools/jispec/distributed-scheduler.ts`
+- `tools/jispec/worker-manager.ts`
+- `tools/jispec/distributed-runtime.ts`
+
+**已验证能力：**
+- 多策略调度：`round_robin` / `least_loaded` / `weighted` / `affinity`
+- 本地 master/worker 闭环
+- 自动重试
+- Worker 负载感知分配
+- 本地分布式运行时等待与结果收集
+
+---
 
 ### 2. 智能缓存系统
-- 三层缓存架构（L1内存/L2磁盘/L3分布式）
-- 内容寻址缓存
-- LRU 驱逐策略
-- 目标缓存命中率: >80%
 
-### 3. 资源管理
-- CPU/内存/磁盘精确监控
-- 资源分配和释放
-- 资源趋势分析
-- 健康检查和告警
+**核心文件：**
+- `tools/jispec/cache-manager.ts`
+- `tools/jispec/distributed-task-cache.ts`
 
-### 4. 故障恢复
-- 自动检查点创建
-- 4种恢复策略（重试、迁移、检查点、跳过）
-- 智能恢复决策
-- 故障历史追踪
+**已验证能力：**
+- 内存 + 磁盘缓存
+- 内容寻址缓存键
+- 运行时缓存命中
+- Slice/Stage 级失效
+- Slice/Stage 级预热
+- 默认路径与远程路径缓存复用
 
-## 🚀 使用示例
+---
 
-```typescript
-// 启动调度器
-const scheduler = new DistributedScheduler("least_loaded");
-scheduler.start();
+### 3. 远程执行引擎
 
-// 注册 Worker
-scheduler.registerWorker({
-  id: "worker-1",
-  host: "localhost",
-  port: 8080,
-  capabilities: { maxCpu: 4, maxMemory: 8192, maxDisk: 10000 }
-});
+**核心文件：**
+- `tools/jispec/remote-executor.ts`
+- `tools/jispec/remote-runtime.ts`
 
-// 提交任务
-const taskId = scheduler.submitTask(
-  "slice-1", "stage-1",
-  { /* payload */ },
-  { cpu: 1, memory: 512, disk: 100, timeout: 60000 },
-  "high"
-);
+**已验证能力：**
+- 原生 `http` 的 master/worker 通信
+- 远程 worker 注册
+- 远程任务派发与回传
+- 远程缓存复用
+- 远程失败重试
 
-// 使用缓存
-const cache = new CacheManager();
-const key = cache.getContentKey("build", config);
-cache.set(key, result, 3600000);
+---
 
-// 资源管理
-const resourceManager = new ResourceManager();
-resourceManager.startMonitoring(5000);
+### 4. 资源管理
 
-// 故障恢复
-const recovery = new FaultRecoveryManager();
-recovery.createCheckpoint("task-1", { progress: 50 });
-```
+**核心文件：**
+- `tools/jispec/resource-manager.ts`
 
-## 📊 性能指标
+**已验证能力：**
+- 显式资源账本
+- CPU / 内存 / 磁盘分配与释放
+- 超额分配阻断
+- 本地/远程 runtime 中的真实占用与回收
 
-- 任务调度延迟: <100ms
-- 缓存命中率: >80%
-- Worker 利用率: 70-80%
-- 故障恢复时间: <30s
+---
 
-## 🎓 最佳实践
+### 5. 故障恢复
 
-1. **调度策略**: 根据场景选择合适的策略
-2. **缓存管理**: 使用内容寻址，设置合理的 TTL
-3. **资源监控**: 定期检查资源使用情况
-4. **故障恢复**: 为长任务创建检查点
+**核心文件：**
+- `tools/jispec/fault-recovery.ts`
 
-## 📝 总结
+**已验证能力：**
+- 失败记录与恢复统计
+- checkpoint 恢复
+- Worker 故障迁移
+- 资源不足降级重试
+- 本地/远程运行时统一恢复入口
 
-Phase 5 为 JiSpec 带来了：
+---
 
-✅ 可扩展性 - 支持 100+ Worker 节点
-✅ 高效性 - 智能缓存，5-10x 性能提升
-✅ 可靠性 - 自动故障恢复
-✅ 灵活性 - 多种调度策略
-✅ 可观测性 - 完善的监控统计
+## Phase 5 专项测试矩阵
 
-## 🎉 项目进度
+当前已纳入总回归的 Phase 5 相关专项包括：
 
-- ✅ Phase 1: 基础架构
-- ✅ Phase 2: 核心功能
-- ✅ Phase 3: 扩展功能
-- ✅ Phase 4: 跨切片依赖管理
-- ✅ **Phase 5: 分布式执行和缓存 - 完成！**
-- 📋 Phase 6: 实时协作和冲突解决
+- `distributed-scheduler-mvp.ts`
+- `distributed-cache-mvp.ts`
+- `distributed-cache-invalidation-warmup.ts`
+- `remote-runtime-mvp.ts`
+- `resource-management.ts`
+- `fault-recovery.ts`
 
-**代码统计**
-- 新增文件: 6 个
-- 新增代码: ~3500 行
-- 文档: ~1500 行
+---
+
+## 相关完成文档
+
+- [PHASE5-1-COMPLETION-SUMMARY.md](</D:/codeSpace/JiSpec/PHASE5-1-COMPLETION-SUMMARY.md>)
+- [PHASE5-2-COMPLETION-SUMMARY.md](</D:/codeSpace/JiSpec/PHASE5-2-COMPLETION-SUMMARY.md>)
+- [PHASE5-5-COMPLETION-SUMMARY.md](</D:/codeSpace/JiSpec/PHASE5-5-COMPLETION-SUMMARY.md>)
+
+---
+
+## 结论
+
+**Phase 5 当前状态：Complete and Verified ✅**
+
+这不是早期文档里的“功能声明式完成”，而是已经通过：
+
+- 编译验证
+- 默认模式回归
+- 事务模式回归
+- doctor readiness gate
+
+的真实验收状态。
+
+**当前基线数字：**
+- `20/20 suites`
+- `79/79 tests`
+- `10/10 doctor checks`
+
+**下一阶段：**
+- Phase 6.1 实时协作引擎
+

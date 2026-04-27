@@ -199,4 +199,11 @@ export class FilesystemStorage implements StorageAdapter {
   listFilesSync(dirPath: string): string[] {
     return fs.readdirSync(dirPath);
   }
+
+  /**
+   * Synchronous stat (for compatibility with existing code)
+   */
+  statSync(filePath: string): fs.Stats {
+    return fs.statSync(filePath);
+  }
 }

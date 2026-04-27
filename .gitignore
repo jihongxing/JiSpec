@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .jispec/
+.jispec-cache/
+.jispec-ci/
+.spec/
 *.log
 .DS_Store
 .env

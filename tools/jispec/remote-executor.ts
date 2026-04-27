@@ -1,32 +1,21 @@
-import * as http from "http";
-import * as express from "express";
-import { DistributedTask, WorkerInfo } from "./distributed-scheduler";
+import http, { type IncomingMessage, type ServerResponse } from "node:http";
+import { URL } from "node:url";
+import type { DistributedTask, WorkerInfo } from "./distributed-scheduler";
 
-/**
- * 远程执行协议
- */
 export interface RemoteExecutionProtocol {
-  // Master -> Worker
   assignTask(workerId: string, task: DistributedTask): Promise<void>;
   cancelTask(workerId: string, taskId: string): Promise<void>;
-
-  // Worker -> Master
   registerWorker(worker: WorkerInfo): Promise<void>;
   unregisterWorker(workerId: string): Promise<void>;
   sendHeartbeat(workerId: string, load: WorkerInfo["currentLoad"]): Promise<void>;
-  reportTaskCompleted(taskId: string, result: any): Promise<void>;
+  reportTaskCompleted(taskId: string, result: unknown): Promise<void>;
   reportTaskFailed(taskId: string, error: string): Promise<void>;
 }
 
-/**
- * HTTP 远程执行客户端
- */
-export class RemoteExecutionClient implements RemoteExecutionProtocol {
-  private masterUrl: string;
+export interface WorkerRegistrationPayload extends Omit<WorkerInfo, "status" | "runningTasks" | "lastHeartbeat" | "totalTasksCompleted" | "totalTasksFailed"> {}
 
-  constructor(masterUrl: string) {
-    this.masterUrl = masterUrl;
-  }
+export class RemoteExecutionClient implements RemoteExecutionProtocol {
+  constructor(private readonly masterUrl: string) {}
 
   async assignTask(workerId: string, task: DistributedTask): Promise<void> {
     await this.post(`/workers/${workerId}/tasks`, task);
@@ -44,14 +33,11 @@ export class RemoteExecutionClient implements RemoteExecutionProtocol {
     await this.delete(`/workers/${workerId}`);
   }
 
-  async sendHeartbeat(
-    workerId: string,
-    load: WorkerInfo["currentLoad"]
-  ): Promise<void> {
+  async sendHeartbeat(workerId: string, load: WorkerInfo["currentLoad"]): Promise<void> {
     await this.post(`/workers/${workerId}/heartbeat`, load);
   }
 
-  async reportTaskCompleted(taskId: string, result: any): Promise<void> {
+  async reportTaskCompleted(taskId: string, result: unknown): Promise<void> {
     await this.post(`/tasks/${taskId}/complete`, { result });
   }
 
@@ -59,24 +45,24 @@ export class RemoteExecutionClient implements RemoteExecutionProtocol {
     await this.post(`/tasks/${taskId}/fail`, { error });
   }
 
-  private async post(path: string, data: any): Promise<any> {
-    const url = `${this.masterUrl}${path}`;
-    const response = await fetch(url, {
+  private async post(pathname: string, body: unknown): Promise<unknown> {
+    const response = await fetch(`${this.masterUrl}${pathname}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${await response.text()}`);
     }
 
-    return response.json();
+    return response.status === 204 ? undefined : response.json();
   }
 
-  private async delete(path: string): Promise<void> {
-    const url = `${this.masterUrl}${path}`;
-    const response = await fetch(url, { method: "DELETE" });
+  private async delete(pathname: string): Promise<void> {
+    const response = await fetch(`${this.masterUrl}${pathname}`, {
+      method: "DELETE",
+    });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${await response.text()}`);
@@ -84,264 +70,295 @@ export class RemoteExecutionClient implements RemoteExecutionProtocol {
   }
 }
 
-/**
- * HTTP 远程执行服务器
- */
+type MasterHandlers = {
+  onWorkerRegister?: (worker: WorkerRegistrationPayload) => Promise<void> | void;
+  onWorkerUnregister?: (workerId: string) => Promise<void> | void;
+  onHeartbeat?: (workerId: string, load: WorkerInfo["currentLoad"]) => Promise<void> | void;
+  onTaskCompleted?: (taskId: string, result: unknown) => Promise<void> | void;
+  onTaskFailed?: (taskId: string, error: string) => Promise<void> | void;
+};
+
 export class RemoteExecutionServer {
-  private app: express.Application;
   private server: http.Server | null = null;
-  private handlers: {
-    onWorkerRegister?: (worker: WorkerInfo) => void;
-    onWorkerUnregister?: (workerId: string) => void;
-    onHeartbeat?: (workerId: string, load: WorkerInfo["currentLoad"]) => void;
-    onTaskCompleted?: (taskId: string, result: any) => void;
-    onTaskFailed?: (taskId: string, error: string) => void;
-  } = {};
+  private readonly handlers: MasterHandlers = {};
 
-  constructor() {
-    this.app = express();
-    this.app.use(express.json());
-    this.setupRoutes();
-  }
-
-  private setupRoutes(): void {
-    // Worker 注册
-    this.app.post("/workers", (req, res) => {
-      try {
-        const worker: WorkerInfo = req.body;
-        this.handlers.onWorkerRegister?.(worker);
-        res.status(201).json({ success: true });
-      } catch (error) {
-        res.status(500).json({ error: String(error) });
-      }
-    });
-
-    // Worker 注销
-    this.app.delete("/workers/:workerId", (req, res) => {
-      try {
-        const { workerId } = req.params;
-        this.handlers.onWorkerUnregister?.(workerId);
-        res.status(200).json({ success: true });
-      } catch (error) {
-        res.status(500).json({ error: String(error) });
-      }
-    });
-
-    // 心跳
-    this.app.post("/workers/:workerId/heartbeat", (req, res) => {
-      try {
-        const { workerId } = req.params;
-        const load = req.body;
-        this.handlers.onHeartbeat?.(workerId, load);
-        res.status(200).json({ success: true });
-      } catch (error) {
-        res.status(500).json({ error: String(error) });
-      }
-    });
-
-    // 任务完成
-    this.app.post("/tasks/:taskId/complete", (req, res) => {
-      try {
-        const { taskId } = req.params;
-        const { result } = req.body;
-        this.handlers.onTaskCompleted?.(taskId, result);
-        res.status(200).json({ success: true });
-      } catch (error) {
-        res.status(500).json({ error: String(error) });
-      }
-    });
-
-    // 任务失败
-    this.app.post("/tasks/:taskId/fail", (req, res) => {
-      try {
-        const { taskId } = req.params;
-        const { error } = req.body;
-        this.handlers.onTaskFailed?.(taskId, error);
-        res.status(200).json({ success: true });
-      } catch (error) {
-        res.status(500).json({ error: String(error) });
-      }
-    });
-
-    // 健康检查
-    this.app.get("/health", (req, res) => {
-      res.status(200).json({ status: "healthy" });
-    });
-  }
-
-  on(event: "worker:register", handler: (worker: WorkerInfo) => void): void;
-  on(event: "worker:unregister", handler: (workerId: string) => void): void;
-  on(event: "heartbeat", handler: (workerId: string, load: WorkerInfo["currentLoad"]) => void): void;
-  on(event: "task:completed", handler: (taskId: string, result: any) => void): void;
-  on(event: "task:failed", handler: (taskId: string, error: string) => void): void;
-  on(event: string, handler: (...args: any[]) => void): void {
+  on(event: "worker:register", handler: NonNullable<MasterHandlers["onWorkerRegister"]>): void;
+  on(event: "worker:unregister", handler: NonNullable<MasterHandlers["onWorkerUnregister"]>): void;
+  on(event: "heartbeat", handler: NonNullable<MasterHandlers["onHeartbeat"]>): void;
+  on(event: "task:completed", handler: NonNullable<MasterHandlers["onTaskCompleted"]>): void;
+  on(event: "task:failed", handler: NonNullable<MasterHandlers["onTaskFailed"]>): void;
+  on(event: string, handler: ((...args: unknown[]) => unknown) | NonNullable<MasterHandlers["onWorkerRegister"]> | NonNullable<MasterHandlers["onWorkerUnregister"]> | NonNullable<MasterHandlers["onHeartbeat"]> | NonNullable<MasterHandlers["onTaskCompleted"]> | NonNullable<MasterHandlers["onTaskFailed"]>): void {
     switch (event) {
       case "worker:register":
-        this.handlers.onWorkerRegister = handler;
+        this.handlers.onWorkerRegister = handler as NonNullable<MasterHandlers["onWorkerRegister"]>;
         break;
       case "worker:unregister":
-        this.handlers.onWorkerUnregister = handler;
+        this.handlers.onWorkerUnregister = handler as NonNullable<MasterHandlers["onWorkerUnregister"]>;
         break;
       case "heartbeat":
-        this.handlers.onHeartbeat = handler;
+        this.handlers.onHeartbeat = handler as NonNullable<MasterHandlers["onHeartbeat"]>;
         break;
       case "task:completed":
-        this.handlers.onTaskCompleted = handler;
+        this.handlers.onTaskCompleted = handler as NonNullable<MasterHandlers["onTaskCompleted"]>;
         break;
       case "task:failed":
-        this.handlers.onTaskFailed = handler;
+        this.handlers.onTaskFailed = handler as NonNullable<MasterHandlers["onTaskFailed"]>;
         break;
+      default:
+        throw new Error(`Unsupported event: ${event}`);
     }
   }
 
-  start(port: number): Promise<void> {
-    return new Promise((resolve) => {
-      this.server = this.app.listen(port, () => {
-        console.log(`Remote execution server listening on port ${port}`);
-        resolve();
-      });
+  async start(port: number): Promise<number> {
+    if (this.server) {
+      throw new Error("Remote execution server already started");
+    }
+
+    this.server = http.createServer(async (req, res) => {
+      try {
+        await this.handleRequest(req, res);
+      } catch (error) {
+        this.writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      }
     });
+
+    await new Promise<void>((resolve) => {
+      this.server!.listen(port, () => resolve());
+    });
+
+    const address = this.server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Failed to determine remote execution server port");
+    }
+
+    return address.port;
   }
 
-  stop(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!this.server) {
-        resolve();
-        return;
-      }
+  async stop(): Promise<void> {
+    if (!this.server) {
+      return;
+    }
 
-      this.server.close((err) => {
-        if (err) {
-          reject(err);
-        } else {
-          this.server = null;
-          resolve();
+    await new Promise<void>((resolve, reject) => {
+      this.server!.close((error) => {
+        if (error) {
+          reject(error);
+          return;
         }
+        resolve();
       });
     });
+
+    this.server = null;
+  }
+
+  private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const method = req.method ?? "GET";
+    const requestUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+    const pathname = requestUrl.pathname;
+
+    if (method === "GET" && pathname === "/health") {
+      this.writeJson(res, 200, { status: "healthy" });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/workers") {
+      const worker = await this.readJson<WorkerRegistrationPayload>(req);
+      await this.handlers.onWorkerRegister?.(worker);
+      this.writeJson(res, 201, { success: true });
+      return;
+    }
+
+    const workerHeartbeat = pathname.match(/^\/workers\/([^/]+)\/heartbeat$/);
+    if (method === "POST" && workerHeartbeat) {
+      const load = await this.readJson<WorkerInfo["currentLoad"]>(req);
+      await this.handlers.onHeartbeat?.(decodeURIComponent(workerHeartbeat[1]), load);
+      this.writeJson(res, 200, { success: true });
+      return;
+    }
+
+    const workerDelete = pathname.match(/^\/workers\/([^/]+)$/);
+    if (method === "DELETE" && workerDelete) {
+      await this.handlers.onWorkerUnregister?.(decodeURIComponent(workerDelete[1]));
+      this.writeJson(res, 200, { success: true });
+      return;
+    }
+
+    const taskComplete = pathname.match(/^\/tasks\/([^/]+)\/complete$/);
+    if (method === "POST" && taskComplete) {
+      const payload = await this.readJson<{ result: unknown }>(req);
+      await this.handlers.onTaskCompleted?.(decodeURIComponent(taskComplete[1]), payload.result);
+      this.writeJson(res, 200, { success: true });
+      return;
+    }
+
+    const taskFail = pathname.match(/^\/tasks\/([^/]+)\/fail$/);
+    if (method === "POST" && taskFail) {
+      const payload = await this.readJson<{ error: string }>(req);
+      await this.handlers.onTaskFailed?.(decodeURIComponent(taskFail[1]), payload.error);
+      this.writeJson(res, 200, { success: true });
+      return;
+    }
+
+    this.writeJson(res, 404, { error: `Unhandled route: ${method} ${pathname}` });
+  }
+
+  private async readJson<T>(req: IncomingMessage): Promise<T> {
+    const chunks: Buffer[] = [];
+
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+
+    const body = Buffer.concat(chunks).toString("utf8");
+    return body ? JSON.parse(body) as T : {} as T;
+  }
+
+  private writeJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+    const body = JSON.stringify(payload);
+    res.writeHead(statusCode, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(body),
+    });
+    res.end(body);
   }
 }
 
-/**
- * Worker HTTP 服务器
- */
+type WorkerHandlers = {
+  onTaskAssigned?: (task: DistributedTask) => Promise<void>;
+  onTaskCancelled?: (taskId: string) => Promise<void>;
+};
+
 export class WorkerHttpServer {
-  private app: express.Application;
   private server: http.Server | null = null;
-  private handlers: {
-    onTaskAssigned?: (task: DistributedTask) => Promise<void>;
-    onTaskCancelled?: (taskId: string) => Promise<void>;
-  } = {};
+  private readonly handlers: WorkerHandlers = {};
 
-  constructor() {
-    this.app = express();
-    this.app.use(express.json());
-    this.setupRoutes();
-  }
-
-  private setupRoutes(): void {
-    this.app.post("/workers/:workerId/tasks", async (req, res) => {
-      try {
-        const task: DistributedTask = req.body;
-        await this.handlers.onTaskAssigned?.(task);
-        res.status(201).json({ success: true });
-      } catch (error) {
-        res.status(500).json({ error: String(error) });
-      }
-    });
-
-    this.app.delete("/workers/:workerId/tasks/:taskId", async (req, res) => {
-      try {
-        const { taskId } = req.params;
-        await this.handlers.onTaskCancelled?.(taskId);
-        res.status(200).json({ success: true });
-      } catch (error) {
-        res.status(500).json({ error: String(error) });
-      }
-    });
-
-    this.app.get("/health", (req, res) => {
-      res.status(200).json({ status: "healthy" });
-    });
-  }
-
-  on(event: "task:assigned", handler: (task: DistributedTask) => Promise<void>): void;
-  on(event: "task:cancelled", handler: (taskId: string) => Promise<void>): void;
-  on(event: string, handler: (...args: any[]) => void): void {
+  on(event: "task:assigned", handler: NonNullable<WorkerHandlers["onTaskAssigned"]>): void;
+  on(event: "task:cancelled", handler: NonNullable<WorkerHandlers["onTaskCancelled"]>): void;
+  on(event: string, handler: ((...args: unknown[]) => unknown) | NonNullable<WorkerHandlers["onTaskAssigned"]> | NonNullable<WorkerHandlers["onTaskCancelled"]>): void {
     switch (event) {
       case "task:assigned":
-        this.handlers.onTaskAssigned = handler;
+        this.handlers.onTaskAssigned = handler as NonNullable<WorkerHandlers["onTaskAssigned"]>;
         break;
       case "task:cancelled":
-        this.handlers.onTaskCancelled = handler;
+        this.handlers.onTaskCancelled = handler as NonNullable<WorkerHandlers["onTaskCancelled"]>;
         break;
+      default:
+        throw new Error(`Unsupported event: ${event}`);
     }
   }
 
-  start(port: number): Promise<void> {
-    return new Promise((resolve) => {
-      this.server = this.app.listen(port, () => {
-        console.log(`Worker HTTP server listening on port ${port}`);
-        resolve();
-      });
+  async start(port: number): Promise<number> {
+    if (this.server) {
+      throw new Error("Worker HTTP server already started");
+    }
+
+    this.server = http.createServer(async (req, res) => {
+      try {
+        await this.handleRequest(req, res);
+      } catch (error) {
+        this.writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      }
     });
+
+    await new Promise<void>((resolve) => {
+      this.server!.listen(port, () => resolve());
+    });
+
+    const address = this.server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Failed to determine worker HTTP server port");
+    }
+
+    return address.port;
   }
 
-  stop(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (!this.server) {
-        resolve();
-        return;
-      }
+  async stop(): Promise<void> {
+    if (!this.server) {
+      return;
+    }
 
-      this.server.close((err) => {
-        if (err) {
-          reject(err);
-        } else {
-          this.server = null;
-          resolve();
+    await new Promise<void>((resolve, reject) => {
+      this.server!.close((error) => {
+        if (error) {
+          reject(error);
+          return;
         }
+        resolve();
       });
     });
+
+    this.server = null;
+  }
+
+  private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const method = req.method ?? "GET";
+    const requestUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+    const pathname = requestUrl.pathname;
+
+    if (method === "GET" && pathname === "/health") {
+      this.writeJson(res, 200, { status: "healthy" });
+      return;
+    }
+
+    const taskAssign = pathname.match(/^\/workers\/([^/]+)\/tasks$/);
+    if (method === "POST" && taskAssign) {
+      const task = await this.readJson<DistributedTask>(req);
+      await this.handlers.onTaskAssigned?.(task);
+      this.writeJson(res, 201, { success: true });
+      return;
+    }
+
+    const taskCancel = pathname.match(/^\/workers\/([^/]+)\/tasks\/([^/]+)$/);
+    if (method === "DELETE" && taskCancel) {
+      await this.handlers.onTaskCancelled?.(decodeURIComponent(taskCancel[2]));
+      this.writeJson(res, 200, { success: true });
+      return;
+    }
+
+    this.writeJson(res, 404, { error: `Unhandled route: ${method} ${pathname}` });
+  }
+
+  private async readJson<T>(req: IncomingMessage): Promise<T> {
+    const chunks: Buffer[] = [];
+
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+
+    const body = Buffer.concat(chunks).toString("utf8");
+    return body ? JSON.parse(body) as T : {} as T;
+  }
+
+  private writeJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+    const body = JSON.stringify(payload);
+    res.writeHead(statusCode, {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(body),
+    });
+    res.end(body);
   }
 }
 
-/**
- * 任务序列化器
- */
 export class TaskSerializer {
   static serialize(task: DistributedTask): string {
-    return JSON.stringify(task, (key, value) => {
-      if (value instanceof Date) {
-        return { __type: "Date", value: value.toISOString() };
-      }
-      return value;
-    });
+    return JSON.stringify(task);
   }
 
   static deserialize(data: string): DistributedTask {
-    return JSON.parse(data, (key, value) => {
-      if (value && value.__type === "Date") {
-        return new Date(value.value);
-      }
-      return value;
-    });
+    return JSON.parse(data) as DistributedTask;
   }
 }
 
-/**
- * 远程执行引擎
- */
 export class RemoteExecutor {
-  private client: RemoteExecutionClient;
+  constructor(private readonly client: RemoteExecutionClient) {}
 
-  constructor(masterUrl: string) {
-    this.client = new RemoteExecutionClient(masterUrl);
+  async executeRemote(workerId: string, task: DistributedTask): Promise<void> {
+    await this.client.assignTask(workerId, task);
   }
 
-  async executeRemote(task: DistributedTask): Promise<any> {
-    const serialized = TaskSerializer.serialize(task);
-    return { success: true };
+  async cancelRemote(workerId: string, taskId: string): Promise<void> {
+    await this.client.cancelTask(workerId, taskId);
   }
 
   getClient(): RemoteExecutionClient {

@@ -10,29 +10,549 @@ import { buildSliceShowReport, buildSliceStatusReport } from "./slice-report";
 import { advanceSlice, createSlice, updateSliceGates } from "./slice-ops";
 import { planSlice } from "./slice-plan";
 import { updateSliceTasks } from "./tasks";
-import { buildTraceReport, validateRepository, validateSlice, validateSliceTraceOnly } from "./validator";
-import * as fs from "fs";
+import { buildTraceReport, validateSlice, validateSliceTraceOnly } from "./validator";
+import { Doctor } from "./doctor.js";
+import { renderBootstrapDiscoverText, runBootstrapDiscover, type BootstrapDiscoverOptions } from "./bootstrap/discover";
+import type { BootstrapDiscoverResult } from "./bootstrap/evidence-graph";
+import { renderBootstrapDraftText, runBootstrapDraft, type BootstrapDraftOptions, type BootstrapDraftResult } from "./bootstrap/draft";
+import { renderBootstrapAdoptText, runBootstrapAdopt, type BootstrapAdoptResult } from "./bootstrap/adopt";
+import { renderVerifyJSON, renderVerifyText, runVerify, type VerifyRunOptions } from "./verify/verify-runner";
+import { createWaiver, listWaivers, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
+import { runChangeCommand, renderChangeCommandJSON, type ChangeCommandOptions } from "./change/change-command";
+import { migrateVerifyPolicy, renderPolicyMigrationText } from "./policy/migrate-policy";
+
+type LegacySurface =
+  | "slice"
+  | "context"
+  | "trace"
+  | "artifact"
+  | "agent"
+  | "pipeline"
+  | "template"
+  | "dependency";
+
+function buildPrimarySurfaceHelpText(): string {
+  return [
+    "Current primary surface:",
+    "  jispec-cli verify [--json]",
+    "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
+    "  jispec-cli implement [--fast] [--json]",
+    "  jispec-cli bootstrap discover [--json]",
+    "  jispec-cli bootstrap draft [--json]",
+    "  jispec-cli adopt --interactive [--json]",
+    "  jispec-cli policy migrate [--json]",
+    "  jispec-cli doctor v1",
+    "  jispec-cli doctor phase5",
+    "",
+    "Current CI wrapper:",
+    "  npm run ci:verify",
+  ].join("\n");
+}
+
+function buildLegacySurfaceHelpText(): string {
+  return [
+    "Legacy compatibility surface:",
+    "  jispec-cli slice ...",
+    "  jispec-cli context ...",
+    "  jispec-cli trace ...",
+    "  jispec-cli artifact ...",
+    "  jispec-cli agent ...",
+    "  jispec-cli pipeline ...",
+    "  jispec-cli template ...",
+    "  jispec-cli dependency ...",
+    "",
+    "Compatibility aliases:",
+    "  jispec-cli validate",
+    "  npm run validate:repo",
+    "  npm run check:jispec",
+  ].join("\n");
+}
+
+function buildWorkflowSurfaceHelpText(): string {
+  return [
+    "Mainline workflow shortcuts:",
+    "  change --mode prompt -> follow next commands manually",
+    "  change --mode execute -> orchestrate implement -> verify",
+    "  implement --fast -> verify --fast",
+    "  strict lane can surface adopt before implementation when a bootstrap draft is still open",
+  ].join("\n");
+}
+
+function buildCombinedHelpText(): string {
+  return `\n${[
+    buildPrimarySurfaceHelpText(),
+    buildLegacySurfaceHelpText(),
+    buildWorkflowSurfaceHelpText(),
+  ].join("\n\n")}\n`;
+}
+
+function renderVerifyResult(options: { json: boolean; result: Awaited<ReturnType<typeof runVerify>> }): void {
+  console.log(options.json ? renderVerifyJSON(options.result) : renderVerifyText(options.result));
+}
+
+function registerPrimaryVerifyCommand(program: Command): void {
+  program
+    .command("verify")
+    .alias("validate")
+    .description("Verify repository contracts, assets, facts, and trace rules.")
+    .option("--root <path>", "Repository root to validate.", ".")
+    .option("--strict", "Reserve strict verify mode on the new verify runner surface.", false)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .option("--baseline", "Apply baseline to downgrade historical issues.", false)
+    .option("--write-baseline", "Write current issues as baseline.", false)
+    .option("--observe", "Run in observe mode (downgrade blocking issues to advisory).", false)
+    .option("--policy <path>", "Path to policy YAML file.")
+    .option("--facts-out <path>", "Output path for canonical facts JSON.")
+    .option("--fast", "Run local fast-lane precheck and auto-promote to strict when needed.", false)
+    .action(async (options: { root: string; strict: boolean; json: boolean; baseline: boolean; writeBaseline: boolean; observe: boolean; policy?: string; factsOut?: string; fast: boolean }) => {
+      try {
+        const result = await runVerify({
+          root: path.resolve(options.root),
+          strict: options.strict,
+          useBaseline: options.baseline,
+          writeBaseline: options.writeBaseline,
+          observe: options.observe,
+          policyPath: options.policy,
+          factsOutPath: options.factsOut,
+          fast: options.fast,
+        } satisfies VerifyRunOptions);
+        renderVerifyResult({ result, json: options.json });
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec verify failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerDoctorCommands(program: Command): void {
+  const doctor = program.command("doctor").description("Run JiSpec-CLI health checks and readiness diagnostics.");
+
+  doctor
+    .command("v1")
+    .description("Check V1 mainline readiness without blocking on deferred distributed or collaboration surfaces.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; json: boolean }) => {
+      try {
+        const doctorInstance = new Doctor(path.resolve(options.root));
+        const report = await doctorInstance.checkV1Mainline();
+
+        if (options.json) {
+          console.log(Doctor.formatJSON(report));
+        } else {
+          console.log(Doctor.formatText(report));
+        }
+
+        process.exitCode = report.ready ? 0 : 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Doctor v1 check failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  doctor
+    .command("phase5")
+    .description("Check Phase 5.1 readiness.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; json: boolean }) => {
+      try {
+        const doctorInstance = new Doctor(path.resolve(options.root));
+        const report = await doctorInstance.checkPhase5();
+
+        if (options.json) {
+          console.log(Doctor.formatJSON(report));
+        } else {
+          console.log(Doctor.formatText(report));
+        }
+
+        process.exitCode = report.ready ? 0 : 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Doctor check failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerPolicyCommands(program: Command): void {
+  const policy = program.command("policy").description("Manage the minimal verify policy surface.");
+
+  policy
+    .command("migrate")
+    .description("Scaffold or normalize .spec/policy.yaml onto the current facts contract.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--path <path>", "Override the policy file path.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; path?: string; json: boolean }) => {
+      try {
+        const result = migrateVerifyPolicy(path.resolve(options.root), options.path);
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(renderPolicyMigrationText(result));
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Policy migrate failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerWaiverCommands(program: Command): void {
+  const waiver = program.command("waiver").description("Manage verify waivers for known issues.");
+
+  waiver
+    .command("create")
+    .description("Create a new waiver for a verify issue.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--code <code>", "Issue code to waive.")
+    .option("--path <path>", "Optional file path to match.")
+    .option("--fingerprint <fingerprint>", "Optional issue fingerprint for exact matching.")
+    .option("--owner <owner>", "Waiver owner (required).")
+    .option("--reason <reason>", "Reason for waiver (required).")
+    .option("--expires-at <date>", "Expiration date (ISO 8601 format).")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; code?: string; path?: string; fingerprint?: string; owner?: string; reason?: string; expiresAt?: string; json: boolean }) => {
+      try {
+        if (!options.owner) {
+          throw new Error("--owner is required");
+        }
+        if (!options.reason) {
+          throw new Error("--reason is required");
+        }
+        if (!options.code && !options.fingerprint) {
+          throw new Error("Either --code or --fingerprint is required");
+        }
+
+        const result = createWaiver(path.resolve(options.root), {
+          code: options.code,
+          path: options.path,
+          fingerprint: options.fingerprint,
+          owner: options.owner,
+          reason: options.reason,
+          expiresAt: options.expiresAt,
+        } satisfies WaiverCreateOptions);
+
+        renderWaiverCreateResult(result, options.json);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Waiver create failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  waiver
+    .command("list")
+    .description("List all waivers.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const waivers = listWaivers(path.resolve(options.root));
+
+        if (options.json) {
+          console.log(JSON.stringify(waivers, null, 2));
+        } else {
+          if (waivers.length === 0) {
+            console.log("No waivers found.");
+          } else {
+            console.log(`Found ${waivers.length} waiver(s):\n`);
+            for (const waiver of waivers) {
+              console.log(`ID: ${waiver.id}`);
+              console.log(`  Owner: ${waiver.owner}`);
+              console.log(`  Reason: ${waiver.reason}`);
+              if (waiver.issueCode) {
+                console.log(`  Code: ${waiver.issueCode}${waiver.issuePath ? ` (${waiver.issuePath})` : ""}`);
+              }
+              if (waiver.issueFingerprint) {
+                console.log(`  Fingerprint: ${waiver.issueFingerprint}`);
+              }
+              console.log(`  Created: ${waiver.createdAt}`);
+              if (waiver.expiresAt) {
+                console.log(`  Expires: ${waiver.expiresAt}`);
+              }
+              console.log();
+            }
+          }
+        }
+
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Waiver list failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function renderWaiverCreateResult(result: WaiverCreateResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`Waiver created successfully:`);
+    console.log(`  ID: ${result.waiver.id}`);
+    console.log(`  File: ${result.filePath}`);
+  }
+}
+
+function registerChangeCommand(program: Command): void {
+  program
+    .command("change")
+    .description("Record change intent, determine fast/strict lane, and either return hints or execute the mainline orchestration.")
+    .argument("<summary>", "Human summary of the intended change.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--lane <lane>", "Requested lane: auto|fast|strict.", "auto")
+    .option("--mode <mode>", "Orchestration mode: prompt|execute.", "prompt")
+    .option("--slice <sliceId>", "Optional legacy slice binding.")
+    .option("--context <contextId>", "Optional legacy context binding.")
+    .option("--base-ref <ref>", "Optional git base ref for diff classification.", "HEAD")
+    .option("--test-command <cmd>", "Override implement test command when --mode execute is used.")
+    .option("--max-iterations <n>", "Maximum execute-mode implement iterations.", parseInt)
+    .option("--max-tokens <n>", "Maximum execute-mode implement tokens.", parseInt)
+    .option("--max-cost <n>", "Maximum execute-mode implement cost in USD.", parseFloat)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (summary: string, options: { root: string; lane: string; mode: string; slice?: string; context?: string; baseRef: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
+      try {
+        const result = await runChangeCommand({
+          root: path.resolve(options.root),
+          summary,
+          lane: options.lane as any,
+          mode: options.mode as "prompt" | "execute",
+          sliceId: options.slice,
+          contextId: options.context,
+          baseRef: options.baseRef,
+          json: options.json,
+          testCommand: options.testCommand,
+          maxIterations: options.maxIterations,
+          maxTokens: options.maxTokens,
+          maxCostUSD: options.maxCost,
+        } satisfies ChangeCommandOptions);
+
+        console.log(options.json ? renderChangeCommandJSON(result) : result.text);
+        process.exitCode = result.exitCode;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Change command failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerImplementCommand(program: Command): void {
+  program
+    .command("implement")
+    .description("Run budget-controlled FSM to implement change intent with test feedback.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--session-id <id>", "Optional session ID to resume.")
+    .option("--fast", "Prefer the local fast-lane implement flow when the active change session allows it.", false)
+    .option("--test-command <cmd>", "Override test command.")
+    .option("--max-iterations <n>", "Maximum iterations (default: 10).", parseInt)
+    .option("--max-tokens <n>", "Maximum tokens (default: 100000).", parseInt)
+    .option("--max-cost <n>", "Maximum cost in USD (default: 5.00).", parseFloat)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; sessionId?: string; fast: boolean; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
+      try {
+        const { runImplement, renderImplementText, renderImplementJSON, computeImplementExitCode } = await import("./implement/implement-runner");
+
+        const result = await runImplement({
+          root: path.resolve(options.root),
+          sessionId: options.sessionId,
+          fast: options.fast,
+          testCommand: options.testCommand,
+          maxIterations: options.maxIterations,
+          maxTokens: options.maxTokens,
+          maxCostUSD: options.maxCost,
+        });
+
+        const output = options.json ? renderImplementJSON(result) : renderImplementText(result);
+        console.log(output);
+
+        process.exitCode = computeImplementExitCode(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Implement command failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function renderBootstrapDiscoverResult(result: BootstrapDiscoverResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(renderBootstrapDiscoverText(result));
+}
+
+function renderBootstrapDraftResult(result: BootstrapDraftResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(renderBootstrapDraftText(result));
+}
+
+function renderBootstrapAdoptResult(result: BootstrapAdoptResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(renderBootstrapAdoptText(result));
+}
+
+function registerBootstrapCommands(program: Command): void {
+  const bootstrap = program
+    .command("bootstrap")
+    .description("Bootstrap repository evidence for the JiSpec-CLI primary surface.");
+
+  bootstrap
+    .command("discover")
+    .description("Discover repository evidence and write a structured bootstrap evidence graph.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .option("--output <path>", "Override the evidence graph output path.", ".spec/facts/bootstrap/evidence-graph.json")
+    .option("--no-write", "Do not write .spec outputs; only compute the discovery result.")
+    .action((options: { root: string; json: boolean; output: string; write: boolean }) => {
+      try {
+        const result = runBootstrapDiscover({
+          root: path.resolve(options.root),
+          outputPath: options.output,
+          writeFile: options.write,
+        } satisfies BootstrapDiscoverOptions);
+        renderBootstrapDiscoverResult(result, options.json);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec bootstrap discover failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  bootstrap
+    .command("draft")
+    .description("Draft the first contract bundle from bootstrap evidence and store it in a session workspace.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--session <id|latest>", "Continue with an explicit session ID or reuse the latest open draft session.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .option("--no-write", "Do not write session files; only compute the draft bundle.")
+    .action(async (options: { root: string; session?: string; json: boolean; write: boolean }) => {
+      try {
+        const result = await runBootstrapDraft({
+          root: path.resolve(options.root),
+          session: options.session,
+          writeFile: options.write,
+        } satisfies BootstrapDraftOptions);
+        renderBootstrapDraftResult(result, options.json);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec bootstrap draft failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerAdoptCommand(program: Command): void {
+  program
+    .command("adopt")
+    .description("Interactively adopt or defer a bootstrap draft bundle into visible contract assets.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--session <id|latest>", "Adopt a specific draft session or the latest open session.")
+    .option("--interactive", "Collect decisions interactively with a terminal prompt.", false)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; session?: string; interactive: boolean; json: boolean }) => {
+      try {
+        const result = await runBootstrapAdopt({
+          root: path.resolve(options.root),
+          session: options.session,
+          interactive: options.interactive,
+        });
+        renderBootstrapAdoptResult(result, options.json);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec adopt failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function shouldPrintLegacySurfaceHint(argv: string[] = process.argv): boolean {
+  return !argv.some((arg) => arg === "--json" || arg.startsWith("--json="));
+}
+
+function printLegacySurfaceHint(surface: LegacySurface): void {
+  console.log(
+    `[JiSpec] \`${surface}\` is part of the legacy compatibility surface. The current primary entry points are \`jispec-cli verify\` and \`jispec-cli doctor phase5\`.`,
+  );
+}
+
+function extractCommandRawArgs(command: Command): string[] {
+  const commandWithRawArgs = command as Command & { rawArgs?: string[] };
+
+  if (Array.isArray(commandWithRawArgs.rawArgs) && commandWithRawArgs.rawArgs.length > 0) {
+    return commandWithRawArgs.rawArgs;
+  }
+
+  const parentWithRawArgs = command.parent as (Command & { rawArgs?: string[] }) | null;
+  if (parentWithRawArgs && Array.isArray(parentWithRawArgs.rawArgs) && parentWithRawArgs.rawArgs.length > 0) {
+    return parentWithRawArgs.rawArgs;
+  }
+
+  return process.argv;
+}
+
+function commandRequestsJson(command: Command): boolean {
+  const commandWithGlobals = command as Command & { optsWithGlobals?: () => Record<string, unknown> };
+  const options =
+    typeof commandWithGlobals.optsWithGlobals === "function"
+      ? commandWithGlobals.optsWithGlobals()
+      : (command.opts() as Record<string, unknown>);
+  return options.json === true;
+}
+
+function registerLegacySurfaceHint(command: Command, surface: LegacySurface): void {
+  command.hook("preAction", (_thisCommand, actionCommand) => {
+    if (commandRequestsJson(actionCommand)) {
+      return;
+    }
+
+    if (shouldPrintLegacySurfaceHint(extractCommandRawArgs(actionCommand))) {
+      printLegacySurfaceHint(surface);
+    }
+  });
+}
 
 export function buildProgram(): Command {
   const program = new Command();
-  program.name("jispec").description("JiSpec repository validation CLI.");
-
   program
-    .command("validate")
-    .description("Validate JiSpec schema and trace rules.")
-    .option("--root <path>", "Repository root to validate.", ".")
-    .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; json: boolean }) => {
-      const result = validateRepository(path.resolve(options.root));
-      if (options.json) {
-        console.log(JSON.stringify(result.toDict(), null, 2));
-      } else {
-        console.log(result.renderText());
-      }
-      process.exitCode = result.ok ? 0 : 1;
-    });
+    .name("jispec-cli")
+    .description("JiSpec-CLI: contract-driven AI delivery gate for repository assets, policies, and AI-assisted delivery.")
+    .showHelpAfterError();
 
-  const slice = program.command("slice").description("Create and validate JiSpec slices.");
+  program.addHelpText("after", buildCombinedHelpText());
+
+  registerPrimaryVerifyCommand(program);
+  registerBootstrapCommands(program);
+  registerAdoptCommand(program);
+  registerDoctorCommands(program);
+  registerPolicyCommands(program);
+  registerWaiverCommands(program);
+  registerChangeCommand(program);
+  registerImplementCommand(program);
+
+  const slice = program.command("slice").description("Legacy slice-based protocol commands (compatibility surface).");
+  registerLegacySurfaceHint(slice, "slice");
 
   slice
     .command("create")
@@ -303,9 +823,11 @@ export function buildProgram(): Command {
       },
     );
 
-  const trace = program.command("trace").description("Inspect and validate slice traceability.");
+  const trace = program.command("trace").description("Legacy traceability commands for slice-based protocol assets.");
+  registerLegacySurfaceHint(trace, "trace");
 
-  const context = program.command("context").description("Inspect bounded contexts and their slice state.");
+  const context = program.command("context").description("Legacy bounded-context reporting commands.");
+  registerLegacySurfaceHint(context, "context");
 
   context
     .command("next")
@@ -457,7 +979,8 @@ export function buildProgram(): Command {
       process.exitCode = result.ok ? 0 : 1;
     });
 
-  const artifact = program.command("artifact").description("Derive slice artifacts from protocol context.");
+  const artifact = program.command("artifact").description("Legacy asset-derivation commands for slice-based protocol workflows.");
+  registerLegacySurfaceHint(artifact, "artifact");
 
   artifact
     .command("derive-all")
@@ -548,7 +1071,8 @@ export function buildProgram(): Command {
       }
     });
 
-  const agent = program.command("agent").description("Run AI agents to generate slice artifacts.");
+  const agent = program.command("agent").description("Legacy AI agent commands for slice-based protocol workflows.");
+  registerLegacySurfaceHint(agent, "agent");
 
   agent
     .command("run")
@@ -599,7 +1123,8 @@ export function buildProgram(): Command {
     );
 
   // Pipeline command
-  const pipeline = program.command("pipeline").description("Run multi-stage pipelines for slices.");
+  const pipeline = program.command("pipeline").description("Legacy multi-stage pipeline commands for slice-based workflows.");
+  registerLegacySurfaceHint(pipeline, "pipeline");
 
   pipeline
     .command("run")
@@ -647,7 +1172,8 @@ export function buildProgram(): Command {
     );
 
   // Template command
-  const template = program.command("template").description("Manage pipeline templates.");
+  const template = program.command("template").description("Manage legacy pipeline templates.");
+  registerLegacySurfaceHint(template, "template");
 
   template
     .command("list")
@@ -800,7 +1326,8 @@ export function buildProgram(): Command {
     );
 
   // Phase 4: 跨切片依赖管理命令
-  const dependency = program.command("dependency").description("Manage cross-slice dependencies.");
+  const dependency = program.command("dependency").description("Legacy dependency-analysis commands for slice-based protocol graphs.");
+  registerLegacySurfaceHint(dependency, "dependency");
 
   dependency
     .command("graph")

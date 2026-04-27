@@ -167,8 +167,14 @@ class SemanticValidationNegativeTest {
           code: [],
           traceLinks: [
             {
-              from: "checkout-scenario-1", // Wrong! Should be payment-*
-              to: "payment-test-1",
+              from: {
+                type: "scenario",
+                id: "checkout-scenario-1" // Wrong! Should be payment-*
+              },
+              to: {
+                type: "test",
+                id: "payment-test-1"
+              },
               relation: "tests"
             }
           ],
@@ -213,7 +219,19 @@ class SemanticValidationNegativeTest {
           ],
           tests: [],
           code: [],
-          traceLinks: [],
+          traceLinks: [
+            {
+              from: {
+                type: "scenario",
+                id: "payment-process-payment"
+              },
+              to: {
+                type: "test",
+                id: "payment-test-1"
+              },
+              relation: "tests"
+            }
+          ],
           gateUpdates: [
             { gate: "behavior_ready", passed: true } // Correct!
           ]

@@ -1,35 +1,256 @@
 # JiSpec
 
-JiSpec is a repo-first protocol for AI collaborative delivery on large projects.
+JiSpec is building a `contract-driven AI delivery gate` for small AI-native engineering teams.
 
-This repository skeleton includes:
+The product surface is converging on:
 
-- project-level protocol files in `jiproject/`
-- bounded context artifacts in `contexts/`
-- reusable templates in `templates/`
-- machine-checkable schemas in `schemas/`
-- sample input documents in `docs/input/`
-- protocolized agent definitions in `agents/`
+- `JiSpec-CLI`
+  Local-first contract verification and developer-facing workflow commands
+- `JiSpec-Console`
+  Team policy, audit, waiver, and contract-drift control plane
 
-## Current sample
+Today, this repository already contains a deep protocol and pipeline engine. The current codebase still exposes a legacy `slice/context` command surface, but the primary product direction is:
 
-The sample models a commerce project with two bounded contexts:
+`bootstrap discover -> bootstrap draft -> adopt -> verify -> change -> implement`
 
-- `catalog`
-- `ordering`
+## V1 release status
 
-The `ordering` context includes one complete example feature slice:
+Based on the current mainline, the golden-path E2E, and two real legacy-repo takeover demos, this repository is now in a state where it can be released as a **scoped V1 mainline build**.
 
-- `ordering-checkout-v1`
+What that means:
 
-Use this skeleton as the seed for:
+- the V1 mainline is real and working:
+  `bootstrap discover -> bootstrap draft -> adopt -> verify -> ci:verify -> change -> implement`
+- the product already proves the V1 `Aha Moment` on real repositories:
+  it can generate the first contract draft bundle quickly enough that a human adopts and re-anchors it instead of authoring everything from scratch
+- `verify` already understands the difference between historical debt, deferred spec debt, and current blocking issues
 
-- CLI implementation
-- schema validation
-- CI gate checks
-- agent orchestration
+What that does **not** mean:
 
-## Validation prototype
+- this is not yet a "high-quality fully automatic contract generation" release
+- complex repositories still need human-guided `domain/api` correction during adopt
+- `feature` drafts are still materially weaker than `domain` and `api` drafts on noisy repos
+
+The right release framing for this build is:
+
+- `V1 mainline`
+- `human-guided legacy repo takeover`
+- `local-first contract verification and CI gate`
+
+Not the wrong framing:
+
+- `fully automatic legacy repo understanding`
+- `LLM-first blocking gate`
+- `mature console/distributed/collaboration product suite`
+
+Real-world proof points:
+
+- [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
+- [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
+
+## Human-readable artifact gap
+
+The two `C8` runs exposed one more important product truth:
+
+the mainline can already write the right artifacts, but many of those artifacts are still `machine-first`, not `human-first`.
+
+Today, JiSpec can already persist:
+
+- full bootstrap evidence graphs
+- draft session manifests
+- adopted contracts
+- spec-debt records
+- verify JSON reports
+- CI summaries
+
+That is technically valuable, but it is not yet the same thing as:
+
+- a takeover brief a human can scan in minutes
+- an adoption decision summary that explains what was accepted, edited, or deferred
+- a verify digest that clearly separates historical debt, deferred debt, and new blocking drift
+
+In other words:
+
+- the engine already lands the data
+- the operator experience still asks the human to read too many raw artifacts
+
+This is why the next product step is not only "better discovery quality", but also "better explanation quality".
+
+The desired output model should become:
+
+1. `Machine-readable artifacts`
+
+- exhaustive JSON and contract files remain the system of record
+- automation, CI, and future policy engines continue to depend on them
+
+2. `Human-readable companion artifacts`
+
+- every major mainline step should also emit a compact explanation layer by default
+- examples:
+  `bootstrap-summary.md`
+  `adopt-summary.md`
+  `verify-summary.md`
+  `takeover-brief.md`
+
+The end-state rule is:
+
+`raw evidence for machines, distilled decision packets for humans`
+
+## Discover optimization plan
+
+The biggest gap exposed by the two `C8` runs is not "mainline missing", but "discover evidence quality still too noisy on hard repos".
+
+Current failure pattern:
+
+- vendored dependencies, audit mirrors, cache directories, and generated assets can dominate evidence ranking
+- `discover` is still better at producing a broad inventory than a sharp takeover summary
+- `draft` quality degrades when the evidence graph is numerically dominated by non-product files
+
+The optimization path should evolve in three steps:
+
+1. `Noise suppression`
+
+- aggressively ignore vendored, mirrored, cache, build, audit, and dependency-bundle directories by default
+- treat repositories like `artifacts/dpi-audit/.pydeps/**` as exclusion candidates unless the user explicitly opts in
+- separate `inventory evidence` from `adoption-ranked evidence` so large repositories do not drown the first takeover loop
+
+2. `Boundary-first ranking`
+
+- rank `README`, governance docs, protocol docs, manifests, controllers, service entrypoints, and schema truth sources above bulk file count
+- infer candidate bounded contexts from component structure, not just route/file frequency
+- distinguish `explicit endpoint`, `module surface inference`, and `weak candidate` so drafts stop flattening all evidence into the same class
+
+3. `Takeover-grade summaries`
+
+- write a compact "top evidence for first adoption" artifact alongside the full evidence graph
+- cap default draft input to the highest-value contract signals unless the user asks for exhaustive mode
+- emit a human-readable takeover brief by default, not only a large machine-oriented evidence graph
+- make `discover` answer:
+  "what are the first 3-10 assets this team should adopt?"
+  instead of only:
+  "what files did the scanner see?"
+
+The short version:
+
+`discover` should evolve from `repository inventory` toward `takeover-oriented evidence prioritization`.
+
+## Product end state evolution
+
+The product should be read as an intentionally staged evolution, not as a pile of unrelated surfaces.
+
+### Stage 1: Current V1 mainline
+
+Goal:
+
+- help a small AI-native team take over an old repo without writing the first contract set from scratch
+
+Working loop:
+
+- `discover -> draft -> adopt -> verify -> ci:verify`
+- daily changes continue through `change -> implement -> verify`
+
+Human role:
+
+- review and re-anchor the first contracts
+- decide what becomes adopted contract vs spec debt
+
+### Stage 2: Better takeover intelligence
+
+Goal:
+
+- reduce the amount of manual repair needed during adopt
+
+Expected improvements:
+
+- higher-signal discover ranking
+- stronger deterministic draft quality
+- better behavior-contract synthesis
+- fewer noisy artifacts entering the first adoption bundle
+- human-readable summaries become first-class outputs rather than after-the-fact interpretation docs
+
+Human role:
+
+- still in the loop, but editing becomes lighter and more selective
+
+### Stage 3: Execute-default mainline
+
+Goal:
+
+- make `change / implement` feel like one coherent workflow instead of two adjacent commands
+
+Expected product shape:
+
+- `prompt` and `execute` both remain available
+- `execute` becomes the default product posture
+- bootstrap state, verify gate, lane choice, and implementation handoff all speak one stable contract
+
+Human role:
+
+- choose mode and approve boundaries, not manually chain every step
+
+### Stage 4: End-state product
+
+Goal:
+
+- JiSpec becomes the contract control layer for an AI-native team operating real repositories over time
+
+End-state characteristics:
+
+- first takeover is fast
+- ongoing change stays inside contract-aware lanes
+- verify is deterministic and CI-native
+- policy, waiver, and facts form the stable governance surface
+- console and collaboration surfaces sit on top of an already-proven mainline instead of compensating for a weak core
+
+The key sequencing rule is:
+
+`core mainline first, surrounding surfaces second`
+
+That is why `console / distributed / collaboration / direct LLM blocking path` remain intentionally de-prioritized until the takeover-and-gate core is stronger.
+
+## What works today
+
+The current first-class entry points in this build are:
+
+```bash
+npm run verify
+npm run jispec-cli -- change "Update checkout copy"
+npm run jispec-cli -- implement
+npm run jispec-cli -- implement --fast
+npm run jispec-cli -- bootstrap discover
+npm run jispec-cli -- bootstrap draft
+npm run jispec-cli -- adopt --interactive
+npm run jispec-cli -- verify --json
+npm run jispec-cli -- policy migrate
+npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor phase5
+npm run ci:verify
+```
+
+What they do:
+
+- `bootstrap discover`
+  Scans the repository and writes a structured evidence graph to `.spec/facts/bootstrap/`.
+- `bootstrap draft`
+  Converts bootstrap evidence into a session-scoped draft bundle under `.spec/sessions/`.
+- `adopt --interactive`
+  Lets you accept, reject, edit, or defer that draft bundle into `.spec/contracts/` and `.spec/spec-debt/`.
+- `change`
+  Records change intent, classifies the active diff into fast or strict lane, and writes the active change session.
+- `implement`
+  Runs the local budget-controlled implementation loop for the active change session, then returns to verify.
+- `verify`
+  Runs the current deterministic repository verification path, auto-loads `.spec/policy.yaml` when present, and emits the new four-state verdict surface.
+- `policy migrate`
+  Scaffolds or normalizes the minimal YAML policy surface at `.spec/policy.yaml` and pins it to the current facts contract version.
+- `doctor v1`
+  Runs the V1 mainline readiness checks without letting deferred distributed or collaboration surfaces block the result.
+- `doctor phase5`
+  Runs the broader Phase 5.1 readiness and health diagnostics against the current runtime and pipeline stack.
+- `ci:verify`
+  Wraps the repository verification path for CI usage.
+
+## Quickstart
 
 Install dependencies:
 
@@ -37,165 +258,242 @@ Install dependencies:
 npm install
 ```
 
-Validate the full repository:
+See the current CLI surface:
 
 ```bash
+npm run jispec-cli -- --help
+```
+
+Run repository verification locally:
+
+```bash
+npm run verify
+```
+
+Record a change and let JiSpec decide the lane:
+
+```bash
+npm run jispec-cli -- change "Add order refund validation"
+```
+
+Record a change in prompt mode and review next-step hints manually:
+
+```bash
+npm run jispec-cli -- change "Add order refund validation" --mode prompt
+```
+
+Record a change in execute mode and let JiSpec continue into implement/verify when the lane allows it:
+
+```bash
+npm run jispec-cli -- change "Add order refund validation" --mode execute
+```
+
+Run the strict local implementation loop:
+
+```bash
+npm run jispec-cli -- implement
+```
+
+Run the fast local implementation loop for a session that stayed on fast lane:
+
+```bash
+npm run jispec-cli -- implement --fast
+```
+
+Inspect the machine-readable verify contract:
+
+```bash
+npm run jispec-cli -- verify --json
+```
+
+Scaffold or refresh the minimal policy file:
+
+```bash
+npm run jispec-cli -- policy migrate
+```
+
+Run bootstrap discovery:
+
+```bash
+npm run jispec-cli -- bootstrap discover
+```
+
+Draft the first contract bundle:
+
+```bash
+npm run jispec-cli -- bootstrap draft
+```
+
+Adopt the drafted bundle:
+
+```bash
+npm run jispec-cli -- adopt --interactive
+```
+
+Run the CI wrapper:
+
+```bash
+npm run ci:verify
+```
+
+Replay the minimal legacy-repo takeover sample:
+
+```bash
+node --import tsx ./scripts/run-v1-sample-repo.ts --workspace ./.tmp/v1-sample-run
+```
+
+Run health checks:
+
+```bash
+npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor phase5
+```
+
+Run the broader Phase 5.1 health checks:
+
+```bash
+npm run jispec-cli -- doctor phase5
+```
+
+## Verify verdicts
+
+`verify` now returns a stable four-state verdict contract:
+
+- `PASS`
+- `FAIL_BLOCKING`
+- `WARN_ADVISORY`
+- `ERROR_NONBLOCKING`
+
+For local and future CI/automation consumers, `npm run jispec-cli -- verify --json` is the stable machine-readable entry point. `npm run ci:verify` remains the current wrapper used by existing team workflows.
+
+When `.spec/policy.yaml` exists, `verify` loads it automatically. Use `npm run jispec-cli -- verify --facts-out .spec/facts/latest-canonical.json` to snapshot the canonical facts surface that policy evaluation reads.
+
+## Compatibility surface
+
+This repository still exposes a working legacy protocol/runtime layer built around `slice`, `context`, `trace`, `artifact`, `agent`, `pipeline`, `template`, and `dependency`.
+
+Examples:
+
+```bash
+npm run jispec-cli -- slice check ordering-checkout-v1
+npm run jispec-cli -- slice plan ordering-checkout-v1 --force
+npm run jispec-cli -- context board ordering
+npm run jispec-cli -- trace show ordering-checkout-v1
+npm run jispec-cli -- artifact derive-all ordering-checkout-v1 --force
+npm run jispec-cli -- pipeline run ordering-checkout-v1
+```
+
+This surface is still valuable and supported, but it should be read as the compatibility/runtime layer behind the newer `JiSpec-CLI` product direction, not as the primary user entry point.
+
+Compatibility aliases still kept for older workflows:
+
+```bash
+npm run jispec -- <command>
 npm run validate:repo
+npm run check:jispec
+npm run jispec-cli -- validate
 ```
 
-For machine-readable output:
+## Change And Implement
+
+`change` and `implement` are now part of the first-class CLI workflow.
+
+Current reality in this build:
+
+- `change` is still primarily a prompt-style step that persists lane/session state and returns next-step hints
+- `implement` already performs a post-implement verify handoff
+- the intended end state is a user-selectable `prompt / execute` mainline, with `execute` becoming the default once the orchestration path is fully landed
+
+Current mode split:
+
+- `change --mode prompt`
+  Writes the change session, classifies the lane, and returns `nextCommands` without executing downstream steps.
+- `change --mode execute`
+  Tries to continue the mainline automatically:
+  fast lane runs through `implement --fast -> verify --fast`, while strict lane either enters `implement -> verify` or pauses at the explicit `adopt` boundary when a bootstrap draft is still open.
+
+- `change`
+  Persists the active diff classification and lane decision into `.jispec/change-session.json`.
+- `implement`
+  Uses that active change session, honors strict vs fast lane, and runs a post-implement verify step automatically.
+- `implement --fast`
+  Is a local development accelerator only. It can still auto-promote back to strict when verify sees contract-critical changes.
+
+## Command language
+
+Externally, JiSpec is moving toward the following user-facing terms:
+
+- `Contract`
+- `Asset`
+- `Policy`
+- `Fact`
+- `Lane`
+- `Waiver`
+
+Internally, you will still see legacy implementation terms such as:
+
+- `slice`
+- `stage`
+
+That is expected for now; the repository is in a controlled transition from the old runtime vocabulary to the new product surface.
+
+## Scripts
+
+Primary scripts:
 
 ```bash
-npm run jispec -- validate --json
+npm run jispec-cli -- <command>
+npm run verify
+npm run ci:verify
 ```
 
-Validate one slice against its lifecycle, schema, and trace rules:
+Compatibility scripts:
 
 ```bash
-npm run jispec -- slice check ordering-checkout-v1
-```
-
-Generate a deterministic task plan for one slice:
-
-```bash
-npm run jispec -- slice plan ordering-checkout-v1 --force
-```
-
-List slices across the repository or for one context:
-
-```bash
-npm run jispec -- slice list --context ordering
-```
-
-Show the full observable snapshot for one slice:
-
-```bash
-npm run jispec -- slice show ordering-checkout-v1
-```
-
-Show what is blocking the next lifecycle step for one slice:
-
-```bash
-npm run jispec -- slice status ordering-checkout-v1
-```
-
-Recommend the next highest-leverage action for one slice:
-
-```bash
-npm run jispec -- slice next ordering-checkout-v1
-```
-
-Update one or more slice gates without advancing state:
-
-```bash
-npm run jispec -- slice update-gates ordering-checkout-v1 --set-gate test_ready=true
-```
-
-Update one or more task execution statuses inside a slice:
-
-```bash
-npm run jispec -- slice update-tasks ordering-checkout-v1 --set-status TASK-ORDERING-CHECKOUT-V1-001=in_progress
-```
-
-Advance a slice to the next lifecycle state when its gates are satisfied:
-
-```bash
-npm run jispec -- slice advance ordering-checkout-v1 --to test-defined --set-gate test_ready=true
-```
-
-Inspect a slice trace summary:
-
-```bash
-npm run jispec -- trace show ordering-checkout-v1
-```
-
-Show the aggregate delivery view for one bounded context:
-
-```bash
-npm run jispec -- context show ordering
-```
-
-Show the execution board for one bounded context:
-
-```bash
-npm run jispec -- context board ordering
-```
-
-Recommend the next highest-leverage action inside one bounded context:
-
-```bash
-npm run jispec -- context next ordering
-```
-
-List bounded contexts and their aggregate delivery state:
-
-```bash
-npm run jispec -- context list
-```
-
-Show what is blocking progress inside one bounded context:
-
-```bash
-npm run jispec -- context status ordering
-```
-
-Validate only the trace chain for one slice:
-
-```bash
-npm run jispec -- trace check ordering-checkout-v1
-```
-
-Derive a slice behavior file from context scenarios:
-
-```bash
-npm run jispec -- artifact derive-behavior ordering-checkout-v1 --force
-```
-
-Derive slice tests and coverage mappings from scenario IDs:
-
-```bash
-npm run jispec -- artifact derive-tests ordering-checkout-v1 --force
-```
-
-Synchronize trace links from slice requirements, behaviors, and tests:
-
-```bash
-npm run jispec -- artifact sync-trace ordering-checkout-v1
-```
-
-Derive a slice design from slice metadata and context design assets:
-
-```bash
-npm run jispec -- artifact derive-design ordering-checkout-v1 --force
-```
-
-Run the full safe derivation pipeline for one slice:
-
-```bash
-npm run jispec -- artifact derive-all ordering-checkout-v1 --force
-```
-
-Create a new proposed slice from the repository templates:
-
-```bash
-npm run jispec -- slice create ordering ordering-returns-v1 --title "Returns MVP"
-```
-
-The CI wrapper uses:
-
-```bash
+npm run jispec -- <command>
+npm run validate:repo
 npm run check:jispec
 ```
 
-Execution planning artifacts are now part of the protocol surface:
+## Current repo state
 
-- `schemas/tasks.schema.json` validates `tasks.yaml`
-- `jispec slice plan` generates deterministic slice tasks with explicit dependencies
-- `jispec slice update-tasks` records execution progress back into `tasks.yaml`
-- `jispec context board` renders a priority-sorted execution board with swimlanes
-- `jispec slice next` and `jispec context next` turn the board state into executable recommendations
+This repository includes:
 
-## Roadmap
+- project-level protocol files in `jiproject/`
+- bounded context assets in `contexts/`
+- reusable templates in `templates/`
+- machine-checkable schemas in `schemas/`
+- sample input documents in `docs/input/`
+- AI and pipeline definitions in `agents/`
+- the CLI/runtime implementation in `tools/jispec/`
 
-- Short-term implementation status: `docs/phase-1-summary.md`, `docs/phase-2-summary.md`, `docs/phase-3-summary.md`
-- Long-term roadmap for repository-scale orchestration: `docs/long-term-roadmap-v0.1.md`
+The sample models a commerce project with two bounded contexts:
+
+- `catalog`
+- `ordering`
+
+The `ordering` context includes one complete example slice:
+
+- `ordering-checkout-v1`
+
+## Key docs
+
+- V1 completion checklist:
+  [docs/v1-mainline-completion-checklist.md](docs/v1-mainline-completion-checklist.md)
+- V1 mainline stable contract:
+  [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
+- Remaining-task roadmap:
+  [docs/remaining-tasks-roadmap.md](docs/remaining-tasks-roadmap.md)
+- Business plan and engineering direction:
+  [docs/spec-driven-ai-pipeline-business-plan.md](docs/spec-driven-ai-pipeline-business-plan.md)
+- Long-term runtime roadmap:
+  [docs/long-term-roadmap-v0.1.md](docs/long-term-roadmap-v0.1.md)
+- Real legacy repo takeover demos:
+  [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
+  [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
+- Earlier implementation summaries:
+  [docs/phase-1-summary.md](docs/phase-1-summary.md)
+  [docs/phase-2-summary.md](docs/phase-2-summary.md)
+  [docs/phase-3-summary.md](docs/phase-3-summary.md)
+- V1 minimal sample repo:
+  [docs/v1-sample-repo.md](docs/v1-sample-repo.md)

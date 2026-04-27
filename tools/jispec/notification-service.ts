@@ -8,6 +8,7 @@ export type NotificationType =
   | "success"
   | "warning"
   | "error"
+  | "comment"
   | "mention"
   | "conflict"
   | "lock"
@@ -62,6 +63,14 @@ export interface NotificationPreferences {
     start: string; // HH:mm
     end: string; // HH:mm
   };
+}
+
+export interface SendNotificationOptions {
+  priority?: NotificationPriority;
+  resourceId?: string;
+  resourceType?: string;
+  channels?: NotificationChannel[];
+  metadata?: Record<string, any>;
 }
 
 /**
@@ -161,6 +170,10 @@ export class NotificationService extends EventEmitter {
     this.handlers.set(channel, handler);
   }
 
+  hasHandler(channel: NotificationChannel): boolean {
+    return this.handlers.has(channel);
+  }
+
   /**
    * 发送通知
    */
@@ -169,13 +182,7 @@ export class NotificationService extends EventEmitter {
     type: NotificationType,
     title: string,
     message: string,
-    options?: {
-      priority?: NotificationPriority;
-      resourceId?: string;
-      resourceType?: string;
-      channels?: NotificationChannel[];
-      metadata?: Record<string, any>;
-    }
+    options?: SendNotificationOptions
   ): Promise<Notification> {
     const notification: Notification = {
       id: `notif-${Date.now()}-${Math.random()}`,
@@ -333,6 +340,10 @@ export class NotificationService extends EventEmitter {
     return notifications;
   }
 
+  getUnreadCount(userId: string): number {
+    return this.getUserNotifications(userId, true).length;
+  }
+
   /**
    * 获取通知
    */
@@ -365,7 +376,7 @@ export class NotificationService extends EventEmitter {
         inApp: true,
       },
       filters: {
-        types: ["info", "success", "warning", "error", "mention", "conflict", "lock", "permission"],
+        types: ["info", "success", "warning", "error", "comment", "mention", "conflict", "lock", "permission"],
         minPriority: "low",
       },
     };
@@ -406,6 +417,32 @@ export class NotificationService extends EventEmitter {
   }
 
   /**
+   * 发送评论通知
+   */
+  async notifyComment(
+    userId: string,
+    resourceId: string,
+    commentedBy: string,
+    preview: string
+  ): Promise<Notification> {
+    return this.sendNotification(
+      userId,
+      "comment",
+      "New comment",
+      `${commentedBy} commented on ${resourceId}`,
+      {
+        priority: "normal",
+        resourceId,
+        resourceType: "document",
+        metadata: {
+          commentedBy,
+          preview,
+        },
+      }
+    );
+  }
+
+  /**
    * 发送冲突通知
    */
   async notifyConflict(
@@ -434,7 +471,7 @@ export class NotificationService extends EventEmitter {
     userId: string,
     resourceId: string,
     lockedBy: string,
-    action: "locked" | "unlocked"
+    action: "locked" | "unlocked" | "renewed" | "force-unlocked"
   ): Promise<Notification> {
     return this.sendNotification(
       userId,
@@ -447,6 +484,19 @@ export class NotificationService extends EventEmitter {
         metadata: { lockedBy, action },
       }
     );
+  }
+
+  extractMentions(content: string): string[] {
+    const mentions = new Set<string>();
+    const pattern = /@([a-zA-Z0-9._-]+)/g;
+    let match = pattern.exec(content);
+
+    while (match) {
+      mentions.add(match[1]);
+      match = pattern.exec(content);
+    }
+
+    return Array.from(mentions);
   }
 
   /**
@@ -488,6 +538,7 @@ export class NotificationService extends EventEmitter {
       success: 0,
       warning: 0,
       error: 0,
+      comment: 0,
       mention: 0,
       conflict: 0,
       lock: 0,

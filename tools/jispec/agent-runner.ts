@@ -12,6 +12,7 @@ import { GateChecker } from "./gate-checker";
 import { TraceManager } from "./trace-manager";
 import type { ResolvedStageContract } from "./stage-contract";
 import type { StageExecutionResult, FileWrite, GateUpdate, TraceLink, Evidence } from "./stage-execution-result";
+import { loadAIConfigFromRoot } from "./runtime/load-ai-config";
 
 /**
  * Agent role types supported by the system
@@ -559,7 +560,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentResult> {
  */
 async function callAI(context: AgentContext): Promise<string> {
   // 1. Load AI configuration from jiproject.yaml
-  const aiConfig = loadAIConfig(context.slicePath);
+  const aiConfig = loadAIConfigFromRoot(findRepositoryRoot(context.slicePath));
 
   // 2. Create AI provider
   const provider = AIProviderFactory.create(aiConfig);
@@ -579,30 +580,22 @@ async function callAI(context: AgentContext): Promise<string> {
   return output;
 }
 
-/**
- * Load AI configuration from jiproject/project.yaml
- */
-function loadAIConfig(slicePath: string): AIConfig | undefined {
-  // Try to find jiproject/project.yaml by walking up the directory tree
+function findRepositoryRoot(slicePath: string): string {
   let currentDir = slicePath;
   const root = path.parse(currentDir).root;
 
   while (currentDir !== root) {
     const projectPath = path.join(currentDir, "jiproject", "project.yaml");
     if (fs.existsSync(projectPath)) {
-      const content = fs.readFileSync(projectPath, "utf-8");
-      const config = yaml.load(content) as any;
-      return config?.ai;
+      return currentDir;
     }
 
-    // Move up one directory
     const parentDir = path.dirname(currentDir);
     if (parentDir === currentDir) break;
     currentDir = parentDir;
   }
 
-  // No configuration found, use default (stdio)
-  return undefined;
+  return slicePath;
 }
 
 /**
