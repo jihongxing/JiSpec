@@ -1,7 +1,7 @@
 /**
- * JiSpec Doctor - Phase 5.1 Readiness Checks
+ * JiSpec Doctor - readiness and health checks
  *
- * Performs comprehensive health checks for Phase 5.1 readiness.
+ * Performs V1 mainline and extended runtime health checks.
  */
 
 import path from "node:path";
@@ -31,7 +31,7 @@ export interface DoctorReport {
   passedChecks: number;
   failedChecks: number;
   ready: boolean;
-  profile?: "phase5" | "v1";
+  profile?: "runtime" | "v1";
 }
 
 export class Doctor {
@@ -42,9 +42,9 @@ export class Doctor {
   }
 
   /**
-   * Run all Phase 5.1 readiness checks
+   * Run extended runtime and compatibility readiness checks.
    */
-  async checkPhase5(): Promise<DoctorReport> {
+  async checkRuntime(): Promise<DoctorReport> {
     const checks: DoctorCheckResult[] = [];
 
     checks.push(await this.checkPipelineConfiguration());
@@ -67,7 +67,7 @@ export class Doctor {
     checks.push(await this.checkCollaborationNotifications());
     checks.push(await this.checkCollaborationAnalytics());
 
-    return this.buildReport("phase5", checks);
+    return this.buildReport("runtime", checks);
   }
 
   /**
@@ -88,7 +88,7 @@ export class Doctor {
     return this.buildReport("v1", checks);
   }
 
-  private buildReport(profile: "phase5" | "v1", checks: DoctorCheckResult[]): DoctorReport {
+  private buildReport(profile: "runtime" | "v1", checks: DoctorCheckResult[]): DoctorReport {
     const passedChecks = checks.filter((c) => c.status === "pass").length;
     const failedChecks = checks.filter((c) => c.status === "fail").length;
 
@@ -1469,7 +1469,7 @@ export class Doctor {
 
     const title = report.profile === "v1"
       ? "=== JiSpec Doctor: V1 Mainline Readiness ===\n"
-      : "=== JiSpec Doctor: Phase 5.1 Readiness ===\n";
+      : "=== JiSpec Doctor: Extended Runtime Readiness ===\n";
     lines.push(title);
 
     for (const check of report.checks) {
@@ -1483,7 +1483,7 @@ export class Doctor {
 
     lines.push("=== Summary ===");
     lines.push(`${report.passedChecks}/${report.totalChecks} checks passed`);
-    lines.push(`${report.profile === "v1" ? "V1 Mainline Ready" : "Phase 5.1 Ready"}: ${report.ready ? "YES" : "NO"}`);
+    lines.push(`${report.profile === "v1" ? "V1 Mainline Ready" : "Extended Runtime Ready"}: ${report.ready ? "YES" : "NO"}`);
 
     return lines.join("\n");
   }

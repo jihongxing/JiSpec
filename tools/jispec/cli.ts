@@ -71,7 +71,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli adopt --interactive [--json]",
     "  jispec-cli policy migrate [--json]",
     "  jispec-cli doctor v1",
-    "  jispec-cli doctor phase5",
+    "  jispec-cli doctor runtime",
     "",
     "Current CI wrapper:",
     "  npm run ci:verify",
@@ -183,14 +183,14 @@ function registerDoctorCommands(program: Command): void {
     });
 
   doctor
-    .command("phase5")
-    .description("Check Phase 5.1 readiness.")
+    .command("runtime")
+    .description("Check extended runtime and compatibility surface readiness.")
     .option("--root <path>", "Repository root.", ".")
     .option("--json", "Emit machine-readable JSON output.", false)
     .action(async (options: { root: string; json: boolean }) => {
       try {
         const doctorInstance = new Doctor(path.resolve(options.root));
-        const report = await doctorInstance.checkPhase5();
+        const report = await doctorInstance.checkRuntime();
 
         if (options.json) {
           console.log(Doctor.formatJSON(report));
@@ -201,7 +201,7 @@ function registerDoctorCommands(program: Command): void {
         process.exitCode = report.ready ? 0 : 1;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`Doctor check failed: ${message}`);
+        console.error(`Doctor runtime check failed: ${message}`);
         process.exitCode = 1;
       }
     });
@@ -755,7 +755,7 @@ function shouldPrintLegacySurfaceHint(argv: string[] = process.argv): boolean {
 
 function printLegacySurfaceHint(surface: LegacySurface): void {
   console.log(
-    `[JiSpec] \`${surface}\` is part of the legacy compatibility surface. The current primary entry points are \`jispec-cli verify\` and \`jispec-cli doctor phase5\`.`,
+    `[JiSpec] \`${surface}\` is part of the legacy compatibility surface. The current primary entry points are \`jispec-cli verify\` and \`jispec-cli doctor v1\`.`,
   );
 }
 

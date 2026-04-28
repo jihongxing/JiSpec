@@ -1,8 +1,8 @@
-# JiSpec Doctor Phase 5.1 Checks
+# JiSpec Doctor Runtime Checks
 
 ## Overview
 
-`jispec doctor phase5` performs comprehensive health checks for Phase 5.1 readiness.
+`jispec doctor runtime` performs extended health checks for the runtime and legacy compatibility surface.
 
 ## Check Categories
 
@@ -68,7 +68,7 @@
 ## Output Format
 
 ```
-=== JiSpec Doctor: Phase 5.1 Readiness ===
+=== JiSpec Doctor: Extended Runtime Readiness ===
 
 ✓ Pipeline Configuration
   - pipeline.yaml valid
@@ -103,7 +103,7 @@
 
 === Summary ===
 7/7 checks passed
-Phase 5.1 Ready: YES
+Extended Runtime Ready: YES
 ```
 
 ## Exit Codes

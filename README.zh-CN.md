@@ -230,7 +230,7 @@ npm run jispec-cli -- adopt --interactive
 npm run jispec-cli -- verify --json
 npm run jispec-cli -- policy migrate
 npm run jispec-cli -- doctor v1
-npm run jispec-cli -- doctor phase5
+npm run jispec-cli -- doctor runtime
 npm run ci:verify
 ```
 
@@ -254,8 +254,8 @@ npm run ci:verify
   在 `.spec/policy.yaml` 脚手架化或标准化最小 YAML policy 面，并把它固定到当前 facts contract 版本。
 - `doctor v1`
   运行 V1 主线 readiness 检查，不让延后的 distributed/collaboration surface 直接阻断结果。
-- `doctor phase5`
-  运行更广义的 Phase 5.1 readiness 与当前 runtime/pipeline 栈健康诊断。
+- `doctor runtime`
+  运行 V1 主线 readiness gate 之外的扩展 runtime 与兼容层健康诊断。
 - `ci:verify`
   为 CI 使用包装仓库 verify 路径。
 
@@ -375,13 +375,13 @@ node --import tsx ./scripts/run-v1-sample-repo.ts --workspace ./.tmp/v1-sample-r
 
 ```bash
 npm run jispec-cli -- doctor v1
-npm run jispec-cli -- doctor phase5
+npm run jispec-cli -- doctor runtime
 ```
 
-运行更广义的 Phase 5.1 健康检查：
+运行更广义的 runtime 与兼容层健康检查：
 
 ```bash
-npm run jispec-cli -- doctor phase5
+npm run jispec-cli -- doctor runtime
 ```
 
 ## Verify verdict

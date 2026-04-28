@@ -229,7 +229,7 @@ npm run jispec-cli -- adopt --interactive
 npm run jispec-cli -- verify --json
 npm run jispec-cli -- policy migrate
 npm run jispec-cli -- doctor v1
-npm run jispec-cli -- doctor phase5
+npm run jispec-cli -- doctor runtime
 npm run ci:verify
 ```
 
@@ -253,8 +253,8 @@ What they do:
   Scaffolds or normalizes the minimal YAML policy surface at `.spec/policy.yaml` and pins it to the current facts contract version.
 - `doctor v1`
   Runs the V1 mainline readiness checks without letting deferred distributed or collaboration surfaces block the result.
-- `doctor phase5`
-  Runs the broader Phase 5.1 readiness and health diagnostics against the current runtime and pipeline stack.
+- `doctor runtime`
+  Runs broader runtime and compatibility health diagnostics outside the V1 mainline readiness gate.
 - `ci:verify`
   Wraps the repository verification path for CI usage.
 
@@ -374,13 +374,13 @@ Run health checks:
 
 ```bash
 npm run jispec-cli -- doctor v1
-npm run jispec-cli -- doctor phase5
+npm run jispec-cli -- doctor runtime
 ```
 
-Run the broader Phase 5.1 health checks:
+Run the broader runtime and compatibility health checks:
 
 ```bash
-npm run jispec-cli -- doctor phase5
+npm run jispec-cli -- doctor runtime
 ```
 
 ## Verify verdicts

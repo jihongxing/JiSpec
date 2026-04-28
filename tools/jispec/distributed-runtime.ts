@@ -25,7 +25,7 @@ export interface SubmitDistributedTaskInput {
 
 /**
  * In-process master/worker bridge used to validate distributed scheduling
- * without introducing a network dependency in Phase 5.1.
+ * without introducing a network dependency in the local runtime.
  */
 export class LocalDistributedRuntime {
   private readonly scheduler: DistributedScheduler;

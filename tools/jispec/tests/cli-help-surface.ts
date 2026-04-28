@@ -47,9 +47,9 @@ function main(): void {
     assertIncludes(help, "jispec-cli bootstrap draft [--json]", "primary surface");
     assertIncludes(help, "jispec-cli adopt --interactive [--json]", "primary surface");
     assertIncludes(help, "jispec-cli doctor v1", "primary surface");
-    assertIncludes(help, "jispec-cli doctor phase5", "primary surface");
+    assertIncludes(help, "jispec-cli doctor runtime", "primary surface");
     assertIncludes(help, "npm run ci:verify", "primary surface");
-    console.log("✓ Test 2: primary surface lists init, verify, change, implement, bootstrap commands, adopt, doctor v1, doctor phase5, and ci:verify");
+    console.log("✓ Test 2: primary surface lists init, verify, change, implement, bootstrap commands, adopt, doctor v1, doctor runtime, and ci:verify");
     passed++;
 
     assertIncludes(help, "jispec-cli slice ...", "legacy surface");

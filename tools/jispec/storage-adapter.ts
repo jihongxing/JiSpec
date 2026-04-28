@@ -2,10 +2,10 @@
  * Storage Adapter Interface
  *
  * Abstracts storage operations to support multiple backends:
- * - Local filesystem (Phase 5.1)
- * - Object storage (Phase 5.2+)
- * - Remote worker storage (Phase 5.2+)
- * - Distributed cache (Phase 5.2+)
+ * - Local filesystem
+ * - Object storage
+ * - Remote worker storage
+ * - Distributed cache
  */
 
 import type { ArtifactIdentity } from "./artifact-identity";
