@@ -1,3 +1,4 @@
+import path from "node:path";
 import { classifyGitDiff } from "./git-diff-classifier";
 import { computeLaneDecision, renderLaneDecisionText, type LaneType } from "./lane-decision";
 import { listDraftSessionManifests } from "../bootstrap/draft";
@@ -9,6 +10,7 @@ import {
   type ChangeSessionOrchestrationMode,
 } from "./change-session";
 import { computeImplementExitCode, runImplement, type ImplementRunResult } from "../implement/implement-runner";
+import { draftSpecDelta, isSpecDeltaChangeType, type SpecDeltaChangeType } from "./spec-delta";
 
 export type ChangeCommandMode = ChangeSessionOrchestrationMode;
 
@@ -19,6 +21,7 @@ export interface ChangeCommandOptions {
   mode?: ChangeCommandMode;
   sliceId?: string;
   contextId?: string;
+  changeType?: SpecDeltaChangeType;
   baseRef?: string;
   json?: boolean;
   testCommand?: string;
@@ -64,6 +67,7 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     mode = "prompt",
     sliceId,
     contextId,
+    changeType,
     baseRef = "HEAD",
     json = false,
     testCommand,
@@ -72,18 +76,47 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     maxCostUSD,
   } = options;
 
+  if (changeType !== undefined && !isSpecDeltaChangeType(changeType)) {
+    throw new Error(`Invalid change type: ${changeType}. Expected add, modify, deprecate, fix, or redesign.`);
+  }
+
   const classification = classifyGitDiff(root, baseRef);
   const laneDecision = computeLaneDecision(classification, lane);
   const nextCommands = buildNextCommandHints(root, laneDecision.lane, sliceId);
-  const impactSummary = buildImpactSummary(root, sliceId);
+  const createdAt = new Date().toISOString();
+  const specDelta = draftSpecDelta({
+    root,
+    summary,
+    changeType,
+    createdAt,
+    sliceId,
+    contextId,
+  });
+  if (specDelta) {
+    nextCommands.unshift({
+      command: `Review .spec/deltas/${specDelta.changeId}/delta.yaml`,
+      description: "Review the proposed Spec Delta before adopting it into the active baseline.",
+    });
+    nextCommands.unshift({
+      command: `Review .spec/deltas/${specDelta.changeId}/verify-focus.yaml`,
+      description: "Review the focused verification scope generated from the Greenfield Evidence Graph.",
+    });
+    nextCommands.unshift({
+      command: `Review .spec/deltas/${specDelta.changeId}/ai-implement-handoff.md`,
+      description: "Review the change-scoped AI implementation handoff before assigning an implementer.",
+    });
+  }
+  const impactSummary = buildImpactSummary(root, sliceId, specDelta);
 
   const session: ChangeSession = {
     id: generateSessionId(),
-    createdAt: new Date().toISOString(),
+    createdAt,
     summary,
     orchestrationMode: mode,
     laneDecision,
     changedPaths: classification.changedPaths,
+    changeType,
+    specDelta,
     sliceId,
     contextId,
     baseRef,
@@ -167,7 +200,34 @@ function findOpenDraftSessionId(root: string): string | undefined {
   return openDraft?.manifest.sessionId;
 }
 
-function buildImpactSummary(root: string, sliceId?: string): string[] | undefined {
+function buildImpactSummary(
+  root: string,
+  sliceId?: string,
+  specDelta?: ReturnType<typeof draftSpecDelta>,
+): string[] | undefined {
+  if (specDelta) {
+    return [
+      `Spec Delta: ${specDelta.changeId}`,
+      `Delta path: ${relativePath(root, specDelta.deltaPath)}`,
+      `Impact report: ${relativePath(root, specDelta.impactReportPath)}`,
+      `Impact graph: ${relativePath(root, specDelta.impactGraphPath)}`,
+      `Dirty report: ${relativePath(root, specDelta.dirtyReportPath)}`,
+      `Dirty graph: ${relativePath(root, specDelta.dirtyGraphPath)}`,
+      `AI handoff: ${relativePath(root, specDelta.handoffPath)}`,
+      `Verify focus: ${relativePath(root, specDelta.verifyFocusPath)}`,
+      `Affected requirements: ${specDelta.references.requirement_ids.length}`,
+      `Affected contexts: ${specDelta.references.contexts.length}`,
+      `Affected contracts: ${specDelta.references.contracts.length}`,
+      `Affected scenarios: ${specDelta.references.scenarios.length}`,
+      `Affected slices: ${specDelta.references.slices.length}`,
+      `Affected tests: ${specDelta.references.tests.length}`,
+      `Affected assets: ${specDelta.blastRadius?.affectedAssetPaths.length ?? 0}`,
+      `Dirty nodes: ${specDelta.dirtyAnalysis?.dirtyGraph.dirty_nodes.length ?? 0}`,
+      `Required dirty updates: ${specDelta.dirtyAnalysis?.dirtyGraph.required_updates.length ?? 0}`,
+      "Active baseline remains unchanged until explicit adoption.",
+    ];
+  }
+
   if (!sliceId) {
     return undefined;
   }
@@ -176,6 +236,10 @@ function buildImpactSummary(root: string, sliceId?: string): string[] | undefine
     `Slice: ${sliceId}`,
     "Impact analysis not yet implemented in this version",
   ];
+}
+
+function relativePath(root: string, target: string): string {
+  return path.relative(root, target).replace(/\\/g, "/");
 }
 
 function buildPromptExecutionSummary(): ChangeCommandExecutionSummary {
@@ -299,6 +363,17 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
     for (const impact of session.impactSummary) {
       lines.push(`- ${impact}`);
     }
+    lines.push("");
+  }
+
+  if (session.specDelta) {
+    lines.push("Spec Delta:");
+    lines.push(`- Change ID: ${session.specDelta.changeId}`);
+    lines.push(`- Delta: ${session.specDelta.deltaPath}`);
+    lines.push(`- Dirty report: ${session.specDelta.dirtyReportPath}`);
+    lines.push(`- AI handoff: ${session.specDelta.handoffPath}`);
+    lines.push(`- Adoption record: ${session.specDelta.adoptionRecordPath}`);
+    lines.push("- Active baseline remains unchanged until explicit adoption.");
     lines.push("");
   }
 

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { FilesystemStorage } from "../filesystem-storage";
 import { validateRepository } from "../validator";
+import { bootstrapProjectExists, runBootstrapInitProject } from "./init-project";
 import {
   type BootstrapDiscoverResult,
   type BootstrapDiscoverSummary,
@@ -19,23 +20,17 @@ import {
   type EvidenceSourceFile,
   type EvidenceTest,
 } from "./evidence-graph";
+import { EvidenceExclusionSummaryBuilder, getEvidenceExclusionMatch } from "./evidence-filter";
+import {
+  buildAdoptionRankedEvidence,
+  buildBootstrapFullInventory,
+  renderAdoptionRankedEvidenceLines,
+} from "./evidence-ranking";
 
 const DEFAULT_EVIDENCE_OUTPUT = ".spec/facts/bootstrap/evidence-graph.json";
 const DEFAULT_EVIDENCE_SUMMARY = "evidence-summary.txt";
-const EXCLUDED_DIRECTORIES = new Set([
-  ".git",
-  "node_modules",
-  "dist",
-  ".jispec",
-  ".jispec-cache",
-  ".spec",
-  ".next",
-  ".turbo",
-  "coverage",
-  "__pycache__",
-  ".venv",
-  "venv",
-]);
+const DEFAULT_FULL_INVENTORY = "full-inventory.json";
+const DEFAULT_ADOPTION_RANKED_EVIDENCE = "adoption-ranked-evidence.json";
 const ROUTE_FILE_HINT = /(route|routes|router|controller|controllers|api)/i;
 const CONTROLLER_FILE_HINT = /controller/i;
 const SERVICE_FILE_HINT = /service/i;
@@ -77,6 +72,7 @@ export interface BootstrapDiscoverOptions {
   root: string;
   outputPath?: string;
   writeFile?: boolean;
+  initProject?: boolean;
 }
 
 export function runBootstrapDiscover(options: BootstrapDiscoverOptions): BootstrapDiscoverResult {
@@ -85,12 +81,18 @@ export function runBootstrapDiscover(options: BootstrapDiscoverOptions): Bootstr
     throw new Error(`Repository root does not exist: ${root}`);
   }
 
+  const scaffoldResult = options.initProject
+    ? runBootstrapInitProject({ root })
+    : undefined;
   const graph = stableSortEvidenceGraph(scanRepository(root));
   const summary = summarizeEvidenceGraph(graph);
   const writtenFiles =
     options.writeFile === false
-      ? []
-      : writeEvidenceGraph(root, options.outputPath ?? DEFAULT_EVIDENCE_OUTPUT, graph);
+      ? scaffoldResult?.writtenFiles ?? []
+      : [
+          ...(scaffoldResult?.writtenFiles ?? []),
+          ...writeEvidenceGraph(root, options.outputPath ?? DEFAULT_EVIDENCE_OUTPUT, graph),
+        ].sort((left, right) => left.localeCompare(right));
 
   return {
     graph,
@@ -111,6 +113,7 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
     `Documents discovered: ${result.summary.documentCount}`,
     `Manifests discovered: ${result.summary.manifestCount}`,
     `Source files inventoried: ${result.summary.sourceFileCount}`,
+    `Excluded files: ${result.graph.excludedSummary?.totalExcludedFileCount ?? 0}`,
     `Warnings: ${result.warningCount}`,
   ];
 
@@ -135,6 +138,24 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
     lines.push(...topDocuments.map((entry) => `- ${entry}`));
   }
 
+  const rankedEvidence = buildAdoptionRankedEvidence(result.graph, { limit: 10 });
+  const topRankedEvidence = renderAdoptionRankedEvidenceLines(rankedEvidence, 10);
+  if (topRankedEvidence.length > 0) {
+    lines.push("Top adoption-ranked evidence:");
+    lines.push(...topRankedEvidence.map((entry) => `- ${entry}`));
+  }
+
+  const excludedRules = result.graph.excludedSummary?.rules ?? [];
+  if (excludedRules.length > 0) {
+    lines.push("Excluded by policy:");
+    lines.push(
+      ...excludedRules.map((rule) => {
+        const examples = rule.examplePaths.length > 0 ? `; examples: ${rule.examplePaths.join(", ")}` : "";
+        return `- ${rule.ruleId}: ${rule.fileCount} file(s)${examples}`;
+      }),
+    );
+  }
+
   if (result.writtenFiles.length > 0) {
     lines.push("Written files:");
     lines.push(...result.writtenFiles.map((filePath) => `- ${filePath}`));
@@ -152,7 +173,9 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
 
 function scanRepository(root: string): EvidenceGraph {
   const graph = createEmptyEvidenceGraph(root);
-  const repositoryFiles = collectRepositoryFiles(root);
+  const repositoryScan = collectRepositoryFiles(root);
+  const repositoryFiles = repositoryScan.files;
+  graph.excludedSummary = repositoryScan.excludedSummary;
 
   graph.schemas = collectSchemaEvidence(root, repositoryFiles);
   graph.tests = collectTestEvidence(root, repositoryFiles);
@@ -164,15 +187,32 @@ function scanRepository(root: string): EvidenceGraph {
 
   const validation = validateRepository(root);
   if (!validation.ok) {
-    graph.warnings.push(`Repository validation reported ${validation.issues.length} issue(s); bootstrap discover continued in warning mode.`);
-    graph.warnings.push(
-      ...validation.issues.map((issue) => `[${issue.code}] ${normalizeEvidencePath(issue.path)}: ${issue.message}`),
-    );
+    const missingProjectYaml = !bootstrapProjectExists(root);
+    const validationIssues = missingProjectYaml
+      ? validation.issues.filter((issue) => !isMissingProjectYamlIssue(issue))
+      : validation.issues;
+
+    if (missingProjectYaml) {
+      graph.warnings.push(
+        "Project scaffold is missing. Run `jispec-cli bootstrap init-project --root <path>` or `jispec-cli bootstrap discover --init-project` to create `jiproject/project.yaml`.",
+      );
+    }
+
+    if (validationIssues.length > 0) {
+      graph.warnings.push(`Repository validation reported ${validationIssues.length} issue(s); bootstrap discover continued in warning mode.`);
+      graph.warnings.push(
+        ...validationIssues.map((issue) => `[${issue.code}] ${normalizeEvidencePath(issue.path)}: ${issue.message}`),
+      );
+    }
   }
 
   applyHeuristicWarnings(graph, repositoryFiles.length);
 
   return graph;
+}
+
+function isMissingProjectYamlIssue(issue: { code: string; path: string }): boolean {
+  return issue.code === "FILE_MISSING" && normalizeEvidencePath(issue.path) === "jiproject/project.yaml";
 }
 
 function collectSchemaEvidence(root: string, files: string[]): EvidenceSchema[] {
@@ -213,6 +253,16 @@ function collectSchemaEvidence(root: string, files: string[]): EvidenceSchema[] 
       signal = "schema_directory";
       confidenceScore = 0.72;
       provenanceNote = "Detected schema-like YAML asset under a schema naming convention.";
+    } else if (fileName === "schema.prisma" || lowerPath.endsWith("/schema.prisma")) {
+      format = "database-schema";
+      signal = "database_schema_file";
+      confidenceScore = 0.94;
+      provenanceNote = "Detected Prisma database schema truth source.";
+    } else if (extension === ".sql" && /(^|\/)(schema|db|database|migrations?)\//.test(lowerPath)) {
+      format = "database-schema";
+      signal = "database_schema_file";
+      confidenceScore = 0.86;
+      provenanceNote = "Detected SQL database schema or migration-adjacent contract asset.";
     }
 
     if (!format || seen.has(repoPath)) {
@@ -387,7 +437,7 @@ function collectSourceFileInventory(root: string, files: string[]): EvidenceSour
     const repoPath = normalizeRepoPath(root, absolutePath);
     return {
       path: repoPath,
-      category: classifySourceFile(repoPath),
+      category: classifySourceFile(repoPath, absolutePath),
     };
   });
 }
@@ -396,7 +446,14 @@ function writeEvidenceGraph(root: string, outputPath: string, graph: EvidenceGra
   const storage = new FilesystemStorage(root);
   const resolvedGraphPath = resolveOutputPath(root, outputPath);
   const resolvedSummaryPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_EVIDENCE_SUMMARY);
-  const writtenFiles = [normalizeEvidencePath(resolvedGraphPath), normalizeEvidencePath(resolvedSummaryPath)];
+  const resolvedFullInventoryPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_FULL_INVENTORY);
+  const resolvedRankedEvidencePath = path.join(path.dirname(resolvedGraphPath), DEFAULT_ADOPTION_RANKED_EVIDENCE);
+  const writtenFiles = [
+    normalizeEvidencePath(resolvedGraphPath),
+    normalizeEvidencePath(resolvedFullInventoryPath),
+    normalizeEvidencePath(resolvedRankedEvidencePath),
+    normalizeEvidencePath(resolvedSummaryPath),
+  ];
   const result: BootstrapDiscoverResult = {
     graph,
     writtenFiles,
@@ -405,6 +462,8 @@ function writeEvidenceGraph(root: string, outputPath: string, graph: EvidenceGra
   };
 
   storage.writeFileSync(resolvedGraphPath, `${JSON.stringify(graph, null, 2)}\n`);
+  storage.writeFileSync(resolvedFullInventoryPath, `${JSON.stringify(buildBootstrapFullInventory(graph), null, 2)}\n`);
+  storage.writeFileSync(resolvedRankedEvidencePath, `${JSON.stringify(buildAdoptionRankedEvidence(graph), null, 2)}\n`);
   storage.writeFileSync(resolvedSummaryPath, `${renderBootstrapDiscoverText(result)}\n`);
 
   return writtenFiles;
@@ -419,34 +478,71 @@ function normalizeRepoPath(root: string, absolutePath: string): string {
   return normalizeEvidencePath(relativePath);
 }
 
-function collectRepositoryFiles(root: string): string[] {
+function collectRepositoryFiles(root: string): { files: string[]; excludedSummary: NonNullable<EvidenceGraph["excludedSummary"]> } {
   const files: string[] = [];
+  const exclusionSummary = new EvidenceExclusionSummaryBuilder();
 
-  walkDirectory(root, files);
+  walkDirectory(root, root, files, exclusionSummary);
 
-  return files.sort((left, right) => normalizeEvidencePath(left).localeCompare(normalizeEvidencePath(right)));
+  return {
+    files: files.sort((left, right) => normalizeEvidencePath(left).localeCompare(normalizeEvidencePath(right))),
+    excludedSummary: exclusionSummary.toSummary(),
+  };
 }
 
-function walkDirectory(currentPath: string, files: string[]): void {
+function walkDirectory(
+  root: string,
+  currentPath: string,
+  files: string[],
+  exclusionSummary: EvidenceExclusionSummaryBuilder,
+): void {
   const entries = fs
     .readdirSync(currentPath, { withFileTypes: true })
     .sort((left, right) => left.name.localeCompare(right.name));
 
   for (const entry of entries) {
     const fullPath = path.join(currentPath, entry.name);
+    const repoPath = normalizeRepoPath(root, fullPath);
+    const exclusionMatch = getEvidenceExclusionMatch(repoPath, { isDirectory: entry.isDirectory() });
 
     if (entry.isDirectory()) {
-      if (EXCLUDED_DIRECTORIES.has(entry.name)) {
+      if (exclusionMatch) {
+        exclusionSummary.record(exclusionMatch, repoPath, countFilesRecursively(fullPath));
         continue;
       }
-      walkDirectory(fullPath, files);
+      walkDirectory(root, fullPath, files, exclusionSummary);
       continue;
     }
 
     if (entry.isFile()) {
+      if (exclusionMatch) {
+        exclusionSummary.record(exclusionMatch, repoPath, 1);
+        continue;
+      }
       files.push(fullPath);
     }
   }
+}
+
+function countFilesRecursively(currentPath: string): number {
+  let count = 0;
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(currentPath, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(currentPath, entry.name);
+    if (entry.isDirectory()) {
+      count += countFilesRecursively(fullPath);
+    } else if (entry.isFile()) {
+      count += 1;
+    }
+  }
+
+  return count;
 }
 
 function extractRouteMatches(content: string): Array<{ path: string; method?: string }> {
@@ -626,9 +722,23 @@ function isFallbackRouteCandidate(repoPath: string): boolean {
   return false;
 }
 
-function classifySourceFile(repoPath: string): EvidenceSourceFile["category"] {
+function classifySourceFile(repoPath: string, absolutePath?: string): EvidenceSourceFile["category"] {
   const normalizedPath = repoPath.toLowerCase();
   const fileName = path.basename(normalizedPath);
+  const extension = path.extname(normalizedPath);
+
+  if (isEntrypointFile(normalizedPath)) {
+    return "entrypoint";
+  }
+  if (isSdkSurface(normalizedPath)) {
+    return "sdk";
+  }
+  if (extension === ".go" && absolutePath && /\btype\s+\w+\s+interface\s*\{/.test(safelyReadTextFile(absolutePath) ?? "")) {
+    return "interface";
+  }
+  if (extension === ".rs" && absolutePath && /\bpub\s+trait\s+\w+/.test(safelyReadTextFile(absolutePath) ?? "")) {
+    return "trait";
+  }
 
   if (detectManifestSignal(repoPath)) {
     return "manifest";
@@ -665,6 +775,26 @@ function classifySourceFile(repoPath: string): EvidenceSourceFile["category"] {
   }
 
   return "other";
+}
+
+function isEntrypointFile(normalizedPath: string): boolean {
+  const fileName = path.basename(normalizedPath);
+  return (
+    fileName === "main.go" ||
+    fileName === "main.rs" ||
+    fileName === "server.ts" ||
+    fileName === "server.js" ||
+    fileName === "app.ts" ||
+    fileName === "app.js" ||
+    fileName === "index.ts" ||
+    fileName === "index.js" ||
+    normalizedPath.endsWith("/cmd/server/main.go") ||
+    normalizedPath.endsWith("/cmd/api/main.go")
+  );
+}
+
+function isSdkSurface(normalizedPath: string): boolean {
+  return normalizedPath.startsWith("sdk/") || normalizedPath.includes("/sdk/") || normalizedPath.startsWith("packages/sdk/");
 }
 
 function detectDocumentSignal(repoPath: string): Pick<EvidenceDocument, "kind" | "confidenceScore" | "provenanceNote"> | undefined {

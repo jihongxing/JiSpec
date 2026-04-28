@@ -2,7 +2,15 @@
 
 English | [中文](./README.zh-CN.md)
 
-JiSpec is building a `contract-driven AI delivery gate` for small AI-native engineering teams.
+JiSpec is building a `contract-driven assembly line for AI-native software delivery` for small AI-native engineering teams.
+
+North star:
+
+> Move AI coding from a heroic craft workshop into a verifiable, auditable, blockable, and replayable modern software delivery line.
+
+Large language models and AI coding tools are high-end machine tools. JiSpec is not trying to be another machine tool; it aims to become the control layer across requirements, contracts, implementation, verification, CI, and team governance.
+
+See: [docs/north-star.md](docs/north-star.md)
 
 The product surface is converging on:
 
@@ -45,10 +53,9 @@ Not the wrong framing:
 - `LLM-first blocking gate`
 - `mature console/distributed/collaboration product suite`
 
-Real-world proof points:
+Release notes:
 
-- [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
-- [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
+- [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)
 
 ## Human-readable artifact gap
 
@@ -59,24 +66,20 @@ the mainline can already write the right artifacts, but many of those artifacts 
 Today, JiSpec can already persist:
 
 - full bootstrap evidence graphs
+- non-excluded full inventories
+- adoption-ranked evidence packets
 - draft session manifests
-- adopted contracts
-- spec-debt records
-- verify JSON reports
-- CI summaries
+- adopted contracts and spec-debt records
+- takeover reports and takeover briefs
+- verify JSON reports and CI summaries
 
-That is technically valuable, but it is not yet the same thing as:
+That is technically valuable, and the takeover path now makes the split explicit:
 
-- a takeover brief a human can scan in minutes
-- an adoption decision summary that explains what was accepted, edited, or deferred
-- a verify digest that clearly separates historical debt, deferred debt, and new blocking drift
+- `evidence-graph.json` and `full-inventory.json` are machine-first system records
+- `adoption-ranked-evidence.json` is the high-signal packet used by draft and takeover review
+- `takeover-brief.md` is the human decision packet a reviewer can scan in minutes
 
-In other words:
-
-- the engine already lands the data
-- the operator experience still asks the human to read too many raw artifacts
-
-This is why the next product step is not only "better discovery quality", but also "better explanation quality".
+The remaining explanation gap is now narrower: future work should bring the same compact digest quality to adoption summaries and verify summaries.
 
 The desired output model should become:
 
@@ -219,6 +222,7 @@ npm run verify
 npm run jispec-cli -- change "Update checkout copy"
 npm run jispec-cli -- implement
 npm run jispec-cli -- implement --fast
+npm run jispec-cli -- bootstrap init-project
 npm run jispec-cli -- bootstrap discover
 npm run jispec-cli -- bootstrap draft
 npm run jispec-cli -- adopt --interactive
@@ -231,12 +235,14 @@ npm run ci:verify
 
 What they do:
 
+- `bootstrap init-project`
+  Creates a minimal `jiproject/project.yaml` scaffold; existing files are protected unless `--force` is passed.
 - `bootstrap discover`
-  Scans the repository and writes a structured evidence graph to `.spec/facts/bootstrap/`.
+  Scans the repository and writes `.spec/facts/bootstrap/evidence-graph.json`, `full-inventory.json`, `adoption-ranked-evidence.json`, and `evidence-summary.txt`; use `--init-project` to create the project scaffold first when it is missing.
 - `bootstrap draft`
-  Converts bootstrap evidence into a session-scoped draft bundle under `.spec/sessions/`.
+  Converts ranked bootstrap evidence into a session-scoped draft bundle under `.spec/sessions/`; deterministic generation is always available, and a configured BYOK provider may only re-anchor draft content.
 - `adopt --interactive`
-  Lets you accept, reject, edit, or defer that draft bundle into `.spec/contracts/` and `.spec/spec-debt/`.
+  Lets you accept, reject, edit, or defer that draft bundle into `.spec/contracts/` and `.spec/spec-debt/`, then writes `.spec/handoffs/bootstrap-takeover.json` and `.spec/handoffs/takeover-brief.md`.
 - `change`
   Records change intent, classifies the active diff into fast or strict lane, and writes the active change session.
 - `implement`
@@ -251,6 +257,14 @@ What they do:
   Runs the broader Phase 5.1 readiness and health diagnostics against the current runtime and pipeline stack.
 - `ci:verify`
   Wraps the repository verification path for CI usage.
+
+## AI boundary rule
+
+LLMs may assist draft, explanation, and repair. Blocking gates remain deterministic.
+
+In the bootstrap path, a BYOK provider is treated as a semantic re-anchoring helper: it can improve human-readable draft `content`, but the deterministic baseline owns `relativePath`, `sourceFiles`, `confidenceScore`, and `provenanceNote`. If the provider is unavailable or returns malformed output, JiSpec falls back to deterministic draft generation and records `generationMode = "provider-fallback"`.
+
+The gate side stays deliberately boring: `verify`, `ci:verify`, policy checks, schema validation, and future AST-backed blockers must remain deterministic and scriptable.
 
 ## Quickstart
 
@@ -314,11 +328,19 @@ Scaffold or refresh the minimal policy file:
 npm run jispec-cli -- policy migrate
 ```
 
+Create the explicit project scaffold when taking over a legacy repo:
+
+```bash
+npm run jispec-cli -- bootstrap init-project
+```
+
 Run bootstrap discovery:
 
 ```bash
 npm run jispec-cli -- bootstrap discover
 ```
+
+This writes the machine inventory and ranked takeover packet under `.spec/facts/bootstrap/`.
 
 Draft the first contract bundle:
 
@@ -326,11 +348,15 @@ Draft the first contract bundle:
 npm run jispec-cli -- bootstrap draft
 ```
 
+This works without an LLM provider. If BYOK draft assistance is configured, it can re-anchor draft language while deterministic provenance stays authoritative.
+
 Adopt the drafted bundle:
 
 ```bash
 npm run jispec-cli -- adopt --interactive
 ```
+
+This writes adopted contracts, deferred spec debt, the machine takeover report, and the human-readable takeover brief.
 
 Run the CI wrapper:
 
@@ -480,20 +506,13 @@ The `ordering` context includes one complete example slice:
 
 ## Key docs
 
+- North star:
+  [docs/north-star.md](docs/north-star.md)
 - V1 mainline stable contract:
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
-- V1 completion checklist:
-  [docs/v1-mainline-completion-checklist.md](docs/v1-mainline-completion-checklist.md)
-- Remaining-task roadmap:
-  [docs/remaining-tasks-roadmap.md](docs/remaining-tasks-roadmap.md)
-- Business plan and product direction:
-  [docs/spec-driven-ai-pipeline-business-plan.md](docs/spec-driven-ai-pipeline-business-plan.md)
-- Change / implement mode decision:
-  [docs/change-implement-mode-decision.md](docs/change-implement-mode-decision.md)
-- Long-term roadmap:
-  [docs/long-term-roadmap-v0.1.md](docs/long-term-roadmap-v0.1.md)
+- Greenfield input contract:
+  [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
 - V1 minimal sample repo:
   [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
-- Real legacy repo takeover demos:
-  [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
-  [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
+- Release notes:
+  [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)

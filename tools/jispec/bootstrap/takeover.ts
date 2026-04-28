@@ -10,6 +10,7 @@ import {
 import { normalizeEvidencePath } from "./evidence-graph";
 
 const BOOTSTRAP_TAKEOVER_REPORT_PATH = ".spec/handoffs/bootstrap-takeover.json";
+const BOOTSTRAP_TAKEOVER_BRIEF_PATH = ".spec/handoffs/takeover-brief.md";
 
 export interface BootstrapTakeoverDecisionRecord {
   artifactKind: DraftArtifactKind;
@@ -70,6 +71,14 @@ export function getBootstrapTakeoverReportPath(rootInput: string): string {
 
 export function getBootstrapTakeoverReportRelativePath(): string {
   return BOOTSTRAP_TAKEOVER_REPORT_PATH;
+}
+
+export function getBootstrapTakeoverBriefPath(rootInput: string): string {
+  return path.join(path.resolve(rootInput), BOOTSTRAP_TAKEOVER_BRIEF_PATH);
+}
+
+export function getBootstrapTakeoverBriefRelativePath(): string {
+  return BOOTSTRAP_TAKEOVER_BRIEF_PATH;
 }
 
 export function buildBootstrapTakeoverReport(input: BootstrapTakeoverReportInput): BootstrapTakeoverReport {

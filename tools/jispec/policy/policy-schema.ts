@@ -25,7 +25,21 @@ export interface VerifyPolicy {
   requires?: {
     facts_contract?: string;
   };
+  greenfield?: {
+    review_gate?: GreenfieldReviewGatePolicy;
+  };
   rules: PolicyRule[];
+}
+
+export interface GreenfieldReviewGatePolicy {
+  low_confidence_blocks?: boolean;
+  low_confidence_blocks_by_decision_type?: Record<string, boolean>;
+  conflict_blocks?: boolean;
+  blocking_review_item_blocks?: boolean;
+  blocking_open_decision_types?: string[];
+  rejected_blocks?: boolean;
+  deferred_or_waived_severity?: "ignore" | "advisory" | "blocking";
+  expired_defer_or_waive_severity?: "ignore" | "advisory" | "blocking";
 }
 
 export interface PolicyValidationIssue {
@@ -61,6 +75,10 @@ export function validateVerifyPolicy(policy: unknown): VerifyPolicy {
     validatePolicyRequires(p.requires);
   }
 
+  if (p.greenfield !== undefined) {
+    validateGreenfieldPolicy(p.greenfield);
+  }
+
   if (!Array.isArray(p.rules)) {
     throw new Error("Policy must have a rules array");
   }
@@ -75,6 +93,91 @@ export function validateVerifyPolicy(policy: unknown): VerifyPolicy {
   }
 
   return policy as VerifyPolicy;
+}
+
+function validateGreenfieldPolicy(greenfield: unknown): void {
+  if (!greenfield || typeof greenfield !== "object" || Array.isArray(greenfield)) {
+    throw new Error("Policy greenfield must be an object when provided");
+  }
+
+  const typed = greenfield as Record<string, unknown>;
+  const allowedKeys = new Set(["review_gate"]);
+  for (const key of Object.keys(typed)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error(`Policy greenfield has unknown key: ${key}`);
+    }
+  }
+
+  if (typed.review_gate !== undefined) {
+    validateGreenfieldReviewGatePolicy(typed.review_gate);
+  }
+}
+
+function validateGreenfieldReviewGatePolicy(reviewGate: unknown): void {
+  if (!reviewGate || typeof reviewGate !== "object" || Array.isArray(reviewGate)) {
+    throw new Error("Policy greenfield.review_gate must be an object when provided");
+  }
+
+  const typed = reviewGate as Record<string, unknown>;
+  const allowedKeys = new Set([
+    "low_confidence_blocks",
+    "low_confidence_blocks_by_decision_type",
+    "conflict_blocks",
+    "blocking_review_item_blocks",
+    "blocking_open_decision_types",
+    "rejected_blocks",
+    "deferred_or_waived_severity",
+    "expired_defer_or_waive_severity",
+  ]);
+  for (const key of Object.keys(typed)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error(`Policy greenfield.review_gate has unknown key: ${key}`);
+    }
+  }
+  for (const key of [
+    "low_confidence_blocks",
+    "conflict_blocks",
+    "blocking_review_item_blocks",
+    "rejected_blocks",
+  ]) {
+    if (typed[key] !== undefined && typeof typed[key] !== "boolean") {
+      throw new Error(`Policy greenfield.review_gate.${key} must be a boolean when provided`);
+    }
+  }
+  if (
+    typed.deferred_or_waived_severity !== undefined &&
+    !["ignore", "advisory", "blocking"].includes(typed.deferred_or_waived_severity as string)
+  ) {
+    throw new Error("Policy greenfield.review_gate.deferred_or_waived_severity must be ignore, advisory, or blocking");
+  }
+  if (
+    typed.expired_defer_or_waive_severity !== undefined &&
+    !["ignore", "advisory", "blocking"].includes(typed.expired_defer_or_waive_severity as string)
+  ) {
+    throw new Error("Policy greenfield.review_gate.expired_defer_or_waive_severity must be ignore, advisory, or blocking");
+  }
+  if (
+    typed.low_confidence_blocks_by_decision_type !== undefined &&
+    (!typed.low_confidence_blocks_by_decision_type ||
+      typeof typed.low_confidence_blocks_by_decision_type !== "object" ||
+      Array.isArray(typed.low_confidence_blocks_by_decision_type))
+  ) {
+    throw new Error("Policy greenfield.review_gate.low_confidence_blocks_by_decision_type must be an object when provided");
+  }
+  if (isRecord(typed.low_confidence_blocks_by_decision_type)) {
+    for (const [decisionType, value] of Object.entries(typed.low_confidence_blocks_by_decision_type)) {
+      if (!decisionType.trim() || typeof value !== "boolean") {
+        throw new Error("Policy greenfield.review_gate.low_confidence_blocks_by_decision_type values must be boolean");
+      }
+    }
+  }
+  if (
+    typed.blocking_open_decision_types !== undefined &&
+    (!Array.isArray(typed.blocking_open_decision_types) ||
+      !typed.blocking_open_decision_types.every((entry) => typeof entry === "string" && entry.trim()))
+  ) {
+    throw new Error("Policy greenfield.review_gate.blocking_open_decision_types must be a string array when provided");
+  }
 }
 
 function validatePolicyRequires(requires: unknown): void {
@@ -97,6 +200,10 @@ function validatePolicyRequires(requires: unknown): void {
   ) {
     throw new Error("Policy requires.facts_contract must be a non-empty string when provided");
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

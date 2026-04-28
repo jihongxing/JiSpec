@@ -23,8 +23,8 @@ export interface EvidenceTest extends EvidenceSignal {
 
 export interface EvidenceSchema extends EvidenceSignal {
   path: string;
-  format: "openapi" | "json-schema" | "protobuf" | "unknown";
-  signal?: "openapi_file" | "json_schema_file" | "protobuf_file" | "schema_directory";
+  format: "openapi" | "json-schema" | "protobuf" | "database-schema" | "unknown";
+  signal?: "openapi_file" | "json_schema_file" | "protobuf_file" | "database_schema_file" | "schema_directory";
 }
 
 export interface EvidenceMigration extends EvidenceSignal {
@@ -65,7 +65,23 @@ export interface EvidenceSourceFile {
     | "feature"
     | "document"
     | "manifest"
+    | "interface"
+    | "trait"
+    | "entrypoint"
+    | "sdk"
     | "other";
+}
+
+export interface EvidenceExclusionRuleSummary {
+  ruleId: string;
+  reason: string;
+  fileCount: number;
+  examplePaths: string[];
+}
+
+export interface EvidenceExclusionSummary {
+  totalExcludedFileCount: number;
+  rules: EvidenceExclusionRuleSummary[];
 }
 
 export interface EvidenceGraph {
@@ -78,6 +94,7 @@ export interface EvidenceGraph {
   documents: EvidenceDocument[];
   manifests: EvidenceManifest[];
   sourceFiles: EvidenceSourceFile[];
+  excludedSummary?: EvidenceExclusionSummary;
   warnings: string[];
 }
 
@@ -123,6 +140,10 @@ export function createEmptyEvidenceGraph(repoRoot: string): EvidenceGraph {
     documents: [],
     manifests: [],
     sourceFiles: [],
+    excludedSummary: {
+      totalExcludedFileCount: 0,
+      rules: [],
+    },
     warnings: [],
   };
 }
@@ -149,6 +170,7 @@ export function stableSortEvidenceGraph(graph: EvidenceGraph): EvidenceGraph {
   const documents = Array.isArray(graph.documents) ? graph.documents : [];
   const manifests = Array.isArray(graph.manifests) ? graph.manifests : [];
   const sourceFiles = Array.isArray(graph.sourceFiles) ? graph.sourceFiles : [];
+  const excludedSummary = normalizeExclusionSummary(graph.excludedSummary);
   const warnings = Array.isArray(graph.warnings) ? graph.warnings : [];
 
   return {
@@ -191,7 +213,34 @@ export function stableSortEvidenceGraph(graph: EvidenceGraph): EvidenceGraph {
       const rightKey = `${right.path}|${right.category}`;
       return leftKey.localeCompare(rightKey);
     }),
+    excludedSummary,
     warnings: [...warnings].sort((left, right) => left.localeCompare(right)),
+  };
+}
+
+function normalizeExclusionSummary(summary: EvidenceExclusionSummary | undefined): EvidenceExclusionSummary {
+  if (!summary || !Array.isArray(summary.rules)) {
+    return {
+      totalExcludedFileCount: 0,
+      rules: [],
+    };
+  }
+
+  const rules = summary.rules
+    .map((rule) => ({
+      ruleId: rule.ruleId,
+      reason: rule.reason,
+      fileCount: Number.isFinite(rule.fileCount) ? Math.max(0, Math.trunc(rule.fileCount)) : 0,
+      examplePaths: Array.isArray(rule.examplePaths)
+        ? [...rule.examplePaths].map((entry) => normalizeEvidencePath(entry)).sort((left, right) => left.localeCompare(right)).slice(0, 5)
+        : [],
+    }))
+    .filter((rule) => rule.ruleId && rule.fileCount > 0)
+    .sort((left, right) => left.ruleId.localeCompare(right.ruleId));
+
+  return {
+    totalExcludedFileCount: rules.reduce((sum, rule) => sum + rule.fileCount, 0),
+    rules,
   };
 }
 

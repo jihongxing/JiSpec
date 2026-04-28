@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { LaneDecision } from "./lane-decision";
 import type { ClassifiedPath } from "./git-diff-classifier";
+import type { SpecDeltaChangeType, SpecDeltaDraftResult } from "./spec-delta";
 
 export type ChangeSessionOrchestrationMode = "prompt" | "execute";
 
@@ -23,6 +24,8 @@ export interface ChangeSession {
   orchestrationMode?: ChangeSessionOrchestrationMode;
   laneDecision: LaneDecision;
   changedPaths: ClassifiedPath[];
+  changeType?: SpecDeltaChangeType;
+  specDelta?: SpecDeltaDraftResult;
   sliceId?: string;
   contextId?: string;
   baseRef?: string;

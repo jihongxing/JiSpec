@@ -44,6 +44,61 @@ export function getCanonicalFactDefinitions(): CanonicalFactDefinition[] {
       description: "Number of verify issues scoped to adopted contract assets",
     },
     {
+      key: "greenfield.code_drift_count",
+      stability: "stable",
+      description: "Number of unclassified implementation facts that are not represented in the Greenfield Evidence Graph",
+    },
+    {
+      key: "greenfield.spec_drift_count",
+      stability: "stable",
+      description: "Number of Greenfield Evidence Graph expectations whose referenced specification assets or coverage edges are missing",
+    },
+    {
+      key: "greenfield.classified_drift_count",
+      stability: "stable",
+      description: "Number of implementation facts outside the Evidence Graph that are explicitly classified as ignored, experimental, or intentional",
+    },
+    {
+      key: "greenfield.spec_debt_open_count",
+      stability: "stable",
+      description: "Number of open Greenfield spec debt records in the ledger",
+    },
+    {
+      key: "greenfield.spec_debt_expired_count",
+      stability: "stable",
+      description: "Number of expired Greenfield spec debt records in the ledger",
+    },
+    {
+      key: "greenfield.review_unresolved_blocking_count",
+      stability: "stable",
+      description: "Number of proposed blocking decisions in the Greenfield Initialization Review Pack",
+    },
+    {
+      key: "greenfield.review_low_confidence_unadopted_count",
+      stability: "stable",
+      description: "Number of low-confidence Greenfield review decisions that remain proposed",
+    },
+    {
+      key: "greenfield.review_rejected_count",
+      stability: "stable",
+      description: "Number of rejected Greenfield review decisions that have not been corrected",
+    },
+    {
+      key: "greenfield.review_deferred_or_waived_count",
+      stability: "stable",
+      description: "Number of deferred or waived Greenfield review decisions",
+    },
+    {
+      key: "greenfield.dirty_required_update_count",
+      stability: "stable",
+      description: "Number of unresolved required updates produced by Greenfield Deterministic Contract Graph dirty propagation",
+    },
+    {
+      key: "greenfield.dirty_graph_warning_count",
+      stability: "stable",
+      description: "Number of dirty propagation warnings emitted while evaluating Greenfield Spec Deltas",
+    },
+    {
       key: "contracts.domain.present",
       stability: "stable",
       description: "Whether domain contract exists",

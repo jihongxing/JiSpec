@@ -2,7 +2,15 @@
 
 中文 | [English](./README.md)
 
-JiSpec 正在为小型 AI 原生工程团队构建一个 `contract-driven AI delivery gate`。
+JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assembly line for AI-native software delivery`。
+
+项目北极星：
+
+> 把 AI 编程从个人英雄主义的手工作坊，推进到可验证、可审计、可阻断、可回放的现代软件交付流水线。
+
+大模型和 AI coding tools 是高端机床；JiSpec 的目标不是再造一台机床，而是成为贯穿需求、契约、实现、验证、CI 和团队治理的流水线控制层。
+
+详见：[docs/north-star.md](docs/north-star.md)
 
 当前产品面正在收敛到：
 
@@ -45,10 +53,9 @@ JiSpec 正在为小型 AI 原生工程团队构建一个 `contract-driven AI del
 - `LLM-first blocking gate`
 - `mature console/distributed/collaboration product suite`
 
-真实世界证据：
+发布说明：
 
-- [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
-- [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
+- [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)
 
 ## 人类可读产物缺口
 
@@ -59,24 +66,21 @@ JiSpec 正在为小型 AI 原生工程团队构建一个 `contract-driven AI del
 当前 JiSpec 已经能够落盘：
 
 - 完整的 bootstrap evidence graph
+- 非排除资产的 full inventory
+- adoption-ranked evidence packet
 - draft session manifest
-- adopted contract
-- spec-debt record
+- adopted contract 和 spec-debt record
+- takeover report 和 takeover brief
 - verify JSON report
 - CI summary
 
-这在技术上很有价值，但还不等于：
+这在技术上很有价值，并且 takeover 路径现在已经把机器产物与人类决策产物分开：
 
-- 一份人类几分钟内就能扫完的 takeover brief
-- 一份能清楚解释 accept / edit / defer 的 adopt 决策摘要
-- 一份能把历史债务、延后债务和新增 blocking drift 分开的 verify digest
+- `evidence-graph.json` 和 `full-inventory.json` 是 machine-first 的系统底账
+- `adoption-ranked-evidence.json` 是 draft 和 takeover review 使用的高信号证据包
+- `takeover-brief.md` 是 reviewer 几分钟内可以扫完的人类决策包
 
-换句话说：
-
-- 引擎已经把数据落下来了
-- 但操作者仍然需要阅读太多原始产物
-
-所以产品的下一步不只是“提升 discovery 质量”，还包括“提升 explanation 质量”。
+剩余的人类可读缺口已经更窄：后续应把同样紧凑的 digest 质量继续推进到 adoption summary 和 verify summary。
 
 理想的输出模型应该变成：
 
@@ -219,6 +223,7 @@ npm run verify
 npm run jispec-cli -- change "Update checkout copy"
 npm run jispec-cli -- implement
 npm run jispec-cli -- implement --fast
+npm run jispec-cli -- bootstrap init-project
 npm run jispec-cli -- bootstrap discover
 npm run jispec-cli -- bootstrap draft
 npm run jispec-cli -- adopt --interactive
@@ -231,12 +236,14 @@ npm run ci:verify
 
 它们分别做什么：
 
+- `bootstrap init-project`
+  创建最小 `jiproject/project.yaml` 脚手架；除非传入 `--force`，否则不会覆盖已有文件。
 - `bootstrap discover`
-  扫描仓库，并将结构化 evidence graph 写入 `.spec/facts/bootstrap/`。
+  扫描仓库，并写出 `.spec/facts/bootstrap/evidence-graph.json`、`full-inventory.json`、`adoption-ranked-evidence.json` 和 `evidence-summary.txt`；缺少项目脚手架时可以用 `--init-project` 先显式创建。
 - `bootstrap draft`
-  将 bootstrap evidence 转成 session 级别的 draft bundle，写入 `.spec/sessions/`。
+  将 ranked bootstrap evidence 转成 session 级别的 draft bundle，写入 `.spec/sessions/`；确定性生成始终可用，配置 BYOK provider 后只能做 draft content 的语义重锚。
 - `adopt --interactive`
-  允许你将这批草稿 accept、reject、edit 或 defer 到 `.spec/contracts/` 与 `.spec/spec-debt/`。
+  允许你将这批草稿 accept、reject、edit 或 defer 到 `.spec/contracts/` 与 `.spec/spec-debt/`，随后写出 `.spec/handoffs/bootstrap-takeover.json` 和 `.spec/handoffs/takeover-brief.md`。
 - `change`
   记录 change intent，对当前 diff 做 fast/strict lane 分类，并写出 active change session。
 - `implement`
@@ -251,6 +258,14 @@ npm run ci:verify
   运行更广义的 Phase 5.1 readiness 与当前 runtime/pipeline 栈健康诊断。
 - `ci:verify`
   为 CI 使用包装仓库 verify 路径。
+
+## AI 边界规则
+
+LLM 可以辅助 draft、解释和 repair。Blocking gate 必须保持确定性。
+
+在 bootstrap 路径里，BYOK provider 被视为语义重锚助手：它可以改善草稿里给人看的 `content`，但 `relativePath`、`sourceFiles`、`confidenceScore` 和 `provenanceNote` 仍由确定性 baseline 负责。如果 provider 不可用或返回 malformed output，JiSpec 会回退到确定性 draft，并记录 `generationMode = "provider-fallback"`。
+
+Gate 侧保持刻意朴素：`verify`、`ci:verify`、policy check、schema validation，以及未来 AST-backed blocker，都必须保持 deterministic 和 scriptable。
 
 ## Quickstart
 
@@ -314,11 +329,19 @@ npm run jispec-cli -- verify --json
 npm run jispec-cli -- policy migrate
 ```
 
+接管旧仓库时创建显式 project scaffold：
+
+```bash
+npm run jispec-cli -- bootstrap init-project
+```
+
 运行 bootstrap discovery：
 
 ```bash
 npm run jispec-cli -- bootstrap discover
 ```
+
+这会在 `.spec/facts/bootstrap/` 下写出机器 inventory 和 ranked takeover packet。
 
 生成第一批 contract bundle：
 
@@ -326,11 +349,15 @@ npm run jispec-cli -- bootstrap discover
 npm run jispec-cli -- bootstrap draft
 ```
 
+这一步不依赖 LLM provider。配置 BYOK draft assistance 时，它只能重锚草稿语言，确定性 provenance 仍然是权威来源。
+
 认领这批 draft：
 
 ```bash
 npm run jispec-cli -- adopt --interactive
 ```
+
+这会写出 adopted contract、deferred spec debt、机器可读 takeover report，以及人类可读 takeover brief。
 
 运行 CI wrapper：
 
@@ -489,20 +516,13 @@ npm run check:jispec
 
 ## 核心文档
 
+- 北极星：
+  [docs/north-star.md](docs/north-star.md)
 - V1 主线稳定契约：
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
-- V1 完成清单：
-  [docs/v1-mainline-completion-checklist.md](docs/v1-mainline-completion-checklist.md)
-- 剩余任务路线图：
-  [docs/remaining-tasks-roadmap.md](docs/remaining-tasks-roadmap.md)
-- 商业计划与产品方向：
-  [docs/spec-driven-ai-pipeline-business-plan.md](docs/spec-driven-ai-pipeline-business-plan.md)
-- Change / implement 模式决策：
-  [docs/change-implement-mode-decision.md](docs/change-implement-mode-decision.md)
-- 长期路线图：
-  [docs/long-term-roadmap-v0.1.md](docs/long-term-roadmap-v0.1.md)
+- Greenfield 输入契约：
+  [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
 - V1 最小样板仓库：
   [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
-- 真实旧仓库接管演示：
-  [docs/real-legacy-repo-takeover-breathofearth.md](docs/real-legacy-repo-takeover-breathofearth.md)
-  [docs/real-legacy-repo-takeover-remirage.md](docs/real-legacy-repo-takeover-remirage.md)
+- 发布说明：
+  [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)

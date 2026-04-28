@@ -30,6 +30,26 @@
           "source_context": {
             "type": "string"
           },
+          "source_confidence": {
+            "type": "string",
+            "enum": [
+              "requirements",
+              "technical_solution",
+              "inferred"
+            ]
+          },
+          "source_requirement_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "open_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "fields": {
             "type": "array",
             "items": {

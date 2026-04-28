@@ -17,6 +17,36 @@ import {
   type EvidenceSchema,
   type EvidenceTest,
 } from "./evidence-graph";
+import { buildApiSurfaces, type ApiSurface } from "./api-surface";
+import { buildAggregateRootCandidates, type AggregateRootCandidate } from "./aggregate-synthesis";
+import { buildProtoDomainMappings, type ProtoServiceDomainMapping } from "./proto-domain-mapping";
+import {
+  assessFeatureScenarioConfidence,
+  summarizeFeatureScenarioConfidence,
+  type FeatureRecommendation,
+} from "./feature-confidence";
+import {
+  extractBusinessVocabularyFromDocuments,
+  summarizeBusinessVocabularyTerms,
+  type BusinessVocabularyTerm,
+} from "./business-vocabulary";
+import {
+  hasTechnicalBoundaryToken,
+  isBoundaryNoiseLabel,
+  isTechnicalBoundaryLabel,
+  normalizeBoundaryLabel,
+  selectBusinessBoundaryFromPath,
+  selectBusinessBoundaryLabel,
+  shouldSuppressPrimaryBoundaryLabel,
+} from "./domain-boundary-policy";
+import {
+  getTaxonomyScenarioTemplate,
+  loadDomainTaxonomyPacksFromRoot,
+  scoreDomainTaxonomyEvidence,
+  summarizeDomainTaxonomyPacks,
+  type DomainTaxonomyPack,
+} from "./domain-taxonomy";
+import { buildAdoptionRankedEvidence, type AdoptionRankedEvidenceEntry } from "./evidence-ranking";
 
 const DEFAULT_EVIDENCE_GRAPH_PATH = ".spec/facts/bootstrap/evidence-graph.json";
 const SESSION_ROOT = ".spec/sessions";
@@ -28,45 +58,6 @@ const ARTIFACT_PATHS: Record<DraftArtifactKind, string> = {
 };
 
 const ARTIFACT_ORDER: DraftArtifactKind[] = ["domain", "api", "feature"];
-const GENERIC_DOMAIN_GROUP_NAMES = new Set([
-  "api",
-  "app",
-  "apps",
-  "bootstrap",
-  "client",
-  "clients",
-  "context",
-  "contexts",
-  "controller",
-  "controllers",
-  "design",
-  "doc",
-  "docs",
-  "handler",
-  "handlers",
-  "index",
-  "jiproject",
-  "main",
-  "manifest",
-  "manifests",
-  "model",
-  "models",
-  "package",
-  "project",
-  "readme",
-  "route",
-  "routes",
-  "schema",
-  "schemas",
-  "server",
-  "service",
-  "services",
-  "spec",
-  "specs",
-  "src",
-  "test",
-  "tests",
-]);
 const GENERIC_ROUTE_KEYWORDS = new Set([
   "api",
   "health",
@@ -123,6 +114,7 @@ export interface DraftSessionManifest {
   adoptedArtifactPaths?: string[];
   specDebtPaths?: string[];
   takeoverReportPath?: string;
+  takeoverBriefPath?: string;
   baselineHandoff?: {
     expectedContractPaths: string[];
     deferredSpecDebtPaths: string[];
@@ -177,6 +169,10 @@ export interface DraftQualitySummary {
   testSignalsUsed: string[];
   documentSignalsUsed: string[];
   manifestSignalsUsed: string[];
+  businessVocabularySignalsUsed: string[];
+  aggregateRootSignalsUsed: string[];
+  protoServiceSignalsUsed: string[];
+  taxonomyPackSignalsUsed: string[];
   primaryContextNames: string[];
   evidenceStrength: "strong" | "moderate" | "thin";
 }
@@ -189,6 +185,10 @@ interface RankedDraftContext {
   topDocuments: EvidenceDocument[];
   topManifests: EvidenceManifest[];
   topMigrations: EvidenceMigration[];
+  businessVocabulary: BusinessVocabularyTerm[];
+  aggregateRoots: AggregateRootCandidate[];
+  protoServiceMappings: ProtoServiceDomainMapping[];
+  taxonomyPacks: DomainTaxonomyPack[];
   domainGroups: Array<{
     name: string;
     sourceFiles: string[];
@@ -198,9 +198,27 @@ interface RankedDraftContext {
     testCount: number;
     schemaCount: number;
     migrationCount: number;
+    vocabularyCount: number;
   }>;
   sourcePriority: string[];
+  topAdoptionEvidence: AdoptionRankedEvidenceEntry[];
   qualitySummary: DraftQualitySummary;
+}
+
+interface FeatureScenarioDraft {
+  scenarioName: string;
+  boundaryName: string;
+  sourceFiles: string[];
+  confidenceScore: number;
+  provenanceNote: string;
+  confidenceReasons: string[];
+  recommendation: FeatureRecommendation;
+  tests: string[];
+  supportingRoute?: string;
+  humanReviewRequired: boolean;
+  given: string;
+  when: string;
+  then: string;
 }
 
 export async function runBootstrapDraft(options: BootstrapDraftOptions): Promise<BootstrapDraftResult> {
@@ -261,6 +279,26 @@ export function renderBootstrapDraftText(result: BootstrapDraftResult): string {
 
   if (result.qualitySummary.primaryContextNames.length > 0) {
     lines.push(`Primary contexts: ${result.qualitySummary.primaryContextNames.join(", ")}`);
+  }
+
+  if (result.qualitySummary.businessVocabularySignalsUsed.length > 0) {
+    lines.push("Business vocabulary:");
+    lines.push(...result.qualitySummary.businessVocabularySignalsUsed.slice(0, 4).map((entry) => `- ${entry}`));
+  }
+
+  if (result.qualitySummary.aggregateRootSignalsUsed.length > 0) {
+    lines.push("Aggregate roots:");
+    lines.push(...result.qualitySummary.aggregateRootSignalsUsed.slice(0, 4).map((entry) => `- ${entry}`));
+  }
+
+  if (result.qualitySummary.protoServiceSignalsUsed.length > 0) {
+    lines.push("Proto service mappings:");
+    lines.push(...result.qualitySummary.protoServiceSignalsUsed.slice(0, 4).map((entry) => `- ${entry}`));
+  }
+
+  if (result.qualitySummary.taxonomyPackSignalsUsed.length > 0) {
+    lines.push("Domain taxonomy packs:");
+    lines.push(...result.qualitySummary.taxonomyPackSignalsUsed.slice(0, 4).map((entry) => `- ${entry}`));
   }
 
   if (result.qualitySummary.routeSignalsUsed.length > 0) {
@@ -458,13 +496,13 @@ async function generateDraftBundle(
       };
     }
 
-    const prompt = buildBootstrapDraftPrompt(root, sessionId, graph, context);
+    const prompt = buildBootstrapDraftPrompt(root, sessionId, context, fallbackBundle);
     const output = await provider.generate(prompt, aiConfig.options);
     const normalized = normalizeProviderDraftBundle(output, fallbackBundle, context);
     return {
-      bundle: normalized,
-      providerName,
-      generationMode: "provider",
+      bundle: normalized.bundle,
+      providerName: normalized.fellBack ? "deterministic-fallback" : providerName,
+      generationMode: normalized.fellBack ? "provider-fallback" : "provider",
       qualitySummary: context.qualitySummary,
     };
   } catch (error) {
@@ -487,46 +525,132 @@ function appendWarnings(bundle: DraftBundle, warnings: string[]): DraftBundle {
   });
 }
 
-function buildBootstrapDraftPrompt(root: string, sessionId: string, graph: EvidenceGraph, context: RankedDraftContext): string {
+function buildBootstrapDraftPrompt(root: string, sessionId: string, context: RankedDraftContext, fallbackBundle: DraftBundle): string {
+  const deterministicDraft = fallbackBundle.artifacts.map((artifact) => ({
+    kind: artifact.kind,
+    relativePath: artifact.relativePath,
+    sourceFiles: artifact.sourceFiles,
+    confidenceScore: artifact.confidenceScore,
+    provenanceNote: artifact.provenanceNote,
+    content: artifact.content,
+  }));
+  const semanticReanchoringPacket = {
+    qualitySummary: context.qualitySummary,
+    adoptionRankedEvidence: context.topAdoptionEvidence.slice(0, 12),
+    domainBoundaries: context.domainGroups.slice(0, 8),
+    routeSignals: context.topRoutes.slice(0, 8).map((route) => ({
+      method: route.method,
+      path: route.path,
+      signal: route.signal,
+      sourceFiles: route.sourceFiles,
+      confidenceScore: getEvidenceConfidenceScore(route),
+      provenanceNote: route.provenanceNote,
+    })),
+    schemaSignals: context.topSchemas.slice(0, 8).map((schema) => ({
+      path: schema.path,
+      format: schema.format,
+      signal: schema.signal,
+      confidenceScore: getEvidenceConfidenceScore(schema),
+      provenanceNote: schema.provenanceNote,
+    })),
+    testSignals: context.topTests.slice(0, 6).map((test) => ({
+      path: test.path,
+      frameworkHint: test.frameworkHint,
+      confidenceScore: getEvidenceConfidenceScore(test),
+      provenanceNote: test.provenanceNote,
+    })),
+    documentSignals: context.topDocuments.slice(0, 6).map((document) => ({
+      path: document.path,
+      kind: document.kind,
+      confidenceScore: getEvidenceConfidenceScore(document),
+      provenanceNote: document.provenanceNote,
+    })),
+    businessVocabulary: context.businessVocabulary.slice(0, 12).map((term) => ({
+      label: term.label,
+      phrase: term.phrase,
+      language: term.language,
+      sourcePath: term.sourcePath,
+      score: term.score,
+      reason: term.reason,
+    })),
+    aggregateRoots: context.aggregateRoots.slice(0, 12).map((aggregate) => ({
+      name: aggregate.name,
+      sourceFiles: aggregate.sourceFiles,
+      confidenceScore: aggregate.confidenceScore,
+      provenanceNote: aggregate.provenanceNote,
+      evidence: aggregate.evidence,
+    })),
+    protoServiceMappings: context.protoServiceMappings.slice(0, 12).map((mapping) => ({
+      service: mapping.service,
+      boundedContext: mapping.boundedContext,
+      contextLabels: mapping.contextLabels,
+      aggregateRoots: mapping.aggregateRoots,
+      operations: mapping.operations,
+      sourceFile: mapping.sourceFile,
+      confidenceScore: mapping.confidenceScore,
+    })),
+    taxonomyPacks: summarizeDomainTaxonomyPacks(context.taxonomyPacks),
+  };
+
   return [
-    "# JiSpec Bootstrap Draft",
+    "# JiSpec Bootstrap Draft Semantic Re-Anchoring",
     "## Bootstrap Draft Mode",
     `- Session ID: ${sessionId}`,
     `- Repository Root: ${normalizeEvidencePath(root)}`,
+    "- Mode: BYOK semantic re-anchoring helper",
     "",
     "Return a JSON object with this shape:",
     '{ "artifacts": DraftArtifact[], "warnings": string[] }',
     "Where DraftArtifact.kind is one of domain, api, feature.",
-    "Each artifact must include relativePath, content, sourceFiles, confidenceScore, and provenanceNote.",
-    "Favor high-confidence routes, schemas, documents, manifests, and tests over low-confidence repository noise.",
-    "Prefer the first adoption loop to be concrete, reviewable, and grounded in the strongest evidence.",
+    "For each artifact, you may improve only `content`.",
+    "You must copy `relativePath`, `sourceFiles`, `confidenceScore`, and `provenanceNote` exactly from the deterministic draft artifact with the same kind.",
+    "Treat the deterministic draft as the authoritative safe baseline.",
+    "Use the ranked evidence packet as grounding. Do not invent domains, endpoints, scenarios, DTOs, or tests that are not supported by that packet or the deterministic draft.",
+    "Prefer human-readable business semantics over folder names and lifecycle verbs.",
+    "For API artifacts, classify every surface with surface_kind: openapi_contract, protobuf_service, explicit_endpoint, typed_handler_inference, module_surface_inference, or weak_candidate.",
+    "Prefer OpenAPI/Swagger and protobuf contract surfaces over route guesses; keep weak candidates visibly separate from real endpoints.",
+    "For feature artifacts, keep Gherkin Given/When/Then structure and mark thin evidence as human-review instead of overclaiming certainty.",
+    "Do not use the full repository inventory as primary context; this packet is intentionally ranked and bounded.",
     "",
-    "## Ranked Evidence Summary",
+    "## Semantic Re-Anchoring Packet",
     "```json",
-    JSON.stringify(context.qualitySummary, null, 2),
+    JSON.stringify(semanticReanchoringPacket, null, 2),
     "```",
     "",
-    "## Evidence Graph JSON",
+    "## Deterministic Draft Baseline",
     "```json",
-    JSON.stringify(graph, null, 2),
+    JSON.stringify({
+      artifacts: deterministicDraft,
+      warnings: fallbackBundle.warnings,
+    }, null, 2),
     "```",
   ].join("\n");
 }
 
-function normalizeProviderDraftBundle(output: string, fallbackBundle: DraftBundle, context: RankedDraftContext): DraftBundle {
+function normalizeProviderDraftBundle(
+  output: string,
+  fallbackBundle: DraftBundle,
+  context: RankedDraftContext,
+): { bundle: DraftBundle; fellBack: boolean } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(output);
   } catch {
-    return appendWarnings(fallbackBundle, [
-      "AI provider output was not valid JSON; bootstrap draft used the deterministic local generator.",
-    ]);
+    return {
+      bundle: appendWarnings(fallbackBundle, [
+        "AI provider output was not valid JSON; bootstrap draft used the deterministic local generator.",
+      ]),
+      fellBack: true,
+    };
   }
 
   if (!parsed || typeof parsed !== "object") {
-    return appendWarnings(fallbackBundle, [
-      "AI provider output was not an object; bootstrap draft used the deterministic local generator.",
-    ]);
+    return {
+      bundle: appendWarnings(fallbackBundle, [
+        "AI provider output was not an object; bootstrap draft used the deterministic local generator.",
+      ]),
+      fellBack: true,
+    };
   }
 
   const candidate = parsed as {
@@ -535,9 +659,12 @@ function normalizeProviderDraftBundle(output: string, fallbackBundle: DraftBundl
   };
 
   if (!Array.isArray(candidate.artifacts)) {
-    return appendWarnings(fallbackBundle, [
-      "AI provider output did not include an artifacts array; bootstrap draft used the deterministic local generator.",
-    ]);
+    return {
+      bundle: appendWarnings(fallbackBundle, [
+        "AI provider output did not include an artifacts array; bootstrap draft used the deterministic local generator.",
+      ]),
+      fellBack: true,
+    };
   }
 
   const fallbackByKind = new Map(fallbackBundle.artifacts.map((artifact) => [artifact.kind, artifact]));
@@ -559,23 +686,12 @@ function normalizeProviderDraftBundle(output: string, fallbackBundle: DraftBundl
     }
 
     normalizedArtifacts.push({
-      kind: raw.kind,
-      relativePath:
-        typeof raw.relativePath === "string" && raw.relativePath.trim().length > 0
-          ? normalizeEvidencePath(raw.relativePath)
-          : baseline.relativePath,
+      kind: baseline.kind,
+      relativePath: baseline.relativePath,
       content: typeof raw.content === "string" && raw.content.trim().length > 0 ? raw.content : baseline.content,
-      sourceFiles: normalizeSourceFiles(
-        Array.isArray(raw.sourceFiles) ? raw.sourceFiles.filter((value): value is string => typeof value === "string") : baseline.sourceFiles,
-      ),
-      confidenceScore:
-        typeof raw.confidenceScore === "number" && Number.isFinite(raw.confidenceScore)
-          ? clampScore(raw.confidenceScore)
-          : baseline.confidenceScore,
-      provenanceNote:
-        typeof raw.provenanceNote === "string" && raw.provenanceNote.trim().length > 0
-          ? raw.provenanceNote
-          : baseline.provenanceNote,
+      sourceFiles: baseline.sourceFiles,
+      confidenceScore: baseline.confidenceScore,
+      provenanceNote: baseline.provenanceNote,
     });
   }
 
@@ -589,15 +705,18 @@ function normalizeProviderDraftBundle(output: string, fallbackBundle: DraftBundl
     ? candidate.warnings.filter((warning): warning is string => typeof warning === "string")
     : [];
 
-  return stableSortDraftBundle({
-    artifacts: mergedArtifacts,
-    warnings: mergeWarnings(
-      warnings,
-      context.qualitySummary.evidenceStrength === "thin"
-        ? ["Bootstrap draft used thin evidence; review all provider-generated artifacts before adoption."]
-        : [],
-    ),
-  });
+  return {
+    bundle: stableSortDraftBundle({
+      artifacts: mergedArtifacts,
+      warnings: mergeWarnings(
+        warnings,
+        context.qualitySummary.evidenceStrength === "thin"
+          ? ["Bootstrap draft used thin evidence; review all provider-generated artifacts before adoption."]
+          : [],
+      ),
+    }),
+    fellBack: false,
+  };
 }
 
 function createDraftSessionManifest(input: {
@@ -685,6 +804,7 @@ function buildDomainArtifact(graph: EvidenceGraph, context: RankedDraftContext):
       ...context.topDocuments.map((document) => document.path),
       ...context.topManifests.map((manifest) => manifest.path),
       ...context.topSchemas.map((schema) => schema.path),
+      ...context.aggregateRoots.flatMap((aggregate) => aggregate.sourceFiles),
     ]),
   );
   const confidenceScore = clampScore(
@@ -721,7 +841,36 @@ function buildDomainArtifact(graph: EvidenceGraph, context: RankedDraftContext):
           source_files: context.summary.sourceFileCount,
         },
         primary_contexts: context.qualitySummary.primaryContextNames,
+        taxonomy_packs: summarizeDomainTaxonomyPacks(context.taxonomyPacks),
         domain_story: buildDomainStory(context),
+        aggregate_roots: context.aggregateRoots.map((aggregate) => ({
+          name: aggregate.name,
+          source_files: aggregate.sourceFiles,
+          confidence_score: aggregate.confidenceScore,
+          provenance_note: aggregate.provenanceNote,
+          evidence: {
+            schemas: aggregate.evidence.schemas,
+            routes: aggregate.evidence.routes,
+            tests: aggregate.evidence.tests,
+            documents: aggregate.evidence.documents,
+            business_vocabulary: aggregate.evidence.businessVocabulary,
+          },
+        })),
+        proto_service_mappings: context.protoServiceMappings.map((mapping) => ({
+          service: mapping.service,
+          bounded_context: mapping.boundedContext,
+          context_labels: mapping.contextLabels,
+          aggregate_roots: mapping.aggregateRoots,
+          source_file: mapping.sourceFile,
+          confidence_score: mapping.confidenceScore,
+          provenance_note: mapping.provenanceNote,
+          operations: mapping.operations.map((operation) => ({
+            operation: operation.operation,
+            request_type: operation.requestType,
+            response_type: operation.responseType,
+            aggregate_roots: operation.aggregateRoots,
+          })),
+        })),
         areas: context.domainGroups.map((group) => ({
           name: group.name,
           source_files: group.sourceFiles,
@@ -732,7 +881,18 @@ function buildDomainArtifact(graph: EvidenceGraph, context: RankedDraftContext):
             tests: group.testCount,
             schemas: group.schemaCount,
             migrations: group.migrationCount,
+            business_vocabulary: group.vocabularyCount,
           },
+        })),
+        business_vocabulary: context.businessVocabulary.slice(0, 12).map((term) => ({
+          label: term.label,
+          phrase: term.phrase,
+          language: term.language,
+          source_path: term.sourcePath,
+          source_kind: term.sourceKind,
+          occurrences: term.occurrences,
+          score: term.score,
+          reason: term.reason,
         })),
         supporting_documents: context.topDocuments.slice(0, 5).map((document) => ({
           path: document.path,
@@ -761,29 +921,7 @@ function buildDomainArtifact(graph: EvidenceGraph, context: RankedDraftContext):
 }
 
 function buildApiArtifact(graph: EvidenceGraph, context: RankedDraftContext): DraftArtifact {
-  const endpoints = context.topRoutes.slice(0, 12).map((route, index) => {
-    const routeConfidence = getEvidenceConfidenceScore(route);
-    const supportingSchemas = selectSchemasForRoute(route, context.topSchemas).slice(0, 3);
-    const sourceFiles = normalizeSourceFiles([
-      ...route.sourceFiles,
-      ...supportingSchemas.map((schema) => schema.path),
-      ...context.topDocuments.slice(0, 1).map((document) => document.path),
-    ]);
-    return {
-      id: `${(route.method ?? "unknown").toLowerCase()}-${slugifyRoutePath(route.path) || `route-${index + 1}`}`,
-      method: route.method ?? "UNKNOWN",
-      path: route.path,
-      source_files: sourceFiles,
-      confidence_score: clampScore(0.52 + routeConfidence * 0.38),
-      provenance_note: route.provenanceNote || `Derived from route evidence in ${joinSourceFiles(route.sourceFiles)}.`,
-      supporting_schemas: supportingSchemas.map((schema) => ({
-        path: schema.path,
-        format: schema.format,
-        confidence_score: getEvidenceConfidenceScore(schema),
-      })),
-    };
-  });
-
+  const classifiedSurfaces = buildApiSurfaces(graph, { schemas: context.topSchemas, taxonomyPacks: context.taxonomyPacks, limit: 32 });
   const schemas = context.topSchemas.slice(0, 12).map((schema) => ({
     path: schema.path,
     format: schema.format,
@@ -794,22 +932,37 @@ function buildApiArtifact(graph: EvidenceGraph, context: RankedDraftContext): Dr
 
   const sourceFiles = normalizeSourceFiles(
     collectArtifactSourceFiles(graph, context, [
-      ...endpoints.flatMap((endpoint) => endpoint.source_files),
+      ...classifiedSurfaces.flatMap((surface) => surface.source_files),
       ...schemas.flatMap((schema) => schema.source_files),
       ...context.topDocuments.slice(0, 2).map((document) => document.path),
     ]),
   );
+  const endpoints: ApiSurface[] =
+    classifiedSurfaces.length > 0
+      ? classifiedSurfaces
+      : [
+          {
+            id: "bootstrap-placeholder-surface",
+            surface_kind: "weak_candidate",
+            candidate_path: "/",
+            method: "UNKNOWN",
+            source_files: sourceFiles,
+            confidence_score: 0.42,
+            provenance_note: "No API contract or endpoint evidence was discovered; this placeholder keeps the first adoption loop visible.",
+          },
+        ];
+  const surfaceSummary = summarizeApiSurfaceKinds(endpoints);
 
   const confidenceScore = clampScore(
-    0.46 +
-      averageConfidence(context.topRoutes.slice(0, 4)) * 0.28 +
+    0.43 +
+      averageConfidence(endpoints.slice(0, 5).map((surface) => ({ confidenceScore: surface.confidence_score }))) * 0.31 +
       averageConfidence(context.topSchemas.slice(0, 4)) * 0.2 +
       averageConfidence(context.topDocuments.slice(0, 2)) * 0.05,
   );
   const provenanceNote =
     endpoints.length > 0
-      ? `Derived from ${endpoints.length} ranked API surface candidate(s), ${schemas.length} schema asset(s), and ${context.topDocuments.length} supporting document(s).`
-      : `Derived from schema and documentation evidence because no explicit routes were discovered.`;
+      ? `Derived from ${endpoints.length} classified API surface(s), ${schemas.length} schema asset(s), and ${context.topDocuments.length} supporting document(s).`
+      : "Derived from schema and documentation evidence because no API surfaces were discovered.";
 
   const content = JSON.stringify(
     {
@@ -832,19 +985,23 @@ function buildApiArtifact(graph: EvidenceGraph, context: RankedDraftContext): Dr
           path: manifest.path,
           kind: manifest.kind,
         })),
-        endpoints:
-          endpoints.length > 0
-            ? endpoints
-            : [
-                {
-                  id: "bootstrap-placeholder-surface",
-                  method: "UNKNOWN",
-                  path: "/",
-                  source_files: sourceFiles,
-                  confidence_score: 0.42,
-                  provenance_note: "No explicit routes were discovered; this placeholder keeps the first adoption loop visible.",
-                },
-              ],
+        surface_summary: surfaceSummary,
+        proto_service_mappings: context.protoServiceMappings.map((mapping) => ({
+          service: mapping.service,
+          bounded_context: mapping.boundedContext,
+          context_labels: mapping.contextLabels,
+          aggregate_roots: mapping.aggregateRoots,
+          source_file: mapping.sourceFile,
+          confidence_score: mapping.confidenceScore,
+          operations: mapping.operations.map((operation) => ({
+            operation: operation.operation,
+            request_type: operation.requestType,
+            response_type: operation.responseType,
+            aggregate_roots: operation.aggregateRoots,
+          })),
+        })),
+        surfaces: endpoints,
+        endpoints,
         schemas,
       },
     },
@@ -862,55 +1019,38 @@ function buildApiArtifact(graph: EvidenceGraph, context: RankedDraftContext): Dr
   };
 }
 
-function buildFeatureArtifact(graph: EvidenceGraph, context: RankedDraftContext): DraftArtifact {
-  const topTests = context.topTests.slice(0, 6);
-  const scenarios = context.topRoutes.slice(0, 6).map((route, index) => {
-    const sourceFiles = normalizeSourceFiles([
-      ...route.sourceFiles,
-      ...selectTestsForRoute(route, topTests).map((test) => test.path),
-      ...selectSchemasForRoute(route, context.topSchemas).slice(0, 2).map((schema) => schema.path),
-    ]);
-    const confidenceScore = clampScore(
-      0.44 + getEvidenceConfidenceScore(route) * 0.3 + averageConfidence(selectTestsForRoute(route, topTests)) * 0.14,
-    );
-    const provenanceNote =
-      route.method && route.path.startsWith("/")
-        ? `Derived from ${route.method} ${route.path}, related test evidence, and supporting schema/document signals.`
-        : `Derived from route candidate source evidence in ${joinSourceFiles(sourceFiles)}.`;
-    const scenarioName =
-      route.method && route.path
-        ? `${route.method} ${route.path} remains reviewable during the first adoption loop`
-        : `Route candidate ${index + 1} remains reviewable during the first adoption loop`;
-
-    return {
-      scenarioName,
-      route,
-      sourceFiles,
-      confidenceScore,
-      provenanceNote,
-      tests: selectTestsForRoute(route, topTests).map((test) => test.path),
-    };
-  });
-
-  const fallbackScenario = {
-    scenarioName: "Bootstrap discovery artifacts remain reviewable after adoption",
-    route: undefined,
-    sourceFiles: normalizeSourceFiles(
-      collectArtifactSourceFiles(graph, context, [
-        ...context.topDocuments.slice(0, 2).map((document) => document.path),
-        ...topTests.slice(0, 2).map((test) => test.path),
-        ...context.topSchemas.slice(0, 2).map((schema) => schema.path),
-      ]),
-    ),
-    confidenceScore: clampScore(0.36 + averageConfidence(context.topDocuments.slice(0, 2)) * 0.16 + averageConfidence(topTests) * 0.1),
-    provenanceNote: "No explicit routes were discovered, so the initial behavior draft is grounded in repository-wide bootstrap evidence.",
-    tests: topTests.slice(0, 2).map((test) => test.path),
+function summarizeApiSurfaceKinds(surfaces: ApiSurface[]): Record<ApiSurface["surface_kind"], number> {
+  const summary: Record<ApiSurface["surface_kind"], number> = {
+    explicit_endpoint: 0,
+    openapi_contract: 0,
+    protobuf_service: 0,
+    typed_handler_inference: 0,
+    module_surface_inference: 0,
+    weak_candidate: 0,
   };
 
-  const selectedScenarios = scenarios.length > 0 ? scenarios : [fallbackScenario];
+  for (const surface of surfaces) {
+    summary[surface.surface_kind] += 1;
+  }
+
+  return summary;
+}
+
+function buildFeatureArtifact(graph: EvidenceGraph, context: RankedDraftContext): DraftArtifact {
+  const topTests = context.topTests.slice(0, 6);
+  const selectedScenarios = buildFeatureScenarios(graph, context, topTests);
   const sourceFiles = normalizeSourceFiles(
     selectedScenarios.flatMap((scenario) => scenario.sourceFiles).concat(topTests.slice(0, 3).map((test) => test.path)),
   );
+  const featureGate = summarizeFeatureScenarioConfidence({
+    scenarios: selectedScenarios.map((scenario) => ({
+      recommendation: scenario.recommendation,
+      confidenceScore: scenario.confidenceScore,
+      confidenceReasons: scenario.confidenceReasons,
+      humanReviewRequired: scenario.humanReviewRequired,
+    })),
+    evidenceStrength: context.qualitySummary.evidenceStrength,
+  });
   const confidenceScore = clampScore(
     0.42 +
       averageConfidence(selectedScenarios.map((scenario) => ({ confidenceScore: scenario.confidenceScore }))) * 0.24 +
@@ -918,14 +1058,16 @@ function buildFeatureArtifact(graph: EvidenceGraph, context: RankedDraftContext)
       averageConfidence(context.topDocuments.slice(0, 2)) * 0.06,
   );
   const provenanceNote =
-    scenarios.length > 0
-      ? `Derived from ${selectedScenarios.length} ranked route-backed behavior candidate(s), ${topTests.length} prioritized test asset(s), and ${context.topDocuments.length} supporting document(s).`
-      : "Derived from repository bootstrap evidence because no explicit route-backed behaviors were discovered.";
+    selectedScenarios.some((scenario) => !scenario.humanReviewRequired)
+      ? `Derived from ${selectedScenarios.length} boundary-backed behavior candidate(s), ${topTests.length} prioritized test asset(s), and ${context.topDocuments.length} supporting document(s).`
+      : "Derived as human-review behavior candidates because bootstrap evidence is too thin for confident behavior synthesis.";
 
   const lines: string[] = [
     `# source_files: ${JSON.stringify(sourceFiles)}`,
     `# confidence_score: ${confidenceScore}`,
     `# provenance_note: ${provenanceNote}`,
+    `# adoption_recommendation: ${featureGate.recommendation}`,
+    `# confidence_reasons: ${JSON.stringify(featureGate.confidenceReasons)}`,
     "Feature: Bootstrap discovered behaviors",
     "",
   ];
@@ -934,19 +1076,22 @@ function buildFeatureArtifact(graph: EvidenceGraph, context: RankedDraftContext)
     lines.push(`  # source_files: ${JSON.stringify(scenario.sourceFiles)}`);
     lines.push(`  # confidence_score: ${scenario.confidenceScore}`);
     lines.push(`  # provenance_note: ${scenario.provenanceNote}`);
+    lines.push(`  # recommendation: ${scenario.recommendation}`);
+    lines.push(`  # confidence_reasons: ${JSON.stringify(scenario.confidenceReasons)}`);
+    if (scenario.humanReviewRequired) {
+      lines.push("  @behavior_needs_human_review");
+    }
     lines.push(`  Scenario: ${scenario.scenarioName}`);
-    if (scenario.route?.method && scenario.route?.path) {
-      lines.push(`    Given bootstrap discover found "${scenario.route.method} ${scenario.route.path}"`);
-      lines.push(`    And the strongest source file is "${scenario.sourceFiles[0] ?? "unknown"}"`);
-    } else {
-      lines.push("    Given bootstrap discover produced repository-wide evidence");
-      lines.push(`    And the strongest signals came from "${scenario.sourceFiles[0] ?? "unknown"}"`);
+    lines.push(`    Given ${scenario.given}`);
+    lines.push(`    And the strongest behavior evidence is "${scenario.sourceFiles[0] ?? "unknown"}"`);
+    if (scenario.supportingRoute) {
+      lines.push(`    And supporting API evidence includes "${scenario.supportingRoute}"`);
     }
     if (scenario.tests.length > 0) {
       lines.push(`    And test evidence includes "${scenario.tests[0]}"`);
     }
-    lines.push("    When the first draft contract bundle is adopted");
-    lines.push("    Then the behavior should remain reviewable as a visible contract asset");
+    lines.push(`    When ${scenario.when}`);
+    lines.push(`    Then ${scenario.then}`);
     lines.push("");
   }
 
@@ -960,7 +1105,220 @@ function buildFeatureArtifact(graph: EvidenceGraph, context: RankedDraftContext)
   };
 }
 
-function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContext, "topRoutes" | "topSchemas" | "topTests" | "topDocuments" | "topMigrations">): Array<{
+function buildFeatureScenarios(graph: EvidenceGraph, context: RankedDraftContext, topTests: EvidenceTest[]): FeatureScenarioDraft[] {
+  const strongBoundaries = context.domainGroups.filter((group) => group.name !== "bootstrap").slice(0, 6);
+  const boundaries =
+    strongBoundaries.length > 0
+      ? strongBoundaries
+      : [
+          {
+            name: inferFallbackBehaviorBoundary(context),
+            sourceFiles: collectArtifactSourceFiles(graph, context, [
+              ...context.topDocuments.slice(0, 2).map((document) => document.path),
+              ...context.topSchemas.slice(0, 2).map((schema) => schema.path),
+              ...context.topRoutes.slice(0, 2).flatMap((route) => route.sourceFiles),
+              ...topTests.slice(0, 2).map((test) => test.path),
+            ]),
+            confidenceScore: 0.32,
+            provenanceNote: "Inferred fallback boundary from thin bootstrap evidence.",
+            routeCount: context.topRoutes.length,
+            testCount: topTests.length,
+            schemaCount: context.topSchemas.length,
+            migrationCount: context.topMigrations.length,
+          },
+        ];
+
+  return boundaries.map((boundary, index) => {
+    const relatedRoute = selectRouteForBoundary(boundary.name, context.topRoutes, index);
+    const relatedTests = relatedRoute ? selectTestsForRoute(relatedRoute, topTests) : selectTestsForBoundary(boundary.name, topTests);
+    const relatedSchemas = relatedRoute
+      ? selectSchemasForRoute(relatedRoute, context.topSchemas)
+      : selectSchemasForBoundary(boundary.name, context.topSchemas);
+    const relatedDocuments = context.topDocuments
+      .filter((document) => boundaryMatchesPath(boundary.name, document.path))
+      .slice(0, 2);
+    const relatedProtoMappings = context.protoServiceMappings.filter((mapping) => protoMappingMatchesBoundary(boundary.name, mapping));
+    const relatedAggregateRoots = context.aggregateRoots.filter((aggregate) => aggregateRootMatchesBoundary(boundary.name, aggregate));
+    const corroboratingAggregateRoots = relatedAggregateRoots.filter((aggregate) => aggregateHasNonRouteEvidence(aggregate));
+    const sourceFiles = normalizeSourceFiles([
+      ...boundary.sourceFiles,
+      ...(relatedRoute?.sourceFiles ?? []),
+      ...relatedTests.slice(0, 2).map((test) => test.path),
+      ...relatedSchemas.slice(0, 2).map((schema) => schema.path),
+      ...relatedDocuments.map((document) => document.path),
+      ...relatedProtoMappings.slice(0, 2).map((mapping) => mapping.sourceFile),
+      ...relatedAggregateRoots.slice(0, 2).flatMap((aggregate) => aggregate.sourceFiles),
+    ]);
+    const behavior = inferBehaviorTemplate(boundary.name, context.taxonomyPacks);
+    const genericBehaviorTemplate = behavior.scenarioName.endsWith("behavior is confirmed before enforcement");
+    const evidenceCoverage =
+      relatedTests.length +
+      relatedSchemas.length +
+      relatedDocuments.length +
+      relatedProtoMappings.length +
+      corroboratingAggregateRoots.length;
+    const strongScenarioSupport =
+      relatedProtoMappings.length > 0 &&
+      relatedTests.length + relatedSchemas.length + relatedDocuments.length + corroboratingAggregateRoots.length > 0;
+    const preliminaryHumanReviewRequired =
+      evidenceCoverage === 0 ||
+      (context.qualitySummary.evidenceStrength === "thin" && !strongScenarioSupport) ||
+      genericBehaviorTemplate ||
+      Boolean(relatedRoute && evidenceCoverage === 0);
+    const confidenceScore = clampScore(
+      Math.max(boundary.confidenceScore, 0.32) +
+        averageConfidence(relatedTests.slice(0, 2)) * 0.1 +
+        averageConfidence(relatedSchemas.slice(0, 2)) * 0.12 +
+        averageConfidence(relatedDocuments.slice(0, 2)) * 0.05 +
+        averageConfidence(relatedProtoMappings.slice(0, 2).map((mapping) => ({ confidenceScore: mapping.confidenceScore }))) * 0.09 +
+        averageConfidence(corroboratingAggregateRoots.slice(0, 2).map((aggregate) => ({ confidenceScore: aggregate.confidenceScore }))) * 0.06 +
+        (preliminaryHumanReviewRequired ? -0.12 : 0.08),
+    );
+    const confidenceAssessment = assessFeatureScenarioConfidence({
+      boundaryName: boundary.name,
+      confidenceScore,
+      evidenceStrength: context.qualitySummary.evidenceStrength,
+      evidenceCoverage,
+      relatedRoute: relatedRoute && relatedRoute.method && relatedRoute.path.startsWith("/") ? `${relatedRoute.method} ${relatedRoute.path}` : undefined,
+      relatedTestCount: relatedTests.length,
+      relatedSchemaCount: relatedSchemas.length,
+      relatedDocumentCount: relatedDocuments.length,
+      relatedProtoServiceCount: relatedProtoMappings.length,
+      relatedAggregateRootCount: corroboratingAggregateRoots.length,
+      genericBehaviorTemplate,
+    });
+
+    return {
+      scenarioName: behavior.scenarioName,
+      boundaryName: boundary.name,
+      sourceFiles,
+      confidenceScore,
+      provenanceNote: confidenceAssessment.humanReviewRequired
+        ? `Boundary ${boundary.name} has thin behavior evidence; this scenario is a human-review candidate.`
+        : `Derived from the ${boundary.name} boundary, supporting contract evidence, and related tests.`,
+      confidenceReasons: confidenceAssessment.confidenceReasons,
+      recommendation: confidenceAssessment.recommendation,
+      tests: relatedTests.slice(0, 2).map((test) => test.path),
+      supportingRoute: relatedRoute && relatedRoute.method && relatedRoute.path.startsWith("/") ? `${relatedRoute.method} ${relatedRoute.path}` : undefined,
+      humanReviewRequired: confidenceAssessment.humanReviewRequired,
+      given: behavior.given,
+      when: behavior.when,
+      then: confidenceAssessment.humanReviewRequired
+        ? `${behavior.then}; behavior_needs_human_review remains open until an owner confirms the scenario`
+        : behavior.then,
+    };
+  });
+}
+
+function inferFallbackBehaviorBoundary(context: RankedDraftContext): string {
+  const firstContext = context.qualitySummary.primaryContextNames.find((name) => name !== "bootstrap");
+  if (firstContext) {
+    return firstContext;
+  }
+  const routeKeyword = context.topRoutes.flatMap((route) => extractRouteKeywords(route.path)).find((keyword) => !GENERIC_ROUTE_KEYWORDS.has(keyword));
+  return routeKeyword ? normalizeDomainGroupLabel(routeKeyword) || "bootstrap" : "bootstrap";
+}
+
+function inferBehaviorTemplate(boundaryName: string, taxonomyPacks: DomainTaxonomyPack[]): {
+  scenarioName: string;
+  given: string;
+  when: string;
+  then: string;
+} {
+  const normalized = normalizeDomainGroupLabel(boundaryName);
+  const taxonomyScenario = getTaxonomyScenarioTemplate(normalized, taxonomyPacks);
+  if (taxonomyScenario) {
+    return taxonomyScenario;
+  }
+
+  return {
+    scenarioName: `${titleCaseBoundary(normalized || "bootstrap")} behavior is confirmed before enforcement`,
+    given: `bootstrap discover identified the ${normalized || "bootstrap"} boundary`,
+    when: "a human reviewer adopts the first behavior contract",
+    then: "the behavior is either confirmed as enforceable or deferred as explicit spec debt",
+  };
+}
+
+function selectRouteForBoundary(boundaryName: string, routes: EvidenceRoute[], index: number): EvidenceRoute | undefined {
+  const matched = routes.find((route) =>
+    [route.path, ...route.sourceFiles].some((candidate) => boundaryMatchesPath(boundaryName, candidate)),
+  );
+  return matched ?? routes[index % Math.max(routes.length, 1)];
+}
+
+function selectTestsForBoundary(boundaryName: string, tests: EvidenceTest[]): EvidenceTest[] {
+  return tests.filter((test) => boundaryMatchesPath(boundaryName, test.path));
+}
+
+function selectSchemasForBoundary(boundaryName: string, schemas: EvidenceSchema[]): EvidenceSchema[] {
+  return schemas.filter((schema) => boundaryMatchesPath(boundaryName, schema.path));
+}
+
+function boundaryMatchesPath(boundaryName: string, candidatePath: string): boolean {
+  const boundaryWords = expandEvidenceKeywords(
+    normalizeDomainGroupLabel(boundaryName)
+      .split("-")
+      .filter((part) => part.length >= 3),
+  );
+  const lowerPath = candidatePath.toLowerCase();
+  return boundaryWords.some((word) => lowerPath.includes(word));
+}
+
+function protoMappingMatchesBoundary(boundaryName: string, mapping: ProtoServiceDomainMapping): boolean {
+  const normalizedBoundary = normalizeDomainGroupLabel(boundaryName);
+  if (!normalizedBoundary) {
+    return false;
+  }
+
+  return [
+    mapping.boundedContext,
+    mapping.service,
+    mapping.sourceFile,
+    ...mapping.contextLabels,
+    ...mapping.aggregateRoots,
+  ].some((candidate) => boundaryMatchesLabel(normalizedBoundary, candidate));
+}
+
+function aggregateRootMatchesBoundary(boundaryName: string, aggregate: AggregateRootCandidate): boolean {
+  const normalizedBoundary = normalizeDomainGroupLabel(boundaryName);
+  if (!normalizedBoundary) {
+    return false;
+  }
+
+  return [aggregate.name, aggregate.provenanceNote, ...aggregate.sourceFiles].some((candidate) =>
+    boundaryMatchesLabel(normalizedBoundary, candidate),
+  );
+}
+
+function aggregateHasNonRouteEvidence(aggregate: AggregateRootCandidate): boolean {
+  return (
+    aggregate.evidence.schemas +
+      aggregate.evidence.tests +
+      aggregate.evidence.documents +
+      aggregate.evidence.businessVocabulary >
+    0
+  );
+}
+
+function boundaryMatchesLabel(boundaryName: string, candidate: string): boolean {
+  const boundaryWords = expandEvidenceKeywords(
+    boundaryName
+      .split("-")
+      .filter((part) => part.length >= 3),
+  );
+  const lowerCandidate = normalizeEvidencePath(candidate).toLowerCase();
+  return boundaryWords.some((word) => lowerCandidate.includes(word));
+}
+
+function titleCaseBoundary(boundaryName: string): string {
+  return boundaryName
+    .split("-")
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContext, "topRoutes" | "topSchemas" | "topTests" | "topDocuments" | "topMigrations" | "topAdoptionEvidence" | "businessVocabulary" | "protoServiceMappings" | "taxonomyPacks">): Array<{
   name: string;
   sourceFiles: string[];
   confidenceScore: number;
@@ -969,6 +1327,7 @@ function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContex
   testCount: number;
   schemaCount: number;
   migrationCount: number;
+  vocabularyCount: number;
 }> {
   const groups = new Map<
     string,
@@ -978,7 +1337,13 @@ function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContex
       testCount: number;
       schemaCount: number;
       migrationCount: number;
+      vocabularyCount: number;
       inferredFromContexts: boolean;
+      semanticScore: number;
+      boundaryScore: number;
+      vocabularyScore: number;
+      protoServiceScore: number;
+      taxonomyScore: number;
     }
   >();
 
@@ -990,7 +1355,13 @@ function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContex
         testCount: 0,
         schemaCount: 0,
         migrationCount: 0,
+        vocabularyCount: 0,
         inferredFromContexts,
+        semanticScore: 0,
+        boundaryScore: 0,
+        vocabularyScore: 0,
+        protoServiceScore: 0,
+        taxonomyScore: 0,
       });
     }
 
@@ -1002,7 +1373,7 @@ function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContex
     increment: keyof Omit<ReturnType<typeof ensureGroup>, "sourceFiles" | "inferredFromContexts">,
     preferredGroupName?: string,
   ) => {
-    const groupName = preferredGroupName ?? inferDomainGroupName(sourceFile);
+    const groupName = resolveDomainGroupName(sourceFile, preferredGroupName);
     const group = ensureGroup(groupName, sourceFile.startsWith("contexts/"));
     group.sourceFiles.add(sourceFile);
     group[increment] += 1;
@@ -1033,10 +1404,55 @@ function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContex
     group.sourceFiles.add(document.path);
   }
 
-  for (const sourceFile of graph.sourceFiles) {
-    const groupName = inferDomainGroupName(sourceFile.path);
-    const group = ensureGroup(groupName, sourceFile.path.startsWith("contexts/"));
-    group.sourceFiles.add(sourceFile.path);
+  for (const term of context.businessVocabulary) {
+    const groupName = term.label;
+    const group = ensureGroup(groupName, false);
+    group.sourceFiles.add(term.sourcePath);
+    group.vocabularyCount += term.occurrences;
+    group.vocabularyScore = Math.max(group.vocabularyScore, term.score);
+    group.boundaryScore = Math.max(group.boundaryScore, term.score);
+  }
+
+  for (const mapping of context.protoServiceMappings) {
+    for (const contextLabel of mapping.contextLabels) {
+      const groupName = normalizeDomainGroupLabel(contextLabel);
+      if (!groupName) {
+        continue;
+      }
+      const group = ensureGroup(groupName, false);
+      group.sourceFiles.add(mapping.sourceFile);
+      group.schemaCount += 1;
+      group.protoServiceScore = Math.max(group.protoServiceScore, mapping.confidenceScore * 100);
+      group.boundaryScore = Math.max(group.boundaryScore, mapping.confidenceScore * 100);
+    }
+  }
+
+  for (const evidence of context.topAdoptionEvidence) {
+    const candidateSources = normalizeSourceFiles([evidence.path, ...evidence.sourceFiles]);
+    const boundary = inferBusinessBoundaryFromEvidence(evidence, context.taxonomyPacks);
+    const groupName = boundary && !isTechnicalBoundaryLabel(boundary.label)
+      ? boundary.label
+      : inferAdoptionEvidenceGroupName(evidence);
+    const group = ensureGroup(groupName, candidateSources.some((sourceFile) => sourceFile.startsWith("contexts/")));
+    for (const sourceFile of candidateSources) {
+      group.sourceFiles.add(sourceFile);
+    }
+    group.semanticScore = Math.max(group.semanticScore, evidence.score);
+    if (boundary) {
+      group.boundaryScore = Math.max(group.boundaryScore, boundary.score);
+    }
+    const taxonomyBoost = scoreDomainTaxonomyEvidence([evidence.path, ...evidence.sourceFiles, evidence.reason].join(" "), context.taxonomyPacks);
+    if (taxonomyBoost.score > 0) {
+      group.taxonomyScore = Math.max(group.taxonomyScore, taxonomyBoost.score * 10);
+      for (const label of taxonomyBoost.labels) {
+        const taxonomyGroup = ensureGroup(label, false);
+        for (const sourceFile of candidateSources) {
+          taxonomyGroup.sourceFiles.add(sourceFile);
+        }
+        taxonomyGroup.taxonomyScore = Math.max(taxonomyGroup.taxonomyScore, taxonomyBoost.score * 10);
+        taxonomyGroup.boundaryScore = Math.max(taxonomyGroup.boundaryScore, taxonomyBoost.score * 10);
+      }
+    }
   }
 
   if (groups.size === 0) {
@@ -1051,33 +1467,58 @@ function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContex
       testCount: context.topTests.length,
       schemaCount: context.topSchemas.length,
       migrationCount: context.topMigrations.length,
+      vocabularyCount: 0,
       inferredFromContexts: false,
+      semanticScore: 0,
+      boundaryScore: 0,
+      vocabularyScore: 0,
+      protoServiceScore: 0,
+      taxonomyScore: 0,
     });
   }
 
   return [...groups.entries()]
     .map(([name, group]) => {
       const sourceFiles = normalizeSourceFiles([...group.sourceFiles]);
+      const technicalBoundary = isBoundaryNoiseLabel(name) || hasTechnicalBoundaryToken(name);
       const confidenceScore = clampScore(
         0.34 +
           (group.routeCount > 0 ? 0.12 : 0) +
           (group.schemaCount > 0 ? 0.1 : 0) +
           (group.testCount > 0 ? 0.06 : 0) +
           (group.inferredFromContexts ? 0.1 : 0.04) +
-          Math.min(sourceFiles.length * 0.015, 0.12),
+          Math.min(group.semanticScore / 1000, 0.16) +
+          Math.min(group.boundaryScore / 1000, 0.12) +
+          Math.min(group.vocabularyScore / 700, 0.2) +
+          Math.min(group.protoServiceScore / 500, 0.18) +
+          Math.min(group.taxonomyScore / 500, 0.16) +
+          Math.min(sourceFiles.length * 0.015, 0.12) -
+          (technicalBoundary ? 0.18 : 0),
       );
 
       return {
         name,
         sourceFiles,
         confidenceScore,
-        provenanceNote: group.inferredFromContexts
-          ? `Inferred from files under the ${name} bounded-context path and related evidence.`
-          : `Inferred from repository path grouping around ${name}.`,
+        provenanceNote:
+          technicalBoundary
+            ? `Kept as supporting technical evidence for ${name}; not promoted as a primary business boundary.`
+            : group.vocabularyScore > 0
+              ? `Re-anchored from multilingual business vocabulary around the ${name} boundary.`
+            : group.protoServiceScore > 0
+              ? `Re-anchored from protobuf service mapping around the ${name} bounded context.`
+            : group.taxonomyScore > 0
+              ? `Re-anchored from configured domain taxonomy around the ${name} boundary.`
+            : group.boundaryScore > 0
+            ? `Re-anchored from high-value takeover evidence around the ${name} business boundary.`
+            : group.inferredFromContexts
+              ? `Inferred from files under the ${name} bounded-context path and related evidence.`
+              : `Inferred from repository path grouping around ${name}.`,
         routeCount: group.routeCount,
         testCount: group.testCount,
         schemaCount: group.schemaCount,
         migrationCount: group.migrationCount,
+        vocabularyCount: group.vocabularyCount,
       };
     })
     .sort((left, right) => {
@@ -1089,21 +1530,46 @@ function buildDomainGroups(graph: EvidenceGraph, context: Pick<RankedDraftContex
 
 function buildRankedDraftContext(graph: EvidenceGraph): RankedDraftContext {
   const summary = summarizeEvidenceGraph(graph);
+  const taxonomyPacks = loadDomainTaxonomyPacksFromRoot(graph.repoRoot);
+  const adoptionEvidence = buildAdoptionRankedEvidence(graph, { limit: 20, taxonomyPacks });
+  const topAdoptionEvidence = adoptionEvidence.evidence;
   const topRoutes = rankRoutes(graph.routes).slice(0, 12);
   const topSchemas = rankSchemas(graph.schemas).slice(0, 12);
   const topTests = rankTests(graph.tests).slice(0, 12);
   const topDocuments = rankDocuments(graph.documents ?? []).slice(0, 10);
   const topManifests = rankManifests(graph.manifests ?? []).slice(0, 6);
   const topMigrations = rankMigrations(graph.migrations).slice(0, 6);
+  const businessVocabulary = extractBusinessVocabularyFromDocuments(graph, topDocuments, { limit: 24, taxonomyPacks });
+  const aggregateRoots = buildAggregateRootCandidates(graph, {
+    routes: topRoutes,
+    schemas: topSchemas,
+    tests: topTests,
+    documents: topDocuments,
+    businessVocabulary,
+    taxonomyPacks,
+    limit: 12,
+  });
+  const protoServiceMappings = buildProtoDomainMappings(graph, {
+    schemas: topSchemas,
+    aggregateRoots,
+    taxonomyPacks,
+    limit: 12,
+  });
   const domainGroups = buildDomainGroups(graph, {
     topRoutes,
     topSchemas,
     topTests,
     topDocuments,
     topMigrations,
+    topAdoptionEvidence,
+    businessVocabulary,
+    protoServiceMappings,
+    taxonomyPacks,
   });
+  const brandHints = inferBrandBoundaryHints(graph);
 
   const sourcePriority = normalizeSourceFiles([
+    ...topAdoptionEvidence.flatMap((entry) => [entry.path, ...entry.sourceFiles]),
     ...topRoutes.flatMap((route) => route.sourceFiles),
     ...topSchemas.map((schema) => schema.path),
     ...topDocuments.map((document) => document.path),
@@ -1115,11 +1581,25 @@ function buildRankedDraftContext(graph: EvidenceGraph): RankedDraftContext {
   const schemaSignalsUsed = topSchemas.slice(0, 5).map((schema) => `${schema.path} (${schema.format}, ${Math.round(getEvidenceConfidenceScore(schema) * 100)}%)`);
   const testSignalsUsed = topTests.slice(0, 5).map((test) => `${test.path} (${test.frameworkHint ?? "unknown"}, ${Math.round(getEvidenceConfidenceScore(test) * 100)}%)`);
   const documentSignalsUsed = topDocuments.slice(0, 5).map((document) => `${document.path} (${document.kind}, ${Math.round(getEvidenceConfidenceScore(document) * 100)}%)`);
-  const manifestSignalsUsed = topManifests.slice(0, 5).map((manifest) => `${manifest.path} (${manifest.kind}, ${Math.round(getEvidenceConfidenceScore(manifest) * 100)}%)`);
-  const specificPrimaryContexts = domainGroups
+  const businessVocabularySignalsUsed = summarizeBusinessVocabularyTerms(businessVocabulary, 8);
+  const aggregateRootSignalsUsed = aggregateRoots
+    .slice(0, 8)
+    .map((aggregate) => `${aggregate.name} (${Math.round(aggregate.confidenceScore * 100)}%) from ${aggregate.sourceFiles.slice(0, 2).join(", ")}`);
+  const protoServiceSignalsUsed = protoServiceMappings
+    .slice(0, 8)
+    .map((mapping) => `${mapping.service} -> ${mapping.boundedContext} (${mapping.aggregateRoots.slice(0, 4).join(", ")})`);
+  const taxonomyPackSignalsUsed = summarizeDomainTaxonomyPacks(taxonomyPacks);
+  const manifestSignalsUsed = [
+    ...topAdoptionEvidence.slice(0, 5).map((entry) => `${entry.path} (${entry.kind}, score ${Math.round(entry.score)})`),
+    ...topManifests.slice(0, 5).map((manifest) => `${manifest.path} (${manifest.kind}, ${Math.round(getEvidenceConfidenceScore(manifest) * 100)}%)`),
+  ].slice(0, 8);
+  const businessPrimaryContexts = domainGroups
     .map((group) => group.name)
-    .filter((name) => name !== "bootstrap" && !GENERIC_DOMAIN_GROUP_NAMES.has(name));
-  const primaryContextNames = (specificPrimaryContexts.length > 0 ? specificPrimaryContexts : domainGroups.map((group) => group.name)).slice(0, 4);
+    .filter((name) => !shouldSuppressPrimaryBoundaryLabel(name, { brandHints, hasSpecificAlternative: false }));
+  const nonBrandPrimaryContexts = businessPrimaryContexts.filter((name) =>
+    !shouldSuppressPrimaryBoundaryLabel(name, { brandHints, hasSpecificAlternative: true }),
+  );
+  const primaryContextNames = (nonBrandPrimaryContexts.length > 0 ? nonBrandPrimaryContexts : businessPrimaryContexts).slice(0, 5);
 
   const evidenceStrengthScore =
     averageConfidence(topRoutes.slice(0, 4)) * 0.34 +
@@ -1143,14 +1623,23 @@ function buildRankedDraftContext(graph: EvidenceGraph): RankedDraftContext {
     topDocuments,
     topManifests,
     topMigrations,
+    businessVocabulary,
+    aggregateRoots,
+    protoServiceMappings,
+    taxonomyPacks,
     domainGroups,
     sourcePriority,
+    topAdoptionEvidence,
     qualitySummary: {
       routeSignalsUsed,
       schemaSignalsUsed,
       testSignalsUsed,
       documentSignalsUsed,
       manifestSignalsUsed,
+      businessVocabularySignalsUsed,
+      aggregateRootSignalsUsed,
+      protoServiceSignalsUsed,
+      taxonomyPackSignalsUsed,
       primaryContextNames,
       evidenceStrength,
     },
@@ -1161,11 +1650,24 @@ function buildDomainStory(context: RankedDraftContext): string[] {
   const story: string[] = [];
 
   if (context.qualitySummary.primaryContextNames.length > 0) {
-    story.push(`Primary bounded contexts appear to be ${context.qualitySummary.primaryContextNames.join(", ")}.`);
+    story.push(`Primary takeover boundaries appear to be ${context.qualitySummary.primaryContextNames.join(", ")}.`);
   }
 
-  if (context.topRoutes.length > 0) {
-    story.push(`The strongest contract surface is ${formatRouteEvidence(context.topRoutes[0])}.`);
+  if (context.domainGroups.length > 0) {
+    const topGroup = context.domainGroups[0];
+    story.push(`The strongest domain boundary is ${topGroup.name}, supported by ${topGroup.sourceFiles.slice(0, 3).join(", ")}.`);
+  }
+
+  if (context.businessVocabulary.length > 0) {
+    story.push(`Document vocabulary contributes ${context.businessVocabulary.slice(0, 5).map((term) => term.label).join(", ")}.`);
+  }
+
+  if (context.aggregateRoots.length > 0) {
+    story.push(`Aggregate root candidates include ${context.aggregateRoots.slice(0, 5).map((aggregate) => aggregate.name).join(", ")}.`);
+  }
+
+  if (context.protoServiceMappings.length > 0) {
+    story.push(`Proto service mappings include ${context.protoServiceMappings.slice(0, 4).map((mapping) => `${mapping.service}->${mapping.boundedContext}`).join(", ")}.`);
   }
 
   if (context.topSchemas.length > 0) {
@@ -1174,6 +1676,10 @@ function buildDomainStory(context: RankedDraftContext): string[] {
 
   if (context.topDocuments.length > 0) {
     story.push(`Documentation context is anchored by ${context.topDocuments[0].path}.`);
+  }
+
+  if (context.topRoutes.length > 0) {
+    story.push(`Route evidence remains supporting context, led by ${formatRouteEvidence(context.topRoutes[0])}.`);
   }
 
   if (story.length === 0) {
@@ -1268,6 +1774,12 @@ function schemaPriorityScore(schema: EvidenceSchema): number {
   let score = getEvidenceConfidenceScore(schema);
   if (schema.format === "openapi") {
     score += 0.08;
+  }
+  if (schema.format === "protobuf") {
+    score += 0.08;
+  }
+  if (schema.format === "database-schema") {
+    score += 0.07;
   }
   if (schema.format === "json-schema") {
     score += 0.05;
@@ -1381,6 +1893,20 @@ function formatRouteEvidence(route: EvidenceRoute): string {
   return `${route.method ?? "UNKNOWN"} ${route.path} (${Math.round(getEvidenceConfidenceScore(route) * 100)}% via ${route.sourceFiles[0] ?? "unknown"})`;
 }
 
+function resolveDomainGroupName(sourceFile: string, preferredGroupName?: string): string {
+  const preferredLabel = preferredGroupName ? normalizeDomainGroupLabel(preferredGroupName) : "";
+  if (preferredLabel && !isBoundaryNoiseLabel(preferredLabel) && !hasTechnicalBoundaryToken(preferredLabel)) {
+    return preferredLabel;
+  }
+
+  const inferred = inferDomainGroupName(sourceFile);
+  if (inferred !== "bootstrap") {
+    return inferred;
+  }
+
+  return "bootstrap";
+}
+
 function inferDomainGroupName(repoPath: string): string {
   const normalizedPath = normalizeEvidencePath(repoPath);
   const segments = normalizedPath.split("/").filter(Boolean);
@@ -1389,7 +1915,7 @@ function inferDomainGroupName(repoPath: string): string {
   }
 
   if (segments[0] === "contexts" && segments[1]) {
-    return normalizeDomainGroupLabel(segments[1]) || "bootstrap";
+    return selectBusinessBoundaryLabel(segments[1]) || "bootstrap";
   }
 
   if (segments[0] === "tools" && segments[1] === "jispec") {
@@ -1404,13 +1930,13 @@ function inferDomainGroupName(repoPath: string): string {
   }
 
   const basename = path.posix.basename(normalizedPath).toLowerCase();
-  const basenameLabel = normalizeDomainGroupLabel(
+  const basenameLabel = selectBusinessBoundaryLabel(
     basename
       .replace(/\.[^.]+$/g, "")
       .replace(/\.(schema|test|spec)$/g, "")
       .replace(/(?:^|[-_.])(route|routes|router|controller|controllers|service|services|handler|handlers|model|models|api|index|main|server)$/g, ""),
   );
-  if (basenameLabel && !GENERIC_DOMAIN_GROUP_NAMES.has(basenameLabel)) {
+  if (basenameLabel) {
     return basenameLabel;
   }
 
@@ -1419,13 +1945,12 @@ function inferDomainGroupName(repoPath: string): string {
     return specificSegment;
   }
 
-  const topLevel = normalizeDomainGroupLabel(segments[0]);
-  return topLevel && !GENERIC_DOMAIN_GROUP_NAMES.has(topLevel) ? topLevel : "bootstrap";
+  return selectBusinessBoundaryLabel(segments[0]) || "bootstrap";
 }
 
 function inferRouteGroupName(route: EvidenceRoute): string {
   const routeKeyword = extractRouteKeywords(route.path)
-    .map((keyword) => normalizeDomainGroupLabel(keyword))
+    .map((keyword) => selectBusinessBoundaryLabel(keyword) ?? "")
     .find((keyword) => keyword.length > 0 && !GENERIC_ROUTE_KEYWORDS.has(keyword));
   if (routeKeyword) {
     return routeKeyword;
@@ -1441,10 +1966,97 @@ function inferRouteGroupName(route: EvidenceRoute): string {
   return "bootstrap";
 }
 
+function inferBusinessGroupNameFromEvidenceSources(evidence: AdoptionRankedEvidenceEntry): string {
+  for (const sourceFile of normalizeSourceFiles([evidence.path, ...evidence.sourceFiles])) {
+    const direct = selectBusinessBoundaryFromPath(sourceFile);
+    if (direct) {
+      return direct;
+    }
+
+    const inferred = inferDomainGroupName(sourceFile);
+    if (inferred !== "bootstrap") {
+      return inferred;
+    }
+  }
+
+  return "bootstrap";
+}
+
+function inferAdoptionEvidenceGroupName(evidence: AdoptionRankedEvidenceEntry): string {
+  const metadata = evidence.metadata ?? {};
+  if (typeof metadata.schemaFormat === "string" && metadata.schemaFormat === "protobuf") {
+    const protoGroup = inferProtoGroupName(evidence.path);
+    if (protoGroup) {
+      return protoGroup;
+    }
+  }
+
+  if (evidence.kind === "schema" && typeof metadata.schemaFormat === "string" && metadata.schemaFormat === "database-schema") {
+    return inferBusinessGroupNameFromEvidenceSources(evidence);
+  }
+
+  return inferBusinessGroupNameFromEvidenceSources(evidence);
+}
+
+function inferBusinessBoundaryFromEvidence(
+  evidence: AdoptionRankedEvidenceEntry,
+  taxonomyPacks: DomainTaxonomyPack[],
+): { label: string; score: number } | undefined {
+  const metadata = evidence.metadata ?? {};
+  const haystackParts = [
+    evidence.path,
+    evidence.reason,
+    ...evidence.sourceFiles,
+    typeof metadata.provenanceNote === "string" ? metadata.provenanceNote : "",
+    typeof metadata.schemaFormat === "string" ? metadata.schemaFormat : "",
+    typeof metadata.documentKind === "string" ? metadata.documentKind : "",
+    typeof metadata.sourceCategory === "string" ? metadata.sourceCategory : "",
+  ];
+  const haystack = haystackParts.join("\n");
+
+  const taxonomyBoost = scoreDomainTaxonomyEvidence(haystack, taxonomyPacks);
+  const taxonomyLabel = taxonomyBoost.labels.find((label) => !isTechnicalBoundaryLabel(label));
+  if (taxonomyLabel) {
+    return {
+      label: taxonomyLabel,
+      score: evidence.score + taxonomyBoost.score * 10,
+    };
+  }
+
+  const vocabulary = Array.isArray(metadata.businessVocabulary) ? metadata.businessVocabulary : [];
+  for (const entry of vocabulary) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const label = normalizeDomainGroupLabel(String((entry as Record<string, unknown>).label ?? ""));
+    if (label && !isTechnicalBoundaryLabel(label)) {
+      return {
+        label,
+        score: evidence.score,
+      };
+    }
+  }
+
+  const fallback = inferBusinessGroupNameFromEvidenceSources(evidence);
+  return fallback !== "bootstrap" && !isTechnicalBoundaryLabel(fallback)
+    ? { label: fallback, score: evidence.score }
+    : undefined;
+}
+
+function inferBrandBoundaryHints(graph: EvidenceGraph): string[] {
+  const rootName = path.basename(normalizeEvidencePath(graph.repoRoot));
+  return [rootName].filter(Boolean);
+}
+
+function inferProtoGroupName(repoPath: string): string | undefined {
+  const basename = path.posix.basename(normalizeEvidencePath(repoPath)).replace(/\.proto$/i, "");
+  return selectBusinessBoundaryLabel(basename);
+}
+
 function findLastSpecificSegment(segments: string[]): string | undefined {
   for (let index = segments.length - 1; index >= 0; index -= 1) {
-    const label = normalizeDomainGroupLabel(segments[index]);
-    if (label && !GENERIC_DOMAIN_GROUP_NAMES.has(label)) {
+    const label = selectBusinessBoundaryLabel(segments[index]);
+    if (label) {
       return label;
     }
   }
@@ -1453,25 +2065,7 @@ function findLastSpecificSegment(segments: string[]): string | undefined {
 }
 
 function normalizeDomainGroupLabel(value: string): string {
-  const cleaned = value
-    .toLowerCase()
-    .replace(/\.[^.]+$/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  if (!cleaned) {
-    return "";
-  }
-
-  if (cleaned.endsWith("ies") && cleaned.length > 4) {
-    return `${cleaned.slice(0, -3)}y`;
-  }
-
-  if (cleaned.endsWith("s") && cleaned.length > 4 && !cleaned.endsWith("ss")) {
-    return cleaned.slice(0, -1);
-  }
-
-  return cleaned;
+  return normalizeBoundaryLabel(value);
 }
 
 function isInfrastructureRoute(routePath: string): boolean {

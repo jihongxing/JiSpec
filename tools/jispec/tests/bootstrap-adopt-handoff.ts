@@ -33,8 +33,10 @@ async function main(): Promise<void> {
 
     const manifestPath = path.join(tempRoot, ".spec", "sessions", draftResult.sessionId, "manifest.json");
     const reportPath = path.join(tempRoot, ".spec", "handoffs", "bootstrap-takeover.json");
+    const briefPath = path.join(tempRoot, ".spec", "handoffs", "takeover-brief.md");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
       takeoverReportPath?: string;
+      takeoverBriefPath?: string;
       baselineHandoff?: {
         expectedContractPaths?: string[];
         deferredSpecDebtPaths?: string[];
@@ -86,6 +88,17 @@ async function main(): Promise<void> {
         report.decisions?.some((entry) => entry.artifactKind === "api" && entry.finalState === "spec_debt") === true &&
         manifest.decisionLog?.some((entry) => entry.artifactKind === "domain" && entry.targetPath === ".spec/contracts/domain.yaml") === true,
       error: "Expected takeover report and session manifest to preserve final adoption outcomes per artifact.",
+    });
+
+    results.push({
+      name: "adopt writes a takeover brief alongside the machine report",
+      passed:
+        adoptResult.takeoverBriefPath === ".spec/handoffs/takeover-brief.md" &&
+        manifest.takeoverBriefPath === ".spec/handoffs/takeover-brief.md" &&
+        fs.existsSync(briefPath) &&
+        fs.readFileSync(briefPath, "utf-8").includes("Bootstrap Takeover Brief") &&
+        fs.readFileSync(briefPath, "utf-8").includes(".spec/spec-debt"),
+      error: "Expected adopt handoff to include a readable takeover brief next to bootstrap-takeover.json.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

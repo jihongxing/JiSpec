@@ -3,6 +3,7 @@ dist/
 .jispec/
 .jispec-cache/
 .jispec-ci/
+.tmp/
 .spec/
 *.log
 .DS_Store

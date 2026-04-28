@@ -31,6 +31,10 @@ import { classifyGitDiff } from "../change/git-diff-classifier";
 import { computeLaneDecision } from "../change/lane-decision";
 import { collectBootstrapTakeoverIssues } from "./bootstrap-takeover-collector";
 import { collectContractAssetIssues, isContractScopedPath } from "./contract-asset-collector";
+import { collectGreenfieldRatchetIssues } from "./greenfield-ratchet-collector";
+import { collectGreenfieldSpecDebtIssues } from "./greenfield-spec-debt-collector";
+import { collectGreenfieldReviewPackIssues } from "./greenfield-review-pack-collector";
+import { collectGreenfieldDirtyIssues } from "./greenfield-dirty-collector";
 
 export interface VerifySupplementalCollector {
   source: string;
@@ -62,6 +66,30 @@ const DEFAULT_SUPPLEMENTAL_COLLECTORS: VerifySupplementalCollector[] = [
     source: "bootstrap-takeover",
     collect(root) {
       return collectBootstrapTakeoverIssues(root);
+    },
+  },
+  {
+    source: "greenfield-ratchet",
+    collect(root) {
+      return collectGreenfieldRatchetIssues(root);
+    },
+  },
+  {
+    source: "greenfield-spec-debt",
+    collect(root) {
+      return collectGreenfieldSpecDebtIssues(root);
+    },
+  },
+  {
+    source: "greenfield-review-pack",
+    collect(root) {
+      return collectGreenfieldReviewPackIssues(root);
+    },
+  },
+  {
+    source: "greenfield-dirty",
+    collect(root) {
+      return collectGreenfieldDirtyIssues(root);
     },
   },
 ];
@@ -303,6 +331,17 @@ async function buildRawFactsSnapshot(
   const issueCodes = Array.from(new Set(result.issues.map((i) => i.code))).sort();
   addRawFact(snapshot, "verify.issue_codes", issueCodes, "verify-runner");
   addRawFact(snapshot, "verify.contract_issue_count", result.issues.filter((issue) => isContractScopedIssue(issue)).length, "verify-runner");
+  addRawFact(snapshot, "greenfield.code_drift_count", result.issues.filter((issue) => issue.code === "GREENFIELD_CODE_DRIFT").length, "greenfield-ratchet");
+  addRawFact(snapshot, "greenfield.spec_drift_count", result.issues.filter((issue) => issue.code.startsWith("GREENFIELD_SPEC_DRIFT")).length, "greenfield-ratchet");
+  addRawFact(snapshot, "greenfield.classified_drift_count", result.issues.filter((issue) => issue.code === "GREENFIELD_CLASSIFIED_CODE_DRIFT").length, "greenfield-ratchet");
+  addRawFact(snapshot, "greenfield.spec_debt_open_count", result.issues.filter((issue) => issue.code === "GREENFIELD_SPEC_DEBT_OPEN").length, "greenfield-spec-debt");
+  addRawFact(snapshot, "greenfield.spec_debt_expired_count", result.issues.filter((issue) => issue.code === "GREENFIELD_SPEC_DEBT_EXPIRED").length, "greenfield-spec-debt");
+  addRawFact(snapshot, "greenfield.review_unresolved_blocking_count", result.issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_UNRESOLVED_BLOCKING").length, "greenfield-review-pack");
+  addRawFact(snapshot, "greenfield.review_low_confidence_unadopted_count", result.issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_LOW_CONFIDENCE_UNADOPTED").length, "greenfield-review-pack");
+  addRawFact(snapshot, "greenfield.review_rejected_count", result.issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_REJECTED").length, "greenfield-review-pack");
+  addRawFact(snapshot, "greenfield.review_deferred_or_waived_count", result.issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_DEFERRED_OR_WAIVED").length, "greenfield-review-pack");
+  addRawFact(snapshot, "greenfield.dirty_required_update_count", result.issues.filter((issue) => issue.code === "GREENFIELD_DIRTY_CHAIN_UNRECONCILED").length, "greenfield-dirty");
+  addRawFact(snapshot, "greenfield.dirty_graph_warning_count", result.issues.filter((issue) => issue.code === "GREENFIELD_DIRTY_GRAPH_WARNING").length, "greenfield-dirty");
 
   // Add contract presence facts
   const contractsDir = path.join(options.root, ".spec", "contracts");

@@ -16,10 +16,34 @@ import { renderBootstrapDiscoverText, runBootstrapDiscover, type BootstrapDiscov
 import type { BootstrapDiscoverResult } from "./bootstrap/evidence-graph";
 import { renderBootstrapDraftText, runBootstrapDraft, type BootstrapDraftOptions, type BootstrapDraftResult } from "./bootstrap/draft";
 import { renderBootstrapAdoptText, runBootstrapAdopt, type BootstrapAdoptResult } from "./bootstrap/adopt";
+import {
+  renderBootstrapInitProjectText,
+  runBootstrapInitProject,
+  type BootstrapInitProjectOptions,
+  type BootstrapInitProjectResult,
+} from "./bootstrap/init-project";
 import { renderVerifyJSON, renderVerifyText, runVerify, type VerifyRunOptions } from "./verify/verify-runner";
 import { createWaiver, listWaivers, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
 import { runChangeCommand, renderChangeCommandJSON, type ChangeCommandOptions } from "./change/change-command";
+import type { SpecDeltaChangeType } from "./change/spec-delta";
 import { migrateVerifyPolicy, renderPolicyMigrationText } from "./policy/migrate-policy";
+import { renderGreenfieldInitText, runGreenfieldInit, type GreenfieldInitOptions, type GreenfieldInitResult } from "./greenfield/init";
+import {
+  renderGreenfieldReviewBriefText,
+  renderGreenfieldReviewListText,
+  renderGreenfieldReviewTransitionText,
+  runGreenfieldReviewBrief,
+  runGreenfieldReviewList,
+  runGreenfieldReviewTransition,
+  type GreenfieldReviewAction,
+  type GreenfieldReviewLanguage,
+} from "./greenfield/review-workflow";
+import {
+  compareReleaseBaselines,
+  createReleaseSnapshot,
+  renderReleaseCompareText,
+  renderReleaseSnapshotText,
+} from "./release/baseline-snapshot";
 
 type LegacySurface =
   | "slice"
@@ -34,9 +58,14 @@ type LegacySurface =
 function buildPrimarySurfaceHelpText(): string {
   return [
     "Current primary surface:",
+    "  jispec-cli init --requirements <path> [--technical-solution <path>] [--json]",
     "  jispec-cli verify [--json]",
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
+    "  jispec-cli review list|adopt|reject|defer|waive|brief [--json]",
+    "  jispec-cli release snapshot --version <version> [--json]",
     "  jispec-cli implement [--fast] [--json]",
+    "  jispec-cli bootstrap init-project [--force] [--json]",
+    "  jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]",
     "  jispec-cli bootstrap discover [--json]",
     "  jispec-cli bootstrap draft [--json]",
     "  jispec-cli adopt --interactive [--json]",
@@ -292,6 +321,149 @@ function registerWaiverCommands(program: Command): void {
     });
 }
 
+function registerReleaseCommands(program: Command): void {
+  const release = program.command("release").description("Manage Greenfield baseline snapshots and release comparisons.");
+
+  release
+    .command("snapshot")
+    .description("Freeze the current baseline into .spec/baselines/releases/<version>.yaml.")
+    .requiredOption("--version <version>", "Release version to snapshot, for example v1.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--force", "Overwrite an existing release baseline.", false)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; version: string; force: boolean; json: boolean }) => {
+      try {
+        const result = createReleaseSnapshot({
+          root: path.resolve(options.root),
+          version: options.version,
+          force: options.force,
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(renderReleaseSnapshotText(result));
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Release snapshot failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  release
+    .command("compare")
+    .description("Compare two baselines, such as --from v1 --to current.")
+    .requiredOption("--from <ref>", "Source baseline ref: current, a release version, or a path.")
+    .requiredOption("--to <ref>", "Target baseline ref: current, a release version, or a path.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; from: string; to: string; json: boolean }) => {
+      try {
+        const result = compareReleaseBaselines({
+          root: path.resolve(options.root),
+          from: options.from,
+          to: options.to,
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(renderReleaseCompareText(result));
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Release compare failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerReviewCommands(program: Command): void {
+  const review = program.command("review").description("Manage Greenfield human review decisions and correction loops.");
+
+  review
+    .command("list")
+    .description("List Greenfield review decisions grouped by review state.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const result = runGreenfieldReviewList(path.resolve(options.root));
+        console.log(options.json ? JSON.stringify(result, null, 2) : renderGreenfieldReviewListText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Review list failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  registerReviewTransitionCommand(review, "adopt", "Adopt a Greenfield review decision.");
+  registerReviewTransitionCommand(review, "reject", "Reject a Greenfield review decision and create a correction loop.");
+  registerReviewTransitionCommand(review, "defer", "Defer a Greenfield review decision into open decisions.");
+  registerReviewTransitionCommand(review, "waive", "Waive a Greenfield review decision into spec debt.");
+
+  review
+    .command("brief")
+    .description("Generate a human-readable Greenfield review brief from the review record.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--lang <lang>", "Brief language: zh-CN|en-US.", "zh-CN")
+    .option("--output <path>", "Output markdown path.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; lang: string; output?: string; json: boolean }) => {
+      try {
+        if (options.lang !== "zh-CN" && options.lang !== "en-US") {
+          throw new Error("--lang must be zh-CN or en-US");
+        }
+        const result = runGreenfieldReviewBrief({
+          root: path.resolve(options.root),
+          lang: options.lang as GreenfieldReviewLanguage,
+          output: options.output,
+        });
+        console.log(options.json ? JSON.stringify(result, null, 2) : renderGreenfieldReviewBriefText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Review brief failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerReviewTransitionCommand(review: Command, action: GreenfieldReviewAction, description: string): void {
+  review
+    .command(action)
+    .description(description)
+    .argument("<decisionId>", "Review decision ID, such as REV-DOMAIN-ORDERING.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--actor <actor>", "Human reviewer name.")
+    .option("--owner <owner>", "Owner for deferred or waived decisions.")
+    .option("--reason <reason>", "Reason for the review decision.")
+    .option("--expires <date>", "Expiration date for deferred or waived decisions.")
+    .option("--expires-at <date>", "Expiration date for deferred or waived decisions.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((decisionId: string, options: { root: string; actor?: string; owner?: string; reason?: string; expires?: string; expiresAt?: string; json: boolean }) => {
+      try {
+        const result = runGreenfieldReviewTransition({
+          root: path.resolve(options.root),
+          decisionId,
+          action,
+          actor: options.actor,
+          owner: options.owner,
+          reason: options.reason,
+          expiresAt: options.expiresAt ?? options.expires,
+        });
+        console.log(options.json ? JSON.stringify(result, null, 2) : renderGreenfieldReviewTransitionText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Review ${action} failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
 function renderWaiverCreateResult(result: WaiverCreateResult, json: boolean): void {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
@@ -312,13 +484,14 @@ function registerChangeCommand(program: Command): void {
     .option("--mode <mode>", "Orchestration mode: prompt|execute.", "prompt")
     .option("--slice <sliceId>", "Optional legacy slice binding.")
     .option("--context <contextId>", "Optional legacy context binding.")
+    .option("--change-type <type>", "Spec Delta type for Greenfield projects: add|modify|deprecate|fix|redesign.")
     .option("--base-ref <ref>", "Optional git base ref for diff classification.", "HEAD")
     .option("--test-command <cmd>", "Override implement test command when --mode execute is used.")
     .option("--max-iterations <n>", "Maximum execute-mode implement iterations.", parseInt)
     .option("--max-tokens <n>", "Maximum execute-mode implement tokens.", parseInt)
     .option("--max-cost <n>", "Maximum execute-mode implement cost in USD.", parseFloat)
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (summary: string, options: { root: string; lane: string; mode: string; slice?: string; context?: string; baseRef: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
+    .action(async (summary: string, options: { root: string; lane: string; mode: string; slice?: string; context?: string; changeType?: SpecDeltaChangeType; baseRef: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
       try {
         const result = await runChangeCommand({
           root: path.resolve(options.root),
@@ -327,6 +500,7 @@ function registerChangeCommand(program: Command): void {
           mode: options.mode as "prompt" | "execute",
           sliceId: options.slice,
           contextId: options.context,
+          changeType: options.changeType,
           baseRef: options.baseRef,
           json: options.json,
           testCommand: options.testCommand,
@@ -392,6 +566,15 @@ function renderBootstrapDiscoverResult(result: BootstrapDiscoverResult, json: bo
   console.log(renderBootstrapDiscoverText(result));
 }
 
+function renderBootstrapInitProjectResult(result: BootstrapInitProjectResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(renderBootstrapInitProjectText(result));
+}
+
 function renderBootstrapDraftResult(result: BootstrapDraftResult, json: boolean): void {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
@@ -410,10 +593,87 @@ function renderBootstrapAdoptResult(result: BootstrapAdoptResult, json: boolean)
   console.log(renderBootstrapAdoptText(result));
 }
 
+function renderGreenfieldInitResult(result: GreenfieldInitResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(renderGreenfieldInitText(result));
+}
+
+function createGreenfieldInitAction(commandName: string) {
+  return (options: {
+    root: string;
+    requirements?: string;
+    technicalSolution?: string;
+    force: boolean;
+    json: boolean;
+  }) => {
+    try {
+      const result = runGreenfieldInit({
+        root: path.resolve(options.root),
+        requirements: options.requirements,
+        technicalSolution: options.technicalSolution,
+        force: options.force,
+      } satisfies GreenfieldInitOptions);
+      renderGreenfieldInitResult(result, options.json);
+      process.exitCode = result.status === "input_contract_failed" ? 1 : 0;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`JiSpec ${commandName} failed: ${message}`);
+      process.exitCode = 1;
+    }
+  };
+}
+
+function registerGreenfieldInitCommand(program: Command): void {
+  program
+    .command("init")
+    .description("Initialize a new Greenfield JiSpec project from product requirements and an optional technical solution.")
+    .option("--root <path>", "New project root.", ".")
+    .option("--requirements <path>", "Product requirements document path.")
+    .option("--technical-solution <path>", "Technical solution document path.")
+    .option("--force", "Overwrite existing Greenfield assets when supported.", false)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(createGreenfieldInitAction("init"));
+}
+
 function registerBootstrapCommands(program: Command): void {
   const bootstrap = program
     .command("bootstrap")
     .description("Bootstrap repository evidence for the JiSpec-CLI primary surface.");
+
+  bootstrap
+    .command("new-project")
+    .description("Initialize a new Greenfield JiSpec project from product requirements and an optional technical solution.")
+    .option("--root <path>", "New project root.", ".")
+    .option("--requirements <path>", "Product requirements document path.")
+    .option("--technical-solution <path>", "Technical solution document path.")
+    .option("--force", "Overwrite existing Greenfield assets when supported.", false)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(createGreenfieldInitAction("bootstrap new-project"));
+
+  bootstrap
+    .command("init-project")
+    .description("Create a minimal jiproject/project.yaml scaffold for bootstrap takeover.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--force", "Overwrite an existing jiproject/project.yaml.", false)
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; force: boolean; json: boolean }) => {
+      try {
+        const result = runBootstrapInitProject({
+          root: path.resolve(options.root),
+          force: options.force,
+        } satisfies BootstrapInitProjectOptions);
+        renderBootstrapInitProjectResult(result, options.json);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec bootstrap init-project failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
 
   bootstrap
     .command("discover")
@@ -421,12 +681,14 @@ function registerBootstrapCommands(program: Command): void {
     .option("--root <path>", "Repository root.", ".")
     .option("--json", "Emit machine-readable JSON output.", false)
     .option("--output <path>", "Override the evidence graph output path.", ".spec/facts/bootstrap/evidence-graph.json")
+    .option("--init-project", "Create jiproject/project.yaml before discovery when it is missing.", false)
     .option("--no-write", "Do not write .spec outputs; only compute the discovery result.")
-    .action((options: { root: string; json: boolean; output: string; write: boolean }) => {
+    .action((options: { root: string; json: boolean; output: string; initProject: boolean; write: boolean }) => {
       try {
         const result = runBootstrapDiscover({
           root: path.resolve(options.root),
           outputPath: options.output,
+          initProject: options.initProject,
           writeFile: options.write,
         } satisfies BootstrapDiscoverOptions);
         renderBootstrapDiscoverResult(result, options.json);
@@ -543,12 +805,15 @@ export function buildProgram(): Command {
   program.addHelpText("after", buildCombinedHelpText());
 
   registerPrimaryVerifyCommand(program);
+  registerGreenfieldInitCommand(program);
   registerBootstrapCommands(program);
   registerAdoptCommand(program);
   registerDoctorCommands(program);
   registerPolicyCommands(program);
   registerWaiverCommands(program);
   registerChangeCommand(program);
+  registerReviewCommands(program);
+  registerReleaseCommands(program);
   registerImplementCommand(program);
 
   const slice = program.command("slice").description("Legacy slice-based protocol commands (compatibility surface).");

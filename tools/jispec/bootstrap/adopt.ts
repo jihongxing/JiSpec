@@ -12,7 +12,14 @@ import {
 import { normalizeEvidencePath } from "./evidence-graph";
 import { createSpecDebtRecord, writeSpecDebtRecord } from "./spec-debt";
 import {
+  buildBootstrapTakeoverBrief,
+  renderTakeoverBriefSummary,
+  type BootstrapTakeoverBriefSummary,
+} from "./takeover-brief";
+import {
   buildBootstrapTakeoverReport,
+  getBootstrapTakeoverBriefPath,
+  getBootstrapTakeoverBriefRelativePath,
   getBootstrapTakeoverReportPath,
   getBootstrapTakeoverReportRelativePath,
   type BootstrapBaselineHandoff,
@@ -47,10 +54,12 @@ export interface BootstrapAdoptResult {
   specDebtFiles: string[];
   rejectedArtifactKinds: DraftArtifactKind[];
   takeoverReportPath?: string;
+  takeoverBriefPath?: string;
+  takeoverBriefSummary?: BootstrapTakeoverBriefSummary;
 }
 
 interface CommitOperation {
-  label: "contracts" | "spec-debt" | "takeover-report";
+  label: "contracts" | "spec-debt" | "takeover-report" | "takeover-brief";
   stagedPath: string;
   finalPath: string;
 }
@@ -62,6 +71,8 @@ interface PreparedShadowBatch {
   adoptedArtifactPaths: string[];
   specDebtFiles: string[];
   takeoverReportPath?: string;
+  takeoverBriefPath?: string;
+  takeoverBriefSummary?: BootstrapTakeoverBriefSummary;
   baselineHandoff?: BootstrapBaselineHandoff;
 }
 
@@ -114,6 +125,7 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
       adoptedArtifactPaths: preparedBatch.adoptedArtifactPaths,
       specDebtPaths: preparedBatch.specDebtFiles.map((filePath) => normalizeEvidencePath(path.relative(root, filePath))),
       takeoverReportPath: preparedBatch.takeoverReportPath,
+      takeoverBriefPath: preparedBatch.takeoverBriefPath,
       baselineHandoff: preparedBatch.baselineHandoff,
       decisionLog: decisions.map((decision) => ({
         artifactKind: decision.artifactKind,
@@ -149,6 +161,8 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
         .map((decision) => decision.artifactKind)
         .sort((left, right) => left.localeCompare(right)),
       takeoverReportPath: preparedBatch.takeoverReportPath,
+      takeoverBriefPath: preparedBatch.takeoverBriefPath,
+      takeoverBriefSummary: preparedBatch.takeoverBriefSummary,
     };
   } catch (error) {
     const abandonedManifest: DraftSessionManifest = {
@@ -184,6 +198,14 @@ export function renderBootstrapAdoptText(result: BootstrapAdoptResult): string {
 
   if (result.takeoverReportPath) {
     lines.push(`Takeover report: ${result.takeoverReportPath}`);
+  }
+
+  if (result.takeoverBriefPath) {
+    lines.push(`Takeover brief: ${result.takeoverBriefPath}`);
+    if (result.takeoverBriefSummary) {
+      lines.push("Brief summary:");
+      lines.push(...renderTakeoverBriefSummary(result.takeoverBriefSummary).map((entry) => `- ${entry}`));
+    }
   }
 
   if (result.writtenFiles.length > 0) {
@@ -467,6 +489,24 @@ function stageBootstrapTakeoverReport(
   batch.stagedFiles.push(normalizeEvidencePath(stagedPath));
   batch.takeoverReportPath = getBootstrapTakeoverReportRelativePath();
   batch.baselineHandoff = report.baselineHandoff;
+
+  const brief = buildBootstrapTakeoverBrief({
+    root,
+    report,
+    artifacts,
+    decisions,
+  });
+  const stagedBriefPath = path.join(batch.shadowRoot, "handoffs", path.basename(getBootstrapTakeoverBriefRelativePath()));
+  fs.mkdirSync(path.dirname(stagedBriefPath), { recursive: true });
+  fs.writeFileSync(stagedBriefPath, brief.content, "utf-8");
+  batch.operations.push({
+    label: "takeover-brief",
+    stagedPath: stagedBriefPath,
+    finalPath: getBootstrapTakeoverBriefPath(root),
+  });
+  batch.stagedFiles.push(normalizeEvidencePath(stagedBriefPath));
+  batch.takeoverBriefPath = brief.relativePath;
+  batch.takeoverBriefSummary = brief.summary;
 }
 
 function commitShadowBatch(batch: PreparedShadowBatch, testFailAfterOperation?: number): string[] {

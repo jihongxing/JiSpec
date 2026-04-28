@@ -10,6 +10,9 @@ export class MockProvider implements AIProvider {
 
   async generate(prompt: string, options?: GenerateOptions): Promise<string> {
     if (prompt.includes("## Bootstrap Draft Mode")) {
+      if (process.env.JISPEC_TEST_BOOTSTRAP_DRAFT_MALFORMED === "true") {
+        return "{ malformed bootstrap draft";
+      }
       return JSON.stringify(buildBootstrapDraftBundle(prompt), null, 2);
     }
 
@@ -376,6 +379,15 @@ function buildBootstrapDraftBundle(prompt: string): {
   }>;
   warnings: string[];
 } {
+  const packetMatch = prompt.match(/## Semantic Re-Anchoring Packet\s+```json\s*([\s\S]+?)\s*```/);
+  const semanticPacket = packetMatch ? safeParseJSON(packetMatch[1]) : undefined;
+  const baselineMatch = prompt.match(/## Deterministic Draft Baseline\s+```json\s*([\s\S]+?)\s*```/);
+  const baselineBundle = baselineMatch ? safeParseJSON(baselineMatch[1]) : undefined;
+  const baselineArtifacts = Array.isArray(baselineBundle?.artifacts) ? baselineBundle.artifacts : [];
+  if (baselineArtifacts.length > 0) {
+    return buildSemanticReanchoredBootstrapDraftBundle(baselineArtifacts, semanticPacket);
+  }
+
   const summaryMatch = prompt.match(/## Ranked Evidence Summary\s+```json\s*([\s\S]+?)\s*```/);
   const rankedSummary = summaryMatch ? safeParseJSON(summaryMatch[1]) : undefined;
   const graphMatch = prompt.match(/## Evidence Graph JSON\s+```json\s*([\s\S]+?)\s*```/);
@@ -570,6 +582,119 @@ ${primaryContexts.map((name: string) => `    - ${name}`).join("\n") || "    - bo
     ],
     warnings: [],
   };
+}
+
+function buildSemanticReanchoredBootstrapDraftBundle(
+  baselineArtifacts: any[],
+  semanticPacket: any,
+): {
+  artifacts: Array<{
+    kind: "domain" | "api" | "feature";
+    relativePath: string;
+    content: string;
+    sourceFiles: string[];
+    confidenceScore: number;
+    provenanceNote: string;
+  }>;
+  warnings: string[];
+} {
+  const topEvidencePaths = Array.isArray(semanticPacket?.adoptionRankedEvidence)
+    ? semanticPacket.adoptionRankedEvidence
+        .slice(0, 5)
+        .map((entry: any) => String(entry?.path || ""))
+        .filter((entry: string) => entry.length > 0)
+    : [];
+  const boundaries = Array.isArray(semanticPacket?.domainBoundaries)
+    ? semanticPacket.domainBoundaries
+        .slice(0, 4)
+        .map((entry: any) => String(entry?.name || ""))
+        .filter((entry: string) => entry.length > 0)
+    : [];
+
+  const artifacts = baselineArtifacts
+    .filter((artifact: any) => artifact && ["domain", "api", "feature"].includes(String(artifact.kind)))
+    .map((artifact: any) => {
+      const baseline = normalizeBaselineArtifact(artifact);
+      return {
+        ...baseline,
+        content: reanchorContent(baseline.kind, baseline.content, boundaries, topEvidencePaths),
+      };
+    });
+
+  return {
+    artifacts,
+    warnings: ["Mock provider re-anchored deterministic bootstrap draft content using ranked evidence."],
+  };
+}
+
+function normalizeBaselineArtifact(artifact: any): {
+  kind: "domain" | "api" | "feature";
+  relativePath: string;
+  content: string;
+  sourceFiles: string[];
+  confidenceScore: number;
+  provenanceNote: string;
+} {
+  const kind = String(artifact.kind) as "domain" | "api" | "feature";
+  return {
+    kind,
+    relativePath: typeof artifact.relativePath === "string" ? artifact.relativePath : `drafts/${kind}`,
+    content: typeof artifact.content === "string" ? artifact.content : "",
+    sourceFiles: Array.isArray(artifact.sourceFiles)
+      ? artifact.sourceFiles.filter((entry: unknown): entry is string => typeof entry === "string")
+      : [],
+    confidenceScore: typeof artifact.confidenceScore === "number" ? artifact.confidenceScore : 0.5,
+    provenanceNote: typeof artifact.provenanceNote === "string" ? artifact.provenanceNote : "Deterministic bootstrap draft baseline.",
+  };
+}
+
+function reanchorContent(
+  kind: "domain" | "api" | "feature",
+  content: string,
+  boundaries: string[],
+  topEvidencePaths: string[],
+): string {
+  const evidenceLine = topEvidencePaths.length > 0 ? topEvidencePaths.join(", ") : "ranked bootstrap evidence";
+  const boundaryLine = boundaries.length > 0 ? boundaries.join(", ") : "bootstrap";
+
+  if (kind === "domain") {
+    return `${content.trimEnd()}
+
+provider_reanchoring:
+  provider: mock
+  purpose: semantic_reanchoring
+  boundaries: ${JSON.stringify(boundaries)}
+  evidence: ${JSON.stringify(topEvidencePaths)}
+`;
+  }
+
+  if (kind === "feature") {
+    return [
+      `# semantic_reanchored_by: mock`,
+      `# semantic_boundaries: ${JSON.stringify(boundaries)}`,
+      `# semantic_evidence: ${JSON.stringify(topEvidencePaths)}`,
+      content.trimEnd(),
+      "",
+    ].join("\n");
+  }
+
+  try {
+    const parsed = JSON.parse(content);
+    const apiSpec = parsed && typeof parsed === "object" ? parsed as Record<string, any> : undefined;
+    const apiSpecBody = apiSpec?.api_spec && typeof apiSpec.api_spec === "object" ? apiSpec.api_spec : undefined;
+    if (apiSpecBody) {
+      apiSpecBody.semantic_reanchoring = {
+        provider: "mock",
+        boundaries: boundaryLine,
+        evidence: evidenceLine,
+      };
+      return JSON.stringify(apiSpec, null, 2);
+    }
+  } catch {
+    return `${content.trimEnd()}\n\n# semantic_reanchored_by: mock\n`;
+  }
+
+  return content;
 }
 
 function safeParseJSON(input: string): any {

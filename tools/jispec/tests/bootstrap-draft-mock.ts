@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   console.log("=== Bootstrap Draft Mock Test ===\n");
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-bootstrap-draft-"));
+  const malformedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-bootstrap-draft-malformed-"));
   const results: TestResult[] = [];
 
   try {
@@ -98,7 +99,41 @@ async function main(): Promise<void> {
         featureArtifact.content.includes("tests/orders.test.ts"),
       error: "Expected mock provider draft to prioritize ranked route/schema/test evidence.",
     });
+
+    const domainArtifact = first.draftBundle.artifacts.find((artifact) => artifact.kind === "domain");
+    results.push({
+      name: "mock provider acts as semantic re-anchoring helper while preserving deterministic metadata",
+      passed:
+        typeof domainArtifact?.content === "string" &&
+        domainArtifact.content.includes("provider_reanchoring") &&
+        typeof featureArtifact?.content === "string" &&
+        featureArtifact.content.includes("semantic_reanchored_by: mock") &&
+        first.draftBundle.artifacts.every((artifact) => !artifact.provenanceNote.includes("Mock provider")),
+      error: "Expected provider to improve content while deterministic sourceFiles/confidenceScore/provenanceNote remain authoritative.",
+    });
+
+    seedRepository(malformedRoot);
+    runBootstrapDiscover({ root: malformedRoot });
+    process.env.JISPEC_TEST_BOOTSTRAP_DRAFT_MALFORMED = "true";
+    const malformedResult = await runBootstrapDraft({ root: malformedRoot });
+    delete process.env.JISPEC_TEST_BOOTSTRAP_DRAFT_MALFORMED;
+
+    results.push({
+      name: "malformed provider output falls back to deterministic draft safely",
+      passed:
+        malformedResult.generationMode === "provider-fallback" &&
+        malformedResult.providerName === "deterministic-fallback" &&
+        malformedResult.draftBundle.artifacts.length === 3 &&
+        malformedResult.draftBundle.warnings.some((warning) => warning.includes("not valid JSON")) &&
+        malformedResult.draftBundle.artifacts.every((artifact) => !artifact.content.includes("semantic_reanchored_by: mock")),
+      error: `Expected malformed provider output to fall back safely, got ${JSON.stringify({
+        providerName: malformedResult.providerName,
+        generationMode: malformedResult.generationMode,
+        warnings: malformedResult.draftBundle.warnings,
+      })}.`,
+    });
   } catch (error) {
+    delete process.env.JISPEC_TEST_BOOTSTRAP_DRAFT_MALFORMED;
     const message = error instanceof Error ? error.message : String(error);
     results.push({
       name: "bootstrap draft execution",
@@ -107,6 +142,7 @@ async function main(): Promise<void> {
     });
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(malformedRoot, { recursive: true, force: true });
   }
 
   let passed = 0;
