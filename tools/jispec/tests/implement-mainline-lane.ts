@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { computeImplementExitCode, runImplement } from "../implement/implement-runner";
+import { computeImplementExitCode, renderImplementJSON, renderImplementText, runImplement } from "../implement/implement-runner";
 import { writeChangeSession, readChangeSession, readArchivedChangeSession, type ChangeSession } from "../change/change-session";
 import { cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
 
@@ -40,7 +40,9 @@ async function main(): Promise<void> {
       testCommand: 'node -e "process.exit(0)"',
     });
 
-    assert.equal(result.outcome, "preflight_failed");
+    assert.equal(result.outcome, "preflight_passed");
+    assert.ok(renderImplementText(result).includes("Outcome: preflight_passed"));
+    assert.equal(JSON.parse(renderImplementJSON(result)).outcome, "preflight_passed");
     assert.equal(result.lane, "fast");
     assert.equal(result.autoPromoted, false);
     assert.equal(result.postVerify?.command, "npm run jispec-cli -- verify --fast");
@@ -96,6 +98,8 @@ async function main(): Promise<void> {
     });
 
     assert.equal(result.testsPassed, true);
+    assert.equal(result.outcome, "verify_blocked");
+    assert.equal(JSON.parse(renderImplementJSON(result)).outcome, "verify_blocked");
     assert.equal(result.postVerify?.verdict, "FAIL_BLOCKING");
     assert.equal(computeImplementExitCode(result), 1);
     assert.equal(result.metadata.sessionArchived, undefined);

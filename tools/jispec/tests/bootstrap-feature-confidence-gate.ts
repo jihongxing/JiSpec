@@ -18,16 +18,19 @@ async function main(): Promise<void> {
   const routeOnlyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-feature-gate-route-"));
   const remirageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-feature-gate-remirage-"));
   const thinFinanceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-feature-gate-finance-"));
+  const noisyRouteRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-feature-gate-noisy-"));
   const results: TestResult[] = [];
 
   try {
     seedRouteOnlyRepository(routeOnlyRoot);
     seedRemirageLikeRepository(remirageRoot);
     seedThinFinanceRepository(thinFinanceRoot);
+    seedNoisyRouteRepository(noisyRouteRoot);
 
     const routeOnlyDraft = await discoverAndDraft(routeOnlyRoot);
     const remirageDraft = await discoverAndDraft(remirageRoot);
     const thinFinanceDraft = await discoverAndDraft(thinFinanceRoot);
+    const noisyRouteDraft = await discoverAndDraft(noisyRouteRoot);
 
     results.push({
       name: "route-only fixtures produce human-review scenarios and deferred recommendations",
@@ -72,6 +75,18 @@ async function main(): Promise<void> {
         thinFinanceBrief.includes("human-review"),
       error: `Expected thin finance behavior to remain spec debt.\nFeature:\n${thinFinanceDraft.feature}\nBrief:\n${thinFinanceBrief}`,
     });
+
+    const noisyScenarioCount = countScenarios(noisyRouteDraft.feature);
+    results.push({
+      name: "high-noise route-only repositories keep feature output small and review-gated",
+      passed:
+        noisyScenarioCount > 0 &&
+        noisyScenarioCount <= 3 &&
+        noisyRouteDraft.feature.includes("# adoption_recommendation: defer_as_spec_debt") &&
+        noisyRouteDraft.feature.includes("@behavior_needs_human_review") &&
+        !noisyRouteDraft.feature.includes("# adoption_recommendation: accept_candidate"),
+      error: `Expected noisy route-only feature draft to stay small and deferred, got ${noisyScenarioCount} scenarios:\n${noisyRouteDraft.feature}`,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({
@@ -83,6 +98,7 @@ async function main(): Promise<void> {
     fs.rmSync(routeOnlyRoot, { recursive: true, force: true });
     fs.rmSync(remirageRoot, { recursive: true, force: true });
     fs.rmSync(thinFinanceRoot, { recursive: true, force: true });
+    fs.rmSync(noisyRouteRoot, { recursive: true, force: true });
   }
 
   let passed = 0;
@@ -147,6 +163,33 @@ function seedRouteOnlyRepository(root: string): void {
     'const app = { post: () => undefined };\napp.post("/orders", () => "created");\n',
     "utf-8",
   );
+}
+
+function seedNoisyRouteRepository(root: string): void {
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "noisy-route-only", private: true }, null, 2), "utf-8");
+  fs.mkdirSync(path.join(root, "src", "routes"), { recursive: true });
+
+  const routeNames = [
+    "orders",
+    "payments",
+    "refunds",
+    "shipments",
+    "invoices",
+    "customers",
+    "coupons",
+    "notifications",
+  ];
+  for (const routeName of routeNames) {
+    fs.writeFileSync(
+      path.join(root, "src", "routes", `${routeName}-routes.ts`),
+      [
+        "const app = { get: () => undefined, post: () => undefined };",
+        `app.get("/${routeName}", () => []);`,
+        `app.post("/${routeName}", () => "ok");`,
+      ].join("\n"),
+      "utf-8",
+    );
+  }
 }
 
 function seedRemirageLikeRepository(root: string): void {
@@ -222,6 +265,10 @@ function writeProject(root: string, packs: string[]): void {
     }),
     "utf-8",
   );
+}
+
+function countScenarios(content: string): number {
+  return content.split(/\r?\n/).filter((line) => line.trim().startsWith("Scenario:")).length;
 }
 
 void main();

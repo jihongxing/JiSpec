@@ -46,6 +46,11 @@ function main(): void {
   try {
     assertEqual(scripts["jispec-cli"], "node --import tsx ./tools/jispec/cli.ts", "primary script `jispec-cli`");
     assertEqual(scripts.verify, "node --import tsx ./tools/jispec/cli.ts verify", "primary script `verify`");
+    assertEqual(
+      scripts["post-release:gate"],
+      "node --import tsx ./scripts/post-release-gate.ts",
+      "primary script `post-release:gate`",
+    );
     assertEqual(scripts["ci:verify"], "node --import tsx ./scripts/check-jispec.ts", "primary script `ci:verify`");
     console.log("✓ Test 2: primary scripts point at the current first-class entry points");
     passed++;

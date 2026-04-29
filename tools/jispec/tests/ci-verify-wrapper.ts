@@ -41,10 +41,12 @@ async function main(): Promise<void> {
       assert.equal(run.status, 0);
       const reportPath = path.join(fixtureRoot, ".jispec-ci", "verify-report.json");
       const summaryPath = path.join(fixtureRoot, ".jispec-ci", "ci-summary.md");
+      const verifySummaryPath = path.join(fixtureRoot, ".jispec-ci", "verify-summary.md");
       const commentPath = path.join(fixtureRoot, ".jispec-ci", "github-pr-comment.md");
 
       assert.ok(fs.existsSync(reportPath));
       assert.ok(fs.existsSync(summaryPath));
+      assert.ok(fs.existsSync(verifySummaryPath));
       assert.ok(fs.existsSync(commentPath));
       assert.ok(fs.existsSync(stepSummaryPath));
 
@@ -55,9 +57,12 @@ async function main(): Promise<void> {
       assert.equal(report.verdict, "PASS");
       assert.equal(report.factsContractVersion, "1.0");
       assert.match(fs.readFileSync(summaryPath, "utf-8"), /# ✅ JiSpec Verify: PASS\s*$/m);
+      assert.match(fs.readFileSync(verifySummaryPath, "utf-8"), /# JiSpec Verify Summary/);
+      assert.match(fs.readFileSync(verifySummaryPath, "utf-8"), /Merge status: Ready to merge\./);
       assert.match(fs.readFileSync(commentPath, "utf-8"), /## ✅ JiSpec Verify: PASS/);
       assert.match(fs.readFileSync(stepSummaryPath, "utf-8"), /# ✅ JiSpec Verify: PASS/);
       assert.match(run.stdout, /CI artifacts written to \.jispec-ci/);
+      assert.match(run.stdout, /- \.jispec-ci\/verify-summary\.md/);
     } finally {
       cleanupVerifyFixture(fixtureRoot);
     }
@@ -81,8 +86,10 @@ async function main(): Promise<void> {
       assert.equal(run.status, 0);
       const notePath = path.join(fixtureRoot, ".jispec-ci", "gitlab-mr-note.md");
       const reportPath = path.join(fixtureRoot, ".jispec-ci", "verify-report.json");
+      const verifySummaryPath = path.join(fixtureRoot, ".jispec-ci", "verify-summary.md");
       assert.ok(fs.existsSync(notePath));
       assert.ok(fs.existsSync(reportPath));
+      assert.ok(fs.existsSync(verifySummaryPath));
 
       const report = JSON.parse(fs.readFileSync(reportPath, "utf-8")) as VerifyReport;
       assert.equal(report.context.provider, "gitlab");
@@ -109,8 +116,10 @@ async function main(): Promise<void> {
       assert.equal(run.status, 1);
       const reportPath = path.join(fixtureRoot, ".jispec-ci", "verify-report.json");
       const summaryPath = path.join(fixtureRoot, ".jispec-ci", "ci-summary.md");
+      const verifySummaryPath = path.join(fixtureRoot, ".jispec-ci", "verify-summary.md");
       assert.ok(fs.existsSync(reportPath));
       assert.ok(fs.existsSync(summaryPath));
+      assert.ok(fs.existsSync(verifySummaryPath));
 
       const report = JSON.parse(fs.readFileSync(reportPath, "utf-8")) as VerifyReport;
       assert.equal(report.context.provider, "local");
@@ -118,6 +127,8 @@ async function main(): Promise<void> {
       assert.equal(report.verdict, "FAIL_BLOCKING");
       assert.ok(report.issues.some((issue) => issue.code === "SLICE_ARTIFACT_MISSING"));
       assert.match(fs.readFileSync(summaryPath, "utf-8"), /# ❌ JiSpec Verify: FAIL_BLOCKING/);
+      assert.match(fs.readFileSync(verifySummaryPath, "utf-8"), /Merge status: Blocked until blocking issues are fixed or explicitly waived\./);
+      assert.match(fs.readFileSync(verifySummaryPath, "utf-8"), /SLICE_ARTIFACT_MISSING/);
     } finally {
       cleanupVerifyFixture(fixtureRoot);
     }

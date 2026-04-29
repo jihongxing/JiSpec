@@ -18,6 +18,109 @@ JiSpec 的北极星目标是：
 - JiSpec 不是另一台机床，而是贯穿需求、契约、实现、验证、CI 和团队治理的流水线控制层。
 - JiSpec 的核心价值不是“替代开发者写更多代码”，而是让 AI 写出的代码始终运行在稳定的契约、节拍、质检和追溯体系里。
 
+## 全局共识
+
+后续实现 JiSpec 时，必须遵守这些共识。它们用于防止产品方向偏移，也用于判断一个功能是否应该进入主线。
+
+### 1. 跨语言、跨平台、跨 LLM
+
+JiSpec 不绑定某一种语言、框架、运行平台或 LLM provider。语言、平台和模型都只是被接入的生产设备；JiSpec 要稳定表达的是需求、契约、事实、策略、变更、验证和审计。
+
+任何核心能力都不应该只在某个 LLM、某个 IDE、某个云平台或某个语言栈下才成立。特定生态适配可以存在，但不能成为主线语义的唯一来源。
+
+### 2. 旧仓库接管与新项目创建同等重要
+
+JiSpec 必须同时服务两种入口：
+
+- 接管已有项目：从真实仓库证据中提炼契约，允许人类采纳、修正、延期和登记历史债务。
+- 从零创建项目：从 PRD、技术方案和初始边界中生成第一批契约、policy、CI gate 和实现 handoff。
+
+两条入口最终必须汇入同一条 contract-aware delivery line，而不是形成两套互相割裂的产品。
+
+### 3. 约束 LLM，而不是依赖 LLM 自由发挥
+
+LLM 可以起草、解释、重锚语言、提出修复建议和执行受控实现尝试，但它不能成为事实来源、契约权威或 blocking gate 的唯一裁判。
+
+所有 LLM 输出都必须被契约、schema、policy、facts、provenance、预算、测试和 deterministic verify 约束。模型能力越强，越需要更清晰的边界、输入包和验收规则。
+
+### 4. 确定性能力大于发散性能力
+
+JiSpec 的核心竞争力是确定性控制，而不是更多生成可能性。面对取舍时，优先级固定为：
+
+1. 可验证
+2. 可审计
+3. 可回放
+4. 可阻断
+5. 可解释
+6. 更强生成能力
+
+如果某个功能让系统更会生成，但削弱了确定性、追溯性或 CI 可复现性，它不应该进入核心主线。
+
+### 5. JiSpec 不作为代码实现主体
+
+JiSpec 是用户、人类开发者、LLM、AI coding tool 和 CI 之间的中间件、约束层、审计层与验证层，不应该演化成又一个独立代码实现 agent。
+
+代码生成、代码编辑和业务实现可以由人类、Codex、Claude Code、Cursor、Copilot、Devin 或其他外部执行者完成。JiSpec 的职责是：
+
+- 定义变更意图、契约边界、blast radius 和验收条件
+- 生成可交给外部实现者的 implementation request / handoff
+- 接收外部实现者产生的 patch、diff、测试结果或实现说明
+- 用 deterministic checks 验证文件范围、契约一致性、policy、facts、测试和 verify verdict
+- 记录 provenance、预算、失败、stall、waiver、spec debt 和 human decision
+
+换句话说，JiSpec 可以调度、约束、记录和验证实现行为，但不应把“自己写业务代码”作为核心产品能力。任何 `implement` 相关能力都必须被理解为 implementation mediation，而不是 autonomous code implementation。
+
+### 6. 所有变更都必须可追溯、可审计、可验证
+
+每一次变更都应该能回答：
+
+- 变更意图是什么？
+- 触碰了哪些契约、事实、policy、waiver 或 spec debt？
+- 使用了哪些输入证据？
+- 谁或哪个 agent 做出了采纳、延期、豁免或实现决策？
+- 哪些验证通过，哪些验证阻断，哪些问题被明确登记为债务？
+
+没有 provenance 的自动化结果不能被视为可信交付结果。
+
+### 7. 契约是控制面，不只是文档
+
+契约不是写给人看的静态说明，而是贯穿 discover、draft、adopt、change、implement、verify 和 CI 的控制面。
+
+文档可以解释契约，LLM 可以生成契约候选，但真正驱动 gate、handoff、policy 和 audit 的必须是结构化、版本化、可验证的 contract artifacts。
+
+### 8. 人类负责边界和例外，机器负责执行和校验
+
+JiSpec 不追求把人完全移出流程。人类应该在高价值位置做判断：边界确认、契约采纳、例外批准、waiver、spec debt、release 风险接受。
+
+机器应该负责重复执行、事实收集、稳定排序、schema 校验、policy 评估、CI 阻断和审计记录。人类不应该被迫在大量机器底账里手工找结论。
+
+### 9. 本地优先，隐私和可移植性优先
+
+JiSpec 的核心 CLI 必须能在不上传源码的情况下运行。Console、云端协作和跨仓库治理可以增强团队工作台，但不能替代本地可运行、可验证、可复现的核心。
+
+核心产物应尽量使用普通文件、稳定 schema 和 scriptable CLI，让项目可以在不同 CI、不同操作系统和不同团队流程中迁移。
+
+### 10. 降级路径必须明确
+
+当 LLM provider 不可用、输出异常、预算耗尽、证据不足或实现循环卡住时，JiSpec 必须安全降级：
+
+- 保留 deterministic baseline
+- 写出 handoff 或 summary
+- 标记 spec debt 或 blocking issue
+- 给出下一步人类可执行动作
+
+失败不能变成静默通过，也不能变成不可解释的半成品状态。
+
+### 11. 主线一致性高于功能数量
+
+任何新功能都必须服务这条主线：
+
+```text
+bootstrap discover -> bootstrap draft -> adopt -> verify -> change -> implement -> verify -> ci:verify
+```
+
+Console、distributed execution、collaboration、analytics 和 direct LLM orchestration 都只有在强化这条主线时才成立。功能面可以扩展，但主线语义不能漂移。
+
 ## 工厂模型
 
 JiSpec 把 AI 原生工程映射为四类生产线职责。

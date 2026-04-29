@@ -1,6 +1,6 @@
 /**
- * Handoff packet for implement FSM.
- * Creates actionable summary for human takeover when AI fails.
+ * Handoff packet for implementation mediation.
+ * Creates an actionable summary for external implementer takeover.
  */
 
 import path from "node:path";
@@ -23,7 +23,7 @@ export interface ImplementContractContext {
 export interface HandoffPacket {
   sessionId: string;
   changeIntent: string;
-  outcome: "budget_exhausted" | "stall_detected";
+  outcome: "budget_exhausted" | "stall_detected" | "external_patch_received";
   iterations: number;
   tokensUsed: number;
   costUSD: number;
@@ -83,7 +83,7 @@ export function generateHandoffPacket(
   return {
     sessionId: result.sessionId,
     changeIntent: session.summary,
-    outcome: result.outcome as "budget_exhausted" | "stall_detected",
+    outcome: result.outcome as "budget_exhausted" | "stall_detected" | "external_patch_received",
     iterations: result.iterations,
     tokensUsed: result.tokensUsed,
     costUSD: result.costUSD,
@@ -178,7 +178,11 @@ function buildSuggestedActions(
   }
 
   if (result.outcome === "budget_exhausted") {
-    actions.push("Budget exhausted - review attempted approaches and continue manually");
+    actions.push("Mediation budget exhausted - review the bounded request and continue with an external patch");
+  }
+
+  if (result.outcome === "external_patch_received" && result.testsPassed === false) {
+    actions.push("External patch was received but did not reach verified state");
   }
 
   // Add rejected paths guidance

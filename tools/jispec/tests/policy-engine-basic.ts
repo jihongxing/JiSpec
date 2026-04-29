@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createFactsContract } from "../facts/facts-contract";
 import type { CanonicalFactsSnapshot } from "../facts/canonical-facts";
 import { evaluateVerifyPolicy } from "../policy/policy-engine";
-import { validatePolicyAgainstFactsContract, type VerifyPolicy } from "../policy/policy-schema";
+import { validatePolicyAgainstFactsContract, validateVerifyPolicy, type VerifyPolicy } from "../policy/policy-schema";
 
 function createFacts(overrides: Record<string, unknown> = {}): CanonicalFactsSnapshot {
   return {
@@ -135,6 +135,22 @@ async function main(): Promise<void> {
     assert.equal(validation.valid, false);
     assert.equal(validation.issues[0]?.code, "POLICY_BLOCKING_RULE_USES_UNSTABLE_FACT");
     console.log("✓ Test 3: blocking policy rules are restricted to stable facts from the facts contract");
+    passed++;
+
+    const teamPolicy = validateVerifyPolicy({
+      version: 1,
+      requires: { facts_contract: "1.0" },
+      team: {
+        profile: "small_team",
+        owner: "platform",
+        reviewers: ["contracts", "qa"],
+      },
+      rules: [],
+    });
+    assert.equal(teamPolicy.team?.profile, "small_team");
+    assert.equal(teamPolicy.team?.owner, "platform");
+    assert.deepEqual(teamPolicy.team?.reviewers, ["contracts", "qa"]);
+    console.log("✓ Test 4: policy schema accepts the minimal team profile surface");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

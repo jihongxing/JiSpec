@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { renderCiSummaryMarkdown, renderCiSummaryText } from "../ci/ci-summary";
+import { renderVerifySummaryMarkdown } from "../ci/verify-summary";
 import type { VerifyReport } from "../ci/verify-report";
 
 async function main(): Promise<void> {
@@ -70,6 +71,17 @@ async function main(): Promise<void> {
         baselineApplied: true,
         baselineMatchCount: 2,
         waiversApplied: 1,
+        waiverLifecycle: {
+          total: 3,
+          active: 1,
+          expired: 1,
+          revoked: 1,
+          invalid: 0,
+          activeIds: ["waiver-active"],
+          expiredIds: ["waiver-expired"],
+          revokedIds: ["waiver-revoked"],
+          invalidIds: [],
+        },
         observeMode: true,
         observeBlockingDowngraded: 2,
         originalVerdict: "FAIL_BLOCKING",
@@ -95,7 +107,8 @@ async function main(): Promise<void> {
     assert.ok(markdown.includes("Matched policy rules: `bootstrap-debt-observe`, `core-contracts`"));
     assert.ok(markdown.includes("- Baseline applied (2 matched)"));
     assert.ok(markdown.includes("- Observe mode enabled (2 blocking downgraded)"));
-    assert.ok(markdown.includes("- 1 waiver(s) matched"));
+    assert.ok(markdown.includes("- 1 waiver(s) matched; unmatched blockers remain blocking"));
+    assert.ok(markdown.includes("- Waiver lifecycle: 1 active, 1 expired, 1 revoked, 0 invalid"));
     assert.ok(markdown.includes("## Links"));
     assert.ok(markdown.includes("[Create Waiver](https://console.example.test/repos/acme%2Fwarehouse/waivers/new?pr=42)"));
     console.log("✓ Test 1: markdown summary includes contract, policy, mitigation, and deep-link sections");
@@ -118,6 +131,21 @@ async function main(): Promise<void> {
     assert.ok(text.includes("Next Action: Fix 2 blocking issue(s) before merging."));
     assert.ok(text.includes("Console: https://console.example.test/repos/acme%2Fwarehouse/verify"));
     console.log("✓ Test 3: text summary stays concise while preserving operator-facing guidance");
+    passed++;
+
+    const verifySummary = renderVerifySummaryMarkdown(report);
+    assert.ok(verifySummary.startsWith("# JiSpec Verify Summary"));
+    assert.ok(verifySummary.includes("Merge status: Blocked until blocking issues are fixed or explicitly waived."));
+    assert.ok(verifySummary.includes("1 waiver(s) matched and downgraded only matching issue(s); unmatched blocking issues remain blocking."));
+    assert.ok(verifySummary.includes("Waiver lifecycle: 1 active, 1 expired, 1 revoked, 0 invalid."));
+    assert.ok(verifySummary.includes("## Blocking Issues"));
+    assert.ok(verifySummary.includes("SLICE_ARTIFACT_MISSING"));
+    assert.ok(verifySummary.includes("## Advisory And Debt"));
+    assert.ok(verifySummary.includes("Known debt items: 2"));
+    assert.ok(verifySummary.includes("BOOTSTRAP_SPEC_DEBT_PENDING"));
+    assert.ok(verifySummary.includes("HISTORICAL_SCHEMA_MISSING"));
+    assert.ok(verifySummary.includes("This Markdown file is a human-readable companion summary, not a machine API."));
+    console.log("✓ Test 4: verify summary answers mergeability, blockers, advisory debt, and source-of-truth boundaries");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

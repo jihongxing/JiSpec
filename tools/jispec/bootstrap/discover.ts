@@ -29,6 +29,7 @@ import {
 
 const DEFAULT_EVIDENCE_OUTPUT = ".spec/facts/bootstrap/evidence-graph.json";
 const DEFAULT_EVIDENCE_SUMMARY = "evidence-summary.txt";
+const DEFAULT_BOOTSTRAP_SUMMARY = "bootstrap-summary.md";
 const DEFAULT_FULL_INVENTORY = "full-inventory.json";
 const DEFAULT_ADOPTION_RANKED_EVIDENCE = "adoption-ranked-evidence.json";
 const ROUTE_FILE_HINT = /(route|routes|router|controller|controllers|api)/i;
@@ -73,6 +74,7 @@ export interface BootstrapDiscoverOptions {
   outputPath?: string;
   writeFile?: boolean;
   initProject?: boolean;
+  includeNoise?: boolean;
 }
 
 export function runBootstrapDiscover(options: BootstrapDiscoverOptions): BootstrapDiscoverResult {
@@ -84,7 +86,7 @@ export function runBootstrapDiscover(options: BootstrapDiscoverOptions): Bootstr
   const scaffoldResult = options.initProject
     ? runBootstrapInitProject({ root })
     : undefined;
-  const graph = stableSortEvidenceGraph(scanRepository(root));
+  const graph = stableSortEvidenceGraph(scanRepository(root, { includeNoise: options.includeNoise }));
   const summary = summarizeEvidenceGraph(graph);
   const writtenFiles =
     options.writeFile === false
@@ -151,7 +153,8 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
     lines.push(
       ...excludedRules.map((rule) => {
         const examples = rule.examplePaths.length > 0 ? `; examples: ${rule.examplePaths.join(", ")}` : "";
-        return `- ${rule.ruleId}: ${rule.fileCount} file(s)${examples}`;
+        const optInHint = rule.optInHint ? `; opt in: ${rule.optInHint}` : "";
+        return `- ${rule.ruleId}: ${rule.fileCount} file(s) (${rule.reason})${examples}${optInHint}`;
       }),
     );
   }
@@ -171,9 +174,22 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
   return lines.join("\n");
 }
 
-function scanRepository(root: string): EvidenceGraph {
+export function renderBootstrapSummaryMarkdown(result: BootstrapDiscoverResult): string {
+  return [
+    "# Bootstrap Summary",
+    "",
+    "This is the human-readable bootstrap discover summary. Machine consumers should use `evidence-graph.json`, `full-inventory.json`, and `adoption-ranked-evidence.json`.",
+    "",
+    "```text",
+    renderBootstrapDiscoverText(result),
+    "```",
+    "",
+  ].join("\n");
+}
+
+function scanRepository(root: string, options: { includeNoise?: boolean } = {}): EvidenceGraph {
   const graph = createEmptyEvidenceGraph(root);
-  const repositoryScan = collectRepositoryFiles(root);
+  const repositoryScan = collectRepositoryFiles(root, { includeNoise: options.includeNoise });
   const repositoryFiles = repositoryScan.files;
   graph.excludedSummary = repositoryScan.excludedSummary;
 
@@ -446,12 +462,14 @@ function writeEvidenceGraph(root: string, outputPath: string, graph: EvidenceGra
   const storage = new FilesystemStorage(root);
   const resolvedGraphPath = resolveOutputPath(root, outputPath);
   const resolvedSummaryPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_EVIDENCE_SUMMARY);
+  const resolvedBootstrapSummaryPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_BOOTSTRAP_SUMMARY);
   const resolvedFullInventoryPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_FULL_INVENTORY);
   const resolvedRankedEvidencePath = path.join(path.dirname(resolvedGraphPath), DEFAULT_ADOPTION_RANKED_EVIDENCE);
   const writtenFiles = [
     normalizeEvidencePath(resolvedGraphPath),
     normalizeEvidencePath(resolvedFullInventoryPath),
     normalizeEvidencePath(resolvedRankedEvidencePath),
+    normalizeEvidencePath(resolvedBootstrapSummaryPath),
     normalizeEvidencePath(resolvedSummaryPath),
   ];
   const result: BootstrapDiscoverResult = {
@@ -465,6 +483,7 @@ function writeEvidenceGraph(root: string, outputPath: string, graph: EvidenceGra
   storage.writeFileSync(resolvedFullInventoryPath, `${JSON.stringify(buildBootstrapFullInventory(graph), null, 2)}\n`);
   storage.writeFileSync(resolvedRankedEvidencePath, `${JSON.stringify(buildAdoptionRankedEvidence(graph), null, 2)}\n`);
   storage.writeFileSync(resolvedSummaryPath, `${renderBootstrapDiscoverText(result)}\n`);
+  storage.writeFileSync(resolvedBootstrapSummaryPath, renderBootstrapSummaryMarkdown(result));
 
   return writtenFiles;
 }
@@ -478,11 +497,11 @@ function normalizeRepoPath(root: string, absolutePath: string): string {
   return normalizeEvidencePath(relativePath);
 }
 
-function collectRepositoryFiles(root: string): { files: string[]; excludedSummary: NonNullable<EvidenceGraph["excludedSummary"]> } {
+function collectRepositoryFiles(root: string, options: { includeNoise?: boolean } = {}): { files: string[]; excludedSummary: NonNullable<EvidenceGraph["excludedSummary"]> } {
   const files: string[] = [];
   const exclusionSummary = new EvidenceExclusionSummaryBuilder();
 
-  walkDirectory(root, root, files, exclusionSummary);
+  walkDirectory(root, root, files, exclusionSummary, options);
 
   return {
     files: files.sort((left, right) => normalizeEvidencePath(left).localeCompare(normalizeEvidencePath(right))),
@@ -495,6 +514,7 @@ function walkDirectory(
   currentPath: string,
   files: string[],
   exclusionSummary: EvidenceExclusionSummaryBuilder,
+  options: { includeNoise?: boolean },
 ): void {
   const entries = fs
     .readdirSync(currentPath, { withFileTypes: true })
@@ -503,14 +523,14 @@ function walkDirectory(
   for (const entry of entries) {
     const fullPath = path.join(currentPath, entry.name);
     const repoPath = normalizeRepoPath(root, fullPath);
-    const exclusionMatch = getEvidenceExclusionMatch(repoPath, { isDirectory: entry.isDirectory() });
+    const exclusionMatch = getEvidenceExclusionMatch(repoPath, { isDirectory: entry.isDirectory(), includeNoise: options.includeNoise });
 
     if (entry.isDirectory()) {
       if (exclusionMatch) {
         exclusionSummary.record(exclusionMatch, repoPath, countFilesRecursively(fullPath));
         continue;
       }
-      walkDirectory(root, fullPath, files, exclusionSummary);
+      walkDirectory(root, fullPath, files, exclusionSummary, options);
       continue;
     }
 

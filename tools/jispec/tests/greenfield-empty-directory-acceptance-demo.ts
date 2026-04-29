@@ -18,7 +18,17 @@ interface DemoJson {
   verifyOk?: boolean;
   firstSliceId?: string;
   acceptanceSummaryPath?: string;
+  changeHandoffPath?: string;
   nextCommands?: string[];
+  changeSmoke?: {
+    sessionId?: string;
+    mode?: string;
+    state?: string;
+    lane?: string;
+    outcome?: string;
+    archived?: boolean;
+    postVerifyVerdict?: string;
+  };
   generatedAssets?: {
     project?: string;
     policy?: string;
@@ -70,15 +80,30 @@ async function main(): Promise<void> {
       assert.match(summary, /## Behavior Open Decisions/);
       assert.match(summary, /## First Slice/);
       assert.match(summary, /## Verify Gate/);
+      assert.match(summary, /## Change Mainline Handoff/);
       assert.match(summary, /## Next Commands/);
       assert.match(summary, /jispec-cli verify --root \. --policy \.spec\/policy\.yaml/);
     }));
 
     results.push(record("demo reports a first implementation slice backed by generated files", () => {
       assert.equal(parsed.firstSliceId, "catalog-product-availability-v1");
+      assert.equal(parsed.changeHandoffPath, ".spec/greenfield/change-mainline-handoff.json");
       assert.ok(fs.existsSync(path.join(targetRoot, "contexts", "catalog", "slices", "catalog-product-availability-v1", "slice.yaml")));
       assert.ok(fs.existsSync(path.join(targetRoot, "contexts", "ordering", "slices", "ordering-checkout-v1", "slice.yaml")));
       assert.ok(parsed.nextCommands?.some((command) => command.includes("jispec-cli change")));
+      assert.ok(fs.existsSync(path.join(targetRoot, ".spec", "greenfield", "change-mainline-handoff.json")));
+      assert.ok(fs.existsSync(path.join(targetRoot, ".spec", "greenfield", "change-mainline-handoff.md")));
+    }));
+
+    results.push(record("demo connects the first slice to change and implementation mediation smoke", () => {
+      assert.equal(parsed.changeSmoke?.mode, "execute");
+      assert.equal(parsed.changeSmoke?.state, "implemented");
+      assert.equal(parsed.changeSmoke?.lane, "fast");
+      assert.equal(parsed.changeSmoke?.outcome, "verify_blocked");
+      assert.equal(parsed.changeSmoke?.archived, false);
+      assert.equal(parsed.changeSmoke?.postVerifyVerdict, "FAIL_BLOCKING");
+      assert.ok(parsed.changeSmoke?.sessionId);
+      assert.ok(fs.existsSync(path.join(targetRoot, ".jispec", "change-session.json")));
     }));
 
     const verifyResult = await runVerify({
@@ -87,10 +112,11 @@ async function main(): Promise<void> {
       useBaseline: true,
       generatedAt: "2026-04-29T00:00:00.000Z",
     });
-    results.push(record("generated empty-directory project remains independently verifiable", () => {
-      assert.equal(verifyResult.verdict, "PASS");
-      assert.equal(verifyResult.issueCount, 0);
+    results.push(record("post-change verify blocks on unreconciled Greenfield dirty chain", () => {
+      assert.equal(verifyResult.verdict, "FAIL_BLOCKING");
+      assert.ok(verifyResult.issueCount > 0);
       assert.equal(verifyResult.metadata?.policyPath, ".spec/policy.yaml");
+      assert.ok(verifyResult.issues.some((issue) => issue.code === "GREENFIELD_DIRTY_CHAIN_UNRECONCILED"));
     }));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

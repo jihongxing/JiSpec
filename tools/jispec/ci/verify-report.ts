@@ -52,6 +52,7 @@ export interface VerifyArtifactPaths {
   outputDir: string;
   reportPath: string;
   summaryPath: string;
+  verifySummaryPath: string;
 }
 
 /**
@@ -182,6 +183,7 @@ export function resolveVerifyArtifactPaths(root: string): VerifyArtifactPaths {
     outputDir,
     reportPath: path.join(outputDir, "verify-report.json"),
     summaryPath: path.join(outputDir, "ci-summary.md"),
+    verifySummaryPath: path.join(outputDir, "verify-summary.md"),
   };
 }
 
@@ -189,11 +191,19 @@ export function writeVerifyArtifacts(
   root: string,
   report: VerifyReport,
   summaryMarkdown: string,
+  verifySummaryMarkdown?: string,
 ): VerifyArtifactPaths {
   const artifactPaths = resolveVerifyArtifactPaths(root);
   fs.mkdirSync(artifactPaths.outputDir, { recursive: true });
   fs.writeFileSync(artifactPaths.reportPath, `${renderVerifyReportJSON(report)}\n`, "utf-8");
   fs.writeFileSync(artifactPaths.summaryPath, `${summaryMarkdown.endsWith("\n") ? summaryMarkdown : `${summaryMarkdown}\n`}`, "utf-8");
+  if (verifySummaryMarkdown !== undefined) {
+    fs.writeFileSync(
+      artifactPaths.verifySummaryPath,
+      `${verifySummaryMarkdown.endsWith("\n") ? verifySummaryMarkdown : `${verifySummaryMarkdown}\n`}`,
+      "utf-8",
+    );
+  }
   return artifactPaths;
 }
 

@@ -18,6 +18,14 @@ interface ContextYaml {
 interface BaselineYaml {
   slices?: string[];
   assets?: string[];
+  change_mainline_handoff?: {
+    path?: string;
+    status?: string;
+    target_slice?: string;
+    context_id?: string;
+    change_summary?: string;
+    next_commands?: string[];
+  };
 }
 
 interface SliceYaml {
@@ -103,7 +111,12 @@ async function main(): Promise<void> {
         catalogContext.active_slices?.includes("catalog-product-availability-v1") === true &&
         baseline.slices?.includes("ordering-checkout-v1") === true &&
         baseline.slices?.includes("catalog-product-availability-v1") === true &&
-        baseline.assets?.includes("contexts/ordering/slices/ordering-checkout-v1/slice.yaml") === true,
+        baseline.assets?.includes("contexts/ordering/slices/ordering-checkout-v1/slice.yaml") === true &&
+        baseline.assets?.includes(".spec/greenfield/change-mainline-handoff.json") === true &&
+        baseline.change_mainline_handoff?.path === ".spec/greenfield/change-mainline-handoff.json" &&
+        baseline.change_mainline_handoff?.status === "ready" &&
+        baseline.change_mainline_handoff?.target_slice === "catalog-product-availability-v1" &&
+        baseline.change_mainline_handoff?.next_commands?.some((command) => command.includes("jispec-cli change")) === true,
       error: `Expected contexts and baseline to reference slices, got ordering=${JSON.stringify(orderingContext)}, catalog=${JSON.stringify(catalogContext)}, baseline=${JSON.stringify(baseline)}.`,
     });
 

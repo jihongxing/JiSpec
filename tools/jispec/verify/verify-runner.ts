@@ -19,6 +19,7 @@ import { applyObserveMode, type ObserveModeResult } from "./observe-mode";
 import {
   applyWaivers,
   loadActiveWaivers,
+  summarizeWaiverLifecycle,
   type WaiverApplyResult,
 } from "./waiver-store";
 import { createRawFactsSnapshot, addRawFact, stableSortRawFacts, type RawFactsSnapshot } from "../facts/raw-facts";
@@ -26,7 +27,7 @@ import { buildCanonicalFacts, stableSortCanonicalFacts, type CanonicalFactsSnaps
 import { createFactsContract } from "../facts/facts-contract";
 import { loadVerifyPolicy, policyFileExists, resolvePolicyPath } from "../policy/policy-loader";
 import { evaluateVerifyPolicy } from "../policy/policy-engine";
-import { validatePolicyAgainstFactsContract } from "../policy/policy-schema";
+import { isPolicySchemaError, validatePolicyAgainstFactsContract } from "../policy/policy-schema";
 import { classifyGitDiff } from "../change/git-diff-classifier";
 import { computeLaneDecision } from "../change/lane-decision";
 import { collectBootstrapTakeoverIssues } from "./bootstrap-takeover-collector";
@@ -402,6 +403,19 @@ async function applyPolicyHook(
     policy = loadVerifyPolicy(options.root, options.policyPath);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (isPolicySchemaError(error)) {
+      return appendVerifyIssues(result, [
+        createPolicyRuntimeIssue(
+          error.code,
+          message,
+          normalizeOutputPath(options.root, policyPath),
+          {
+            key: error.key,
+            replacement: error.replacement,
+          },
+        ),
+      ]);
+    }
     return appendVerifyIssues(result, [
       createPolicyRuntimeIssue(
         "POLICY_LOAD_FAILED",
@@ -471,6 +485,14 @@ async function applyPostProcessing(
 
   // Step 1: Apply waivers
   if (options.applyWaivers !== false) {
+    const waiverLifecycle = summarizeWaiverLifecycle(options.root);
+    if (waiverLifecycle.total > 0) {
+      processedResult.metadata = {
+        ...processedResult.metadata,
+        waiverLifecycle,
+      };
+    }
+
     const waivers = loadActiveWaivers(options.root);
     if (waivers.length > 0) {
       const waiverResult = applyWaivers(processedResult, waivers);

@@ -1,4 +1,5 @@
 import { inferNextAction, selectHighlightedIssues, type VerifyReport } from "./verify-report";
+import { renderGreenfieldControlContext } from "./verify-summary";
 
 /**
  * Render CI summary as plain text for terminal/logs.
@@ -21,6 +22,15 @@ export function renderCiSummaryText(report: VerifyReport): string {
     lines.push(`Matched Policy Rules: ${report.matchedPolicyRules.join(", ")}`);
   }
   if (report.factsContractVersion || (Array.isArray(report.matchedPolicyRules) && report.matchedPolicyRules.length > 0)) {
+    lines.push("");
+  }
+
+  const greenfieldContext = renderGreenfieldControlContext(report);
+  if (greenfieldContext.length > 0) {
+    lines.push("Greenfield Control Context:");
+    for (const line of greenfieldContext) {
+      lines.push(`  ${line.replace(/^- /, "")}`);
+    }
     lines.push("");
   }
 
@@ -88,6 +98,14 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
     lines.push("");
   }
 
+  const greenfieldContext = renderGreenfieldControlContext(report);
+  if (greenfieldContext.length > 0) {
+    lines.push("## Greenfield Control Context");
+    lines.push("");
+    lines.push(...greenfieldContext);
+    lines.push("");
+  }
+
   // Highlighted issues
   if (report.counts.total > 0) {
     lines.push("## Top Issues");
@@ -130,7 +148,11 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
       lines.push(`- Observe mode enabled${observeDetail}`);
     }
     if (report.modes.waiversApplied) {
-      lines.push(`- ${report.modes.waiversApplied} waiver(s) matched`);
+      lines.push(`- ${report.modes.waiversApplied} waiver(s) matched; unmatched blockers remain blocking`);
+    }
+    if (report.modes.waiverLifecycle && typeof report.modes.waiverLifecycle === "object") {
+      const lifecycle = report.modes.waiverLifecycle as Record<string, unknown>;
+      lines.push(`- Waiver lifecycle: ${numberValue(lifecycle.active)} active, ${numberValue(lifecycle.expired)} expired, ${numberValue(lifecycle.revoked)} revoked, ${numberValue(lifecycle.invalid)} invalid`);
     }
   }
 
@@ -147,6 +169,10 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
   }
 
   return lines.join("\n");
+}
+
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 /**

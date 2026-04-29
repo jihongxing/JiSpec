@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { renderVerifyJSON, runVerify } from "../verify/verify-runner";
-import { FIXED_GENERATED_AT, cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
+import { FIXED_GENERATED_AT, cleanupVerifyFixture, createVerifyFixture, getRepoRoot } from "./verify-test-helpers";
 
 async function main(): Promise<void> {
   console.log("=== Verify JSON Contract Tests ===\n");
@@ -57,6 +60,27 @@ async function main(): Promise<void> {
       "metadata",
     ]);
     console.log("✓ Test 2: top-level JSON keys stay in the expected order");
+    passed++;
+
+    const repoRoot = getRepoRoot();
+    const cli = spawnSync(
+      process.execPath,
+      ["--import", "tsx", path.join(repoRoot, "tools", "jispec", "cli.ts"), "verify", "--root", root, "--json"],
+      {
+        cwd: repoRoot,
+        encoding: "utf-8",
+      },
+    );
+    assert.equal(cli.status, 0);
+    const cliPayload = JSON.parse(cli.stdout) as Record<string, unknown>;
+    assert.equal(cliPayload.verdict, "PASS");
+    const summaryPath = path.join(root, ".spec", "handoffs", "verify-summary.md");
+    assert.ok(fs.existsSync(summaryPath));
+    const summary = fs.readFileSync(summaryPath, "utf-8");
+    assert.ok(summary.includes("# JiSpec Verify Summary"));
+    assert.ok(summary.includes("Merge status: Ready to merge."));
+    assert.ok(summary.includes("Machine-readable verify report remains the source of truth."));
+    console.log("✓ Test 3: CLI verify --json keeps stdout machine-readable while writing the local verify summary");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

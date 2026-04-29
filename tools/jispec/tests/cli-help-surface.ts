@@ -41,7 +41,7 @@ function main(): void {
     assertIncludes(help, "jispec-cli init --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change <summary> [--mode prompt|execute] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli release snapshot --version <version> [--json]", "primary surface");
-    assertIncludes(help, "jispec-cli implement [--fast] [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli implement [--fast] [--external-patch <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap discover [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap draft [--json]", "primary surface");
@@ -56,7 +56,7 @@ function main(): void {
     assertIncludes(help, "jispec-cli template ...", "legacy surface");
     assertIncludes(help, "npm run validate:repo", "compatibility aliases");
     assertIncludes(help, "change --mode prompt -> follow next commands manually", "workflow shortcuts");
-    assertIncludes(help, "change --mode execute -> orchestrate implement -> verify", "workflow shortcuts");
+    assertIncludes(help, "change --mode execute -> orchestrate implementation mediation -> verify", "workflow shortcuts");
     assertIncludes(help, "implement --fast -> verify --fast", "workflow shortcuts");
     console.log("✓ Test 3: compatibility surface, aliases, and workflow shortcuts are explicitly listed");
     passed++;

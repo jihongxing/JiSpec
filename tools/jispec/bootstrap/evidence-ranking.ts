@@ -64,6 +64,17 @@ export interface AdoptionRankedEvidence {
   excludedSummary: NonNullable<EvidenceGraph["excludedSummary"]>;
 }
 
+export type AdoptionBoundarySignal =
+  | "governance_document"
+  | "protocol_document"
+  | "schema_truth_source"
+  | "explicit_endpoint"
+  | "service_entrypoint"
+  | "module_surface_inference"
+  | "weak_candidate"
+  | "runtime_manifest"
+  | "supporting_evidence";
+
 interface UnrankedAdoptionEvidenceEntry extends Omit<AdoptionRankedEvidenceEntry, "rank"> {
   stableKey: string;
 }
@@ -167,6 +178,10 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
       score += 24;
       reasons.push("contract-oriented documentation path");
     }
+    if (isGovernanceOrProtocolDocumentationPath(lowerPath)) {
+      score += 28;
+      reasons.push("governance or protocol boundary document");
+    }
     if (input.documentKind === "architecture" || input.documentKind === "contract" || input.documentKind === "context") {
       score += 18;
       reasons.push("contract boundary support");
@@ -191,6 +206,10 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
       score += 10;
       reasons.push("schema directory");
     }
+    if (["protobuf", "openapi", "database-schema"].includes(input.schemaFormat ?? "")) {
+      score += 18;
+      reasons.push("schema truth source boundary");
+    }
   } else if (input.kind === "route") {
     score += input.routeSignal === "http_signature" ? 32 : 10;
     reasons.push(input.routeSignal === "http_signature" ? "explicit HTTP signature" : "route-like module");
@@ -204,6 +223,13 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
     }
     if (normalizedPath.startsWith("/")) {
       score += 6;
+    }
+    if (input.routeSignal === "http_signature") {
+      score += 12;
+      reasons.push("explicit endpoint boundary");
+    } else {
+      score -= 18;
+      reasons.push("weak route candidate");
     }
     if (isInfrastructureRoute(normalizedPath)) {
       score -= 24;
@@ -260,6 +286,16 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
     if (lowerPath.startsWith("src/") || lowerPath.startsWith("app/") || lowerPath.startsWith("cmd/")) {
       score += 8;
       reasons.push("application source path");
+    }
+    if (input.sourceCategory === "entrypoint") {
+      score += 24;
+      reasons.push("service entrypoint boundary");
+    } else if (input.sourceCategory === "controller" || input.sourceCategory === "service" || input.sourceCategory === "route") {
+      score += 16;
+      reasons.push("module surface boundary");
+    } else if (input.sourceCategory === "interface" || input.sourceCategory === "trait" || input.sourceCategory === "sdk") {
+      score += 10;
+      reasons.push("public module contract surface");
     }
   }
 
@@ -370,6 +406,7 @@ function documentToEvidence(
     sourceFiles: [document.path],
     metadata: {
       documentKind: document.kind,
+      boundarySignal: classifyDocumentBoundarySignal(document.path),
       businessVocabulary: vocabularyTerms.map((term) => ({
         label: term.label,
         phrase: term.phrase,
@@ -403,6 +440,7 @@ function schemaToEvidence(schema: EvidenceSchema, taxonomyPacks: DomainTaxonomyP
     metadata: {
       schemaFormat: schema.format,
       signal: schema.signal,
+      boundarySignal: classifySchemaBoundarySignal(schema),
       provenanceNote: schema.provenanceNote,
     },
   };
@@ -430,6 +468,7 @@ function routeToEvidence(route: EvidenceRoute, taxonomyPacks: DomainTaxonomyPack
     metadata: {
       method: route.method,
       signal: route.signal,
+      boundarySignal: classifyRouteBoundarySignal(route),
       provenanceNote: route.provenanceNote,
     },
   };
@@ -455,6 +494,7 @@ function manifestToEvidence(manifest: EvidenceManifest, taxonomyPacks: DomainTax
     sourceFiles: [manifest.path],
     metadata: {
       manifestKind: manifest.kind,
+      boundarySignal: "runtime_manifest",
       provenanceNote: manifest.provenanceNote,
     },
   };
@@ -481,6 +521,7 @@ function migrationToEvidence(migration: EvidenceMigration, taxonomyPacks: Domain
     metadata: {
       toolHint: migration.toolHint,
       signal: migration.signal,
+      boundarySignal: "supporting_evidence",
       provenanceNote: migration.provenanceNote,
     },
   };
@@ -507,6 +548,7 @@ function testToEvidence(test: EvidenceTest, taxonomyPacks: DomainTaxonomyPack[])
     metadata: {
       frameworkHint: test.frameworkHint,
       signal: test.signal,
+      boundarySignal: "supporting_evidence",
       provenanceNote: test.provenanceNote,
     },
   };
@@ -534,6 +576,7 @@ function sourceFileToEvidence(
     sourceFiles: [sourceFile.path],
     metadata: {
       sourceCategory: sourceFile.category,
+      boundarySignal: classifySourceBoundarySignal(sourceFile),
     },
   };
 }
@@ -587,6 +630,57 @@ function isContractLikeDocumentationPath(lowerPath: string): boolean {
   );
 }
 
+function isGovernanceOrProtocolDocumentationPath(lowerPath: string): boolean {
+  const segments = lowerPath.split("/");
+  return segments.some((segment) =>
+    [
+      "governance",
+      "governance-docs",
+      "policy",
+      "policies",
+      "protocol",
+      "protocols",
+      "api-contracts",
+      "contracts",
+    ].includes(segment),
+  );
+}
+
+function classifyDocumentBoundarySignal(documentPath: string): AdoptionBoundarySignal {
+  const lowerPath = normalizeEvidencePath(documentPath).toLowerCase();
+  if (lowerPath.includes("protocol")) {
+    return "protocol_document";
+  }
+  if (lowerPath.includes("governance") || lowerPath.includes("policy") || lowerPath.includes("contract")) {
+    return "governance_document";
+  }
+  return "supporting_evidence";
+}
+
+function classifySchemaBoundarySignal(schema: EvidenceSchema): AdoptionBoundarySignal {
+  if (["protobuf", "openapi", "database-schema", "json-schema"].includes(schema.format)) {
+    return "schema_truth_source";
+  }
+  return "supporting_evidence";
+}
+
+function classifyRouteBoundarySignal(route: EvidenceRoute): AdoptionBoundarySignal {
+  return route.signal === "http_signature" ? "explicit_endpoint" : "weak_candidate";
+}
+
+function classifySourceBoundarySignal(sourceFile: EvidenceSourceFile): AdoptionBoundarySignal {
+  if (sourceFile.category === "entrypoint") {
+    return "service_entrypoint";
+  }
+  if (sourceFile.category === "controller" || sourceFile.category === "service" || sourceFile.category === "route") {
+    return "module_surface_inference";
+  }
+  if (sourceFile.category === "interface" || sourceFile.category === "trait" || sourceFile.category === "sdk") {
+    return "module_surface_inference";
+  }
+  return "supporting_evidence";
+}
+
 function normalizeExcludedSummary(summary: EvidenceGraph["excludedSummary"]): NonNullable<EvidenceGraph["excludedSummary"]> {
   if (!summary) {
     return {
@@ -600,6 +694,7 @@ function normalizeExcludedSummary(summary: EvidenceGraph["excludedSummary"]): No
     rules: [...summary.rules].map((rule) => ({
       ruleId: rule.ruleId,
       reason: rule.reason,
+      optInHint: rule.optInHint,
       fileCount: rule.fileCount,
       examplePaths: [...rule.examplePaths].sort((left, right) => left.localeCompare(right)),
     })),

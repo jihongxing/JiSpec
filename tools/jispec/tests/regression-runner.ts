@@ -20,6 +20,7 @@ interface TestSuite {
 type RegressionArea =
   | 'core-mainline'
   | 'bootstrap-takeover-hardening'
+  | 'retakeover-regression-pool'
   | 'verify-ci-gates'
   | 'change-implement'
   | 'runtime-extended';
@@ -32,6 +33,10 @@ function core(suite: TestSuiteInput): TestSuite {
 
 function bootstrap(suite: TestSuiteInput): TestSuite {
   return { area: 'bootstrap-takeover-hardening', ...suite };
+}
+
+function retakeover(suite: TestSuiteInput): TestSuite {
+  return { area: 'retakeover-regression-pool', ...suite };
 }
 
 function gates(suite: TestSuiteInput): TestSuite {
@@ -57,11 +62,11 @@ const TEST_SUITES: TestSuite[] = [
   core({ name: 'Greenfield Domain And Context Draft', file: 'greenfield-domain-context-draft.ts', expectedTests: 5 }),
   core({ name: 'Greenfield API Contract Draft', file: 'greenfield-api-contract-draft.ts', expectedTests: 6 }),
   core({ name: 'Greenfield Behavior Scenario Draft', file: 'greenfield-behavior-scenario-draft.ts', expectedTests: 5 }),
-  core({ name: 'Greenfield Initial Slice Queue', file: 'greenfield-initial-slice-queue.ts', expectedTests: 5 }),
-  core({ name: 'Greenfield Verify Policy And CI Gate', file: 'greenfield-verify-policy-ci-gate.ts', expectedTests: 5 }),
-  core({ name: 'Greenfield Empty Directory Acceptance Demo', file: 'greenfield-empty-directory-acceptance-demo.ts', expectedTests: 5 }),
+  core({ name: 'Greenfield Initial Slice Queue', file: 'greenfield-initial-slice-queue.ts', expectedTests: 5, task: 'P3-T1' }),
+  core({ name: 'Greenfield Verify Policy And CI Gate', file: 'greenfield-verify-policy-ci-gate.ts', expectedTests: 6, task: 'P3-T2' }),
+  core({ name: 'Greenfield Empty Directory Acceptance Demo', file: 'greenfield-empty-directory-acceptance-demo.ts', expectedTests: 6, task: 'P3-T1' }),
   core({ name: 'Greenfield Spec Delta Model', file: 'greenfield-spec-delta-model.ts', expectedTests: 6 }),
-  core({ name: 'Greenfield Baseline Snapshot', file: 'greenfield-baseline-snapshot.ts', expectedTests: 7 }),
+  core({ name: 'Greenfield Baseline Snapshot', file: 'greenfield-baseline-snapshot.ts', expectedTests: 9, task: 'P2-T5' }),
   core({ name: 'Greenfield Evidence Graph', file: 'greenfield-evidence-graph.ts', expectedTests: 6 }),
   core({ name: 'Greenfield Two-Way Ratchet Verify', file: 'greenfield-two-way-ratchet-verify.ts', expectedTests: 6 }),
   core({ name: 'Greenfield Blast Radius Tracking', file: 'greenfield-blast-radius-tracking.ts', expectedTests: 5 }),
@@ -71,22 +76,22 @@ const TEST_SUITES: TestSuite[] = [
   core({ name: 'Verify Runner Fail Blocking', file: 'verify-runner-fail-blocking.ts', expectedTests: 3 }),
   core({ name: 'Verify Runner Warn Advisory', file: 'verify-runner-warn-advisory.ts', expectedTests: 3 }),
   core({ name: 'Verify Runner Runtime Soft Fail', file: 'verify-runner-runtime-soft-fail.ts', expectedTests: 3 }),
-  core({ name: 'Verify JSON Contract', file: 'verify-json-contract.ts', expectedTests: 2 }),
+  core({ name: 'Verify JSON Contract', file: 'verify-json-contract.ts', expectedTests: 3, task: 'P1-T5' }),
   core({ name: 'Facts Contract Roundtrip', file: 'facts-contract-roundtrip.ts', expectedTests: 3 }),
-  core({ name: 'Policy Engine Basic', file: 'policy-engine-basic.ts', expectedTests: 3 }),
-  core({ name: 'Policy Unknown Fact', file: 'policy-unknown-fact.ts', expectedTests: 3 }),
-  core({ name: 'Verify Policy Integration', file: 'verify-policy-integration.ts', expectedTests: 3 }),
-  core({ name: 'Verify Report Contract', file: 'verify-report-contract.ts', expectedTests: 3 }),
+  core({ name: 'Policy Engine Basic', file: 'policy-engine-basic.ts', expectedTests: 4, task: 'P2-T6' }),
+  core({ name: 'Policy Unknown Fact', file: 'policy-unknown-fact.ts', expectedTests: 5, task: 'P2-T6' }),
+  core({ name: 'Verify Policy Integration', file: 'verify-policy-integration.ts', expectedTests: 5, task: 'P2-T6' }),
+  core({ name: 'Verify Report Contract', file: 'verify-report-contract.ts', expectedTests: 4, task: 'P1-T5' }),
   core({ name: 'Verify Issue Fingerprint Stability', file: 'verify-issue-fingerprint-stability.ts', expectedTests: 2 }),
   core({ name: 'V1 Mainline Golden Path', file: 'v1-mainline-golden-path.ts', expectedTests: 4 }),
-  core({ name: 'Doctor V1 Readiness', file: 'doctor-v1-readiness.ts', expectedTests: 3 }),
+  core({ name: 'Doctor V1 Readiness', file: 'doctor-v1-readiness.ts', expectedTests: 4, task: 'P2-T3' }),
   core({ name: 'V1 Sample Repo Smoke', file: 'v1-sample-repo-smoke.ts', expectedTests: 3 }),
-  bootstrap({ name: 'Bootstrap Discover Smoke', file: 'bootstrap-discover-smoke.ts', expectedTests: 3 }),
+  bootstrap({ name: 'Bootstrap Discover Smoke', file: 'bootstrap-discover-smoke.ts', expectedTests: 4, task: 'P1-T6' }),
   bootstrap({ name: 'Bootstrap Discover Empty Repo', file: 'bootstrap-discover-empty-repo.ts', expectedTests: 2 }),
   bootstrap({ name: 'Bootstrap Discover Signal Filtering', file: 'bootstrap-discover-signal-filtering.ts', expectedTests: 3 }),
-  bootstrap({ name: 'Bootstrap Discover Exclusion Policy', file: 'bootstrap-discover-exclusion-policy.ts', expectedTests: 3, task: 'Task 1' }),
-  bootstrap({ name: 'Bootstrap Adoption Ranked Evidence', file: 'bootstrap-adoption-ranked-evidence.ts', expectedTests: 4, task: 'Task 2' }),
-  bootstrap({ name: 'Bootstrap Evidence Ranking Score', file: 'bootstrap-evidence-ranking-score.ts', expectedTests: 3, task: 'Task 3' }),
+  bootstrap({ name: 'Bootstrap Discover Exclusion Policy', file: 'bootstrap-discover-exclusion-policy.ts', expectedTests: 4, task: 'P1-T1' }),
+  bootstrap({ name: 'Bootstrap Adoption Ranked Evidence', file: 'bootstrap-adoption-ranked-evidence.ts', expectedTests: 5, task: 'Task 2/P1-T6' }),
+  bootstrap({ name: 'Bootstrap Evidence Ranking Score', file: 'bootstrap-evidence-ranking-score.ts', expectedTests: 4, task: 'P1-T2' }),
   bootstrap({ name: 'Bootstrap Discover Unknown Layout', file: 'bootstrap-discover-unknown-layout.ts', expectedTests: 2 }),
   bootstrap({ name: 'Bootstrap Draft Mock', file: 'bootstrap-draft-mock.ts', expectedTests: 7, task: 'Task 9' }),
   bootstrap({ name: 'Bootstrap Draft Fallback', file: 'bootstrap-draft-fallback.ts', expectedTests: 2 }),
@@ -99,28 +104,29 @@ const TEST_SUITES: TestSuite[] = [
   bootstrap({ name: 'Bootstrap Domain Taxonomy Packs', file: 'bootstrap-domain-taxonomy-packs.ts', expectedTests: 5, task: 'Task 16' }),
   bootstrap({ name: 'Bootstrap Domain Generality Audit', file: 'bootstrap-domain-generality-audit.ts', expectedTests: 2, task: 'Task 16' }),
   bootstrap({ name: 'Bootstrap Draft Feature Scenarios', file: 'bootstrap-draft-feature-scenarios.ts', expectedTests: 4, task: 'Task 5' }),
-  bootstrap({ name: 'Bootstrap Feature Confidence Gate', file: 'bootstrap-feature-confidence-gate.ts', expectedTests: 4, task: 'Task 15' }),
+  bootstrap({ name: 'Bootstrap Feature Confidence Gate', file: 'bootstrap-feature-confidence-gate.ts', expectedTests: 5, task: 'P1-T3' }),
   bootstrap({ name: 'Bootstrap API Surface Classification', file: 'bootstrap-api-surface-classification.ts', expectedTests: 6, task: 'Task 6/14' }),
   bootstrap({ name: 'Bootstrap Proto Domain Mapping', file: 'bootstrap-proto-domain-mapping.ts', expectedTests: 4, task: 'Task 14' }),
   bootstrap({ name: 'Bootstrap Init Project', file: 'bootstrap-init-project.ts', expectedTests: 4, task: 'Task 8' }),
-  bootstrap({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 6, task: 'Task 18' }),
+  retakeover({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 10, task: 'P0-T2' }),
   bootstrap({ name: 'Adopt CLI Surface', file: 'adopt-cli-surface.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Adopt Atomic', file: 'bootstrap-adopt-atomic.ts', expectedTests: 3 }),
-  bootstrap({ name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 4, task: 'Task 7' }),
+  bootstrap({ name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 5, task: 'Task 7/P1-T4' }),
   bootstrap({ name: 'Bootstrap Spec Debt', file: 'bootstrap-spec-debt.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Takeover Brief', file: 'bootstrap-takeover-brief.ts', expectedTests: 4, task: 'Task 7/17' }),
   gates({ name: 'Verify Contract-Aware Core', file: 'verify-contract-aware-core.ts', expectedTests: 3 }),
   gates({ name: 'Verify Bootstrap Takeover', file: 'verify-bootstrap-takeover.ts', expectedTests: 3 }),
   gates({ name: 'Verify Baseline Hardening', file: 'verify-baseline-hardening.ts', expectedTests: 3 }),
-  gates({ name: 'Verify Waiver Hardening', file: 'verify-waiver-hardening.ts', expectedTests: 3 }),
+  gates({ name: 'Verify Waiver Hardening', file: 'verify-waiver-hardening.ts', expectedTests: 4, task: 'P2-T4' }),
   gates({ name: 'Verify Mitigation Stacking', file: 'verify-mitigation-stacking.ts', expectedTests: 2 }),
   gates({ name: 'CI Verify Wrapper', file: 'ci-verify-wrapper.ts', expectedTests: 3 }),
-  gates({ name: 'CI Summary Markdown', file: 'ci-summary-markdown.ts', expectedTests: 3 }),
+  gates({ name: 'CI Summary Markdown', file: 'ci-summary-markdown.ts', expectedTests: 4, task: 'P1-T5' }),
   gates({ name: 'Package Script Surface', file: 'package-script-surface.ts', expectedTests: 3 }),
-  changeImplement({ name: 'Change Dual Mode', file: 'change-dual-mode.ts', expectedTests: 3 }),
+  changeImplement({ name: 'Change Dual Mode', file: 'change-dual-mode.ts', expectedTests: 5, task: 'P2-T3' }),
   changeImplement({ name: 'Change Mainline Hints', file: 'change-mainline-hints.ts', expectedTests: 2 }),
   changeImplement({ name: 'Implement Mainline Lane', file: 'implement-mainline-lane.ts', expectedTests: 3 }),
   changeImplement({ name: 'Implement Handoff Mainline', file: 'implement-handoff-mainline.ts', expectedTests: 1 }),
+  changeImplement({ name: 'Implement Patch Mediation', file: 'implement-patch-mediation.ts', expectedTests: 4, task: 'P2-T1' }),
   runtime({ name: 'Stage Runner Identity', file: 'stage-runner-identity-apply.ts', expectedTests: 8 }),
   runtime({ name: 'Cache Key Spec', file: 'cache-key-spec.ts', expectedTests: 10 }),
   runtime({ name: 'Cache Manifest Spec', file: 'cache-manifest-spec.ts', expectedTests: 10 }),
@@ -145,6 +151,8 @@ const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Collaboration Locking MVP', file: 'collaboration-locking-mvp.ts', expectedTests: 3 }),
   runtime({ name: 'Collaboration Notifications MVP', file: 'collaboration-notifications-mvp.ts', expectedTests: 3 }),
   runtime({ name: 'Collaboration Analytics MVP', file: 'collaboration-analytics-mvp.ts', expectedTests: 3 }),
+  runtime({ name: 'Console Read Model Contract', file: 'console-read-model-contract.ts', expectedTests: 4, task: 'P4-T1' }),
+  runtime({ name: 'Collaboration Surface Freeze', file: 'collaboration-surface-freeze.ts', expectedTests: 4, task: 'P4-T2' }),
 ];
 
 interface TestResult {
@@ -309,6 +317,7 @@ function printAreaSummary(results: TestResult[]): void {
   const areaOrder: RegressionArea[] = [
     'core-mainline',
     'bootstrap-takeover-hardening',
+    'retakeover-regression-pool',
     'verify-ci-gates',
     'change-implement',
     'runtime-extended',

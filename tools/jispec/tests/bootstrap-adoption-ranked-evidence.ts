@@ -24,10 +24,12 @@ function main(): void {
     const fullInventoryPath = path.join(bootstrapDir, "full-inventory.json");
     const rankedEvidencePath = path.join(bootstrapDir, "adoption-ranked-evidence.json");
     const summaryPath = path.join(bootstrapDir, "evidence-summary.txt");
+    const bootstrapSummaryPath = path.join(bootstrapDir, "bootstrap-summary.md");
 
     const fullInventory = JSON.parse(fs.readFileSync(fullInventoryPath, "utf-8")) as BootstrapFullInventory;
     const rankedEvidence = JSON.parse(fs.readFileSync(rankedEvidencePath, "utf-8")) as AdoptionRankedEvidence;
     const summaryText = fs.readFileSync(summaryPath, "utf-8");
+    const bootstrapSummary = fs.readFileSync(bootstrapSummaryPath, "utf-8");
     const rankedPaths = rankedEvidence.evidence.map((entry) => entry.path);
     const rankedSourceFiles = rankedEvidence.evidence.flatMap((entry) => entry.sourceFiles);
 
@@ -72,6 +74,19 @@ function main(): void {
         summaryText.includes("docs/protocols/README.md") &&
         summaryText.includes("api/proto/gateway.proto"),
       error: `Expected summary to include ranked evidence, got:\n${summaryText}`,
+    });
+
+    results.push({
+      name: "bootstrap summary md mirrors ranked evidence while preserving txt compatibility",
+      passed:
+        fs.existsSync(bootstrapSummaryPath) &&
+        discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/bootstrap-summary.md")) &&
+        discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/evidence-summary.txt")) &&
+        bootstrapSummary.includes("# Bootstrap Summary") &&
+        bootstrapSummary.includes("Top adoption-ranked evidence:") &&
+        bootstrapSummary.includes("docs/protocols/README.md") &&
+        bootstrapSummary.includes("api/proto/gateway.proto"),
+      error: `Expected bootstrap-summary.md to include ranked evidence, got:\n${bootstrapSummary}`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

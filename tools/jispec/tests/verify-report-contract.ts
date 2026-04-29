@@ -4,8 +4,10 @@ import {
   buildVerifyReport,
   detectCiProvider,
   renderVerifyReportJSON,
+  resolveVerifyArtifactPaths,
   selectHighlightedIssues,
 } from "../ci/verify-report";
+import { renderVerifySummaryMarkdown } from "../ci/verify-summary";
 import { createVerifyRunResult, type VerifyIssue } from "../verify/verdict";
 
 const FIXED_GENERATED_AT = "2026-04-27T00:00:00.000Z";
@@ -53,6 +55,17 @@ async function main(): Promise<void> {
     baselineApplied: true,
     baselineMatchCount: 1,
     waiversApplied: 2,
+    waiverLifecycle: {
+      total: 3,
+      active: 2,
+      expired: 1,
+      revoked: 0,
+      invalid: 0,
+      activeIds: ["waiver-active-a", "waiver-active-b"],
+      expiredIds: ["waiver-expired"],
+      revokedIds: [],
+      invalidIds: [],
+    },
     observeMode: true,
     observeBlockingDowngraded: 1,
     originalVerdict: "FAIL_BLOCKING",
@@ -120,8 +133,21 @@ async function main(): Promise<void> {
     assert.equal(detectCiProvider({ GITLAB_CI: "true" } as NodeJS.ProcessEnv), "gitlab");
     assert.equal(detectCiProvider({ JENKINS_HOME: "C:/jenkins" } as NodeJS.ProcessEnv), "jenkins");
     assert.equal(detectCiProvider({} as NodeJS.ProcessEnv), "local");
-    assert.equal(buildCiOutputDir("D:/repo").replace(/\\/g, "/"), "D:/repo/.jispec-ci");
-    console.log("✓ Test 3: CI provider detection and output directory resolution stay deterministic");
+    const outputDir = buildCiOutputDir("D:/repo").replace(/\\/g, "/");
+    const artifactPaths = resolveVerifyArtifactPaths("D:/repo");
+    assert.equal(outputDir, "D:/repo/.jispec-ci");
+    assert.equal(artifactPaths.verifySummaryPath.replace(/\\/g, "/"), "D:/repo/.jispec-ci/verify-summary.md");
+    console.log("✓ Test 3: CI provider detection and output path resolution stay deterministic");
+    passed++;
+
+    const summary = renderVerifySummaryMarkdown(report);
+    assert.ok(summary.includes("Verdict: `FAIL_BLOCKING`"));
+    assert.ok(summary.includes("Merge status: Blocked until blocking issues are fixed or explicitly waived."));
+    assert.ok(summary.includes("2 waiver(s) matched and downgraded only matching issue(s); unmatched blocking issues remain blocking."));
+    assert.ok(summary.includes("Waiver lifecycle: 2 active, 1 expired, 0 revoked, 0 invalid."));
+    assert.ok(summary.includes("Known debt items: 1"));
+    assert.ok(summary.includes("This Markdown file is a human-readable companion summary, not a machine API."));
+    console.log("✓ Test 4: verify summary has a stable human-readable decision shape");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

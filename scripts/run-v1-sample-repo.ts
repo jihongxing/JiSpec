@@ -53,6 +53,7 @@ interface SampleDemoReport {
     verdict: string;
     reportPath: string;
     summaryPath: string;
+    verifySummaryPath: string;
   };
   keyPaths: {
     evidenceGraphPath: string;
@@ -176,6 +177,7 @@ async function main(): Promise<void> {
         verdict: ciReport.verdict ?? "UNKNOWN",
         reportPath: ".jispec-ci/verify-report.json",
         summaryPath: ".jispec-ci/ci-summary.md",
+        verifySummaryPath: ".jispec-ci/verify-summary.md",
       },
       keyPaths: {
         evidenceGraphPath: ".spec/facts/bootstrap/evidence-graph.json",
@@ -318,7 +320,7 @@ function renderTextReport(report: SampleDemoReport, adopt: BootstrapAdoptResult)
     `Bootstrap draft opened session \`${report.sessionId}\` in ${report.draft.generationMode ?? "unknown"} mode with evidence strength ${report.draft.evidenceStrength ?? "unknown"}.`,
     `Adopt accepted ${adopt.adoptedArtifactPaths.length} artifact(s), deferred ${adopt.specDebtFiles.length} artifact(s) into spec debt, and rejected ${adopt.rejectedArtifactKinds.length} artifact(s).`,
     `Verify returned ${report.verify.verdict}; deferred bootstrap debt stays advisory while adopted contracts remain enforced.`,
-    `CI verify returned ${report.ciVerify.verdict} and wrote ${report.ciVerify.reportPath} plus ${report.ciVerify.summaryPath}.`,
+    `CI verify returned ${report.ciVerify.verdict} and wrote ${report.ciVerify.reportPath}, ${report.ciVerify.summaryPath}, and ${report.ciVerify.verifySummaryPath}.`,
     "",
     "Interactive replay command for the same draft decisions:",
     `- ${report.commands.adoptInteractive}`,
@@ -329,6 +331,7 @@ function renderTextReport(report: SampleDemoReport, adopt: BootstrapAdoptResult)
     `- ${report.keyPaths.policyPath}`,
     `- ${report.ciVerify.reportPath}`,
     `- ${report.ciVerify.summaryPath}`,
+    `- ${report.ciVerify.verifySummaryPath}`,
   ];
 
   return lines.join("\n");

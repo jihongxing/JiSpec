@@ -1,6 +1,6 @@
 /**
- * Implement runner - main orchestrator for implement FSM.
- * Runs a budget-controlled iteration loop, then returns to verify.
+ * Implement runner - main orchestrator for implementation mediation.
+ * Mediates external patches, then returns to verify.
  */
 
 import path from "node:path";
@@ -19,6 +19,11 @@ import { generateHandoffPacket, writeHandoffPacket, formatHandoffPacket, type Ha
 import { resolveTestCommand as resolveTestCommandFromResolver, describeTestCommand, validateTestCommand } from "./test-command-resolver";
 import { runVerify } from "../verify/verify-runner";
 import type { VerifyRunResult } from "../verify/verdict";
+import {
+  mediateExternalPatch,
+  writePatchMediationArtifact,
+  type PatchMediationArtifact,
+} from "./patch-mediation";
 
 export interface ImplementRunOptions {
   root: string;
@@ -28,6 +33,7 @@ export interface ImplementRunOptions {
   maxIterations?: number;
   maxTokens?: number;
   maxCostUSD?: number;
+  externalPatchPath?: string;
 }
 
 export interface ImplementPostVerifySummary {
@@ -45,7 +51,14 @@ export interface ImplementPostVerifySummary {
 }
 
 export interface ImplementRunResult {
-  outcome: "success" | "budget_exhausted" | "stall_detected" | "preflight_failed";
+  outcome:
+    | "preflight_passed"
+    | "external_patch_received"
+    | "patch_verified"
+    | "patch_rejected_out_of_scope"
+    | "budget_exhausted"
+    | "stall_detected"
+    | "verify_blocked";
   sessionId: string;
   lane: "fast" | "strict";
   requestedFast: boolean;
@@ -56,6 +69,7 @@ export interface ImplementRunResult {
   costUSD: number;
   testsPassed: boolean;
   handoffPacket?: HandoffPacket;
+  patchMediation?: PatchMediationArtifact;
   postVerify?: ImplementPostVerifySummary;
   metadata: {
     startedAt: string;
@@ -63,13 +77,15 @@ export interface ImplementRunResult {
     testCommand: string;
     stallReason?: string;
     handoffPacketPath?: string;
+    patchMediationPath?: string;
+    externalPatchPath?: string;
     verifyCommand?: string;
     sessionArchived?: boolean;
   };
 }
 
 interface PreflightExitResult {
-  outcome: "preflight_failed";
+  outcome: "preflight_passed";
   iterations: number;
   tokensUsed: number;
   costUSD: number;
@@ -77,7 +93,7 @@ interface PreflightExitResult {
 }
 
 interface IterationLoopResult {
-  outcome: "success" | "budget_exhausted" | "stall_detected";
+  outcome: "preflight_passed" | "budget_exhausted" | "stall_detected";
   iterations: number;
   tokensUsed: number;
   costUSD: number;
@@ -100,7 +116,7 @@ interface ImplementLaneResolution {
 }
 
 /**
- * Run implement FSM.
+ * Run implementation mediation.
  */
 export async function runImplement(options: ImplementRunOptions): Promise<ImplementRunResult> {
   const root = path.resolve(options.root);
@@ -124,53 +140,73 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
   console.log(describeLaneResolution(laneResolution));
   console.log(describeTestCommand(testCommandResolution));
 
-  const preflightResult = await runPreflight(root, testCommand);
   let result: ImplementRunResult;
   let episodeMemory: EpisodeMemory | undefined;
   let lastError = "";
 
-  if (preflightResult) {
-    result = {
-      ...preflightResult,
-      sessionId: session.id,
-      lane: laneResolution.lane,
-      requestedFast: laneResolution.requestedFast,
-      autoPromoted: laneResolution.autoPromoted,
-      laneReasons: [...laneResolution.reasons],
-      metadata: {
-        startedAt,
-        completedAt: new Date().toISOString(),
-        testCommand,
-      },
-    };
+  if (options.externalPatchPath) {
+    result = mediatePatchIntake(root, session, laneResolution, testCommand, options.externalPatchPath, startedAt);
+    lastError = result.patchMediation?.test?.errorMessage ?? result.patchMediation?.violations.join("\n") ?? "";
   } else {
-    const budgetLimits: Partial<BudgetLimits> = {
-      maxIterations: options.maxIterations,
-      maxTokens: options.maxTokens,
-      maxCostUSD: options.maxCostUSD,
-    };
-    const budget = new BudgetController(budgetLimits);
-    const loopResult = await runIterationLoop(root, session, testCommand, budget);
-    episodeMemory = loopResult.episodeMemory;
-    lastError = loopResult.lastError;
+    const preflightResult = await runPreflight(root, testCommand);
+    if (preflightResult) {
+      result = {
+        ...preflightResult,
+        sessionId: session.id,
+        lane: laneResolution.lane,
+        requestedFast: laneResolution.requestedFast,
+        autoPromoted: laneResolution.autoPromoted,
+        laneReasons: [...laneResolution.reasons],
+        metadata: {
+          startedAt,
+          completedAt: new Date().toISOString(),
+          testCommand,
+        },
+      };
+    } else {
+      const budgetLimits: Partial<BudgetLimits> = {
+        maxIterations: options.maxIterations,
+        maxTokens: options.maxTokens,
+        maxCostUSD: options.maxCostUSD,
+      };
+      const budget = new BudgetController(budgetLimits);
+      const loopResult = await runIterationLoop(root, session, testCommand, budget);
+      episodeMemory = loopResult.episodeMemory;
+      lastError = loopResult.lastError;
 
-    result = {
-      ...loopResult,
-      sessionId: session.id,
-      lane: laneResolution.lane,
-      requestedFast: laneResolution.requestedFast,
-      autoPromoted: laneResolution.autoPromoted,
-      laneReasons: [...laneResolution.reasons],
-      metadata: {
-        startedAt,
-        completedAt: new Date().toISOString(),
-        testCommand,
-        stallReason: loopResult.stallReason,
-      },
-    };
+      result = {
+        ...loopResult,
+        sessionId: session.id,
+        lane: laneResolution.lane,
+        requestedFast: laneResolution.requestedFast,
+        autoPromoted: laneResolution.autoPromoted,
+        laneReasons: [...laneResolution.reasons],
+        metadata: {
+          startedAt,
+          completedAt: new Date().toISOString(),
+          testCommand,
+          stallReason: loopResult.stallReason,
+        },
+      };
+    }
   }
 
-  if (result.outcome === "budget_exhausted" || result.outcome === "stall_detected") {
+  if (
+    result.outcome === "budget_exhausted" ||
+    result.outcome === "stall_detected" ||
+    (result.outcome === "external_patch_received" && !result.testsPassed)
+  ) {
+    if (result.patchMediation?.touchedPaths.length) {
+      episodeMemory = createEpisodeMemory();
+      addEpisode(episodeMemory, {
+        iteration: 1,
+        hypothesis: `External patch intake from ${result.metadata.externalPatchPath ?? "provided patch"}`,
+        outcome: "failure",
+        changedFiles: result.patchMediation.touchedPaths,
+        errorMessage: lastError,
+      });
+    }
+
     const handoffPacket = generateHandoffPacket(
       root,
       session,
@@ -192,6 +228,27 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
     result.postVerify = postVerify;
     result.metadata.verifyCommand = postVerify.command;
 
+    if (result.patchMediation) {
+      result.patchMediation.postVerify = {
+        command: postVerify.command,
+        verdict: postVerify.verdict,
+        ok: postVerify.ok,
+        exitCode: postVerify.exitCode,
+        issueCount: postVerify.issueCount,
+        blockingIssueCount: postVerify.blockingIssueCount,
+        advisoryIssueCount: postVerify.advisoryIssueCount,
+        nonBlockingErrorCount: postVerify.nonBlockingErrorCount,
+      };
+      result.patchMediation.completedAt = new Date().toISOString();
+      result.metadata.patchMediationPath = writePatchMediationArtifact(root, result.patchMediation);
+    }
+
+    if (!postVerify.ok) {
+      result.outcome = "verify_blocked";
+    } else if (result.patchMediation) {
+      result.outcome = "patch_verified";
+    }
+
     if (postVerify.ok && loadedSession.source === "active" && isActiveChangeSession(root, session.id)) {
       archiveChangeSession(root);
       result.metadata.sessionArchived = true;
@@ -200,6 +257,93 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
 
   return result;
 }
+
+function mediatePatchIntake(
+  root: string,
+  session: ChangeSession,
+  laneResolution: ImplementLaneResolution,
+  testCommand: string,
+  externalPatchPath: string,
+  startedAt: string,
+): ImplementRunResult {
+  console.log(`External patch supplied: ${externalPatchPath}`);
+  console.log("Mediating patch scope before applying it.");
+
+  const mediation = mediateExternalPatch(root, session, externalPatchPath);
+  const metadata = {
+    startedAt,
+    completedAt: new Date().toISOString(),
+    testCommand,
+    patchMediationPath: mediation.artifactPath,
+    externalPatchPath: mediation.artifact.externalPatchPath,
+  };
+
+  if (mediation.artifact.status === "rejected_out_of_scope") {
+    console.log("Patch rejected before apply: touched paths are outside the active change session scope.");
+    return {
+      outcome: "patch_rejected_out_of_scope",
+      sessionId: session.id,
+      lane: laneResolution.lane,
+      requestedFast: laneResolution.requestedFast,
+      autoPromoted: laneResolution.autoPromoted,
+      laneReasons: [...laneResolution.reasons],
+      iterations: 0,
+      tokensUsed: 0,
+      costUSD: 0,
+      testsPassed: false,
+      patchMediation: mediation.artifact,
+      metadata,
+    };
+  }
+
+  if (mediation.artifact.status === "apply_failed") {
+    console.log("Patch scope accepted, but git apply failed.");
+    return {
+      outcome: "external_patch_received",
+      sessionId: session.id,
+      lane: laneResolution.lane,
+      requestedFast: laneResolution.requestedFast,
+      autoPromoted: laneResolution.autoPromoted,
+      laneReasons: [...laneResolution.reasons],
+      iterations: 0,
+      tokensUsed: 0,
+      costUSD: 0,
+      testsPassed: false,
+      patchMediation: mediation.artifact,
+      metadata,
+    };
+  }
+
+  console.log("Patch accepted and applied. Running mediated test command.");
+  const testResult = runTestCommand(testCommand, { cwd: root });
+  const errorMessage = extractErrorMessage(testResult);
+  mediation.artifact.test = {
+    command: testCommand,
+    passed: testResult.passed,
+    exitCode: testResult.exitCode,
+    duration: testResult.duration,
+    errorMessage: errorMessage || undefined,
+  };
+  mediation.artifact.completedAt = new Date().toISOString();
+  metadata.patchMediationPath = writePatchMediationArtifact(root, mediation.artifact);
+  metadata.completedAt = mediation.artifact.completedAt;
+
+  return {
+    outcome: "external_patch_received",
+    sessionId: session.id,
+    lane: laneResolution.lane,
+    requestedFast: laneResolution.requestedFast,
+    autoPromoted: laneResolution.autoPromoted,
+    laneReasons: [...laneResolution.reasons],
+    iterations: 1,
+    tokensUsed: 0,
+    costUSD: 0,
+    testsPassed: testResult.passed,
+    patchMediation: mediation.artifact,
+    metadata,
+  };
+}
+
 
 function loadImplementSession(root: string, sessionId?: string): LoadedImplementSession | null {
   if (sessionId) {
@@ -234,9 +378,9 @@ async function runPreflight(
   const result = runTestCommand(testCommand, { cwd: root });
 
   if (result.passed) {
-    console.log("Preflight PASSED - tests already pass, skipping the patch loop and returning to verify");
+    console.log("Preflight PASSED - tests already pass, skipping patch mediation and returning to verify");
     return {
-      outcome: "preflight_failed",
+      outcome: "preflight_passed",
       iterations: 0,
       tokensUsed: 0,
       costUSD: 0,
@@ -244,7 +388,7 @@ async function runPreflight(
     };
   }
 
-  console.log("Preflight FAILED - ready to implement");
+  console.log("Preflight FAILED - no external patch supplied, preparing implementation mediation handoff");
   return null;
 }
 
@@ -267,11 +411,11 @@ async function runIterationLoop(
     const context = buildContextBundle(root, session, lastTestResult, episodeMemory);
     console.log(`Context: ${context.workingSet.files.length} files, ${context.workingSet.totalLines} lines`);
 
-    console.log("Generating code... (placeholder)");
-    const hypothesis = `Iteration ${iteration} hypothesis (placeholder)`;
+    console.log("No external patch supplied; recording a bounded handoff request.");
+    const hypothesis = `Iteration ${iteration} external patch request`;
     const changedFiles: string[] = [];
-    const tokensUsed = 1000;
-    const costUSD = 0.05;
+    const tokensUsed = 0;
+    const costUSD = 0;
 
     budget.recordIteration(tokensUsed, costUSD);
 
@@ -289,7 +433,7 @@ async function runIterationLoop(
 
       const state = budget.getState();
       return {
-        outcome: "success",
+        outcome: "preflight_passed",
         iterations: state.iterations,
         tokensUsed: state.tokensUsed,
         costUSD: state.costUSD,
@@ -350,7 +494,7 @@ async function runIterationLoop(
 export function renderImplementText(result: ImplementRunResult): string {
   const lines: string[] = [];
 
-  lines.push("=== Implement FSM Result ===");
+  lines.push("=== Implementation Mediation Result ===");
   lines.push("");
   lines.push(`Outcome: ${result.outcome}`);
   lines.push(`Session: ${result.sessionId}`);
@@ -375,6 +519,22 @@ export function renderImplementText(result: ImplementRunResult): string {
   if (result.metadata.handoffPacketPath) {
     lines.push("");
     lines.push(`Handoff packet: ${result.metadata.handoffPacketPath}`);
+  }
+
+  if (result.patchMediation) {
+    lines.push("");
+    lines.push("Patch mediation:");
+    lines.push(`  Status: ${result.patchMediation.status}`);
+    lines.push(`  External patch: ${result.patchMediation.externalPatchPath}`);
+    lines.push(`  Touched paths: ${result.patchMediation.touchedPaths.join(", ") || "none"}`);
+    lines.push(`  Allowed paths: ${result.patchMediation.allowedPaths.join(", ") || "none"}`);
+    lines.push(`  Applied: ${result.patchMediation.applied}`);
+    if (result.patchMediation.violations.length > 0) {
+      lines.push(`  Violations: ${result.patchMediation.violations.join("; ")}`);
+    }
+    if (result.metadata.patchMediationPath) {
+      lines.push(`  Artifact: ${result.metadata.patchMediationPath}`);
+    }
   }
 
   if (result.postVerify) {

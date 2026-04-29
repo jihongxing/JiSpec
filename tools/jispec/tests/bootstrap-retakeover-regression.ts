@@ -7,6 +7,8 @@ import { runBootstrapDiscover } from "../bootstrap/discover";
 import { runBootstrapDraft, type BootstrapDraftResult } from "../bootstrap/draft";
 import type { BootstrapDiscoverResult } from "../bootstrap/evidence-graph";
 import type { AdoptionRankedEvidence } from "../bootstrap/evidence-ranking";
+import { runVerify } from "../verify/verify-runner";
+import type { VerifyRunResult } from "../verify/verdict";
 
 interface TestResult {
   name: string;
@@ -58,6 +60,34 @@ interface RetakeoverResult {
   feature: string;
   ranked: AdoptionRankedEvidence;
   brief: string;
+  verify: VerifyRunResult;
+  metrics: RetakeoverMetrics;
+}
+
+interface RetakeoverFixtureOptions {
+  fixtureId: string;
+  fixtureClass: "high-noise-protocol-repo" | "multilingual-finance-service-repo" | "docs-api-schema-scattered-repo";
+  featureDecision: "accept" | "skip_as_spec_debt";
+}
+
+interface RetakeoverMetrics {
+  version: 1;
+  fixtureId: string;
+  fixtureClass: RetakeoverFixtureOptions["fixtureClass"];
+  discoverSummary: BootstrapDiscoverResult["summary"];
+  topRankedEvidence: string[];
+  draftQuality: {
+    domainContextCount: number;
+    aggregateRootCount: number;
+    apiSurfaceCount: number;
+    featureRecommendation: "accept_candidate" | "defer_as_spec_debt" | "unknown";
+  };
+  adoptCorrection: {
+    acceptedArtifacts: string[];
+    deferredArtifacts: string[];
+  };
+  verifyVerdict: VerifyRunResult["verdict"];
+  verifyOk: boolean;
 }
 
 async function main(): Promise<void> {
@@ -65,14 +95,29 @@ async function main(): Promise<void> {
 
   const remirageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-remirage-"));
   const breathRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-breath-"));
+  const scatteredRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-scattered-"));
   const results: TestResult[] = [];
 
   try {
     seedReMirageLikeRepository(remirageRoot);
     seedBreathofEarthLikeRepository(breathRoot);
+    seedScatteredContractsRepository(scatteredRoot);
 
-    const remirage = await runRetakeover(remirageRoot, "accept");
-    const breath = await runRetakeover(breathRoot, "skip_as_spec_debt");
+    const remirage = await runRetakeover(remirageRoot, {
+      fixtureId: "remirage-like",
+      fixtureClass: "high-noise-protocol-repo",
+      featureDecision: "accept",
+    });
+    const breath = await runRetakeover(breathRoot, {
+      fixtureId: "breathofearth-like",
+      fixtureClass: "multilingual-finance-service-repo",
+      featureDecision: "skip_as_spec_debt",
+    });
+    const scattered = await runRetakeover(scatteredRoot, {
+      fixtureId: "scattered-contracts-like",
+      fixtureClass: "docs-api-schema-scattered-repo",
+      featureDecision: "accept",
+    });
 
     const remirageRankedPaths = remirage.ranked.evidence.map((entry) => entry.path);
     const remirageExcludedRules = excludedRuleIds(remirage.ranked);
@@ -138,12 +183,12 @@ async function main(): Promise<void> {
         breath.ranked.excludedSummary.totalExcludedFileCount >= 3 &&
         breathExcludedRules.includes("python-cache-or-env") &&
         !containsPathFragment(breathRankedPaths, [".pytest_cache/", ".ruff_cache/", "__pycache__/"]) &&
-        containsAll(breathRankedPaths.slice(0, 10), [
+        containsAll(breathRankedPaths.slice(0, 15), [
           "db/schema_governance.sql",
           "db/schema_broker_sync.sql",
           "docs/finance-overview.md",
         ]) &&
-        containsAny(breathRankedPaths.slice(0, 10), [
+        containsAny(breathRankedPaths.slice(0, 15), [
           "db/schema_alpha.sql",
           "db/schema_shadow_run.sql",
           "docs/system-design.md",
@@ -176,6 +221,81 @@ async function main(): Promise<void> {
         breath.brief.includes(".spec/spec-debt/"),
       error: `Expected BreathofEarth-like API surfaces and reviewable feature gate.\nAPI=${JSON.stringify(breath.api)}\nFeature:\n${breath.feature}\nBrief:\n${breath.brief}`,
     });
+
+    const scatteredRankedPaths = scattered.ranked.evidence.map((entry) => entry.path);
+    const scatteredContexts = collectDomainNames(scattered.domain);
+    const scatteredAggregates = collectAggregateNames(scattered.domain);
+    const scatteredSurfaces = scattered.api.api_spec?.surfaces ?? [];
+
+    results.push({
+      name: "Scattered contracts fixture promotes docs, OpenAPI, JSON schemas, and explicit endpoints together",
+      passed:
+        scattered.ranked.summary.selectedCount >= 8 &&
+        scattered.discover.summary.documentCount >= 3 &&
+        scattered.discover.summary.schemaCount >= 3 &&
+        scattered.discover.summary.routeCount >= 2 &&
+        containsAll(scatteredRankedPaths.slice(0, 15), [
+          "docs/product/portfolio-control.md",
+          "services/api/openapi/openapi.yaml",
+          "packages/contracts/schemas/portfolio-command.schema.json",
+        ]) &&
+        containsAny(scatteredRankedPaths.slice(0, 15), [
+          "services/node/src/routes/portfolio.ts",
+          "services/python/api/ledger_routes.py",
+          "/portfolio/rebalance",
+        ]),
+      error: `Expected scattered fixture to promote distributed docs/API/schema evidence. summary=${JSON.stringify(scattered.discover.summary)}, ranked=${JSON.stringify(scattered.ranked.evidence)}.`,
+    });
+
+    results.push({
+      name: "Scattered contracts fixture joins dispersed assets into finance governance contracts",
+      passed:
+        containsAll(scatteredContexts, ["portfolio", "governance", "ledger"]) &&
+        containsAll(scatteredAggregates, ["Portfolio", "GovernanceDecision", "Ledger"]) &&
+        (scattered.api.api_spec?.surface_summary?.openapi_contract ?? 0) >= 1 &&
+        (scattered.api.api_spec?.surface_summary?.explicit_endpoint ?? 0) >= 2 &&
+        scatteredSurfaces.some((surface) =>
+          surface.surface_kind === "openapi_contract" &&
+          surface.path === "/portfolio/rebalance" &&
+          surface.operation === "rebalancePortfolio",
+        ) &&
+        scatteredSurfaces.some((surface) =>
+          surface.surface_kind === "explicit_endpoint" &&
+          surface.path === "/ledger/entries",
+        ),
+      error: `Expected scattered fixture to synthesize finance/governance contracts. contexts=${JSON.stringify(scatteredContexts)}, aggregates=${JSON.stringify(scatteredAggregates)}, api=${JSON.stringify(scattered.api)}.`,
+    });
+
+    results.push({
+      name: "Retakeover pool records ranking, draft quality, adopt corrections, and verify verdict per fixture",
+      passed:
+        [remirage, breath, scattered].every((result) =>
+          result.metrics.version === 1 &&
+          result.metrics.topRankedEvidence.length > 0 &&
+          result.metrics.draftQuality.domainContextCount > 0 &&
+          result.metrics.draftQuality.apiSurfaceCount > 0 &&
+          result.metrics.verifyOk &&
+          fs.existsSync(path.join(result.discover.graph.repoRoot, ".spec", "handoffs", "retakeover-metrics.json")),
+        ) &&
+        remirage.metrics.fixtureClass === "high-noise-protocol-repo" &&
+        breath.metrics.fixtureClass === "multilingual-finance-service-repo" &&
+        scattered.metrics.fixtureClass === "docs-api-schema-scattered-repo" &&
+        breath.metrics.adoptCorrection.deferredArtifacts.includes("feature") &&
+        remirage.metrics.adoptCorrection.acceptedArtifacts.includes("feature") &&
+        scattered.metrics.adoptCorrection.acceptedArtifacts.includes("feature"),
+      error: `Expected each retakeover fixture to record metrics. metrics=${JSON.stringify([remirage.metrics, breath.metrics, scattered.metrics], null, 2)}.`,
+    });
+
+    results.push({
+      name: "Retakeover pool covers the three P0-T2 fixture classes",
+      passed:
+        new Set([remirage.metrics.fixtureClass, breath.metrics.fixtureClass, scattered.metrics.fixtureClass]).size === 3 &&
+        containsAll(
+          [remirage.metrics.fixtureClass, breath.metrics.fixtureClass, scattered.metrics.fixtureClass],
+          ["high-noise-protocol-repo", "multilingual-finance-service-repo", "docs-api-schema-scattered-repo"],
+        ),
+      error: `Expected P0-T2 fixture pool to cover high-noise, multilingual, and scattered docs/API/schema classes. metrics=${JSON.stringify([remirage.metrics, breath.metrics, scattered.metrics])}.`,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({
@@ -186,6 +306,7 @@ async function main(): Promise<void> {
   } finally {
     fs.rmSync(remirageRoot, { recursive: true, force: true });
     fs.rmSync(breathRoot, { recursive: true, force: true });
+    fs.rmSync(scatteredRoot, { recursive: true, force: true });
   }
 
   let passed = 0;
@@ -212,7 +333,7 @@ async function main(): Promise<void> {
 
 async function runRetakeover(
   root: string,
-  featureDecision: "accept" | "skip_as_spec_debt",
+  options: RetakeoverFixtureOptions,
 ): Promise<RetakeoverResult> {
   const discover = runBootstrapDiscover({ root });
   const draft = await runBootstrapDraft({ root });
@@ -231,20 +352,37 @@ async function runRetakeover(
       { artifactKind: "api", kind: "accept" },
       {
         artifactKind: "feature",
-        kind: featureDecision,
-        note: featureDecision === "skip_as_spec_debt" ? "feature behavior needs owner confirmation" : undefined,
+        kind: options.featureDecision,
+        note: options.featureDecision === "skip_as_spec_debt" ? "feature behavior needs owner confirmation" : undefined,
       },
     ],
+  });
+
+  const domain = yaml.load(domainArtifact.content) as DomainDraft;
+  const api = JSON.parse(apiArtifact.content) as ApiDraft;
+  const feature = featureArtifact.content;
+  const ranked = readRankedEvidence(root);
+  const brief = fs.readFileSync(path.join(root, ".spec", "handoffs", "takeover-brief.md"), "utf-8");
+  const verify = await runVerify({ root, useBaseline: true, applyWaivers: true });
+  const metrics = writeRetakeoverMetrics(root, options, {
+    discover,
+    domain,
+    api,
+    feature,
+    ranked,
+    verify,
   });
 
   return {
     discover,
     draft,
-    domain: yaml.load(domainArtifact.content) as DomainDraft,
-    api: JSON.parse(apiArtifact.content) as ApiDraft,
-    feature: featureArtifact.content,
-    ranked: readRankedEvidence(root),
-    brief: fs.readFileSync(path.join(root, ".spec", "handoffs", "takeover-brief.md"), "utf-8"),
+    domain,
+    api,
+    feature,
+    ranked,
+    brief,
+    verify,
+    metrics,
   };
 }
 
@@ -405,6 +543,219 @@ function seedBreathofEarthLikeRepository(root: string): void {
   writeText(root, ".pytest_cache/v/cache/nodeids", "[]\n");
   writeText(root, ".ruff_cache/content.json", "{}\n");
   writeText(root, "src/__pycache__/routes.cpython-311.pyc", "binary\n");
+}
+
+function seedScatteredContractsRepository(root: string): void {
+  writeProject(root, "scattered-contracts-retakeover", ["finance-portfolio", "saas-control-plane"]);
+  fs.writeFileSync(
+    path.join(root, "README.md"),
+    [
+      "# Portfolio Control Platform",
+      "",
+      "Portfolio rebalance, governance approval, ledger entries, and reporting workflows are split across service folders.",
+      "The takeover must connect product docs, API contracts, JSON schemas, and handlers instead of relying on one perfect source tree.",
+    ].join("\n"),
+    "utf-8",
+  );
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "scattered-contracts-retakeover", private: true }, null, 2), "utf-8");
+  writeText(root, "go.mod", "module example.com/scattered-contracts\n\ngo 1.22\n");
+
+  writeText(
+    root,
+    "docs/product/portfolio-control.md",
+    [
+      "# Portfolio Control",
+      "",
+      "Portfolio rebalance requests require governance approval before ledger entries are committed.",
+      "Risk governance and reporting evidence must stay connected to each rebalance decision.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "docs/architecture/service-map.md",
+    [
+      "# Service Map",
+      "",
+      "The Node service accepts portfolio commands, the Python API exposes ledger entries, and the Go worker records reporting snapshots.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "docs/contracts/governance.md",
+    [
+      "# Governance Contract",
+      "",
+      "GovernanceDecision records owner approval, approval memo, risk limit, and audit trail provenance.",
+    ].join("\n"),
+  );
+
+  writeText(
+    root,
+    "services/api/openapi/openapi.yaml",
+    [
+      "openapi: 3.0.0",
+      "info:",
+      "  title: Portfolio Control",
+      "  version: 1.0.0",
+      "paths:",
+      "  /portfolio/rebalance:",
+      "    post:",
+      "      operationId: rebalancePortfolio",
+      "      requestBody:",
+      "        content:",
+      "          application/json:",
+      "            schema:",
+      "              $ref: '#/components/schemas/PortfolioCommand'",
+      "      responses:",
+      "        '202':",
+      "          description: accepted",
+      "          content:",
+      "            application/json:",
+      "              schema:",
+      "                $ref: '#/components/schemas/GovernanceDecision'",
+      "components:",
+      "  schemas:",
+      "    PortfolioCommand:",
+      "      type: object",
+      "    GovernanceDecision:",
+      "      type: object",
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "packages/contracts/schemas/portfolio-command.schema.json",
+    JSON.stringify({
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      title: "PortfolioCommand",
+      type: "object",
+      properties: {
+        portfolioId: { type: "string" },
+        rebalanceReason: { type: "string" },
+        riskLimit: { type: "string" },
+      },
+    }, null, 2),
+  );
+  writeText(
+    root,
+    "packages/contracts/schemas/governance-decision.schema.json",
+    JSON.stringify({
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      title: "GovernanceDecision",
+      type: "object",
+      properties: {
+        approvalMemo: { type: "string" },
+        auditTrailId: { type: "string" },
+      },
+    }, null, 2),
+  );
+  writeText(
+    root,
+    "services/python/schemas/ledger-entry.schema.json",
+    JSON.stringify({
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      title: "LedgerEntry",
+      type: "object",
+      properties: {
+        ledgerId: { type: "string" },
+        amount: { type: "number" },
+      },
+    }, null, 2),
+  );
+
+  writeText(
+    root,
+    "services/node/src/routes/portfolio.ts",
+    [
+      "const app = { post: () => undefined, get: () => undefined };",
+      'app.post("/portfolio/rebalance", () => ({ status: "accepted" }));',
+      'app.get("/portfolio/:id/reporting", () => ({ status: "ready" }));',
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "services/python/api/ledger_routes.py",
+    [
+      'app.get("/ledger/entries")(lambda: [])',
+      'app.post("/governance/approvals")(lambda: {"ok": True})',
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "services/go/cmd/reporting/main.go",
+    [
+      "package main",
+      "",
+      "type ReportingSnapshot struct {",
+      "  PortfolioID string",
+      "  LedgerID string",
+      "}",
+      "",
+      "func main() {}",
+      "",
+    ].join("\n"),
+  );
+  writeText(root, "tests/portfolio-control.test.ts", "describe('portfolio rebalance governance ledger reporting', () => {});\n");
+  writeText(root, "services/python/tests/test_ledger.py", "def test_ledger_entries_are_auditable():\n    assert True\n");
+}
+
+function writeRetakeoverMetrics(
+  root: string,
+  options: RetakeoverFixtureOptions,
+  result: {
+    discover: BootstrapDiscoverResult;
+    domain: DomainDraft;
+    api: ApiDraft;
+    feature: string;
+    ranked: AdoptionRankedEvidence;
+    verify: VerifyRunResult;
+  },
+): RetakeoverMetrics {
+  const acceptedArtifacts = ["domain", "api"];
+  const deferredArtifacts: string[] = [];
+
+  if (options.featureDecision === "skip_as_spec_debt") {
+    deferredArtifacts.push("feature");
+  } else {
+    acceptedArtifacts.push("feature");
+  }
+
+  const metrics: RetakeoverMetrics = {
+    version: 1,
+    fixtureId: options.fixtureId,
+    fixtureClass: options.fixtureClass,
+    discoverSummary: result.discover.summary,
+    topRankedEvidence: result.ranked.evidence.slice(0, 10).map((entry) => entry.path),
+    draftQuality: {
+      domainContextCount: collectDomainNames(result.domain).length,
+      aggregateRootCount: collectAggregateNames(result.domain).length,
+      apiSurfaceCount: result.api.api_spec?.surfaces?.length ?? 0,
+      featureRecommendation: parseFeatureRecommendation(result.feature),
+    },
+    adoptCorrection: {
+      acceptedArtifacts,
+      deferredArtifacts,
+    },
+    verifyVerdict: result.verify.verdict,
+    verifyOk: result.verify.ok,
+  };
+
+  const metricsPath = path.join(root, ".spec", "handoffs", "retakeover-metrics.json");
+  fs.mkdirSync(path.dirname(metricsPath), { recursive: true });
+  fs.writeFileSync(metricsPath, JSON.stringify(metrics, null, 2), "utf-8");
+  return metrics;
+}
+
+function parseFeatureRecommendation(feature: string): RetakeoverMetrics["draftQuality"]["featureRecommendation"] {
+  if (feature.includes("# adoption_recommendation: accept_candidate")) {
+    return "accept_candidate";
+  }
+  if (feature.includes("# adoption_recommendation: defer_as_spec_debt")) {
+    return "defer_as_spec_debt";
+  }
+  return "unknown";
 }
 
 function writeBreathProject(root: string): void {

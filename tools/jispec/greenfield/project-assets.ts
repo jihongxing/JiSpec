@@ -26,6 +26,11 @@ import { buildContractGraphFromEvidenceGraph, contractGraphPath } from "./contra
 import { createEmptyGreenfieldSpecDebtLedger, renderGreenfieldSpecDebtLedger } from "./spec-debt-ledger";
 import { draftGreenfieldReviewPack, type GreenfieldReviewPackDraft } from "./review-pack";
 import { draftGreenfieldAiImplementHandoff, type GreenfieldAiImplementHandoff } from "./ai-implement-handoff";
+import {
+  buildGreenfieldChangeMainlineHandoff,
+  renderGreenfieldChangeMainlineHandoffMarkdown,
+  type GreenfieldChangeMainlineHandoff,
+} from "./change-mainline-handoff";
 
 export interface GreenfieldProjectAssetOptions {
   root: string;
@@ -162,6 +167,11 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
     contractGraph,
     reviewPackDraft,
   });
+  const changeMainlineHandoff = buildGreenfieldChangeMainlineHandoff({
+    sliceQueueDraft,
+    reviewPackDraft,
+    aiImplementHandoff,
+  });
   writeAsset({
     root,
     relativePath: "jiproject/project.yaml",
@@ -200,7 +210,7 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
   writeAsset({
     root,
     relativePath: ".spec/greenfield/initialization-summary.md",
-    content: renderInitializationSummary(identity, options.inputContract, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, evidenceGraph, reviewPackDraft, aiImplementHandoff),
+    content: renderInitializationSummary(identity, options.inputContract, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, evidenceGraph, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff),
     force,
     result,
   });
@@ -214,7 +224,7 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
   writeAsset({
     root,
     relativePath: ".spec/baselines/current.yaml",
-    content: renderCurrentBaseline(identity, options.inputContract, domainDraft, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, reviewPackDraft, aiImplementHandoff),
+    content: renderCurrentBaseline(identity, options.inputContract, domainDraft, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff),
     force,
     result,
   });
@@ -250,6 +260,20 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
     root,
     relativePath: ".spec/greenfield/ai-implement-handoff.md",
     content: aiImplementHandoff.markdown,
+    force,
+    result,
+  });
+  writeAsset({
+    root,
+    relativePath: ".spec/greenfield/change-mainline-handoff.json",
+    content: `${JSON.stringify(changeMainlineHandoff, null, 2)}\n`,
+    force,
+    result,
+  });
+  writeAsset({
+    root,
+    relativePath: ".spec/greenfield/change-mainline-handoff.md",
+    content: renderGreenfieldChangeMainlineHandoffMarkdown(changeMainlineHandoff),
     force,
     result,
   });
@@ -447,6 +471,7 @@ function renderInitializationSummary(
   evidenceGraph: GreenfieldEvidenceGraph,
   reviewPackDraft: GreenfieldReviewPackDraft,
   aiImplementHandoff: GreenfieldAiImplementHandoff,
+  changeMainlineHandoff: GreenfieldChangeMainlineHandoff,
 ): string {
   return [
     `# ${identity.name} Greenfield Initialization`,
@@ -479,6 +504,8 @@ function renderInitializationSummary(
     "- `.spec/greenfield/review-pack/executive-summary.md`",
     "- `.spec/greenfield/review-pack/review-record.yaml`",
     "- `.spec/greenfield/ai-implement-handoff.md`",
+    "- `.spec/greenfield/change-mainline-handoff.json`",
+    "- `.spec/greenfield/change-mainline-handoff.md`",
     "- `schemas/*.json`",
     "- `.spec/greenfield/source-documents.yaml`",
     "- `.spec/baselines/current.yaml`",
@@ -554,6 +581,14 @@ function renderInitializationSummary(
     `- Test focus: ${aiImplementHandoff.testIds.map((testId) => `\`${testId}\``).join(", ") || "none"}`,
     `- Blocking review decisions: ${aiImplementHandoff.blockingReviewDecisionIds.length}`,
     "",
+    "## Change Mainline Handoff",
+    "",
+    "- Machine handoff: `.spec/greenfield/change-mainline-handoff.json`",
+    "- Human handoff: `.spec/greenfield/change-mainline-handoff.md`",
+    `- Status: \`${changeMainlineHandoff.status}\``,
+    `- First change: ${changeMainlineHandoff.change_intent ? `\`${changeMainlineHandoff.change_intent.summary}\`` : "blocked"}`,
+    `- Target slice: ${changeMainlineHandoff.first_slice ? `\`${changeMainlineHandoff.first_slice.slice_id}\`` : "not available"}`,
+    "",
     "## Spec Debt",
     "",
     "- Open debts: 0",
@@ -563,7 +598,11 @@ function renderInitializationSummary(
     "",
     "```bash",
     "jispec-cli verify --root . --policy .spec/policy.yaml",
-    "jispec-cli change \"V2: describe the next requirement change\" --root .",
+    ...(changeMainlineHandoff.change_intent
+      ? [
+          `jispec-cli change "${changeMainlineHandoff.change_intent.summary}" --root . --slice ${changeMainlineHandoff.change_intent.slice_id} --context ${changeMainlineHandoff.change_intent.context_id} --change-type add --mode prompt`,
+        ]
+      : ["# Review .spec/greenfield/review-pack/review-record.yaml before creating a change session."]),
     "```",
     "",
     "## Next Task",
@@ -605,6 +644,7 @@ function renderCurrentBaseline(
   verifyGateDraft: GreenfieldVerifyGateDraft,
   reviewPackDraft: GreenfieldReviewPackDraft,
   aiImplementHandoff: GreenfieldAiImplementHandoff,
+  changeMainlineHandoff: GreenfieldChangeMainlineHandoff,
 ): string {
   return dumpYaml({
     baseline_id: `${identity.id}-current`,
@@ -634,6 +674,15 @@ function renderCurrentBaseline(
       scenario_focus: aiImplementHandoff.scenarioIds,
       test_focus: aiImplementHandoff.testIds,
       blocking_review_decisions: aiImplementHandoff.blockingReviewDecisionIds,
+    },
+    change_mainline_handoff: {
+      path: ".spec/greenfield/change-mainline-handoff.json",
+      summary_path: ".spec/greenfield/change-mainline-handoff.md",
+      status: changeMainlineHandoff.status,
+      target_slice: changeMainlineHandoff.first_slice?.slice_id,
+      context_id: changeMainlineHandoff.first_slice?.context_id,
+      change_summary: changeMainlineHandoff.change_intent?.summary,
+      next_commands: changeMainlineHandoff.next_commands,
     },
     verify_policy: {
       path: ".spec/policy.yaml",
@@ -665,6 +714,8 @@ function renderCurrentBaseline(
       ".spec/greenfield/review-pack/open-decisions.md",
       ".spec/greenfield/review-pack/review-record.yaml",
       ".spec/greenfield/ai-implement-handoff.md",
+      ".spec/greenfield/change-mainline-handoff.json",
+      ".spec/greenfield/change-mainline-handoff.md",
       ".github/workflows/jispec-verify.yml",
       ...domainDraft.contexts.map((context) => `contexts/${context.id}/context.yaml`),
       ...apiContractDraft.contextContracts.map((contextContract) => `contexts/${contextContract.contextId}/design/contracts.yaml`),

@@ -84,6 +84,7 @@ node --import tsx ./scripts/check-jispec.ts --root <sample-workspace>
 - `.spec/facts/verify/sample-facts.json`
 - `.jispec-ci/verify-report.json`
 - `.jispec-ci/ci-summary.md`
+- `.jispec-ci/verify-summary.md`
 
 ## 你应该看到什么
 

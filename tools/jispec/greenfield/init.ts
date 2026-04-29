@@ -19,6 +19,7 @@ export interface GreenfieldInitResult {
   writtenFiles: string[];
   skippedFiles: string[];
   createdDirectories: string[];
+  changeMainlineHandoffPath?: string;
   nextTask: "greenfield-initialization-mvp-complete";
 }
 
@@ -48,6 +49,9 @@ export function runGreenfieldInit(options: GreenfieldInitOptions): GreenfieldIni
     writtenFiles: assetResult.writtenFiles,
     skippedFiles: assetResult.skippedFiles,
     createdDirectories: assetResult.createdDirectories,
+    changeMainlineHandoffPath: inputContract.status === "failed"
+      ? undefined
+      : ".spec/greenfield/change-mainline-handoff.json",
     nextTask: "greenfield-initialization-mvp-complete",
   };
 }
@@ -65,6 +69,7 @@ export function renderGreenfieldInitText(result: GreenfieldInitResult): string {
     `Input mode: ${result.inputContract.mode}`,
     `Input status: ${result.inputContract.status}`,
     `Force: ${result.force ? "yes" : "no"}`,
+    `Change handoff: ${result.changeMainlineHandoffPath ?? "not written"}`,
     `Next task: ${result.nextTask}`,
   ];
 

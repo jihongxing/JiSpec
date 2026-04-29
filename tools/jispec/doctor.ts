@@ -14,6 +14,7 @@ import { createManifest } from "./cache-manifest.js";
 import { createFactsContract } from "./facts/facts-contract";
 import { loadVerifyPolicy, policyFileExists } from "./policy/policy-loader";
 import { validatePolicyAgainstFactsContract } from "./policy/policy-schema";
+import { evaluateChangeExecuteDefaultReadiness } from "./change/orchestration-config";
 
 const EXPECTED_REGRESSION_SUITE_COUNT = 65;
 const EXPECTED_REGRESSION_TEST_COUNT = 209;
@@ -83,6 +84,7 @@ export class Doctor {
     checks.push(await this.checkFactsAndPolicySurface());
     checks.push(await this.checkCiVerifySurface());
     checks.push(await this.checkChangeImplementMainlineSurface());
+    checks.push(await this.checkExecuteDefaultMediationReadiness());
     checks.push(await this.checkV1RegressionCoverage());
 
     return this.buildReport("v1", checks);
@@ -873,6 +875,29 @@ export class Doctor {
     } catch (error: any) {
       return {
         name: "Change / Implement Mainline Surface",
+        status: "fail",
+        summary: "Check failed",
+        details: [error.message],
+      };
+    }
+  }
+
+  /**
+   * Check V1.3b: Execute-default mediation readiness
+   */
+  private async checkExecuteDefaultMediationReadiness(): Promise<DoctorCheckResult> {
+    try {
+      const readiness = evaluateChangeExecuteDefaultReadiness(this.root);
+      const status: "pass" | "fail" = readiness.warnings.length === 0 ? "pass" : "fail";
+      return {
+        name: "Execute-Default Mediation Readiness",
+        status,
+        summary: readiness.readyForExecuteDefault ? "Execute default ready" : "Prompt default active",
+        details: readiness.details,
+      };
+    } catch (error: any) {
+      return {
+        name: "Execute-Default Mediation Readiness",
         status: "fail",
         summary: "Check failed",
         details: [error.message],

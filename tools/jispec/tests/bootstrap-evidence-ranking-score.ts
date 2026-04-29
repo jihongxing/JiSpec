@@ -73,6 +73,25 @@ function main(): void {
         stubScore.reasons.includes("generated or stub-like asset"),
       error: `Expected proto to outrank vendor/stub assets, got proto=${JSON.stringify(protoScore)}, vendor=${JSON.stringify(vendorManifestScore)}, stub=${JSON.stringify(stubScore)}.`,
     });
+
+    const governanceDoc = ranked.evidence.find((entry) => entry.path === "docs/governance/README.md");
+    const protoSchema = ranked.evidence.find((entry) => entry.path === "api/proto/control-plane.proto");
+    const explicitEndpoint = ranked.evidence.find((entry) => entry.path === "/orders");
+    const entrypoint = ranked.evidence.find((entry) => entry.path === "cmd/server/main.go");
+    const weakCandidate = ranked.evidence.find((entry) => entry.path === "src/controllers/unknown-controller.ts");
+
+    results.push({
+      name: "boundary-first ranking labels strong surfaces and keeps weak candidates behind them",
+      passed:
+        governanceDoc?.metadata?.boundarySignal === "governance_document" &&
+        protoSchema?.metadata?.boundarySignal === "schema_truth_source" &&
+        explicitEndpoint?.metadata?.boundarySignal === "explicit_endpoint" &&
+        entrypoint?.metadata?.boundarySignal === "service_entrypoint" &&
+        weakCandidate?.metadata?.boundarySignal === "weak_candidate" &&
+        rankedPaths.indexOf("/orders") < rankedPaths.indexOf("src/controllers/unknown-controller.ts") &&
+        rankedPaths.indexOf("api/proto/control-plane.proto") < rankedPaths.indexOf("src/controllers/unknown-controller.ts"),
+      error: `Expected boundarySignal metadata and weak-candidate ordering, got ${JSON.stringify(ranked.evidence)}.`,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({
@@ -137,6 +156,16 @@ function seedRepository(root: string): void {
 
   fs.mkdirSync(path.join(root, "cmd", "server"), { recursive: true });
   fs.writeFileSync(path.join(root, "cmd", "server", "main.go"), "package main\nfunc main() {}\n", "utf-8");
+
+  fs.mkdirSync(path.join(root, "src", "routes"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "src", "routes", "orders.ts"),
+    'const app = { post: () => undefined };\napp.post("/orders", () => "created");\n',
+    "utf-8",
+  );
+
+  fs.mkdirSync(path.join(root, "src", "controllers"), { recursive: true });
+  fs.writeFileSync(path.join(root, "src", "controllers", "unknown-controller.ts"), "export class UnknownController {}\n", "utf-8");
 
   fs.mkdirSync(path.join(root, "sdk"), { recursive: true });
   fs.writeFileSync(path.join(root, "sdk", "client.ts"), "export class Client {}\n", "utf-8");

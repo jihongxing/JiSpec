@@ -6,6 +6,7 @@ import type { VerifyIssue, VerifyRunResult } from "./verdict";
 
 export interface VerifyWaiver {
   id: string;
+  status?: "active" | "revoked";
   ruleId?: string;
   issueCode?: string;
   issuePath?: string;
@@ -14,6 +15,9 @@ export interface VerifyWaiver {
   reason: string;
   createdAt: string;
   expiresAt?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+  revokeReason?: string;
 }
 
 export interface WaiverCreateOptions {
@@ -31,11 +35,34 @@ export interface WaiverCreateResult {
   filePath: string;
 }
 
+export interface WaiverRevokeOptions {
+  revokedBy: string;
+  reason: string;
+}
+
+export interface WaiverRevokeResult {
+  waiver: VerifyWaiver;
+  filePath: string;
+}
+
 export interface WaiverApplyResult {
   totalIssues: number;
   waivedIssues: number;
   matchedWaiverIds: string[];
+  unmatchedActiveWaiverIds: string[];
   result: VerifyRunResult;
+}
+
+export interface WaiverLifecycleSummary {
+  total: number;
+  active: number;
+  expired: number;
+  revoked: number;
+  invalid: number;
+  activeIds: string[];
+  expiredIds: string[];
+  revokedIds: string[];
+  invalidIds: string[];
 }
 
 const WAIVER_DIR = ".spec/waivers";
@@ -54,6 +81,7 @@ export function createWaiver(root: string, options: WaiverCreateOptions): Waiver
   const id = generateWaiverId();
   const waiver: VerifyWaiver = {
     id,
+    status: "active",
     ruleId: options.ruleId,
     issueCode: options.code,
     issuePath: options.path,
@@ -68,6 +96,31 @@ export function createWaiver(root: string, options: WaiverCreateOptions): Waiver
   fs.writeFileSync(filePath, `${JSON.stringify(waiver, null, 2)}\n`, "utf-8");
 
   return { waiver, filePath };
+}
+
+export function revokeWaiver(root: string, waiverId: string, options: WaiverRevokeOptions): WaiverRevokeResult {
+  validateWaiverRevokeOptions(options);
+  const filePath = path.join(root, WAIVER_DIR, `${waiverId}.json`);
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Waiver not found: ${waiverId}`);
+  }
+
+  const waiver = JSON.parse(fs.readFileSync(filePath, "utf-8")) as VerifyWaiver;
+  if (waiver.status === "revoked") {
+    throw new Error(`Waiver is already revoked: ${waiverId}`);
+  }
+
+  const revoked: VerifyWaiver = {
+    ...waiver,
+    status: "revoked",
+    revokedAt: new Date().toISOString(),
+    revokedBy: options.revokedBy,
+    revokeReason: options.reason,
+  };
+
+  fs.writeFileSync(filePath, `${JSON.stringify(revoked, null, 2)}\n`, "utf-8");
+  return { waiver: revoked, filePath };
 }
 
 /**
@@ -103,7 +156,39 @@ export function loadActiveWaivers(root: string, now?: Date): VerifyWaiver[] {
   const allWaivers = listWaivers(root);
   const currentTime = now ?? new Date();
 
-  return allWaivers.filter((waiver) => !isWaiverExpired(waiver, currentTime));
+  return allWaivers.filter((waiver) => isWaiverActive(waiver, currentTime));
+}
+
+export function summarizeWaiverLifecycle(root: string, now?: Date): WaiverLifecycleSummary {
+  const currentTime = now ?? new Date();
+  const activeIds: string[] = [];
+  const expiredIds: string[] = [];
+  const revokedIds: string[] = [];
+  const invalidIds: string[] = [];
+
+  for (const waiver of listWaivers(root)) {
+    if (!isWaiverShapeValid(waiver)) {
+      invalidIds.push(waiver.id ?? "unknown");
+    } else if (isWaiverRevoked(waiver)) {
+      revokedIds.push(waiver.id);
+    } else if (isWaiverExpired(waiver, currentTime)) {
+      expiredIds.push(waiver.id);
+    } else {
+      activeIds.push(waiver.id);
+    }
+  }
+
+  return {
+    total: activeIds.length + expiredIds.length + revokedIds.length + invalidIds.length,
+    active: activeIds.length,
+    expired: expiredIds.length,
+    revoked: revokedIds.length,
+    invalid: invalidIds.length,
+    activeIds: stableSort(activeIds),
+    expiredIds: stableSort(expiredIds),
+    revokedIds: stableSort(revokedIds),
+    invalidIds: stableSort(invalidIds),
+  };
 }
 
 /**
@@ -120,6 +205,10 @@ export function isWaiverExpired(waiver: VerifyWaiver, now?: Date): boolean {
   return currentTime > expiresAt;
 }
 
+export function isWaiverRevoked(waiver: VerifyWaiver): boolean {
+  return waiver.status === "revoked";
+}
+
 /**
  * Apply waivers to verify result.
  * Waived issues are downgraded to advisory severity.
@@ -131,6 +220,7 @@ export function applyWaivers(
   const waivedIssues: VerifyIssue[] = [];
   const remainingIssues: VerifyIssue[] = [];
   const matchedWaiverIds = new Set<string>();
+  const activeWaiverIds = new Set(waivers.map((waiver) => waiver.id));
 
   for (const issue of result.issues) {
     const matchingWaiver = findMatchingWaiver(issue, waivers);
@@ -145,6 +235,8 @@ export function applyWaivers(
           waiver_id: matchingWaiver.id,
           waiver_owner: matchingWaiver.owner,
           waiver_reason: matchingWaiver.reason,
+          waiver_expires_at: matchingWaiver.expiresAt,
+          waiver_matcher: describeWaiverMatcher(matchingWaiver),
           original_severity: issue.severity,
         }),
       });
@@ -152,6 +244,9 @@ export function applyWaivers(
       remainingIssues.push(issue);
     }
   }
+
+  const waiverIds = stableSort([...matchedWaiverIds]);
+  const unmatchedActiveWaiverIds = stableSort([...activeWaiverIds].filter((id) => !matchedWaiverIds.has(id)));
 
   const recomputed = createVerifyRunResult(
     result.root,
@@ -165,13 +260,15 @@ export function applyWaivers(
   return {
     totalIssues: result.issues.length,
     waivedIssues: waivedIssues.length,
-    matchedWaiverIds: [...matchedWaiverIds].sort((left, right) => left.localeCompare(right)),
+    matchedWaiverIds: waiverIds,
+    unmatchedActiveWaiverIds,
     result: {
       ...recomputed,
       metadata: {
         ...result.metadata,
         waiversApplied: matchedWaiverIds.size,
-        waiverIds: [...matchedWaiverIds].sort((left, right) => left.localeCompare(right)),
+        waiverIds,
+        unmatchedActiveWaiverIds,
       },
     },
   };
@@ -237,6 +334,47 @@ function validateWaiverCreateOptions(options: WaiverCreateOptions): void {
       throw new Error(`Waiver expiration is not a valid ISO timestamp: ${options.expiresAt}`);
     }
   }
+}
+
+function validateWaiverRevokeOptions(options: WaiverRevokeOptions): void {
+  if (!options.revokedBy || options.revokedBy.trim().length === 0) {
+    throw new Error("Waiver revoke actor is required.");
+  }
+
+  if (!options.reason || options.reason.trim().length === 0) {
+    throw new Error("Waiver revoke reason is required.");
+  }
+}
+
+function isWaiverActive(waiver: VerifyWaiver, now: Date): boolean {
+  return isWaiverShapeValid(waiver) && !isWaiverRevoked(waiver) && !isWaiverExpired(waiver, now);
+}
+
+function isWaiverShapeValid(waiver: VerifyWaiver): boolean {
+  if (!waiver.id || !waiver.owner || !waiver.reason || !waiver.createdAt) {
+    return false;
+  }
+  if (waiver.status !== undefined && waiver.status !== "active" && waiver.status !== "revoked") {
+    return false;
+  }
+  if (waiver.expiresAt && Number.isNaN(new Date(waiver.expiresAt).getTime())) {
+    return false;
+  }
+  return Boolean(waiver.issueCode || waiver.issueFingerprint || waiver.ruleId);
+}
+
+function describeWaiverMatcher(waiver: VerifyWaiver): "fingerprint" | "code_path" | "rule_id" {
+  if (waiver.issueFingerprint) {
+    return "fingerprint";
+  }
+  if (waiver.issueCode) {
+    return "code_path";
+  }
+  return "rule_id";
+}
+
+function stableSort(values: string[]): string[] {
+  return [...values].sort((left, right) => left.localeCompare(right));
 }
 
 function mergeIssueDetails(details: unknown, annotation: Record<string, unknown>): unknown {

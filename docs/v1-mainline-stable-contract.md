@@ -41,6 +41,7 @@
 ```bash
 npm run jispec-cli -- bootstrap init-project
 npm run jispec-cli -- bootstrap discover
+npm run jispec-cli -- bootstrap discover --include-noise
 npm run jispec-cli -- bootstrap discover --init-project
 npm run jispec-cli -- bootstrap draft
 npm run jispec-cli -- adopt --interactive
@@ -54,6 +55,8 @@ npm run jispec-cli -- change "Add order refund validation" --mode prompt
 npm run jispec-cli -- change "Add order refund validation" --mode execute
 npm run jispec-cli -- implement
 npm run jispec-cli -- implement --fast
+npm run jispec-cli -- release snapshot --version v1
+npm run jispec-cli -- release compare --from v1 --to current
 npm run jispec-cli -- doctor v1
 ```
 
@@ -63,16 +66,21 @@ npm run jispec-cli -- doctor v1
 | --- | --- |
 | `bootstrap init-project` | 显式创建最小 `jiproject/project.yaml`，除非 `--force` 否则不覆盖已有文件 |
 | `bootstrap discover` | 扫描仓库并写出 bootstrap evidence graph、full inventory、adoption-ranked evidence 和 readable summary |
+| `bootstrap discover --include-noise` | 显式 opt in 到 vendored、generated、cache、build、audit 和 tool-mirror 路径扫描，用于 forensic/exhaustive takeover 调查；默认主线不使用 |
 | `bootstrap draft` | 基于 ranked bootstrap evidence 生成首批 draft bundle 和 session manifest；可选 BYOK provider 只能做语义重锚 |
-| `adopt --interactive` | 对 draft 做 accept / reject / edit / skip_as_spec_debt 决策，并写入 takeover report 与 takeover brief |
+| `adopt --interactive` | 对 draft 做 accept / reject / edit / skip_as_spec_debt 决策，并写入 takeover report、takeover brief 与 adopt summary |
 | `policy migrate` | 生成或规范化 `.spec/policy.yaml` |
 | `verify` | 运行确定性 gate，输出四态 verdict |
 | `verify --fast` | 运行本地 fast-lane precheck，必要时可自动提升回 strict 语义 |
 | `ci:verify` | 运行 CI 包装层，写出 `.jispec-ci` 报告产物 |
 | `change --mode prompt` | 只记录变更意图、lane 和 next commands，不自动继续执行 |
 | `change --mode execute` | 尝试继续串联到 `implement -> verify`，但 strict lane 遇到未处理 bootstrap draft 时会停在 adopt 边界 |
-| `implement` | 执行 strict lane 的本地实现循环，并做 post-implement verify |
-| `implement --fast` | 执行 fast lane 的本地实现循环，并在 post-verify 中保留自动提升能力 |
+| `change` + `jiproject/project.yaml: change.default_mode=execute` | 在未显式传入 `--mode` 时默认进入 execute mediation；显式 CLI mode 优先 |
+| `implement` | 执行 strict lane 的 implementation mediation，并做 post-implement verify |
+| `implement --fast` | 执行 fast lane 的 implementation mediation，并在 post-verify 中保留自动提升能力 |
+| `implement --external-patch <path>` | 接入外部 patch，先做 scope check，再 apply / test / verify |
+| `release snapshot --version <version>` | 冻结当前 baseline，并写出 contract graph、static collector、policy snapshot 和可读摘要 |
+| `release compare --from <ref> --to <ref>` | 比较两个 baseline/ref，并写出机器可读 compare report 与可读 drift summary |
 | `doctor v1` | 只回答 V1 主线 readiness，不让 deferred surfaces 拖红 |
 
 ## 3. 退出码契约
@@ -90,6 +98,7 @@ npm run jispec-cli -- doctor v1
 | --- | --- | --- |
 | `bootstrap init-project` | project scaffold 已创建、已存在，或在 `--force` 下刷新成功 | scaffold 写入失败、调用参数无效，或未使用 `--force` 时试图覆盖已有文件 |
 | `bootstrap discover` | discover 成功完成 | discover 运行失败 |
+| `bootstrap discover --include-noise` | discover 成功完成，并且跳过默认噪声排除策略 | discover 运行失败 |
 | `bootstrap draft` | draft 成功完成 | draft 运行失败 |
 | `adopt --interactive` | adopt 成功完成并提交或正常结束 | adopt 运行失败、调用参数无效、交互输入不完整 |
 | `policy migrate` | policy 文件生成或规范化成功 | policy migrate 失败 |
@@ -98,13 +107,14 @@ npm run jispec-cli -- doctor v1
 | `ci:verify` | verify 结果不 blocking，并成功写出 CI artifacts | verify 为 `FAIL_BLOCKING`，或 wrapper 运行失败 |
 | `change --mode prompt` | change session 已记录，命令级规划成功 | change 命令执行失败 |
 | `change --mode execute` | 串联成功，或命令按设计停在 `awaiting_adopt` 边界 | downstream implement/tests/post-verify 失败，或 orchestration 运行异常 |
-| `implement` | tests 通过，且 post-implement verify 不 blocking | tests 失败、post-implement verify 为 `FAIL_BLOCKING`，或命令运行异常 |
+| `implement` | outcome 为 `preflight_passed` 或 `patch_verified`，且 post-implement verify 不 blocking | outcome 为 `external_patch_received`、`patch_rejected_out_of_scope`、`budget_exhausted`、`stall_detected`、`verify_blocked`，或命令运行异常 |
 | `implement --fast` | 同 `implement` | 同 `implement` |
 | `doctor v1` | V1 readiness 为 ready | V1 readiness 不 ready，或 doctor 运行失败 |
 
 额外约定：
 
 - `change --mode execute` 在 strict lane 遇到 open bootstrap draft 时，`execution.state = "awaiting_adopt"` 是设计内暂停，不算命令失败，退出码仍为 `0`。
+- `change.default_mode: execute` 只改变未显式传入 `--mode` 的默认编排入口，不表示 JiSpec 生成业务代码，也不绕过 adopt 边界。
 - `verify` 的 verdict 与退出码不是一一映射的多值关系；当前只有 `FAIL_BLOCKING` 会把退出码抬到 `1`。
 
 ## 4. 关键落盘文件
@@ -117,7 +127,8 @@ npm run jispec-cli -- doctor v1
 | `.spec/facts/bootstrap/evidence-graph.json` | `bootstrap discover` 后 | discover 的结构化 evidence graph 主产物，包含 routes/tests/schemas/documents/manifests/sourceFiles/excludedSummary |
 | `.spec/facts/bootstrap/full-inventory.json` | `bootstrap discover` 后 | 非排除资产的完整机器底账，用于审计扫描范围，不作为默认 draft 主上下文 |
 | `.spec/facts/bootstrap/adoption-ranked-evidence.json` | `bootstrap discover` 后 | 高信号接管证据包；默认供 draft、takeover brief 和人工 review 优先使用 |
-| `.spec/facts/bootstrap/evidence-summary.txt` | `bootstrap discover` 后 | discover 的可读摘要，包含 top ranked evidence 与 excluded noise 摘要 |
+| `.spec/facts/bootstrap/bootstrap-summary.md` | `bootstrap discover` 后 | 推荐的人类可读 discover 摘要，包含 top ranked evidence 与 excluded noise 摘要 |
+| `.spec/facts/bootstrap/evidence-summary.txt` | `bootstrap discover` 后 | 兼容保留的 discover 可读摘要；新文档和人工入口应优先引用 `bootstrap-summary.md` |
 | `.spec/sessions/<session-id>/manifest.json` | `bootstrap draft` 后 | draft / adopt session 的主状态文件，包含 providerName、generationMode 和 qualitySummary |
 | `.spec/sessions/<session-id>/drafts/domain.yaml` | `bootstrap draft` 后 | domain draft |
 | `.spec/sessions/<session-id>/drafts/api_spec.json` | `bootstrap draft` 后 | api draft |
@@ -128,10 +139,13 @@ npm run jispec-cli -- doctor v1
 | `.spec/spec-debt/<session-id>/<artifact>.json` | adopt 选择 `skip_as_spec_debt` 后 | 暂缓接管但已登记的历史契约债务 |
 | `.spec/handoffs/bootstrap-takeover.json` | adopt 产生 committed takeover 后 | takeover 汇总报告，供 verify / implement / demo 读取 |
 | `.spec/handoffs/takeover-brief.md` | adopt 产生 committed takeover 后 | 人类可读 takeover decision packet，列出边界候选、已接管契约、spec debt、强证据、排除噪声和下一步动作 |
+| `.spec/handoffs/adopt-summary.md` | adopt 产生 committed takeover 后 | 人类可读 adopt 决策摘要，列出 accepted、edited、rejected、deferred spec debt、人工修改点和下一步 verify 建议 |
+| `.spec/greenfield/change-mainline-handoff.json` | Greenfield init 后 | 初始 slice queue 到 `change -> implement -> verify` 主线的机器可读 handoff，包含 first slice、review gate、change intent 和 next commands |
+| `.spec/greenfield/change-mainline-handoff.md` | Greenfield init 后 | 人类可读 Greenfield change handoff，解释首个 slice、review gate 和下一步 change 命令 |
 
 ### 4.2 Bootstrap 产物语义
 
-`evidence-graph.json`、`full-inventory.json`、`adoption-ranked-evidence.json` 与 `bootstrap-takeover.json` 的路径和粗粒度语义属于 V1 稳定契约。它们可以新增字段，但不应静默改变已有字段的含义。
+`evidence-graph.json`、`full-inventory.json`、`adoption-ranked-evidence.json`、`bootstrap-summary.md`、`evidence-summary.txt` 与 `bootstrap-takeover.json` 的路径和粗粒度语义属于 V1 稳定契约。它们可以新增字段，但不应静默改变已有字段的含义。
 
 `full-inventory.json` 稳定包含：
 
@@ -165,16 +179,34 @@ npm run jispec-cli -- doctor v1
 | `sourceFiles` | `string[]` | 支撑该证据的文件 |
 | `metadata` | `object` 可选 | 可扩展归一化元数据 |
 
-`takeover-brief.md` 是人类决策包，不是机器 API。机器消费者应读取 `.spec/handoffs/bootstrap-takeover.json`。
+P1-T2 之后，`metadata.boundarySignal` 可用于解释 adoption ranking 的边界优先语义。当前已知值包括：
+
+- `governance_document`
+- `protocol_document`
+- `schema_truth_source`
+- `explicit_endpoint`
+- `service_entrypoint`
+- `module_surface_inference`
+- `weak_candidate`
+- `runtime_manifest`
+- `supporting_evidence`
+
+这些值用于帮助 draft、takeover brief 和人工 review 区分强边界证据与弱候选；它们是 metadata 扩展，不改变 V1 既有字段含义。
+
+`takeover-brief.md` 和 `adopt-summary.md` 是人类决策包，不是机器 API。机器消费者应读取 `.spec/handoffs/bootstrap-takeover.json`。
+
+Greenfield 初始化后的 `.spec/greenfield/change-mainline-handoff.json` 是机器 API；它只生成可追溯的 change intent 和执行中介入口，不表示 JiSpec 自动实现业务代码。首个 slice 进入 `change` 后，dirty graph / verify focus 会成为后续 implementation mediation 的约束输入。
 
 ### 4.3 Policy、Verify 与 CI
 
 | 路径 | 何时出现 | 稳定语义 |
 | --- | --- | --- |
 | `.spec/policy.yaml` | `policy migrate` 后 | verify 默认读取的 policy 文件 |
+| `.spec/handoffs/verify-summary.md` | `verify` 后 | 本地 verify 的人类可读摘要，解释 verdict、是否可合并、blocking/advisory/debt 和下一步动作 |
 | `<facts-out 指定路径>` | `verify --facts-out <path>` 后 | 当前 canonical facts snapshot |
 | `.jispec-ci/verify-report.json` | `ci:verify` 后 | CI 机器可读报告主产物 |
 | `.jispec-ci/ci-summary.md` | `ci:verify` 后 | CI 可读摘要主产物 |
+| `.jispec-ci/verify-summary.md` | `ci:verify` 后 | CI verify 的人类可读决策摘要，与本地 verify summary 使用同一语言 |
 
 ### 4.4 Change 与 Implement
 
@@ -182,11 +214,47 @@ npm run jispec-cli -- doctor v1
 | --- | --- | --- |
 | `.jispec/change-session.json` | `change` 后 | 当前 active change session |
 | `.jispec/change-sessions/<change-session-id>.json` | successful post-implement verify 后 | 已归档的 change session |
-| `.jispec/handoff/<change-session-id>.json` | implement 出现 `budget_exhausted` 或 `stall_detected` 时 | implement handoff packet |
+| `.jispec/handoff/<change-session-id>.json` | implement 出现 `budget_exhausted`、`stall_detected` 或未验证成功的 `external_patch_received` 时 | implementation mediation handoff packet |
+| `.jispec/implement/<change-session-id>/patch-mediation.json` | `implement --external-patch <path>` 后 | 外部 patch 的 scope、apply、test 和 verify 审计记录 |
+
+### 4.5 Release / Baseline
+
+| 路径 | 何时出现 | 稳定语义 |
+| --- | --- | --- |
+| `.spec/baselines/releases/<version>.yaml` | `release snapshot --version <version>` 后 | 冻结的 release baseline，包含当前 baseline、contract graph 引用、static collector manifest 引用和 policy snapshot |
+| `.spec/releases/<version>/release-summary.md` | `release snapshot --version <version>` 后 | 人类可读 release baseline 摘要，包含 counts、spec debt、contract graph、static collector 和 policy 概览 |
+| `.spec/releases/<version>/contract-graph.json` | release snapshot 能构建 contract graph 时 | release 时刻的 canonical deterministic contract graph |
+| `.spec/releases/<version>/contract-graph.lock` | release snapshot 能构建 contract graph 时 | Merkle Contract DAG lock，用于 release compare 判定 contract graph drift |
+| `.spec/releases/<version>/static-collector-manifest.json` | `release snapshot --version <version>` 后 | release 时刻的 deterministic static collector manifest |
+| `.spec/releases/compare/<from>-to-<to>/compare-report.json` | `release compare --from <ref> --to <ref>` 后 | 机器可读 compare artifact，包含 `driftSummary`，可供未来 Console 只读消费 |
+| `.spec/releases/compare/<from>-to-<to>/compare-report.md` | `release compare --from <ref> --to <ref>` 后 | 人类可读 compare report，包含短 drift summary 和详细 graph/baseline diff |
+
+`driftSummary` 稳定区分三类漂移：
+
+| 类别 | 语义 |
+| --- | --- |
+| `contract_graph_drift` | contract graph / Merkle DAG 层面的节点、边、闭包、覆盖关系或 root hash 变化 |
+| `static_collector_drift` | deterministic static collector 看到的实现事实、未解析 surface 或 manifest 内容变化 |
+| `policy_drift` | verify policy 的路径、内容 hash、facts contract 或 rule id 集合变化 |
+
+这些 release/baseline JSON 产物可以新增字段，但 Console 和 CI 不应解析 Markdown；Markdown 只作为人类 companion artifact。
+
+### 4.6 Console Read Model Contract
+
+P4-T1 固定了未来 JiSpec Console 可以只读读取的本地产物集合，详见 [docs/console-read-model-contract.md](/D:/codeSpace/JiSpec/docs/console-read-model-contract.md)。代码级契约位于 `tools/jispec/console/read-model-contract.ts`。
+
+稳定边界：
+
+- Console read model 只读取本地 JiSpec artifacts，不替代 `verify`、`ci:verify`、policy evaluation 或 release compare。
+- Console read model 不要求上传源码；缺失 artifact 应显示为 `not available yet`，而不是扫描源码自行推断。
+- JSON、YAML 和 lock 文件可作为机器输入；Markdown 只作为 human companion artifact 展示，不作为自动化解析契约。
+- 当前承诺的核心读取面包括 verify report、verify summary、CI summary、policy、waiver records、verify baseline、Greenfield current baseline、spec debt ledger、release baseline 和 release compare report。
 
 ## 5. Verify JSON 契约
 
 `npm run jispec-cli -- verify --json` 是当前 V1 主线唯一明确对外承诺的稳定 stdout 机器可读命令面。
+
+Waiver 只是一种可审计 mitigation，不是永久忽略规则。匹配到的 waiver 会把对应 issue 降级为 advisory，并在 issue details 中记录 `matched_by = "waiver"`、`waiver_id`、`waiver_owner`、`waiver_reason` 和 `waiver_matcher`；未匹配的新 blocking issue 仍保持 blocking。Verify metadata 中的 `waiverLifecycle` 汇总 active、expired、revoked、invalid waiver，`unmatchedActiveWaiverIds` 暴露当前没有匹配任何 issue 的 active waiver。
 
 ### 5.1 顶层字段
 
@@ -244,12 +312,13 @@ npm run jispec-cli -- doctor v1
 
 ## 6. CI Artifacts 契约
 
-`npm run ci:verify` 当前稳定保证的本地产物只有两类：
+`npm run ci:verify` 当前稳定保证的本地产物包括：
 
 | 路径 | 类型 | 语义 |
 | --- | --- | --- |
 | `.jispec-ci/verify-report.json` | JSON | CI 机器可读验证报告 |
 | `.jispec-ci/ci-summary.md` | Markdown | CI 可读摘要 |
+| `.jispec-ci/verify-summary.md` | Markdown | 与本地 verify 对齐的人类决策摘要 |
 
 `verify-report.json` 当前稳定包含：
 
@@ -272,7 +341,9 @@ Provider-specific 附加产物属于“有环境时可用”的补充契约：
 | GitHub Actions | `.jispec-ci/github-pr-comment.md` |
 | GitLab CI | `.jispec-ci/gitlab-mr-note.md` |
 
-这些 provider-specific 文件是受支持能力，但不替代 `.jispec-ci/verify-report.json` 与 `.jispec-ci/ci-summary.md` 这两个主产物。
+这些 provider-specific 文件是受支持能力，但不替代 `.jispec-ci/verify-report.json`、`.jispec-ci/ci-summary.md` 与 `.jispec-ci/verify-summary.md` 这些主产物。
+
+`verify-summary.md` 是人类 companion artifact，不是机器 API。机器消费者仍应读取 `verify --json` stdout 或 `.jispec-ci/verify-report.json`。
 
 ## 7. Policy 默认路径契约
 
@@ -285,6 +356,38 @@ policy 默认路径固定为：
 - `verify` 在该文件存在时会自动加载它。
 - `policy migrate` 默认写到该路径。
 - `verify --policy <path>` 可以覆盖默认路径，但这不改变默认契约。
+
+当前 policy YAML 的稳定最小面包括：
+
+```yaml
+version: 1
+requires:
+  facts_contract: "1.0"
+team:
+  profile: small_team
+  owner: unassigned
+  reviewers: []
+rules: []
+```
+
+`team.profile` 当前支持 `solo`、`small_team`、`regulated`。这个字段只描述团队治理姿态，不改变 verify 的确定性执行方式。
+
+Policy migration 会把已知 deprecated key 迁到当前结构：
+
+| Deprecated key | Replacement |
+| --- | --- |
+| `facts_contract` | `requires.facts_contract` |
+| `requires.factsContract` | `requires.facts_contract` |
+| `team_profile` | `team.profile` |
+
+稳定错误行为：
+
+| 场景 | 行为 |
+| --- | --- |
+| unknown fact | `verify` 产生 nonblocking `POLICY_UNKNOWN_FACT` |
+| unknown policy key | `verify` 产生 nonblocking `POLICY_UNKNOWN_KEY` |
+| deprecated policy key | `verify` 产生 nonblocking `POLICY_DEPRECATED_KEY`，并在 details 中给出 replacement |
+| blocking rule 使用 unstable fact | `verify` 产生 nonblocking `POLICY_BLOCKING_RULE_USES_UNSTABLE_FACT` |
 
 ## 8. Change / Implement 串联语义
 
@@ -299,6 +402,7 @@ policy 默认路径固定为：
 | --- | --- |
 | `change --mode prompt` | 只记录 change session、lane 和 next commands，不自动执行 implement |
 | `change --mode execute` | 尝试自动进入 `implement -> verify`，但在 strict lane 存在 open bootstrap draft 时必须停在 adopt 边界 |
+| `change.default_mode: execute` | 项目级默认值切换预备；doctor v1 会报告 execute-default mediation readiness |
 
 当前仓库的目标终态仍然是“以执行式串联为最终产品形态”，但在默认值切到 `execute` 之前，`prompt` 与 `execute` 会继续同时保留。
 
@@ -320,12 +424,12 @@ Bootstrap takeover hardening 区域必须持续覆盖：
 | Task 2 Separate Full Inventory From Adoption Evidence | `bootstrap-adoption-ranked-evidence.ts` |
 | Task 3 Business-Semantic Evidence Scoring | `bootstrap-evidence-ranking-score.ts` |
 | Task 4 Domain Re-Anchoring | `bootstrap-draft-domain-reanchoring.ts` |
-| Task 5 Feature Scenario Synthesis | `bootstrap-draft-feature-scenarios.ts` |
+| Task 5 Feature Scenario Synthesis / P1-T3 Feature Confidence Gate | `bootstrap-draft-feature-scenarios.ts` and `bootstrap-feature-confidence-gate.ts` |
 | Task 6 API Surface Classification | `bootstrap-api-surface-classification.ts` |
-| Task 7 Takeover Brief Decision Packet | `bootstrap-takeover-brief.ts` and `bootstrap-adopt-handoff.ts` |
+| Task 7 Takeover Brief Decision Packet / P1-T4 Adopt Summary | `bootstrap-takeover-brief.ts` and `bootstrap-adopt-handoff.ts` |
 | Task 8 Explicit Project Scaffold | `bootstrap-init-project.ts` |
 | Task 9 BYOK Semantic Re-Anchoring | `bootstrap-draft-mock.ts` |
-| Task 10 Documentation And Regression Matrix | `regression-runner.ts` area summary and this stable-contract section |
+| Task 10 Documentation And Regression Matrix / P1-T6 Bootstrap Summary Naming | `bootstrap-discover-smoke.ts`, `bootstrap-adoption-ranked-evidence.ts`, `regression-runner.ts` area summary and this stable-contract section |
 
 ## 10. AI / LLM 边界规则
 
@@ -364,6 +468,18 @@ LLM 可以辅助 draft、explanation 和 repair，但不能成为 blocking gate 
 - distributed / collaboration / presence 已进入 V1 收口
 - LLM blocking orchestration 已经成为默认 gate 路径
 
+### 11.1 Collaboration Surface Freeze
+
+P4-T2 固定了 collaboration / presence / distributed 的冻结边界，详见 [docs/collaboration-surface-freeze.md](/D:/codeSpace/JiSpec/docs/collaboration-surface-freeze.md)。代码级契约位于 `tools/jispec/runtime/deferred-surface-contract.ts`。
+
+稳定规则：
+
+- distributed execution、collaboration workspace 和 presence awareness 仍是 `deferred` surface。
+- 这些 surface 的回归测试只允许保留在 `runtime-extended` 区域，用于防止已有实验腐化。
+- `doctor runtime` 可以继续诊断这些 surface；`doctor v1` 不得让它们参与 V1 readiness。
+- 它们不得替代或覆盖 `verify`、`ci:verify`、policy evaluation、waiver lifecycle、release compare 或 implementation mediation。
+- 任何 future promotion 都必须显式更新冻结契约、稳定契约和主线验收标准。
+
 ## 12. 相关文档
 
 - 北极星：
@@ -372,5 +488,9 @@ LLM 可以辅助 draft、explanation 和 repair，但不能成为 blocking gate 
   [docs/v1-sample-repo.md](/D:/codeSpace/JiSpec/docs/v1-sample-repo.md)
 - Greenfield 输入契约：
   [docs/greenfield-input-contract.md](/D:/codeSpace/JiSpec/docs/greenfield-input-contract.md)
+- Console read model contract：
+  [docs/console-read-model-contract.md](/D:/codeSpace/JiSpec/docs/console-read-model-contract.md)
+- Collaboration surface freeze：
+  [docs/collaboration-surface-freeze.md](/D:/codeSpace/JiSpec/docs/collaboration-surface-freeze.md)
 - v0.1.0 发布说明：
   [docs/releases/v0.1.0.md](/D:/codeSpace/JiSpec/docs/releases/v0.1.0.md)

@@ -14,6 +14,7 @@ function main(): void {
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const graphPath = path.join(repoRoot, ".spec", "facts", "bootstrap", "evidence-graph.json");
   const summaryPath = path.join(repoRoot, ".spec", "facts", "bootstrap", "evidence-summary.txt");
+  const bootstrapSummaryPath = path.join(repoRoot, ".spec", "facts", "bootstrap", "bootstrap-summary.md");
   const results: TestResult[] = [];
 
   try {
@@ -21,8 +22,8 @@ function main(): void {
 
     results.push({
       name: "writes bootstrap evidence files",
-      passed: fs.existsSync(graphPath) && fs.existsSync(summaryPath),
-      error: fs.existsSync(graphPath) && fs.existsSync(summaryPath) ? undefined : "Expected bootstrap output files to exist.",
+      passed: fs.existsSync(graphPath) && fs.existsSync(summaryPath) && fs.existsSync(bootstrapSummaryPath),
+      error: fs.existsSync(graphPath) && fs.existsSync(summaryPath) && fs.existsSync(bootstrapSummaryPath) ? undefined : "Expected bootstrap output files to exist.",
     });
 
     const graph = JSON.parse(fs.readFileSync(graphPath, "utf-8")) as {
@@ -50,6 +51,16 @@ function main(): void {
         discoverResult.summary.testCount > 0 &&
         discoverResult.summary.sourceFileCount > 0,
       error: `Expected non-empty summary counts, got schemas=${discoverResult.summary.schemaCount}, tests=${discoverResult.summary.testCount}, sourceFiles=${discoverResult.summary.sourceFileCount}.`,
+    });
+
+    results.push({
+      name: "bootstrap summary md is the preferred human-readable companion path",
+      passed:
+        discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/bootstrap-summary.md")) &&
+        discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/evidence-summary.txt")) &&
+        fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("# Bootstrap Summary") &&
+        fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("Machine consumers should use `evidence-graph.json`"),
+      error: "Expected discover to write bootstrap-summary.md while preserving evidence-summary.txt compatibility.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

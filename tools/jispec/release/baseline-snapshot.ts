@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
@@ -40,6 +41,7 @@ export interface ReleaseSnapshotResult {
   baselineId?: string;
   projectId?: string;
   counts: BaselineCounts;
+  summary: ReleaseBaselineSummary;
 }
 
 export interface BaselineCounts {
@@ -68,12 +70,53 @@ export interface ReleaseCompareResult {
   identical: boolean;
   diffs: BaselineDiff[];
   graphDiff: MerkleContractDagDiff;
+  driftSummary: ReleaseDriftSummary;
 }
 
 export interface BaselineDiff {
   field: string;
   added: string[];
   removed: string[];
+}
+
+export type BaselineSurfaceStatus = "tracked" | "not_tracked";
+export type DriftStatus = "changed" | "unchanged" | "not_tracked";
+
+export interface ReleaseBaselineSummary {
+  schemaVersion: 1;
+  contractGraph: BaselineSurfaceSummary;
+  staticCollector: BaselineSurfaceSummary;
+  policy: BaselineSurfaceSummary;
+}
+
+export interface BaselineSurfaceSummary {
+  status: BaselineSurfaceStatus;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+export interface ReleaseDriftSummary {
+  schemaVersion: 1;
+  overallStatus: DriftStatus;
+  contractGraph: DriftSurfaceSummary;
+  staticCollector: DriftSurfaceSummary;
+  policy: DriftSurfaceSummary;
+}
+
+export interface DriftSurfaceSummary {
+  kind: "contract_graph_drift" | "static_collector_drift" | "policy_drift";
+  status: DriftStatus;
+  summary: string;
+  details: Record<string, unknown>;
+}
+
+interface PolicySnapshot {
+  policy_kind: "verify-policy";
+  path: string;
+  available: boolean;
+  content_hash?: string;
+  facts_contract?: string;
+  rule_ids: string[];
 }
 
 type BaselineDocument = Record<string, unknown>;
@@ -86,6 +129,8 @@ const TRACKED_ARRAY_FIELDS = [
   "slices",
   "assets",
 ] as const;
+
+const DEFAULT_POLICY_PATH = ".spec/policy.yaml";
 
 export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseSnapshotResult {
   const root = path.resolve(options.root);
@@ -102,6 +147,7 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
   if (exists && options.force !== true) {
     const existingBaseline = readYamlObject(releaseBaselinePath);
     const existingGraph = readContractGraphRef(root, existingBaseline);
+    const existingStaticCollector = readStaticCollectorManifestRef(root, existingBaseline);
     return {
       root: normalizePath(root),
       version,
@@ -113,10 +159,11 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
       contractGraphPath: existingGraph.graphPath,
       contractGraphLockPath: existingGraph.lockPath,
       contractGraphRootHash: existingGraph.lock?.root_hash,
-      staticCollectorManifestPath: readStaticCollectorManifestRef(root, existingBaseline).manifestPath,
+      staticCollectorManifestPath: existingStaticCollector.manifestPath,
       baselineId: stringValue(currentBaseline.baseline_id),
       projectId: stringValue(currentBaseline.project_id),
       counts: countBaseline(currentBaseline),
+      summary: summarizeReleaseBaseline(existingBaseline),
     };
   }
 
@@ -164,12 +211,14 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
       fact_count: staticCollectorManifest.facts.length,
       unresolved_surface_count: staticCollectorManifest.unresolved_surfaces.length,
     },
+    policy_snapshot: snapshotPolicy(root, currentBaseline),
   };
+  const summary = summarizeReleaseBaseline(releaseBaseline);
 
   fs.mkdirSync(path.dirname(releaseBaselinePath), { recursive: true });
   fs.writeFileSync(releaseBaselinePath, dumpYaml(releaseBaseline), "utf-8");
   fs.mkdirSync(path.dirname(releaseSummaryPath), { recursive: true });
-  fs.writeFileSync(releaseSummaryPath, renderReleaseSummary(root, releaseBaseline), "utf-8");
+  fs.writeFileSync(releaseSummaryPath, renderReleaseSummary(root, releaseBaseline, summary), "utf-8");
 
   return {
     root: normalizePath(root),
@@ -186,6 +235,7 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
     baselineId: stringValue(currentBaseline.baseline_id),
     projectId: stringValue(currentBaseline.project_id),
     counts: countBaseline(currentBaseline),
+    summary,
   };
 }
 
@@ -204,6 +254,13 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     fromLock: fromGraph.lock,
     toLock: toGraph.lock,
   });
+  const driftSummary = summarizeReleaseDrift({
+    graphDiff,
+    fromStaticCollector: resolveComparableStaticCollector(root, options.from, fromBaseline),
+    toStaticCollector: resolveComparableStaticCollector(root, options.to, toBaseline),
+    fromPolicy: resolveComparablePolicy(root, options.from, fromBaseline),
+    toPolicy: resolveComparablePolicy(root, options.to, toBaseline),
+  });
   const compareReportDir = resolveCompareReportDir(root, options.from, options.to);
   const compareReportJsonPath = path.join(compareReportDir, "compare-report.json");
   const compareReportMarkdownPath = path.join(compareReportDir, "compare-report.md");
@@ -215,9 +272,13 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     toPath: normalizePath(toPath),
     compareReportJsonPath: normalizePath(compareReportJsonPath),
     compareReportMarkdownPath: normalizePath(compareReportMarkdownPath),
-    identical: diffs.every((diff) => diff.added.length === 0 && diff.removed.length === 0) && graphDiff.identical,
+    identical:
+      diffs.every((diff) => diff.added.length === 0 && diff.removed.length === 0) &&
+      graphDiff.identical &&
+      driftSummary.overallStatus !== "changed",
     diffs,
     graphDiff,
+    driftSummary,
   };
 
   fs.mkdirSync(compareReportDir, { recursive: true });
@@ -246,6 +307,11 @@ export function renderReleaseSnapshotText(result: ReleaseSnapshotResult): string
     ...(result.staticCollectorManifestPath
       ? [`Static collector manifest: ${result.staticCollectorManifestPath}`]
       : []),
+    "",
+    "Summary:",
+    `- Contract graph: ${result.summary.contractGraph.summary}`,
+    `- Static collector: ${result.summary.staticCollector.summary}`,
+    `- Policy: ${result.summary.policy.summary}`,
     "",
     "Counts:",
     `- requirements: ${result.counts.requirementIds}`,
@@ -286,6 +352,12 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   lines.push(`Added edges: ${result.graphDiff.addedEdges.length}`);
   lines.push(`Removed edges: ${result.graphDiff.removedEdges.length}`);
   lines.push(`Affected closure nodes: ${result.graphDiff.affectedClosureNodes.length}`);
+
+  lines.push("", "## Drift Summary");
+  lines.push(`Overall: ${result.driftSummary.overallStatus}`);
+  lines.push(`Contract graph drift: ${result.driftSummary.contractGraph.status} - ${result.driftSummary.contractGraph.summary}`);
+  lines.push(`Static collector drift: ${result.driftSummary.staticCollector.status} - ${result.driftSummary.staticCollector.summary}`);
+  lines.push(`Policy drift: ${result.driftSummary.policy.status} - ${result.driftSummary.policy.summary}`);
 
   if (result.graphDiff.changedNodeContent.length > 0) {
     lines.push("", "Changed node content:");
@@ -438,6 +510,83 @@ function readStaticCollectorManifestRef(
   };
 }
 
+function resolveComparableStaticCollector(
+  root: string,
+  ref: string,
+  baseline: BaselineDocument,
+): ComparableStaticCollector {
+  if (ref === "current") {
+    const manifest = collectStaticImplementationFacts(root);
+    return comparableStaticCollectorFromManifest(manifest, ".spec/evidence/static-collector-manifest.json");
+  }
+
+  const manifestRef = readStaticCollectorManifestRef(root, baseline, ref);
+  if (manifestRef.manifestPath) {
+    const manifest = readJsonObject(manifestRef.manifestPath);
+    if (manifest) {
+      return comparableStaticCollectorFromManifest(manifest, manifestRef.manifestPath);
+    }
+  }
+
+  const manifestRecord = isRecord(baseline.static_collector_manifest) ? baseline.static_collector_manifest : {};
+  return {
+    tracked: Object.keys(manifestRecord).length > 0,
+    path: stringValue(manifestRecord.manifest_path),
+    factCount: numberValue(manifestRecord.fact_count),
+    unresolvedSurfaceCount: numberValue(manifestRecord.unresolved_surface_count),
+    signature: stableHash({
+      manifest_kind: stringValue(manifestRecord.manifest_kind),
+      fact_count: numberValue(manifestRecord.fact_count),
+      unresolved_surface_count: numberValue(manifestRecord.unresolved_surface_count),
+    }),
+  };
+}
+
+function comparableStaticCollectorFromManifest(manifest: unknown, manifestPath: string): ComparableStaticCollector {
+  const record = isRecord(manifest) ? manifest : {};
+  const facts = arrayValue(record.facts);
+  const unresolvedSurfaces = arrayValue(record.unresolved_surfaces);
+  return {
+    tracked: true,
+    path: normalizePath(manifestPath),
+    factCount: facts.length,
+    unresolvedSurfaceCount: unresolvedSurfaces.length,
+    signature: stableHash({
+      schema_version: record.schema_version,
+      manifest_kind: record.manifest_kind,
+      collectors: record.collectors,
+      facts,
+      unresolved_surfaces: unresolvedSurfaces,
+      warnings: record.warnings,
+    }),
+  };
+}
+
+function resolveComparablePolicy(root: string, ref: string, baseline: BaselineDocument): ComparablePolicy {
+  if (ref === "current") {
+    return readPolicySnapshotFromDisk(root, policyPathFromBaseline(baseline));
+  }
+
+  const policySnapshot = isRecord(baseline.policy_snapshot) ? baseline.policy_snapshot : undefined;
+  if (policySnapshot) {
+    return {
+      tracked: Boolean(policySnapshot.available) || Boolean(policySnapshot.content_hash) || stringArray(policySnapshot.rule_ids).length > 0,
+      path: stringValue(policySnapshot.path),
+      contentHash: stringValue(policySnapshot.content_hash),
+      factsContract: stringValue(policySnapshot.facts_contract),
+      ruleIds: stringArray(policySnapshot.rule_ids),
+    };
+  }
+
+  const policyRecord = isRecord(baseline.verify_policy) ? baseline.verify_policy : {};
+  return {
+    tracked: Object.keys(policyRecord).length > 0,
+    path: stringValue(policyRecord.path),
+    factsContract: stringValue(policyRecord.facts_contract),
+    ruleIds: stringArray(policyRecord.rule_ids),
+  };
+}
+
 function readContractGraphRef(
   root: string,
   baseline: BaselineDocument,
@@ -470,6 +619,275 @@ function readContractGraphRef(
   };
 }
 
+interface ComparableStaticCollector {
+  tracked: boolean;
+  path?: string;
+  signature?: string;
+  factCount?: number;
+  unresolvedSurfaceCount?: number;
+}
+
+interface ComparablePolicy {
+  tracked: boolean;
+  path?: string;
+  contentHash?: string;
+  factsContract?: string;
+  ruleIds: string[];
+}
+
+function summarizeReleaseBaseline(baseline: BaselineDocument): ReleaseBaselineSummary {
+  const graphRecord = isRecord(baseline.contract_graph) ? baseline.contract_graph : undefined;
+  const staticRecord = isRecord(baseline.static_collector_manifest) ? baseline.static_collector_manifest : undefined;
+  const policyRecord = isRecord(baseline.policy_snapshot)
+    ? baseline.policy_snapshot
+    : isRecord(baseline.verify_policy)
+      ? baseline.verify_policy
+      : undefined;
+  const policyAvailable = policyRecord ? Boolean(policyRecord.available ?? true) : false;
+  const policyRuleIds = stringArray(policyRecord?.rule_ids);
+
+  return {
+    schemaVersion: 1,
+    contractGraph: graphRecord
+      ? {
+          status: "tracked",
+          summary: `tracked (${String(graphRecord.root_hash ?? "missing root hash")})`,
+          details: {
+            graph_kind: stringValue(graphRecord.graph_kind),
+            graph_path: stringValue(graphRecord.graph_path),
+            lock_path: stringValue(graphRecord.lock_path),
+            root_hash: stringValue(graphRecord.root_hash),
+            node_counts: isRecord(graphRecord.node_counts) ? graphRecord.node_counts : {},
+            edge_counts: isRecord(graphRecord.edge_counts) ? graphRecord.edge_counts : {},
+          },
+        }
+      : {
+          status: "not_tracked",
+          summary: "not tracked",
+          details: {},
+        },
+    staticCollector: staticRecord
+      ? {
+          status: "tracked",
+          summary: `tracked (${Number(staticRecord.fact_count ?? 0)} facts, ${Number(staticRecord.unresolved_surface_count ?? 0)} unresolved)`,
+          details: {
+            manifest_kind: stringValue(staticRecord.manifest_kind),
+            manifest_path: stringValue(staticRecord.manifest_path),
+            fact_count: numberValue(staticRecord.fact_count) ?? 0,
+            unresolved_surface_count: numberValue(staticRecord.unresolved_surface_count) ?? 0,
+          },
+        }
+      : {
+          status: "not_tracked",
+          summary: "not tracked",
+          details: {},
+        },
+    policy: policyRecord && policyAvailable
+      ? {
+          status: "tracked",
+          summary: `tracked (${policyRuleIds.length} rules, facts contract ${stringValue(policyRecord.facts_contract) ?? "unknown"})`,
+          details: {
+            path: stringValue(policyRecord.path),
+            facts_contract: stringValue(policyRecord.facts_contract),
+            rule_ids: policyRuleIds,
+            content_hash: stringValue(policyRecord.content_hash),
+          },
+        }
+      : {
+          status: "not_tracked",
+          summary: "not tracked",
+          details: policyRecord ? { path: stringValue(policyRecord.path), available: false } : {},
+        },
+  };
+}
+
+function summarizeReleaseDrift(input: {
+  graphDiff: MerkleContractDagDiff;
+  fromStaticCollector: ComparableStaticCollector;
+  toStaticCollector: ComparableStaticCollector;
+  fromPolicy: ComparablePolicy;
+  toPolicy: ComparablePolicy;
+}): ReleaseDriftSummary {
+  const contractGraph = summarizeContractGraphDrift(input.graphDiff);
+  const staticCollector = summarizeStaticCollectorDrift(input.fromStaticCollector, input.toStaticCollector);
+  const policy = summarizePolicyDrift(input.fromPolicy, input.toPolicy);
+  const statuses = [contractGraph.status, staticCollector.status, policy.status];
+  const overallStatus: DriftStatus = statuses.includes("changed")
+    ? "changed"
+    : statuses.every((status) => status === "unchanged")
+      ? "unchanged"
+      : "not_tracked";
+
+  return {
+    schemaVersion: 1,
+    overallStatus,
+    contractGraph,
+    staticCollector,
+    policy,
+  };
+}
+
+function summarizeContractGraphDrift(graphDiff: MerkleContractDagDiff): DriftSurfaceSummary {
+  if (!graphDiff.available) {
+    return {
+      kind: "contract_graph_drift",
+      status: "not_tracked",
+      summary: "Contract graph artifacts are missing for one or both baselines.",
+      details: {
+        warnings: graphDiff.warnings,
+        from_root_hash: graphDiff.fromRootHash,
+        to_root_hash: graphDiff.toRootHash,
+      },
+    };
+  }
+
+  const changedCount = graphDiff.addedNodes.length +
+    graphDiff.removedNodes.length +
+    graphDiff.changedNodeContent.length +
+    graphDiff.addedEdges.length +
+    graphDiff.removedEdges.length +
+    graphDiff.changedEdges.length +
+    graphDiff.affectedClosureNodes.length +
+    graphDiff.coverageChanges.length;
+  return {
+    kind: "contract_graph_drift",
+    status: graphDiff.identical ? "unchanged" : "changed",
+    summary: graphDiff.identical
+      ? "Merkle Contract DAG root hash is unchanged."
+      : `${changedCount} graph signal(s) changed across nodes, edges, closures, or coverage.`,
+    details: {
+      from_root_hash: graphDiff.fromRootHash,
+      to_root_hash: graphDiff.toRootHash,
+      added_nodes: graphDiff.addedNodes.length,
+      removed_nodes: graphDiff.removedNodes.length,
+      changed_node_content: graphDiff.changedNodeContent.length,
+      added_edges: graphDiff.addedEdges.length,
+      removed_edges: graphDiff.removedEdges.length,
+      changed_edges: graphDiff.changedEdges.length,
+      affected_closure_nodes: graphDiff.affectedClosureNodes.length,
+      coverage_changes: graphDiff.coverageChanges.length,
+      warnings: graphDiff.warnings,
+    },
+  };
+}
+
+function summarizeStaticCollectorDrift(
+  fromStaticCollector: ComparableStaticCollector,
+  toStaticCollector: ComparableStaticCollector,
+): DriftSurfaceSummary {
+  if (!fromStaticCollector.tracked && !toStaticCollector.tracked) {
+    return {
+      kind: "static_collector_drift",
+      status: "not_tracked",
+      summary: "Static collector manifests are not tracked for either baseline.",
+      details: {},
+    };
+  }
+
+  const changed = fromStaticCollector.signature !== toStaticCollector.signature;
+  return {
+    kind: "static_collector_drift",
+    status: changed ? "changed" : "unchanged",
+    summary: changed
+      ? "Static implementation facts changed."
+      : "Static implementation facts are unchanged.",
+    details: {
+      from_path: fromStaticCollector.path,
+      to_path: toStaticCollector.path,
+      from_fact_count: fromStaticCollector.factCount,
+      to_fact_count: toStaticCollector.factCount,
+      from_unresolved_surface_count: fromStaticCollector.unresolvedSurfaceCount,
+      to_unresolved_surface_count: toStaticCollector.unresolvedSurfaceCount,
+    },
+  };
+}
+
+function summarizePolicyDrift(fromPolicy: ComparablePolicy, toPolicy: ComparablePolicy): DriftSurfaceSummary {
+  if (!fromPolicy.tracked && !toPolicy.tracked) {
+    return {
+      kind: "policy_drift",
+      status: "not_tracked",
+      summary: "Verify policy is not tracked for either baseline.",
+      details: {},
+    };
+  }
+
+  const fromSignature = policySignature(fromPolicy);
+  const toSignature = policySignature(toPolicy);
+  const changed = fromSignature !== toSignature;
+  return {
+    kind: "policy_drift",
+    status: changed ? "changed" : "unchanged",
+    summary: changed
+      ? "Verify policy path, content hash, facts contract, or rule ids changed."
+      : "Verify policy path, facts contract, and rule ids are unchanged.",
+    details: {
+      from_path: fromPolicy.path,
+      to_path: toPolicy.path,
+      from_facts_contract: fromPolicy.factsContract,
+      to_facts_contract: toPolicy.factsContract,
+      from_rule_ids: fromPolicy.ruleIds,
+      to_rule_ids: toPolicy.ruleIds,
+      from_content_hash: fromPolicy.contentHash,
+      to_content_hash: toPolicy.contentHash,
+    },
+  };
+}
+
+function policySignature(policy: ComparablePolicy): string {
+  return stableHash({
+    tracked: policy.tracked,
+    path: policy.path,
+    content_hash: policy.contentHash,
+    facts_contract: policy.factsContract,
+    rule_ids: policy.ruleIds,
+  });
+}
+
+function snapshotPolicy(root: string, baseline: BaselineDocument): PolicySnapshot {
+  const snapshot = readPolicySnapshotFromDisk(root, policyPathFromBaseline(baseline));
+  return {
+    policy_kind: "verify-policy",
+    path: snapshot.path ?? DEFAULT_POLICY_PATH,
+    available: snapshot.tracked,
+    ...(snapshot.contentHash ? { content_hash: snapshot.contentHash } : {}),
+    ...(snapshot.factsContract ? { facts_contract: snapshot.factsContract } : {}),
+    rule_ids: snapshot.ruleIds,
+  };
+}
+
+function readPolicySnapshotFromDisk(root: string, policyPath: string): ComparablePolicy {
+  const resolvedPath = path.isAbsolute(policyPath) ? policyPath : path.join(root, policyPath);
+  if (!fs.existsSync(resolvedPath)) {
+    return {
+      tracked: false,
+      path: normalizePath(path.relative(root, resolvedPath) || policyPath),
+      ruleIds: [],
+    };
+  }
+
+  const content = fs.readFileSync(resolvedPath, "utf-8");
+  const parsed = yaml.load(content);
+  const policy = isRecord(parsed) ? parsed : {};
+  const requires = isRecord(policy.requires) ? policy.requires : {};
+  return {
+    tracked: true,
+    path: normalizePath(path.relative(root, resolvedPath) || policyPath),
+    contentHash: stableHash(content),
+    factsContract: stringValue(requires.facts_contract),
+    ruleIds: arrayValue(policy.rules)
+      .map((rule) => isRecord(rule) ? stringValue(rule.id) : undefined)
+      .filter((ruleId): ruleId is string => Boolean(ruleId))
+      .sort((left, right) => left.localeCompare(right)),
+  };
+}
+
+function policyPathFromBaseline(baseline: BaselineDocument): string {
+  const policySnapshot = isRecord(baseline.policy_snapshot) ? baseline.policy_snapshot : {};
+  const verifyPolicy = isRecord(baseline.verify_policy) ? baseline.verify_policy : {};
+  return stringValue(policySnapshot.path) ?? stringValue(verifyPolicy.path) ?? DEFAULT_POLICY_PATH;
+}
+
 function resolveArtifactPath(root: string, recordedPath: string | undefined, fallbackPath: string | undefined): string | undefined {
   const candidates = [
     recordedPath ? (path.isAbsolute(recordedPath) ? recordedPath : path.join(root, recordedPath)) : undefined,
@@ -489,7 +907,7 @@ function countBaseline(baseline: BaselineDocument): BaselineCounts {
   };
 }
 
-function renderReleaseSummary(root: string, baseline: BaselineDocument): string {
+function renderReleaseSummary(root: string, baseline: BaselineDocument, summary = summarizeReleaseBaseline(baseline)): string {
   const version = stringValue(baseline.release_version) ?? "unknown";
   const counts = countBaseline(baseline);
   const specDebt = summarizeGreenfieldSpecDebt(root);
@@ -508,6 +926,12 @@ function renderReleaseSummary(root: string, baseline: BaselineDocument): string 
     `- Scenarios: ${counts.scenarios}`,
     `- Slices: ${counts.slices}`,
     `- Assets: ${counts.assets}`,
+    "",
+    "## Baseline Summary",
+    "",
+    `- Contract graph: ${summary.contractGraph.summary}`,
+    `- Static collector: ${summary.staticCollector.summary}`,
+    `- Policy: ${summary.policy.summary}`,
     "",
     "## Spec Debt",
     "",
@@ -579,8 +1003,16 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -593,6 +1025,38 @@ function dumpYaml(value: unknown): string {
     noRefs: true,
     sortKeys: false,
   });
+}
+
+function readJsonObject(filePath: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function stableHash(value: unknown): string {
+  return crypto.createHash("sha256").update(stableStringify(value)).digest("hex");
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortObject(value));
+}
+
+function sortObject(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortObject);
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, sortObject(entry)]),
+    );
+  }
+  return value;
 }
 
 function normalizePath(filePath: string): string {

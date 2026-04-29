@@ -10,6 +10,7 @@
     "jispec": "node --import tsx ./tools/jispec/cli.ts",
     "verify": "node --import tsx ./tools/jispec/cli.ts verify",
     "validate:repo": "node --import tsx ./tools/jispec/cli.ts verify",
+    "post-release:gate": "node --import tsx ./scripts/post-release-gate.ts",
     "ci:verify": "node --import tsx ./scripts/check-jispec.ts",
     "check:jispec": "node --import tsx ./scripts/check-jispec.ts"
   },

@@ -24,21 +24,19 @@ function main(): void {
   let passed = 0;
   let failed = 0;
 
-  const promptFixture = createVerifyFixture("change-mode-prompt");
+  const promptFixture = createVerifyFixture("change-mode-default-prompt");
   try {
     seedDocsFixture(promptFixture);
     initializeGitRepository(promptFixture);
-    fs.appendFileSync(path.join(promptFixture, "README.md"), "\nPrompt mode docs-only change.\n", "utf-8");
+    fs.appendFileSync(path.join(promptFixture, "README.md"), "\nDefault prompt mode docs-only change.\n", "utf-8");
 
     const change = runCli([
       "change",
-      "Document prompt mode",
+      "Document default prompt mode",
       "--root",
       promptFixture,
       "--lane",
       "fast",
-      "--mode",
-      "prompt",
       "--json",
     ]);
 
@@ -47,6 +45,9 @@ function main(): void {
       id?: string;
       mode?: string;
       orchestrationMode?: string;
+      modeResolution?: {
+        source?: string;
+      };
       execution?: {
         mode?: string;
         state?: string;
@@ -59,13 +60,14 @@ function main(): void {
     const activeSession = readChangeSession(promptFixture);
 
     assert.equal(payload.mode, "prompt");
+    assert.equal(payload.modeResolution?.source, "built_in_default");
     assert.equal(payload.orchestrationMode, "prompt");
     assert.equal(payload.execution?.mode, "prompt");
     assert.equal(payload.execution?.state, "planned");
     assert.equal(payload.laneDecision?.lane, "fast");
     assert.equal(activeSession?.id, payload.id);
     assert.equal(activeSession?.orchestrationMode, "prompt");
-    console.log("✓ Test 1: prompt mode records the change session and returns next-step hints without executing downstream steps");
+    console.log("✓ Test 1: built-in default prompt mode records the change session without executing downstream steps");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -73,6 +75,115 @@ function main(): void {
     failed++;
   } finally {
     cleanupVerifyFixture(promptFixture);
+  }
+
+  const explicitPromptFixture = createVerifyFixture("change-mode-explicit-prompt");
+  try {
+    seedDocsFixture(explicitPromptFixture);
+    writeExecuteDefaultProjectConfig(explicitPromptFixture);
+    initializeGitRepository(explicitPromptFixture);
+    fs.appendFileSync(path.join(explicitPromptFixture, "README.md"), "\nExplicit prompt mode docs-only change.\n", "utf-8");
+
+    const change = runCli([
+      "change",
+      "Document explicit prompt mode",
+      "--root",
+      explicitPromptFixture,
+      "--lane",
+      "fast",
+      "--mode",
+      "prompt",
+      "--json",
+    ]);
+
+    assert.equal(change.status, 0, `explicit prompt mode exited with ${change.status}. stderr: ${change.stderr}`);
+    const payload = JSON.parse(change.stdout) as {
+      mode?: string;
+      orchestrationMode?: string;
+      modeResolution?: {
+        source?: string;
+      };
+      execution?: {
+        mode?: string;
+        state?: string;
+        implement?: unknown;
+      };
+    };
+
+    assert.equal(payload.mode, "prompt");
+    assert.equal(payload.orchestrationMode, "prompt");
+    assert.equal(payload.modeResolution?.source, "cli");
+    assert.equal(payload.execution?.mode, "prompt");
+    assert.equal(payload.execution?.state, "planned");
+    assert.equal(payload.execution?.implement, undefined);
+    console.log("✓ Test 2: explicit prompt mode overrides project execute-default mediation");
+    passed++;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ Test ${passed + failed + 1} failed: ${message}`);
+    failed++;
+  } finally {
+    cleanupVerifyFixture(explicitPromptFixture);
+  }
+
+  const configuredExecuteFixture = createVerifyFixture("change-mode-configured-execute");
+  try {
+    seedDocsFixture(configuredExecuteFixture);
+    writeExecuteDefaultProjectConfig(configuredExecuteFixture);
+    initializeGitRepository(configuredExecuteFixture);
+    fs.appendFileSync(path.join(configuredExecuteFixture, "README.md"), "\nConfigured execute-default docs-only change.\n", "utf-8");
+
+    const change = runCli([
+      "change",
+      "Document configured execute default",
+      "--root",
+      configuredExecuteFixture,
+      "--lane",
+      "fast",
+      "--test-command",
+      'node -e "process.exit(0)"',
+      "--json",
+    ]);
+
+    assert.equal(change.status, 0, `configured execute default exited with ${change.status}. stderr: ${change.stderr}`);
+    const payload = JSON.parse(change.stdout) as {
+      id?: string;
+      mode?: string;
+      orchestrationMode?: string;
+      modeResolution?: {
+        source?: string;
+      };
+      execution?: {
+        mode?: string;
+        state?: string;
+        implement?: {
+          lane?: string;
+          testsPassed?: boolean;
+          sessionArchived?: boolean;
+          postVerifyVerdict?: string;
+        };
+      };
+    };
+
+    assert.equal(payload.mode, "execute");
+    assert.equal(payload.orchestrationMode, "execute");
+    assert.equal(payload.modeResolution?.source, "project_config");
+    assert.equal(payload.execution?.mode, "execute");
+    assert.equal(payload.execution?.state, "implemented");
+    assert.equal(payload.execution?.implement?.lane, "fast");
+    assert.equal(payload.execution?.implement?.testsPassed, true);
+    assert.equal(payload.execution?.implement?.postVerifyVerdict, "PASS");
+    assert.equal(payload.execution?.implement?.sessionArchived, true);
+    assert.ok(payload.id);
+    assert.ok(readArchivedChangeSession(configuredExecuteFixture, payload.id ?? ""));
+    console.log("✓ Test 3: project config can opt into execute-default mediation without --mode");
+    passed++;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ Test ${passed + failed + 1} failed: ${message}`);
+    failed++;
+  } finally {
+    cleanupVerifyFixture(configuredExecuteFixture);
   }
 
   const executeFastFixture = createVerifyFixture("change-mode-execute-fast");
@@ -123,7 +234,7 @@ function main(): void {
     assert.equal(readChangeSession(executeFastFixture), null);
     assert.ok(payload.id);
     assert.ok(readArchivedChangeSession(executeFastFixture, payload.id ?? ""));
-    console.log("✓ Test 2: execute mode runs the fast-lane implement flow and archives the session after post-implement verify passes");
+    console.log("✓ Test 4: explicit execute mode runs the fast-lane implement flow and archives the session after post-implement verify passes");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -190,7 +301,7 @@ function main(): void {
     assert.equal(payload.execution?.openDraftSessionId, "bootstrap-test");
     assert.equal(payload.nextCommands?.[0]?.command, "npm run jispec-cli -- adopt --interactive --session bootstrap-test");
     assert.equal(readChangeSession(strictFixture)?.id, payload.id);
-    console.log("✓ Test 3: execute mode pauses at the adopt boundary when a strict-lane change still has an open bootstrap draft");
+    console.log("✓ Test 5: execute mode pauses at the adopt boundary when a strict-lane change still has an open bootstrap draft");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -205,6 +316,17 @@ function main(): void {
   if (failed > 0) {
     process.exit(1);
   }
+}
+
+function writeExecuteDefaultProjectConfig(root: string): void {
+  fs.mkdirSync(path.join(root, "jiproject"), { recursive: true });
+  const projectPath = path.join(root, "jiproject", "project.yaml");
+  const existing = fs.existsSync(projectPath) ? fs.readFileSync(projectPath, "utf-8").trimEnd() : [
+    "id: change-dual-mode-fixture",
+    "name: Change Dual Mode Fixture",
+  ].join("\n");
+
+  fs.writeFileSync(projectPath, `${existing}\nchange:\n  default_mode: execute\n`, "utf-8");
 }
 
 function runCli(args: string[]): CommandExecution {

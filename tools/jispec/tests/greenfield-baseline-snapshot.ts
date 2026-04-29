@@ -34,6 +34,14 @@ interface BaselineYaml {
     fact_count?: number;
     unresolved_surface_count?: number;
   };
+  policy_snapshot?: {
+    policy_kind?: string;
+    path?: string;
+    available?: boolean;
+    content_hash?: string;
+    facts_contract?: string;
+    rule_ids?: string[];
+  };
   requirement_ids?: string[];
   slices?: string[];
   assets?: string[];
@@ -135,6 +143,15 @@ async function main(): Promise<void> {
       assert.equal(releaseBaseline.static_collector_manifest?.manifest_kind, "deterministic-static-collector");
       assert.equal(releaseBaseline.static_collector_manifest?.manifest_path, ".spec/releases/v1/static-collector-manifest.json");
       assert.ok((releaseBaseline.static_collector_manifest?.fact_count ?? 0) >= 1);
+      assert.equal(releaseBaseline.policy_snapshot?.policy_kind, "verify-policy");
+      assert.equal(releaseBaseline.policy_snapshot?.path, ".spec/policy.yaml");
+      assert.equal(releaseBaseline.policy_snapshot?.available, true);
+      assert.equal(releaseBaseline.policy_snapshot?.facts_contract, "1.0");
+      assert.ok(releaseBaseline.policy_snapshot?.rule_ids?.includes("greenfield-no-blocking-verify-issues"));
+      assert.equal(typeof releaseBaseline.policy_snapshot?.content_hash, "string");
+      assert.equal(snapshot.summary.contractGraph.status, "tracked");
+      assert.equal(snapshot.summary.staticCollector.status, "tracked");
+      assert.equal(snapshot.summary.policy.status, "tracked");
       assert.ok(fs.existsSync(releaseGraphPath));
       assert.ok(fs.existsSync(releaseGraphLockPath));
       assert.ok(fs.existsSync(staticCollectorManifestPath));
@@ -154,6 +171,7 @@ async function main(): Promise<void> {
         fact.contract_ids?.includes("CTR-ORDERING-001")
       ));
       assert.match(releaseSummary, /# Release v1 Baseline/);
+      assert.match(releaseSummary, /## Baseline Summary/);
       assert.match(releaseSummary, /## Contract Graph/);
       assert.match(releaseSummary, /## Static Collector/);
       assert.match(releaseSummary, /ordering-checkout-v1/);
@@ -174,6 +192,10 @@ async function main(): Promise<void> {
       assert.equal(identicalCompare.identical, true);
       assert.equal(identicalCompare.graphDiff.available, true);
       assert.equal(identicalCompare.graphDiff.identical, true);
+      assert.equal(identicalCompare.driftSummary.overallStatus, "unchanged");
+      assert.equal(identicalCompare.driftSummary.contractGraph.status, "unchanged");
+      assert.equal(identicalCompare.driftSummary.staticCollector.status, "unchanged");
+      assert.equal(identicalCompare.driftSummary.policy.status, "unchanged");
       assert.ok(fs.existsSync(identicalCompare.compareReportJsonPath));
       assert.ok(fs.existsSync(identicalCompare.compareReportMarkdownPath));
       assert.ok(identicalCompare.diffs.every((diff) => diff.added.length === 0 && diff.removed.length === 0));
@@ -197,8 +219,66 @@ async function main(): Promise<void> {
       assert.ok(merkleCompare.graphDiff.changedNodeContent.includes("@api:CTR-ORDERING-001"));
       assert.ok(merkleCompare.graphDiff.affectedClosureNodes.includes("@api:CTR-ORDERING-001"));
       assert.ok(merkleCompare.graphDiff.affectedClosureNodes.includes("@req:REQ-ORD-001"));
+      assert.equal(merkleCompare.driftSummary.contractGraph.kind, "contract_graph_drift");
+      assert.equal(merkleCompare.driftSummary.contractGraph.status, "changed");
+      assert.equal(merkleCompare.driftSummary.staticCollector.status, "unchanged");
+      assert.equal(merkleCompare.driftSummary.policy.status, "unchanged");
+      assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /## Drift Summary/);
+      assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /Contract graph drift: changed/);
       assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /Changed node content/);
+      assert.match(fs.readFileSync(merkleCompare.compareReportJsonPath, "utf-8"), /"driftSummary"/);
       assert.match(fs.readFileSync(merkleCompare.compareReportJsonPath, "utf-8"), /"changedNodeContent"/);
+    }));
+
+    const policyPath = path.join(root, ".spec", "policy.yaml");
+    const originalPolicy = fs.readFileSync(policyPath, "utf-8");
+    fs.writeFileSync(
+      policyPath,
+      originalPolicy.replace("greenfield-no-blocking-verify-issues", "greenfield-no-blocking-verify-issues-v2"),
+      "utf-8",
+    );
+    const policyOnlyCompare = compareReleaseBaselines({ root, from: "v1", to: "current" });
+    fs.writeFileSync(policyPath, originalPolicy, "utf-8");
+
+    results.push(record("release compare marks policy-only drift as non-identical", () => {
+      assert.equal(policyOnlyCompare.identical, false);
+      assert.equal(policyOnlyCompare.driftSummary.contractGraph.status, "unchanged");
+      assert.equal(policyOnlyCompare.driftSummary.staticCollector.status, "unchanged");
+      assert.equal(policyOnlyCompare.driftSummary.policy.status, "changed");
+    }));
+
+    const additionalRoutePath = path.join(root, "src", "routes", "refunds.ts");
+    fs.writeFileSync(
+      additionalRoutePath,
+      [
+        "import { Router } from 'express';",
+        "export const router = Router();",
+        "router.post('/refunds', (_req, res) => res.status(202).send({ ok: true }));",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      policyPath,
+      originalPolicy.replace("greenfield-no-blocking-verify-issues", "greenfield-no-blocking-verify-issues-v2"),
+      "utf-8",
+    );
+    const governanceCompare = compareReleaseBaselines({ root, from: "v1", to: "current" });
+    fs.rmSync(additionalRoutePath, { force: true });
+    fs.writeFileSync(policyPath, originalPolicy, "utf-8");
+
+    results.push(record("release compare distinguishes static collector and policy drift", () => {
+      assert.equal(governanceCompare.driftSummary.overallStatus, "changed");
+      assert.equal(governanceCompare.driftSummary.staticCollector.kind, "static_collector_drift");
+      assert.equal(governanceCompare.driftSummary.staticCollector.status, "changed");
+      assert.equal(governanceCompare.driftSummary.policy.kind, "policy_drift");
+      assert.equal(governanceCompare.driftSummary.policy.status, "changed");
+      assert.notDeepEqual(
+        governanceCompare.driftSummary.policy.details.from_rule_ids,
+        governanceCompare.driftSummary.policy.details.to_rule_ids,
+      );
+      const markdown = fs.readFileSync(governanceCompare.compareReportMarkdownPath, "utf-8");
+      assert.match(markdown, /Static collector drift: changed/);
+      assert.match(markdown, /Policy drift: changed/);
     }));
 
     const change = await runChangeCommand({

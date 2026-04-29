@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { computeIssueFingerprint } from "../verify/issue-fingerprint";
-import { createWaiver, loadActiveWaivers } from "../verify/waiver-store";
+import { createWaiver, loadActiveWaivers, revokeWaiver, summarizeWaiverLifecycle } from "../verify/waiver-store";
 import { runVerify, type VerifySupplementalCollector } from "../verify/verify-runner";
 import { cleanupVerifyFixture, createVerifyFixture, FIXED_GENERATED_AT } from "./verify-test-helpers";
 
@@ -59,12 +59,20 @@ async function main(): Promise<void> {
       owner: "contracts-team",
       reason: "Known malformed bootstrap API draft during migration",
     });
+    const staleWaiver = createWaiver(fixtureRoot, {
+      code: "STALE_WAIVER",
+      owner: "contracts-team",
+      reason: "No current issue should match this waiver",
+    });
 
     const activeWaivers = loadActiveWaivers(fixtureRoot, new Date("2026-04-27T00:00:00.000Z"));
-    assert.equal(activeWaivers.length, 1);
-    assert.equal(activeWaivers[0]?.id, fingerprintWaiver.waiver.id);
+    assert.equal(activeWaivers.length, 2);
+    assert.deepEqual(activeWaivers.map((waiver) => waiver.id).sort(), [fingerprintWaiver.waiver.id, staleWaiver.waiver.id].sort());
     assert.notEqual(expired.waiver.id, fingerprintWaiver.waiver.id);
-    console.log("✓ Test 2: active waiver loading filters out expired waiver files");
+    const lifecycle = summarizeWaiverLifecycle(fixtureRoot, new Date("2026-04-27T00:00:00.000Z"));
+    assert.equal(lifecycle.active, 2);
+    assert.equal(lifecycle.expired, 1);
+    console.log("✓ Test 2: active waiver loading filters out expired waiver files and reports lifecycle counts");
     passed++;
 
     const result = await runVerify({
@@ -81,9 +89,23 @@ async function main(): Promise<void> {
     assert.equal(downgraded?.message, waivedIssue.message);
     assert.equal((downgraded?.details as Record<string, unknown>)?.matched_by, "waiver");
     assert.equal((downgraded?.details as Record<string, unknown>)?.waiver_id, fingerprintWaiver.waiver.id);
+    assert.equal((downgraded?.details as Record<string, unknown>)?.waiver_matcher, "fingerprint");
     assert.equal(remaining?.severity, "blocking");
     assert.equal(result.metadata?.waiversApplied, 1);
+    assert.deepEqual(result.metadata?.unmatchedActiveWaiverIds, [staleWaiver.waiver.id]);
+    assert.equal((result.metadata?.waiverLifecycle as Record<string, unknown>)?.active, 2);
     console.log("✓ Test 3: fingerprint waivers downgrade only matching issues and preserve unmatched blockers");
+    passed++;
+
+    const revoked = revokeWaiver(fixtureRoot, fingerprintWaiver.waiver.id, {
+      revokedBy: "contracts-team",
+      reason: "Contract was repaired",
+    });
+    assert.equal(revoked.waiver.status, "revoked");
+    assert.equal(loadActiveWaivers(fixtureRoot, new Date("2026-04-27T00:00:00.000Z")).some((waiver) => waiver.id === fingerprintWaiver.waiver.id), false);
+    const afterRevoke = summarizeWaiverLifecycle(fixtureRoot, new Date("2026-04-27T00:00:00.000Z"));
+    assert.equal(afterRevoke.revoked, 1);
+    console.log("✓ Test 4: revoked waivers are retained for audit but excluded from active matching");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -23,7 +23,9 @@ import {
   type BootstrapInitProjectResult,
 } from "./bootstrap/init-project";
 import { renderVerifyJSON, renderVerifyText, runVerify, type VerifyRunOptions } from "./verify/verify-runner";
-import { createWaiver, listWaivers, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
+import { buildVerifyReport } from "./ci/verify-report";
+import { writeLocalVerifySummary } from "./ci/verify-summary";
+import { createWaiver, listWaivers, revokeWaiver, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
 import { runChangeCommand, renderChangeCommandJSON, type ChangeCommandOptions } from "./change/change-command";
 import type { SpecDeltaChangeType } from "./change/spec-delta";
 import { migrateVerifyPolicy, renderPolicyMigrationText } from "./policy/migrate-policy";
@@ -63,7 +65,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
     "  jispec-cli review list|adopt|reject|defer|waive|brief [--json]",
     "  jispec-cli release snapshot --version <version> [--json]",
-    "  jispec-cli implement [--fast] [--json]",
+    "  jispec-cli implement [--fast] [--external-patch <path>] [--json]",
     "  jispec-cli bootstrap init-project [--force] [--json]",
     "  jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]",
     "  jispec-cli bootstrap discover [--json]",
@@ -101,7 +103,7 @@ function buildWorkflowSurfaceHelpText(): string {
   return [
     "Mainline workflow shortcuts:",
     "  change --mode prompt -> follow next commands manually",
-    "  change --mode execute -> orchestrate implement -> verify",
+    "  change --mode execute -> orchestrate implementation mediation -> verify",
     "  implement --fast -> verify --fast",
     "  strict lane can surface adopt before implementation when a bootstrap draft is still open",
   ].join("\n");
@@ -135,8 +137,9 @@ function registerPrimaryVerifyCommand(program: Command): void {
     .option("--fast", "Run local fast-lane precheck and auto-promote to strict when needed.", false)
     .action(async (options: { root: string; strict: boolean; json: boolean; baseline: boolean; writeBaseline: boolean; observe: boolean; policy?: string; factsOut?: string; fast: boolean }) => {
       try {
+        const root = path.resolve(options.root);
         const result = await runVerify({
-          root: path.resolve(options.root),
+          root,
           strict: options.strict,
           useBaseline: options.baseline,
           writeBaseline: options.writeBaseline,
@@ -145,7 +148,14 @@ function registerPrimaryVerifyCommand(program: Command): void {
           factsOutPath: options.factsOut,
           fast: options.fast,
         } satisfies VerifyRunOptions);
+        const verifySummaryPath = writeLocalVerifySummary(root, buildVerifyReport(result, {
+          repoRoot: root,
+          provider: "local",
+        }));
         renderVerifyResult({ result, json: options.json });
+        if (!options.json) {
+          console.log(`Verify summary: ${path.relative(root, verifySummaryPath).replace(/\\/g, "/")}`);
+        }
         process.exitCode = result.exitCode;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -295,6 +305,7 @@ function registerWaiverCommands(program: Command): void {
             console.log(`Found ${waivers.length} waiver(s):\n`);
             for (const waiver of waivers) {
               console.log(`ID: ${waiver.id}`);
+              console.log(`  Status: ${waiver.status ?? "active"}`);
               console.log(`  Owner: ${waiver.owner}`);
               console.log(`  Reason: ${waiver.reason}`);
               if (waiver.issueCode) {
@@ -307,6 +318,10 @@ function registerWaiverCommands(program: Command): void {
               if (waiver.expiresAt) {
                 console.log(`  Expires: ${waiver.expiresAt}`);
               }
+              if (waiver.revokedAt) {
+                console.log(`  Revoked: ${waiver.revokedAt} by ${waiver.revokedBy ?? "unknown"}`);
+                console.log(`  Revoke reason: ${waiver.revokeReason ?? "not recorded"}`);
+              }
               console.log();
             }
           }
@@ -316,6 +331,44 @@ function registerWaiverCommands(program: Command): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Waiver list failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  waiver
+    .command("revoke")
+    .description("Revoke an active waiver.")
+    .argument("<id>", "Waiver ID to revoke.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--actor <actor>", "Actor revoking the waiver (required).")
+    .option("--reason <reason>", "Reason for revocation (required).")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((id: string, options: { root: string; actor?: string; reason?: string; json: boolean }) => {
+      try {
+        if (!options.actor) {
+          throw new Error("--actor is required");
+        }
+        if (!options.reason) {
+          throw new Error("--reason is required");
+        }
+
+        const result = revokeWaiver(path.resolve(options.root), id, {
+          revokedBy: options.actor,
+          reason: options.reason,
+        });
+
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log(`Waiver revoked successfully:`);
+          console.log(`  ID: ${result.waiver.id}`);
+          console.log(`  Revoked by: ${result.waiver.revokedBy}`);
+          console.log(`  Reason: ${result.waiver.revokeReason}`);
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Waiver revoke failed: ${message}`);
         process.exitCode = 1;
       }
     });
@@ -481,7 +534,7 @@ function registerChangeCommand(program: Command): void {
     .argument("<summary>", "Human summary of the intended change.")
     .option("--root <path>", "Repository root.", ".")
     .option("--lane <lane>", "Requested lane: auto|fast|strict.", "auto")
-    .option("--mode <mode>", "Orchestration mode: prompt|execute.", "prompt")
+    .option("--mode <mode>", "Orchestration mode: prompt|execute. Defaults to jiproject/project.yaml change.default_mode or prompt.")
     .option("--slice <sliceId>", "Optional legacy slice binding.")
     .option("--context <contextId>", "Optional legacy context binding.")
     .option("--change-type <type>", "Spec Delta type for Greenfield projects: add|modify|deprecate|fix|redesign.")
@@ -491,7 +544,7 @@ function registerChangeCommand(program: Command): void {
     .option("--max-tokens <n>", "Maximum execute-mode implement tokens.", parseInt)
     .option("--max-cost <n>", "Maximum execute-mode implement cost in USD.", parseFloat)
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (summary: string, options: { root: string; lane: string; mode: string; slice?: string; context?: string; changeType?: SpecDeltaChangeType; baseRef: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
+    .action(async (summary: string, options: { root: string; lane: string; mode?: string; slice?: string; context?: string; changeType?: SpecDeltaChangeType; baseRef: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
       try {
         const result = await runChangeCommand({
           root: path.resolve(options.root),
@@ -522,16 +575,17 @@ function registerChangeCommand(program: Command): void {
 function registerImplementCommand(program: Command): void {
   program
     .command("implement")
-    .description("Run budget-controlled FSM to implement change intent with test feedback.")
+    .description("Mediate external implementation patches through scope, test, and verify feedback.")
     .option("--root <path>", "Repository root.", ".")
     .option("--session-id <id>", "Optional session ID to resume.")
     .option("--fast", "Prefer the local fast-lane implement flow when the active change session allows it.", false)
+    .option("--external-patch <path>", "Mediate an external patch file through scope, test, and verify gates.")
     .option("--test-command <cmd>", "Override test command.")
     .option("--max-iterations <n>", "Maximum iterations (default: 10).", parseInt)
     .option("--max-tokens <n>", "Maximum tokens (default: 100000).", parseInt)
     .option("--max-cost <n>", "Maximum cost in USD (default: 5.00).", parseFloat)
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; sessionId?: string; fast: boolean; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
+    .action(async (options: { root: string; sessionId?: string; fast: boolean; externalPatch?: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
       try {
         const { runImplement, renderImplementText, renderImplementJSON, computeImplementExitCode } = await import("./implement/implement-runner");
 
@@ -539,6 +593,7 @@ function registerImplementCommand(program: Command): void {
           root: path.resolve(options.root),
           sessionId: options.sessionId,
           fast: options.fast,
+          externalPatchPath: options.externalPatch,
           testCommand: options.testCommand,
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
@@ -682,13 +737,15 @@ function registerBootstrapCommands(program: Command): void {
     .option("--json", "Emit machine-readable JSON output.", false)
     .option("--output <path>", "Override the evidence graph output path.", ".spec/facts/bootstrap/evidence-graph.json")
     .option("--init-project", "Create jiproject/project.yaml before discovery when it is missing.", false)
+    .option("--include-noise", "Opt in to scanning vendored, generated, cache, build, audit, and tool-mirror paths.", false)
     .option("--no-write", "Do not write .spec outputs; only compute the discovery result.")
-    .action((options: { root: string; json: boolean; output: string; initProject: boolean; write: boolean }) => {
+    .action((options: { root: string; json: boolean; output: string; initProject: boolean; includeNoise: boolean; write: boolean }) => {
       try {
         const result = runBootstrapDiscover({
           root: path.resolve(options.root),
           outputPath: options.output,
           initProject: options.initProject,
+          includeNoise: options.includeNoise,
           writeFile: options.write,
         } satisfies BootstrapDiscoverOptions);
         renderBootstrapDiscoverResult(result, options.json);

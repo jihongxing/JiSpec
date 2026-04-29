@@ -25,10 +25,19 @@ export interface VerifyPolicy {
   requires?: {
     facts_contract?: string;
   };
+  team?: TeamPolicyProfile;
   greenfield?: {
     review_gate?: GreenfieldReviewGatePolicy;
   };
   rules: PolicyRule[];
+}
+
+export type TeamPolicyProfileName = "solo" | "small_team" | "regulated";
+
+export interface TeamPolicyProfile {
+  profile?: TeamPolicyProfileName;
+  owner?: string;
+  reviewers?: string[];
 }
 
 export interface GreenfieldReviewGatePolicy {
@@ -46,15 +55,41 @@ export interface PolicyValidationIssue {
   code:
     | "POLICY_FACTS_CONTRACT_MISMATCH"
     | "POLICY_UNKNOWN_FACT"
-    | "POLICY_BLOCKING_RULE_USES_UNSTABLE_FACT";
+    | "POLICY_BLOCKING_RULE_USES_UNSTABLE_FACT"
+    | "POLICY_UNKNOWN_KEY"
+    | "POLICY_DEPRECATED_KEY";
   message: string;
   ruleId?: string;
   factKeys?: string[];
+  key?: string;
+  replacement?: string;
 }
 
 export interface PolicyFactsContractValidationResult {
   valid: boolean;
   issues: PolicyValidationIssue[];
+}
+
+export class PolicySchemaError extends Error {
+  code: "POLICY_UNKNOWN_KEY" | "POLICY_DEPRECATED_KEY";
+  key?: string;
+  replacement?: string;
+
+  constructor(
+    code: "POLICY_UNKNOWN_KEY" | "POLICY_DEPRECATED_KEY",
+    message: string,
+    details: { key?: string; replacement?: string } = {},
+  ) {
+    super(message);
+    this.name = "PolicySchemaError";
+    this.code = code;
+    this.key = details.key;
+    this.replacement = details.replacement;
+  }
+}
+
+export function isPolicySchemaError(error: unknown): error is PolicySchemaError {
+  return error instanceof PolicySchemaError;
 }
 
 /**
@@ -66,6 +101,25 @@ export function validateVerifyPolicy(policy: unknown): VerifyPolicy {
   }
 
   const p = policy as Record<string, unknown>;
+  const allowedTopLevelKeys = new Set(["version", "requires", "team", "greenfield", "rules"]);
+  const deprecatedTopLevelKeys = new Map([
+    ["facts_contract", "requires.facts_contract"],
+    ["team_profile", "team.profile"],
+  ]);
+
+  for (const key of Object.keys(p)) {
+    const replacement = deprecatedTopLevelKeys.get(key);
+    if (replacement) {
+      throw new PolicySchemaError(
+        "POLICY_DEPRECATED_KEY",
+        `Policy key '${key}' is deprecated; use '${replacement}' instead.`,
+        { key, replacement },
+      );
+    }
+    if (!allowedTopLevelKeys.has(key)) {
+      throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Policy has unknown key: ${key}`, { key });
+    }
+  }
 
   if (p.version !== 1) {
     throw new Error("Policy version must be 1");
@@ -73,6 +127,10 @@ export function validateVerifyPolicy(policy: unknown): VerifyPolicy {
 
   if (p.requires !== undefined) {
     validatePolicyRequires(p.requires);
+  }
+
+  if (p.team !== undefined) {
+    validateTeamPolicyProfile(p.team);
   }
 
   if (p.greenfield !== undefined) {
@@ -104,7 +162,9 @@ function validateGreenfieldPolicy(greenfield: unknown): void {
   const allowedKeys = new Set(["review_gate"]);
   for (const key of Object.keys(typed)) {
     if (!allowedKeys.has(key)) {
-      throw new Error(`Policy greenfield has unknown key: ${key}`);
+      throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Policy greenfield has unknown key: ${key}`, {
+        key: `greenfield.${key}`,
+      });
     }
   }
 
@@ -131,7 +191,9 @@ function validateGreenfieldReviewGatePolicy(reviewGate: unknown): void {
   ]);
   for (const key of Object.keys(typed)) {
     if (!allowedKeys.has(key)) {
-      throw new Error(`Policy greenfield.review_gate has unknown key: ${key}`);
+      throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Policy greenfield.review_gate has unknown key: ${key}`, {
+        key: `greenfield.review_gate.${key}`,
+      });
     }
   }
   for (const key of [
@@ -180,6 +242,36 @@ function validateGreenfieldReviewGatePolicy(reviewGate: unknown): void {
   }
 }
 
+function validateTeamPolicyProfile(team: unknown): void {
+  if (!team || typeof team !== "object" || Array.isArray(team)) {
+    throw new Error("Policy team must be an object when provided");
+  }
+
+  const typed = team as Record<string, unknown>;
+  const allowedKeys = new Set(["profile", "owner", "reviewers"]);
+  for (const key of Object.keys(typed)) {
+    if (!allowedKeys.has(key)) {
+      throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Policy team has unknown key: ${key}`, {
+        key: `team.${key}`,
+      });
+    }
+  }
+
+  if (typed.profile !== undefined && !["solo", "small_team", "regulated"].includes(typed.profile as string)) {
+    throw new Error("Policy team.profile must be solo, small_team, or regulated when provided");
+  }
+  if (typed.owner !== undefined && (typeof typed.owner !== "string" || !typed.owner.trim())) {
+    throw new Error("Policy team.owner must be a non-empty string when provided");
+  }
+  if (
+    typed.reviewers !== undefined &&
+    (!Array.isArray(typed.reviewers) ||
+      !typed.reviewers.every((entry) => typeof entry === "string" && entry.trim()))
+  ) {
+    throw new Error("Policy team.reviewers must be a string array when provided");
+  }
+}
+
 function validatePolicyRequires(requires: unknown): void {
   if (!requires || typeof requires !== "object" || Array.isArray(requires)) {
     throw new Error("Policy requires must be an object when provided");
@@ -187,10 +279,21 @@ function validatePolicyRequires(requires: unknown): void {
 
   const typedRequires = requires as Record<string, unknown>;
   const allowedKeys = new Set(["facts_contract"]);
+  const deprecatedKeys = new Map([["factsContract", "facts_contract"]]);
 
   for (const key of Object.keys(typedRequires)) {
+    const replacement = deprecatedKeys.get(key);
+    if (replacement) {
+      throw new PolicySchemaError(
+        "POLICY_DEPRECATED_KEY",
+        `Policy requires.${key} is deprecated; use requires.${replacement} instead.`,
+        { key: `requires.${key}`, replacement: `requires.${replacement}` },
+      );
+    }
     if (!allowedKeys.has(key)) {
-      throw new Error(`Policy requires has unknown key: ${key}`);
+      throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Policy requires has unknown key: ${key}`, {
+        key: `requires.${key}`,
+      });
     }
   }
 
@@ -215,6 +318,14 @@ function validatePolicyRule(rule: unknown): string {
   }
 
   const r = rule as Record<string, unknown>;
+  const allowedKeys = new Set(["id", "enabled", "action", "message", "when"]);
+  for (const key of Object.keys(r)) {
+    if (!allowedKeys.has(key)) {
+      throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Rule has unknown key: ${key}`, {
+        key: typeof r.id === "string" ? `rules.${r.id}.${key}` : `rules.${key}`,
+      });
+    }
+  }
 
   if (typeof r.id !== "string" || !r.id) {
     throw new Error("Rule must have a non-empty id");

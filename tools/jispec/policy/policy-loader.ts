@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
-import { validateVerifyPolicy, type VerifyPolicy } from "./policy-schema";
+import { isPolicySchemaError, validateVerifyPolicy, type VerifyPolicy } from "./policy-schema";
 
 export const DEFAULT_POLICY_PATH = ".spec/policy.yaml";
 
@@ -19,6 +19,9 @@ export function loadVerifyPolicy(root: string, filePath?: string): VerifyPolicy 
   try {
     return validateVerifyPolicy(readPolicyDocument(policyPath));
   } catch (error) {
+    if (isPolicySchemaError(error)) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to load policy from ${policyPath}: ${message}`);
   }

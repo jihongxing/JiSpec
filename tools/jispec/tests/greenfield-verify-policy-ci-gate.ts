@@ -2,6 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { renderCiSummaryMarkdown, renderCiSummaryText } from "../ci/ci-summary";
+import { buildVerifyReport } from "../ci/verify-report";
+import { renderVerifySummaryMarkdown } from "../ci/verify-summary";
 import { runGreenfieldInit } from "../greenfield/init";
 import { loadVerifyPolicy } from "../policy/policy-loader";
 import { runVerify } from "../verify/verify-runner";
@@ -209,6 +212,34 @@ async function main(): Promise<void> {
         failingVerify.issues.some((issue) => issue.code === "SLICE_ARTIFACT_MISSING") &&
         failingVerify.issues.some((issue) => issue.code === "POLICY_GREENFIELD_NO_BLOCKING_VERIFY_ISSUES"),
       error: `Expected verify pass then policy-gated fail, got pass=${JSON.stringify(passingVerify)}, low=${JSON.stringify(lowConfidenceAllowedVerify)}, contractLow=${JSON.stringify(contractLowConfidenceAllowedVerify)}, fail=${JSON.stringify(failingVerify)}.`, 
+    });
+
+    const failingReport = buildVerifyReport(failingVerify, {
+      repoRoot: root,
+      provider: "local",
+    });
+    const verifySummary = renderVerifySummaryMarkdown(failingReport);
+    const ciSummary = renderCiSummaryMarkdown(failingReport);
+    const ciText = renderCiSummaryText(failingReport);
+
+    results.push({
+      name: "Greenfield verify and CI summaries use the shared control-context language",
+      passed:
+        verifySummary.includes("## Greenfield Control Context") &&
+        verifySummary.includes("Uses the same verify decision model as takeover") &&
+        verifySummary.includes("Review gate:") &&
+        verifySummary.includes("Contract graph / spec delta:") &&
+        verifySummary.includes("Implementation facts ratchet:") &&
+        verifySummary.includes("Spec debt:") &&
+        verifySummary.includes("Policy overlay:") &&
+        verifySummary.includes("`greenfield-no-blocking-verify-issues`") &&
+        verifySummary.includes("This Markdown file is a human-readable companion summary, not a machine API.") &&
+        ciSummary.includes("## Greenfield Control Context") &&
+        ciSummary.includes("Contract graph / spec delta:") &&
+        ciSummary.includes("Next action vocabulary stays shared with verify summary") &&
+        ciText.includes("Greenfield Control Context:") &&
+        ciText.includes("Contract graph / spec delta:"),
+      error: `Expected aligned Greenfield summary language, got verify=${verifySummary}, ci=${ciSummary}, text=${ciText}.`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

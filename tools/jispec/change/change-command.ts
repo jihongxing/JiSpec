@@ -11,6 +11,7 @@ import {
 } from "./change-session";
 import { computeImplementExitCode, runImplement, type ImplementRunResult } from "../implement/implement-runner";
 import { draftSpecDelta, isSpecDeltaChangeType, type SpecDeltaChangeType } from "./spec-delta";
+import { resolveChangeCommandMode, type ChangeDefaultModeResolution } from "./orchestration-config";
 
 export type ChangeCommandMode = ChangeSessionOrchestrationMode;
 
@@ -57,6 +58,7 @@ export interface ChangeCommandResult {
   execution: ChangeCommandExecutionSummary;
   text: string;
   exitCode: number;
+  modeResolution: ChangeDefaultModeResolution;
 }
 
 export async function runChangeCommand(options: ChangeCommandOptions): Promise<ChangeCommandResult> {
@@ -64,7 +66,7 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     root,
     summary,
     lane = "auto" as any,
-    mode = "prompt",
+    mode,
     sliceId,
     contextId,
     changeType,
@@ -81,6 +83,11 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
   }
 
   const classification = classifyGitDiff(root, baseRef);
+  const modeResolution = resolveChangeCommandMode(root, mode);
+  if (modeResolution.warnings.length > 0) {
+    throw new Error(`Invalid change default mode configuration: ${modeResolution.warnings.join("; ")}`);
+  }
+  const effectiveMode = modeResolution.mode;
   const laneDecision = computeLaneDecision(classification, lane);
   const nextCommands = buildNextCommandHints(root, laneDecision.lane, sliceId);
   const createdAt = new Date().toISOString();
@@ -112,7 +119,7 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     id: generateSessionId(),
     createdAt,
     summary,
-    orchestrationMode: mode,
+    orchestrationMode: effectiveMode,
     laneDecision,
     changedPaths: classification.changedPaths,
     changeType,
@@ -126,7 +133,7 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
 
   writeChangeSession(root, session);
 
-  const execution = mode === "execute"
+  const execution = effectiveMode === "execute"
     ? await runExecuteOrchestration(root, session, {
         quiet: json,
         testCommand,
@@ -138,10 +145,11 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
 
   const result: ChangeCommandResult = {
     session,
-    mode,
+    mode: effectiveMode,
     execution,
     text: "",
     exitCode: execution.implement ? computeImplementExitCodeFromExecution(execution) : 0,
+    modeResolution,
   };
 
   result.text = renderChangeCommandText(result);
@@ -166,7 +174,7 @@ export function buildNextCommandHints(
 
     hints.push({
       command: "npm run jispec-cli -- implement",
-      description: "Run the strict-lane implementation loop inside the current contract boundary.",
+      description: "Run strict-lane implementation mediation inside the current contract boundary.",
     });
 
     hints.push({
@@ -341,6 +349,7 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
   lines.push(`ID: ${session.id}`);
   lines.push(`Summary: ${session.summary}`);
   lines.push(`Mode: ${execution.mode.toUpperCase()}`);
+  lines.push(`Mode source: ${result.modeResolution.source}`);
   lines.push("");
 
   lines.push(renderLaneDecisionText(session.laneDecision));
@@ -412,6 +421,7 @@ export function renderChangeCommandJSON(result: ChangeCommandResult): string {
   return JSON.stringify({
     ...result.session,
     mode: result.mode,
+    modeResolution: result.modeResolution,
     execution: result.execution,
     exitCode: result.exitCode,
   }, null, 2);

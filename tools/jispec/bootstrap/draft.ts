@@ -115,6 +115,7 @@ export interface DraftSessionManifest {
   specDebtPaths?: string[];
   takeoverReportPath?: string;
   takeoverBriefPath?: string;
+  adoptSummaryPath?: string;
   baselineHandoff?: {
     expectedContractPaths: string[];
     deferredSpecDebtPaths: string[];
@@ -1128,7 +1129,7 @@ function buildFeatureScenarios(graph: EvidenceGraph, context: RankedDraftContext
           },
         ];
 
-  return boundaries.map((boundary, index) => {
+  const scenarios = boundaries.map((boundary, index) => {
     const relatedRoute = selectRouteForBoundary(boundary.name, context.topRoutes, index);
     const relatedTests = relatedRoute ? selectTestsForRoute(relatedRoute, topTests) : selectTestsForBoundary(boundary.name, topTests);
     const relatedSchemas = relatedRoute
@@ -1208,6 +1209,38 @@ function buildFeatureScenarios(graph: EvidenceGraph, context: RankedDraftContext
         : behavior.then,
     };
   });
+
+  return selectTakeoverGradeFeatureScenarios(scenarios, context.qualitySummary.evidenceStrength);
+}
+
+function selectTakeoverGradeFeatureScenarios(
+  scenarios: FeatureScenarioDraft[],
+  evidenceStrength: "strong" | "moderate" | "thin",
+): FeatureScenarioDraft[] {
+  const hasAcceptCandidate = scenarios.some((scenario) => scenario.recommendation === "accept_candidate");
+  const limit = hasAcceptCandidate
+    ? 6
+    : evidenceStrength === "thin"
+      ? 2
+      : 3;
+
+  return [...scenarios]
+    .sort((left, right) => {
+      const recommendationDelta = recommendationPriority(right) - recommendationPriority(left);
+      if (recommendationDelta !== 0) {
+        return recommendationDelta;
+      }
+      const confidenceDelta = right.confidenceScore - left.confidenceScore;
+      if (confidenceDelta !== 0) {
+        return confidenceDelta;
+      }
+      return left.boundaryName.localeCompare(right.boundaryName);
+    })
+    .slice(0, limit);
+}
+
+function recommendationPriority(scenario: FeatureScenarioDraft): number {
+  return scenario.recommendation === "accept_candidate" ? 1 : 0;
 }
 
 function inferFallbackBehaviorBoundary(context: RankedDraftContext): string {

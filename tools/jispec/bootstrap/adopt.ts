@@ -16,7 +16,9 @@ import {
   renderTakeoverBriefSummary,
   type BootstrapTakeoverBriefSummary,
 } from "./takeover-brief";
+import { buildBootstrapAdoptSummary } from "./adopt-summary";
 import {
+  getBootstrapAdoptSummaryPath,
   buildBootstrapTakeoverReport,
   getBootstrapTakeoverBriefPath,
   getBootstrapTakeoverBriefRelativePath,
@@ -55,11 +57,12 @@ export interface BootstrapAdoptResult {
   rejectedArtifactKinds: DraftArtifactKind[];
   takeoverReportPath?: string;
   takeoverBriefPath?: string;
+  adoptSummaryPath?: string;
   takeoverBriefSummary?: BootstrapTakeoverBriefSummary;
 }
 
 interface CommitOperation {
-  label: "contracts" | "spec-debt" | "takeover-report" | "takeover-brief";
+  label: "contracts" | "spec-debt" | "takeover-report" | "takeover-brief" | "adopt-summary";
   stagedPath: string;
   finalPath: string;
 }
@@ -72,6 +75,7 @@ interface PreparedShadowBatch {
   specDebtFiles: string[];
   takeoverReportPath?: string;
   takeoverBriefPath?: string;
+  adoptSummaryPath?: string;
   takeoverBriefSummary?: BootstrapTakeoverBriefSummary;
   baselineHandoff?: BootstrapBaselineHandoff;
 }
@@ -126,6 +130,7 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
       specDebtPaths: preparedBatch.specDebtFiles.map((filePath) => normalizeEvidencePath(path.relative(root, filePath))),
       takeoverReportPath: preparedBatch.takeoverReportPath,
       takeoverBriefPath: preparedBatch.takeoverBriefPath,
+      adoptSummaryPath: preparedBatch.adoptSummaryPath,
       baselineHandoff: preparedBatch.baselineHandoff,
       decisionLog: decisions.map((decision) => ({
         artifactKind: decision.artifactKind,
@@ -162,6 +167,7 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
         .sort((left, right) => left.localeCompare(right)),
       takeoverReportPath: preparedBatch.takeoverReportPath,
       takeoverBriefPath: preparedBatch.takeoverBriefPath,
+      adoptSummaryPath: preparedBatch.adoptSummaryPath,
       takeoverBriefSummary: preparedBatch.takeoverBriefSummary,
     };
   } catch (error) {
@@ -206,6 +212,10 @@ export function renderBootstrapAdoptText(result: BootstrapAdoptResult): string {
       lines.push("Brief summary:");
       lines.push(...renderTakeoverBriefSummary(result.takeoverBriefSummary).map((entry) => `- ${entry}`));
     }
+  }
+
+  if (result.adoptSummaryPath) {
+    lines.push(`Adopt summary: ${result.adoptSummaryPath}`);
   }
 
   if (result.writtenFiles.length > 0) {
@@ -489,6 +499,18 @@ function stageBootstrapTakeoverReport(
   batch.stagedFiles.push(normalizeEvidencePath(stagedPath));
   batch.takeoverReportPath = getBootstrapTakeoverReportRelativePath();
   batch.baselineHandoff = report.baselineHandoff;
+
+  const adoptSummary = buildBootstrapAdoptSummary(report);
+  const stagedAdoptSummaryPath = path.join(batch.shadowRoot, "handoffs", path.basename(adoptSummary.relativePath));
+  fs.mkdirSync(path.dirname(stagedAdoptSummaryPath), { recursive: true });
+  fs.writeFileSync(stagedAdoptSummaryPath, adoptSummary.content, "utf-8");
+  batch.operations.push({
+    label: "adopt-summary",
+    stagedPath: stagedAdoptSummaryPath,
+    finalPath: getBootstrapAdoptSummaryPath(root),
+  });
+  batch.stagedFiles.push(normalizeEvidencePath(stagedAdoptSummaryPath));
+  batch.adoptSummaryPath = adoptSummary.relativePath;
 
   const brief = buildBootstrapTakeoverBrief({
     root,

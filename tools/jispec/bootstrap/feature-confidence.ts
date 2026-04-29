@@ -78,6 +78,11 @@ export function assessFeatureScenarioConfidence(
       (input.relatedDocumentCount > 0 && input.relatedSchemaCount + input.relatedTestCount > 0) ||
       (input.relatedTestCount > 0 && input.relatedAggregateRootCount > 0)
     );
+  const lacksExecutableBehaviorAnchor =
+    !strongScenarioCorroboration &&
+    input.relatedTestCount === 0 &&
+    input.relatedProtoServiceCount === 0 &&
+    input.relatedDocumentCount === 0;
 
   if (input.evidenceStrength === "thin") {
     confidenceReasons.push("repository evidence strength is thin");
@@ -117,6 +122,10 @@ export function assessFeatureScenarioConfidence(
     confidenceReasons.push("route-only behavior lacks contract, document, proto, aggregate, or test corroboration");
   }
 
+  if (lacksExecutableBehaviorAnchor) {
+    confidenceReasons.push("behavior lacks test or protocol service corroboration");
+  }
+
   if (input.evidenceCoverage === 0) {
     confidenceReasons.push("no direct behavior evidence supports this boundary");
   }
@@ -133,6 +142,7 @@ export function assessFeatureScenarioConfidence(
     (input.evidenceStrength === "thin" && !strongScenarioCorroboration) ||
     input.evidenceCoverage === 0 ||
     routeOnlyEvidence ||
+    lacksExecutableBehaviorAnchor ||
     input.genericBehaviorTemplate ||
     genericBoundary ||
     input.confidenceScore < 0.58;
@@ -174,16 +184,21 @@ export function summarizeFeatureScenarioConfidence(input: {
       ? Number((scenarios.reduce((sum, scenario) => sum + scenario.confidenceScore, 0) / scenarios.length).toFixed(2))
       : undefined;
   const recommendation: FeatureRecommendation =
-    scenarios.length > 0 &&
-    deferredScenarioCount === 0 &&
-    humanReviewScenarioCount === 0 &&
-    (averageConfidenceScore ?? 0) >= ACCEPT_CONFIDENCE_THRESHOLD
+    shouldAcceptFeatureArtifact({
+      evidenceStrength: input.evidenceStrength,
+      acceptCandidateCount,
+      deferredScenarioCount,
+      humanReviewScenarioCount,
+      averageConfidenceScore,
+    })
       ? "accept_candidate"
       : "defer_as_spec_debt";
   const confidenceReasons: string[] = [];
 
-  if (recommendation === "accept_candidate") {
+  if (recommendation === "accept_candidate" && deferredScenarioCount === 0 && humanReviewScenarioCount === 0) {
     confidenceReasons.push("all scenarios passed the confidence gate");
+  } else if (recommendation === "accept_candidate") {
+    confidenceReasons.push("strong scenarios passed while tagged scenarios remain review warnings");
   } else if (scenarios.length === 0) {
     confidenceReasons.push("no feature scenarios were available for confidence assessment");
   } else {
@@ -214,6 +229,28 @@ export function summarizeFeatureScenarioConfidence(input: {
     humanReviewScenarioCount,
     averageConfidenceScore,
   };
+}
+
+function shouldAcceptFeatureArtifact(input: {
+  evidenceStrength: "strong" | "moderate" | "thin";
+  acceptCandidateCount: number;
+  deferredScenarioCount: number;
+  humanReviewScenarioCount: number;
+  averageConfidenceScore?: number;
+}): boolean {
+  const average = input.averageConfidenceScore ?? 0;
+  if (input.acceptCandidateCount === 0 || average < ACCEPT_CONFIDENCE_THRESHOLD) {
+    return false;
+  }
+
+  if (input.deferredScenarioCount === 0 && input.humanReviewScenarioCount === 0) {
+    return true;
+  }
+
+  return (
+    input.evidenceStrength === "strong" &&
+    input.acceptCandidateCount >= Math.max(2, input.deferredScenarioCount * 2)
+  );
 }
 
 export function parseFeatureConfidenceFromGherkin(content: string | undefined): ParsedFeatureConfidenceSummary {

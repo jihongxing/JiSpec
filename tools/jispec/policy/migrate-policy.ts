@@ -1,11 +1,11 @@
 import { createFactsContract } from "../facts/facts-contract";
 import {
-  loadVerifyPolicy,
   policyFileExists,
+  readPolicyDocument,
   resolvePolicyPath,
   writeVerifyPolicy,
 } from "./policy-loader";
-import { type VerifyPolicy } from "./policy-schema";
+import { validateVerifyPolicy, type VerifyPolicy } from "./policy-schema";
 
 export interface PolicyMigrationResult {
   path: string;
@@ -25,6 +25,11 @@ export function createStarterVerifyPolicy(): VerifyPolicy {
     version: 1,
     requires: {
       facts_contract: contract.version,
+    },
+    team: {
+      profile: "small_team",
+      owner: "unassigned",
+      reviewers: [],
     },
     rules: [
       {
@@ -89,13 +94,17 @@ export function migrateVerifyPolicy(root: string, filePath?: string): PolicyMigr
   const contract = createFactsContract();
   const targetPath = resolvePolicyPath(root, filePath);
   const exists = policyFileExists(root, filePath);
-  const basePolicy = exists ? loadVerifyPolicy(root, filePath) : null;
+  const changes: string[] = [];
+  const basePolicy = exists ? loadPolicyForMigration(targetPath, changes) : null;
 
   let nextPolicy = basePolicy ?? createStarterVerifyPolicy();
-  const changes: string[] = [];
 
   if (!exists) {
     changes.push("Scaffolded a starter policy");
+  }
+
+  if (!nextPolicy.team) {
+    changes.push("Added minimal team profile");
   }
 
   if (nextPolicy.requires?.facts_contract !== contract.version) {
@@ -108,6 +117,11 @@ export function migrateVerifyPolicy(root: string, filePath?: string): PolicyMigr
       ...(nextPolicy.requires ?? {}),
       facts_contract: contract.version,
     },
+    team: {
+      profile: nextPolicy.team?.profile ?? "small_team",
+      owner: nextPolicy.team?.owner ?? "unassigned",
+      reviewers: nextPolicy.team?.reviewers ?? [],
+    },
   };
 
   writeVerifyPolicy(root, nextPolicy, filePath);
@@ -119,6 +133,56 @@ export function migrateVerifyPolicy(root: string, filePath?: string): PolicyMigr
     changes,
     policy: nextPolicy,
   };
+}
+
+function loadPolicyForMigration(policyPath: string, changes: string[]): VerifyPolicy {
+  const raw = readPolicyDocument(policyPath);
+  const normalized = normalizeDeprecatedPolicyKeys(raw, changes);
+  return validateVerifyPolicy(normalized);
+}
+
+function normalizeDeprecatedPolicyKeys(policy: unknown, changes: string[]): unknown {
+  if (!isRecord(policy)) {
+    return policy;
+  }
+
+  const next: Record<string, unknown> = { ...policy };
+
+  if ("facts_contract" in next) {
+    const requires = isRecord(next.requires) ? { ...next.requires } : {};
+    if (requires.facts_contract === undefined) {
+      requires.facts_contract = next.facts_contract;
+      changes.push("Migrated deprecated facts_contract to requires.facts_contract");
+    }
+    delete next.facts_contract;
+    next.requires = requires;
+  }
+
+  if (isRecord(next.requires) && "factsContract" in next.requires) {
+    const requires = { ...next.requires };
+    if (requires.facts_contract === undefined) {
+      requires.facts_contract = requires.factsContract;
+      changes.push("Migrated deprecated requires.factsContract to requires.facts_contract");
+    }
+    delete requires.factsContract;
+    next.requires = requires;
+  }
+
+  if ("team_profile" in next) {
+    const team = isRecord(next.team) ? { ...next.team } : {};
+    if (team.profile === undefined) {
+      team.profile = next.team_profile;
+      changes.push("Migrated deprecated team_profile to team.profile");
+    }
+    delete next.team_profile;
+    next.team = team;
+  }
+
+  return next;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function renderPolicyMigrationText(result: PolicyMigrationResult): string {

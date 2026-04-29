@@ -75,6 +75,7 @@ export interface EvidenceSourceFile {
 export interface EvidenceExclusionRuleSummary {
   ruleId: string;
   reason: string;
+  optInHint?: string;
   fileCount: number;
   examplePaths: string[];
 }
@@ -227,11 +228,12 @@ function normalizeExclusionSummary(summary: EvidenceExclusionSummary | undefined
   }
 
   const rules = summary.rules
-    .map((rule) => ({
-      ruleId: rule.ruleId,
-      reason: rule.reason,
-      fileCount: Number.isFinite(rule.fileCount) ? Math.max(0, Math.trunc(rule.fileCount)) : 0,
-      examplePaths: Array.isArray(rule.examplePaths)
+      .map((rule) => ({
+        ruleId: rule.ruleId,
+        reason: rule.reason,
+        optInHint: rule.optInHint,
+        fileCount: Number.isFinite(rule.fileCount) ? Math.max(0, Math.trunc(rule.fileCount)) : 0,
+        examplePaths: Array.isArray(rule.examplePaths)
         ? [...rule.examplePaths].map((entry) => normalizeEvidencePath(entry)).sort((left, right) => left.localeCompare(right)).slice(0, 5)
         : [],
     }))

@@ -3,7 +3,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 interface DoctorReport {
-  checks?: Array<{ name?: string; status?: string }>;
+  checks?: Array<{ name?: string; status?: string; details?: string[] }>;
   profile?: string;
   ready?: boolean;
 }
@@ -45,6 +45,7 @@ async function main(): Promise<void> {
       "Facts & Policy Surface",
       "CI Verify Surface",
       "Change / Implement Mainline Surface",
+      "Execute-Default Mediation Readiness",
       "V1 Regression Coverage",
     ]) {
       assert.ok(checkNames.has(requiredName), `Missing V1 readiness check: ${requiredName}`);
@@ -65,6 +66,13 @@ async function main(): Promise<void> {
       assert.ok(!checkNames.has(deferredName), `Deferred surface leaked into doctor v1: ${deferredName}`);
     }
     console.log("✓ Test 3: doctor v1 does not let deferred collaboration/distributed surfaces participate in V1 readiness");
+    passed++;
+
+    const executeDefaultCheck = (report.checks ?? []).find((check) => check.name === "Execute-Default Mediation Readiness");
+    assert.equal(executeDefaultCheck?.status, "pass");
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Default change mode:")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Strict-lane changes still stop at the adopt boundary") || detail.includes("change defaults to prompt mode")));
+    console.log("✓ Test 4: doctor v1 reports execute-default mediation readiness without changing deferred readiness scope");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

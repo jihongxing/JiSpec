@@ -40,6 +40,7 @@ What that does **not** mean:
 - this is not yet a "high-quality fully automatic contract generation" release
 - complex repositories still need human-guided `domain/api` correction during adopt
 - `feature` drafts are still materially weaker than `domain` and `api` drafts on noisy repos
+  and are review-gated when the supporting evidence is thin
 
 The right release framing for this build is:
 
@@ -70,16 +71,19 @@ Today, JiSpec can already persist:
 - adoption-ranked evidence packets
 - draft session manifests
 - adopted contracts and spec-debt records
-- takeover reports and takeover briefs
-- verify JSON reports and CI summaries
+- takeover reports, takeover briefs, and adopt summaries
+- verify JSON reports, verify summaries, and CI summaries
 
 That is technically valuable, and the takeover path now makes the split explicit:
 
 - `evidence-graph.json` and `full-inventory.json` are machine-first system records
 - `adoption-ranked-evidence.json` is the high-signal packet used by draft and takeover review
+- `bootstrap-summary.md` is the preferred human-readable discover summary; `evidence-summary.txt` remains a compatibility alias
 - `takeover-brief.md` is the human decision packet a reviewer can scan in minutes
+- `adopt-summary.md` is the compact adoption digest for accepted, edited, rejected, and deferred draft decisions
+- `verify-summary.md` is the compact decision digest for mergeability, blockers, advisory debt, and next action; Greenfield reports use the same language for policy, contract graph, spec delta, spec debt, and implementation fact ratchets
 
-The remaining explanation gap is now narrower: future work should bring the same compact digest quality to adoption summaries and verify summaries.
+The remaining explanation gap is now narrower: adopt and verify decisions now get compact summaries, and future work should keep tightening summary quality across the mainline.
 
 The desired output model should become:
 
@@ -170,6 +174,7 @@ Expected improvements:
 - higher-signal discover ranking
 - stronger deterministic draft quality
 - better behavior-contract synthesis
+- feature scenarios stay review-gated or deferred when behavior evidence is thin
 - fewer noisy artifacts entering the first adoption bundle
 - human-readable summaries become first-class outputs rather than after-the-fact interpretation docs
 
@@ -228,6 +233,8 @@ npm run jispec-cli -- bootstrap draft
 npm run jispec-cli -- adopt --interactive
 npm run jispec-cli -- verify --json
 npm run jispec-cli -- policy migrate
+npm run jispec-cli -- release snapshot --version v1
+npm run jispec-cli -- release compare --from v1 --to current
 npm run jispec-cli -- doctor v1
 npm run jispec-cli -- doctor runtime
 npm run ci:verify
@@ -238,25 +245,30 @@ What they do:
 - `bootstrap init-project`
   Creates a minimal `jiproject/project.yaml` scaffold; existing files are protected unless `--force` is passed.
 - `bootstrap discover`
-  Scans the repository and writes `.spec/facts/bootstrap/evidence-graph.json`, `full-inventory.json`, `adoption-ranked-evidence.json`, and `evidence-summary.txt`; use `--init-project` to create the project scaffold first when it is missing.
+  Scans the repository and writes `.spec/facts/bootstrap/evidence-graph.json`, `full-inventory.json`, `adoption-ranked-evidence.json`, `bootstrap-summary.md`, and the compatibility `evidence-summary.txt`; use `--init-project` to create the project scaffold first when it is missing.
+  By default it excludes vendor, cache, build, coverage, audit mirror, generated, and tool-mirror noise; use `--include-noise` for explicit forensic/exhaustive scans.
 - `bootstrap draft`
   Converts ranked bootstrap evidence into a session-scoped draft bundle under `.spec/sessions/`; deterministic generation is always available, and a configured BYOK provider may only re-anchor draft content.
 - `adopt --interactive`
-  Lets you accept, reject, edit, or defer that draft bundle into `.spec/contracts/` and `.spec/spec-debt/`, then writes `.spec/handoffs/bootstrap-takeover.json` and `.spec/handoffs/takeover-brief.md`.
+  Lets you accept, reject, edit, or defer that draft bundle into `.spec/contracts/` and `.spec/spec-debt/`, then writes `.spec/handoffs/bootstrap-takeover.json`, `.spec/handoffs/takeover-brief.md`, and `.spec/handoffs/adopt-summary.md`.
 - `change`
   Records change intent, classifies the active diff into fast or strict lane, and writes the active change session.
 - `implement`
-  Runs the local budget-controlled implementation loop for the active change session, then returns to verify.
+  Mediates an active change session through bounded handoff or an external patch file, then returns to verify. JiSpec does not generate business code.
 - `verify`
-  Runs the current deterministic repository verification path, auto-loads `.spec/policy.yaml` when present, and emits the new four-state verdict surface.
+  Runs the current deterministic repository verification path, auto-loads `.spec/policy.yaml` when present, emits the four-state verdict surface, and writes `.spec/handoffs/verify-summary.md`.
 - `policy migrate`
-  Scaffolds or normalizes the minimal YAML policy surface at `.spec/policy.yaml` and pins it to the current facts contract version.
+  Scaffolds or normalizes the minimal YAML policy surface at `.spec/policy.yaml`, pins it to the current facts contract version, and adds the minimal `team.profile` governance surface.
+- `waiver create|list|revoke`
+  Records, inspects, or revokes auditable verify waivers. Waivers downgrade only matching issues; unmatched blocking issues remain blocking.
+- `release snapshot|compare`
+  Freezes release baselines and compares baseline refs with a compact drift summary across contract graph, static collector, and policy surfaces.
 - `doctor v1`
   Runs the V1 mainline readiness checks without letting deferred distributed or collaboration surfaces block the result.
 - `doctor runtime`
   Runs broader runtime and compatibility health diagnostics outside the V1 mainline readiness gate.
 - `ci:verify`
-  Wraps the repository verification path for CI usage.
+  Wraps the repository verification path for CI usage and writes `.jispec-ci/verify-report.json`, `.jispec-ci/ci-summary.md`, and `.jispec-ci/verify-summary.md`.
 
 ## AI boundary rule
 
@@ -265,6 +277,8 @@ LLMs may assist draft, explanation, and repair. Blocking gates remain determinis
 In the bootstrap path, a BYOK provider is treated as a semantic re-anchoring helper: it can improve human-readable draft `content`, but the deterministic baseline owns `relativePath`, `sourceFiles`, `confidenceScore`, and `provenanceNote`. If the provider is unavailable or returns malformed output, JiSpec falls back to deterministic draft generation and records `generationMode = "provider-fallback"`.
 
 The gate side stays deliberately boring: `verify`, `ci:verify`, policy checks, schema validation, and future AST-backed blockers must remain deterministic and scriptable.
+
+Waivers are lifecycle records, not silent ignores. Created waivers carry owner, reason, matcher, status, optional expiration, and optional revocation metadata. Verify summaries report matched waivers and lifecycle counts so teams can see expired, revoked, invalid, and unmatched active waivers.
 
 ## Quickstart
 
@@ -286,6 +300,8 @@ Run repository verification locally:
 npm run verify
 ```
 
+This also writes `.spec/handoffs/verify-summary.md`, a human-readable companion summary. The machine-readable contract remains `verify --json`.
+
 Record a change and let JiSpec decide the lane:
 
 ```bash
@@ -304,17 +320,36 @@ Record a change in execute mode and let JiSpec continue into implement/verify wh
 npm run jispec-cli -- change "Add order refund validation" --mode execute
 ```
 
-Run the strict local implementation loop:
+Projects can prepare an execute-default rollout without changing existing behavior globally by setting:
+
+```yaml
+change:
+  default_mode: execute
+```
+
+in `jiproject/project.yaml`. Explicit `--mode prompt` or `--mode execute` still wins over project config, and strict-lane changes still pause at the adopt boundary when an open bootstrap draft exists.
+
+Run strict implementation mediation:
 
 ```bash
 npm run jispec-cli -- implement
 ```
 
-Run the fast local implementation loop for a session that stayed on fast lane:
+Run fast implementation mediation for a session that stayed on fast lane:
 
 ```bash
 npm run jispec-cli -- implement --fast
 ```
+
+Mediate an external patch produced by a human or AI coding tool:
+
+```bash
+npm run jispec-cli -- implement --external-patch .jispec/patches/refund.patch
+```
+
+Implementation mediation JSON uses stable outcome names:
+
+`preflight_passed`, `external_patch_received`, `patch_verified`, `patch_rejected_out_of_scope`, `budget_exhausted`, `stall_detected`, `verify_blocked`.
 
 Inspect the machine-readable verify contract:
 
@@ -328,6 +363,8 @@ Scaffold or refresh the minimal policy file:
 npm run jispec-cli -- policy migrate
 ```
 
+The migrated policy pins `requires.facts_contract`, includes `team.profile`, and normalizes known deprecated keys such as `facts_contract` and `team_profile`. Unknown facts, unknown policy keys, and deprecated keys are reported as deterministic nonblocking policy issues during `verify`.
+
 Create the explicit project scaffold when taking over a legacy repo:
 
 ```bash
@@ -340,7 +377,7 @@ Run bootstrap discovery:
 npm run jispec-cli -- bootstrap discover
 ```
 
-This writes the machine inventory and ranked takeover packet under `.spec/facts/bootstrap/`.
+This writes the machine inventory, ranked takeover packet, and `bootstrap-summary.md` under `.spec/facts/bootstrap/`.
 
 Draft the first contract bundle:
 
@@ -356,13 +393,26 @@ Adopt the drafted bundle:
 npm run jispec-cli -- adopt --interactive
 ```
 
-This writes adopted contracts, deferred spec debt, the machine takeover report, and the human-readable takeover brief.
+This writes adopted contracts, deferred spec debt, the machine takeover report, the human-readable takeover brief, and the compact adopt summary.
+
+For Greenfield projects, initialization also writes `.spec/greenfield/change-mainline-handoff.json` and `.spec/greenfield/change-mainline-handoff.md`. These files turn the first generated slice into a traceable `change` intent for implementation mediation; JiSpec still only constrains, records, and verifies external implementation work. Greenfield verify and CI summaries use the shared verify-summary decision vocabulary rather than a separate explanation model.
 
 Run the CI wrapper:
 
 ```bash
 npm run ci:verify
 ```
+
+This writes `.jispec-ci/verify-report.json`, `.jispec-ci/ci-summary.md`, and `.jispec-ci/verify-summary.md`.
+
+Freeze and compare release baselines:
+
+```bash
+npm run jispec-cli -- release snapshot --version v1
+npm run jispec-cli -- release compare --from v1 --to current
+```
+
+`release compare` writes JSON and Markdown reports under `.spec/releases/compare/`, with drift split into contract graph, static collector, and policy categories.
 
 Replay the minimal legacy-repo takeover sample:
 
@@ -439,11 +489,13 @@ Current mode split:
 - `change --mode execute`
   Tries to continue the mainline automatically:
   fast lane runs through `implement --fast -> verify --fast`, while strict lane either enters `implement -> verify` or pauses at the explicit `adopt` boundary when a bootstrap draft is still open.
+- `jiproject/project.yaml` with `change.default_mode: execute`
+  Lets a project opt into execute-default mediation for `change` calls that omit `--mode`; explicit CLI mode remains the highest priority.
 
 - `change`
   Persists the active diff classification and lane decision into `.jispec/change-session.json`.
 - `implement`
-  Uses that active change session, honors strict vs fast lane, and runs a post-implement verify step automatically.
+  Uses that active change session, honors strict vs fast lane, mediates external patch intake when `--external-patch` is supplied, and runs a post-implement verify step automatically.
 - `implement --fast`
   Is a local development accelerator only. It can still auto-promote back to strict when verify sees contract-critical changes.
 
@@ -508,6 +560,16 @@ The `ordering` context includes one complete example slice:
 
 - North star:
   [docs/north-star.md](docs/north-star.md)
+- Post-V1 north-star task plan:
+  [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
+- Post-release gate:
+  [docs/post-release-gate.md](docs/post-release-gate.md)
+- Retakeover regression pool:
+  [docs/retakeover-regression-pool.md](docs/retakeover-regression-pool.md)
+- Console read model contract:
+  [docs/console-read-model-contract.md](docs/console-read-model-contract.md)
+- Collaboration surface freeze:
+  [docs/collaboration-surface-freeze.md](docs/collaboration-surface-freeze.md)
 - V1 mainline stable contract:
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
 - Greenfield input contract:

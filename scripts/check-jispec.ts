@@ -7,6 +7,7 @@ import {
   writeVerifyArtifacts,
 } from "../tools/jispec/ci/verify-report";
 import { renderCiSummaryMarkdown, renderCiSummaryText } from "../tools/jispec/ci/ci-summary";
+import { renderVerifySummaryMarkdown } from "../tools/jispec/ci/verify-summary";
 import {
   isGitHubActionsEnv,
   buildGitHubContext,
@@ -48,7 +49,12 @@ async function main(): Promise<number> {
   context.repoRoot = repoRoot;
 
   const report = buildVerifyReport(verifyResult, context);
-  const artifactPaths = writeVerifyArtifacts(repoRoot, report, renderCiSummaryMarkdown(report));
+  const artifactPaths = writeVerifyArtifacts(
+    repoRoot,
+    report,
+    renderCiSummaryMarkdown(report),
+    renderVerifySummaryMarkdown(report),
+  );
 
   if (isGitHubActionsEnv()) {
     writeGitHubStepSummary(report);
@@ -62,6 +68,7 @@ async function main(): Promise<number> {
   console.log(`CI artifacts written to ${path.relative(repoRoot, ciOutputDir).replace(/\\/g, "/")}`);
   console.log(`- ${path.relative(repoRoot, artifactPaths.reportPath).replace(/\\/g, "/")}`);
   console.log(`- ${path.relative(repoRoot, artifactPaths.summaryPath).replace(/\\/g, "/")}`);
+  console.log(`- ${path.relative(repoRoot, artifactPaths.verifySummaryPath).replace(/\\/g, "/")}`);
 
   return verifyResult.ok ? 0 : 1;
 }

@@ -4,6 +4,7 @@ import * as yaml from "js-yaml";
 import { runGreenfieldInit } from "../tools/jispec/greenfield/init";
 import { runVerify } from "../tools/jispec/verify/verify-runner";
 import type { VerifyRunResult } from "../tools/jispec/verify/verdict";
+import { runChangeCommand, type ChangeCommandResult } from "../tools/jispec/change/change-command";
 
 interface DemoOptions {
   root: string;
@@ -17,6 +18,14 @@ interface BaselineYaml {
   slices?: string[];
 }
 
+interface ChangeMainlineHandoffJson {
+  change_intent?: {
+    summary?: string;
+    context_id?: string;
+    slice_id?: string;
+  };
+}
+
 interface DemoResult {
   root: string;
   requirements: string;
@@ -27,7 +36,17 @@ interface DemoResult {
   verifyOk: boolean;
   firstSliceId?: string;
   acceptanceSummaryPath: string;
+  changeHandoffPath: string;
   nextCommands: string[];
+  changeSmoke?: {
+    sessionId: string;
+    mode: string;
+    state: string;
+    lane: string;
+    outcome?: string;
+    archived: boolean;
+    postVerifyVerdict?: string;
+  };
   generatedAssets: {
     project: string;
     policy: string;
@@ -61,9 +80,10 @@ async function main(): Promise<number> {
       policyPath: ".spec/policy.yaml",
       useBaseline: true,
     });
-    const result = buildDemoResult(options, initResult.status, verifyResult, initResult.writtenFiles.length);
+    const changeSmoke = verifyResult.ok ? await runGreenfieldChangeSmoke(options.root) : undefined;
+    const result = buildDemoResult(options, initResult.status, verifyResult, initResult.writtenFiles.length, changeSmoke);
     printResult(result, options.json);
-    return verifyResult.ok ? 0 : 1;
+    return verifyResult.ok && (!changeSmoke || changeSmoke.execution.state === "implemented") ? 0 : 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Greenfield empty directory demo failed: ${message}`);
@@ -146,9 +166,11 @@ function buildDemoResult(
   initStatus: string,
   verifyResult: VerifyRunResult | undefined,
   writtenFileCount: number,
+  changeSmoke?: ChangeCommandResult,
 ): DemoResult {
   const root = path.resolve(options.root);
   const firstSliceId = readFirstSliceId(root);
+  const changeIntent = readChangeHandoff(root)?.change_intent;
 
   return {
     root: normalizePath(root),
@@ -160,10 +182,24 @@ function buildDemoResult(
     verifyOk: verifyResult?.ok ?? false,
     firstSliceId,
     acceptanceSummaryPath: ".spec/greenfield/initialization-summary.md",
+    changeHandoffPath: ".spec/greenfield/change-mainline-handoff.json",
     nextCommands: [
       "jispec-cli verify --root . --policy .spec/policy.yaml",
-      'jispec-cli change "V2: describe the next requirement change" --root .',
+      changeIntent?.summary && changeIntent.slice_id && changeIntent.context_id
+        ? `jispec-cli change "${changeIntent.summary}" --root . --slice ${changeIntent.slice_id} --context ${changeIntent.context_id} --change-type add --mode prompt`
+        : 'jispec-cli change "V2: describe the next requirement change" --root .',
     ],
+    changeSmoke: changeSmoke
+      ? {
+          sessionId: changeSmoke.session.id,
+          mode: changeSmoke.mode,
+          state: changeSmoke.execution.state,
+          lane: changeSmoke.session.laneDecision.lane,
+          outcome: changeSmoke.execution.implement?.outcome,
+          archived: changeSmoke.execution.implement?.sessionArchived === true,
+          postVerifyVerdict: changeSmoke.execution.implement?.postVerifyVerdict,
+        }
+      : undefined,
     generatedAssets: {
       project: "jiproject/project.yaml",
       policy: ".spec/policy.yaml",
@@ -173,6 +209,38 @@ function buildDemoResult(
     writtenFileCount,
     verifyIssueCount: verifyResult?.issueCount ?? 0,
   };
+}
+
+async function runGreenfieldChangeSmoke(rootInput: string): Promise<ChangeCommandResult | undefined> {
+  const root = path.resolve(rootInput);
+  const handoff = readChangeHandoff(root);
+  const intent = handoff?.change_intent;
+  if (!intent?.summary || !intent.slice_id || !intent.context_id) {
+    return undefined;
+  }
+
+  return runChangeCommand({
+    root,
+    summary: intent.summary,
+    sliceId: intent.slice_id,
+    contextId: intent.context_id,
+    changeType: "add",
+    mode: "execute",
+    json: true,
+    testCommand: buildVerifySmokeCommand(),
+  });
+}
+
+function buildVerifySmokeCommand(): string {
+  return `"${process.execPath}" -e "process.exit(0)"`;
+}
+
+function readChangeHandoff(root: string): ChangeMainlineHandoffJson | undefined {
+  const handoffPath = path.join(root, ".spec", "greenfield", "change-mainline-handoff.json");
+  if (!fs.existsSync(handoffPath)) {
+    return undefined;
+  }
+  return JSON.parse(fs.readFileSync(handoffPath, "utf-8")) as ChangeMainlineHandoffJson;
 }
 
 function readFirstSliceId(root: string): string | undefined {
@@ -198,6 +266,8 @@ function printResult(result: DemoResult, json: boolean): void {
     `Verify: ${result.verifyVerdict}`,
     `First slice: ${result.firstSliceId ?? "none"}`,
     `Acceptance summary: ${result.acceptanceSummaryPath}`,
+    `Change handoff: ${result.changeHandoffPath}`,
+    `Change smoke: ${result.changeSmoke?.state ?? "not run"}`,
     "",
     "Next commands:",
     ...result.nextCommands.map((command) => `- ${command}`),

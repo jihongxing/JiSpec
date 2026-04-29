@@ -99,6 +99,60 @@ async function main(): Promise<void> {
     );
     console.log("✓ Test 3: explicit policy paths fail soft when the requested policy file is missing");
     passed++;
+
+    fs.writeFileSync(
+      policyPath,
+      [
+        "version: 1",
+        "unknown_surface: true",
+        "rules: []",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const unknownKeyResult = await runVerify({
+      root: fixtureRoot,
+      generatedAt: FIXED_GENERATED_AT,
+    });
+
+    assert.equal(unknownKeyResult.verdict, "ERROR_NONBLOCKING");
+    assert.ok(
+      unknownKeyResult.issues.some(
+        (issue) =>
+          issue.code === "POLICY_UNKNOWN_KEY" &&
+          issue.severity === "nonblocking_error" &&
+          (issue.details as Record<string, unknown>)?.key === "unknown_surface",
+      ),
+    );
+    console.log("✓ Test 4: unknown policy keys fail soft with a stable policy issue code");
+    passed++;
+
+    fs.writeFileSync(
+      policyPath,
+      [
+        "version: 1",
+        'team_profile: "solo"',
+        "rules: []",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const deprecatedKeyResult = await runVerify({
+      root: fixtureRoot,
+      generatedAt: FIXED_GENERATED_AT,
+    });
+
+    assert.equal(deprecatedKeyResult.verdict, "ERROR_NONBLOCKING");
+    assert.ok(
+      deprecatedKeyResult.issues.some(
+        (issue) =>
+          issue.code === "POLICY_DEPRECATED_KEY" &&
+          issue.severity === "nonblocking_error" &&
+          (issue.details as Record<string, unknown>)?.replacement === "team.profile",
+      ),
+    );
+    console.log("✓ Test 5: deprecated policy keys fail soft and name their replacement");
+    passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`✗ Test ${passed + failed + 1} failed: ${message}`);

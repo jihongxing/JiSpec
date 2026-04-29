@@ -238,7 +238,9 @@ function renderFeatureConfidenceGate(summary: ParsedFeatureConfidenceSummary): s
       : "defer_as_spec_debt";
   const decisionGuidance =
     summary.recommendation === "accept_candidate"
-      ? "Feature draft can be adopted as an initial behavior contract because the scenarios passed the confidence gate."
+      ? summary.humanReviewScenarioCount > 0 || summary.deferredScenarioCount > 0
+        ? "Feature draft can be adopted for its strong scenarios, but tagged behavior scenarios remain review warnings and must not become blocking gates until confirmed."
+        : "Feature draft can be adopted as an initial behavior contract because the scenarios passed the confidence gate."
       : "Defer the feature draft as spec debt until an owner confirms the tagged behavior scenarios; do not use it as a blocking gate yet.";
   const lines = [
     `- Recommendation: ${inlineCode(recommendation)}`,
