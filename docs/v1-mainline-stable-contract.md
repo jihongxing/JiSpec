@@ -404,6 +404,8 @@ Policy migration 会把已知 deprecated key 迁到当前结构：
 | `change --mode execute` | 尝试自动进入 `implement -> verify`，但在 strict lane 存在 open bootstrap draft 时必须停在 adopt 边界 |
 | `change.default_mode: execute` | 项目级默认值切换预备；doctor v1 会报告 execute-default mediation readiness |
 
+`doctor v1` 的 `Execute-Default Mediation Readiness` 检查会以人类决策包语言说明当前默认模式、mode 来源、是否建议使用 execute-default、open bootstrap draft adopt 边界和下一步动作。这个 readiness 只判断是否可以把 `change` 默认入口切到 implementation mediation，不表示 JiSpec 会自动生成业务代码。
+
 当前仓库的目标终态仍然是“以执行式串联为最终产品形态”，但在默认值切到 `execute` 之前，`prompt` 与 `execute` 会继续同时保留。
 
 ## 9. 回归矩阵

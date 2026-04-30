@@ -84,7 +84,7 @@ const TEST_SUITES: TestSuite[] = [
   core({ name: 'Verify Report Contract', file: 'verify-report-contract.ts', expectedTests: 4, task: 'P1-T5' }),
   core({ name: 'Verify Issue Fingerprint Stability', file: 'verify-issue-fingerprint-stability.ts', expectedTests: 2 }),
   core({ name: 'V1 Mainline Golden Path', file: 'v1-mainline-golden-path.ts', expectedTests: 4 }),
-  core({ name: 'Doctor V1 Readiness', file: 'doctor-v1-readiness.ts', expectedTests: 4, task: 'P2-T3' }),
+  core({ name: 'Doctor V1 Readiness', file: 'doctor-v1-readiness.ts', expectedTests: 7, task: 'P2-T3/N6' }),
   core({ name: 'V1 Sample Repo Smoke', file: 'v1-sample-repo-smoke.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Discover Smoke', file: 'bootstrap-discover-smoke.ts', expectedTests: 4, task: 'P1-T6' }),
   bootstrap({ name: 'Bootstrap Discover Empty Repo', file: 'bootstrap-discover-empty-repo.ts', expectedTests: 2 }),

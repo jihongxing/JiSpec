@@ -491,6 +491,8 @@ Current mode split:
   fast lane runs through `implement --fast -> verify --fast`, while strict lane either enters `implement -> verify` or pauses at the explicit `adopt` boundary when a bootstrap draft is still open.
 - `jiproject/project.yaml` with `change.default_mode: execute`
   Lets a project opt into execute-default mediation for `change` calls that omit `--mode`; explicit CLI mode remains the highest priority.
+- `doctor v1`
+  Reports execute-default readiness as a decision packet: current default, mode source, whether switching is recommended, open-bootstrap-draft adopt boundary, and next action.
 
 - `change`
   Persists the active diff classification and lane decision into `.jispec/change-session.json`.

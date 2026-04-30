@@ -15,6 +15,7 @@ export interface ChangeExecuteDefaultReadiness {
   source: ChangeDefaultModeResolution["source"];
   configPath?: string;
   readyForExecuteDefault: boolean;
+  openDraftSessionId?: string;
   warnings: string[];
   details: string[];
 }
@@ -52,6 +53,7 @@ export function resolveChangeCommandMode(
 
 export function evaluateChangeExecuteDefaultReadiness(root: string): ChangeExecuteDefaultReadiness {
   const resolution = resolveChangeCommandMode(root);
+  const openDraftSessionId = findOpenBootstrapDraftSessionId(root);
   const details: string[] = [];
 
   if (resolution.configPath) {
@@ -60,28 +62,96 @@ export function evaluateChangeExecuteDefaultReadiness(root: string): ChangeExecu
     details.push("Project config: not present");
   }
 
+  details.push(`Current default: ${resolution.mode}`);
   details.push(`Default change mode: ${resolution.mode}`);
   details.push(`Mode source: ${resolution.source}`);
 
-  if (resolution.mode === "execute") {
-    details.push("Execute-default mediation is configured.");
-    details.push("Strict-lane changes still stop at the adopt boundary when an open bootstrap draft exists.");
+  const readyForExecuteDefault = resolution.mode === "execute" && resolution.warnings.length === 0;
+  details.push(`Decision: ${renderExecuteDefaultDecision(resolution.mode, readyForExecuteDefault, resolution.warnings)}`);
+  details.push("Guardrail: execute-default only enters implementation mediation and verify orchestration; JiSpec still does not generate business code autonomously.");
+  details.push("Adopt boundary: strict-lane changes still stop before implement when an open bootstrap draft exists.");
+  details.push(`Open bootstrap draft: ${openDraftSessionId ?? "none"}`);
+
+  if (openDraftSessionId) {
+    details.push(`Next action: run npm run jispec-cli -- adopt --interactive --session ${openDraftSessionId} before relying on strict-lane execute-default.`);
+  } else if (resolution.mode === "execute") {
+    details.push("Next action: run change without --mode when you want the project default to enter implementation mediation.");
   } else {
-    details.push("Execute-default mediation is not enabled; change defaults to prompt mode.");
+    details.push("Next action: keep prompt default, or set change.default_mode: execute in jiproject/project.yaml after the team accepts execute mediation as the default entry point.");
   }
 
   for (const warning of resolution.warnings) {
-    details.push(warning);
+    details.push(`Blocking reason: ${warning}`);
   }
 
   return {
     defaultMode: resolution.mode,
     source: resolution.source,
     configPath: resolution.configPath,
-    readyForExecuteDefault: resolution.mode === "execute" && resolution.warnings.length === 0,
+    readyForExecuteDefault,
+    openDraftSessionId,
     warnings: resolution.warnings,
     details,
   };
+}
+
+function renderExecuteDefaultDecision(
+  mode: ChangeSessionOrchestrationMode,
+  readyForExecuteDefault: boolean,
+  warnings: string[],
+): string {
+  if (warnings.length > 0) {
+    return "Do not enable execute-default until the project configuration warning(s) are fixed.";
+  }
+  if (readyForExecuteDefault) {
+    return "Execute-default mediation is configured and ready for ordinary change calls.";
+  }
+  if (mode === "prompt") {
+    return "Prompt remains the default; use --mode execute for explicit trials before switching the project default.";
+  }
+  return "Review required before changing the project default.";
+}
+
+function findOpenBootstrapDraftSessionId(root: string): string | undefined {
+  const sessionsRoot = path.join(root, ".spec", "sessions");
+  if (!fs.existsSync(sessionsRoot)) {
+    return undefined;
+  }
+
+  const candidates: Array<{ sessionId: string; updatedAt: string }> = [];
+  for (const entry of fs.readdirSync(sessionsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const manifestPath = path.join(sessionsRoot, entry.name, "manifest.json");
+    if (!fs.existsSync(manifestPath)) {
+      continue;
+    }
+
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
+        sessionId?: string;
+        status?: string;
+        updatedAt?: string;
+        createdAt?: string;
+      };
+      if (manifest.status !== "drafted" && manifest.status !== "adopting") {
+        continue;
+      }
+      candidates.push({
+        sessionId: manifest.sessionId ?? entry.name,
+        updatedAt: manifest.updatedAt ?? manifest.createdAt ?? "",
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  candidates.sort((left, right) =>
+    `${right.updatedAt}|${right.sessionId}`.localeCompare(`${left.updatedAt}|${left.sessionId}`),
+  );
+  return candidates[0]?.sessionId;
 }
 
 function loadConfiguredChangeDefaultMode(root: string): {

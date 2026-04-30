@@ -500,6 +500,8 @@ npm run jispec-cli -- validate
   fast lane 会运行 `implement --fast -> verify --fast`，而 strict lane 会进入 `implement -> verify`，或者在仍有 bootstrap draft 未处理时停在显式 `adopt` 边界。
 - `jiproject/project.yaml` 中的 `change.default_mode: execute`
   允许项目让未显式传入 `--mode` 的 `change` 默认进入 execute mediation；显式 CLI mode 仍然最高优先级。
+- `doctor v1`
+  会用决策包语言报告 execute-default readiness：当前默认模式、mode 来源、是否建议切换、open bootstrap draft adopt 边界和下一步动作。
 
 - `change`
   将当前 diff 分类与 lane 决策持久化到 `.jispec/change-session.json`。
