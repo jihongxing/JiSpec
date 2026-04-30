@@ -108,7 +108,7 @@ const TEST_SUITES: TestSuite[] = [
   bootstrap({ name: 'Bootstrap API Surface Classification', file: 'bootstrap-api-surface-classification.ts', expectedTests: 6, task: 'Task 6/14' }),
   bootstrap({ name: 'Bootstrap Proto Domain Mapping', file: 'bootstrap-proto-domain-mapping.ts', expectedTests: 4, task: 'Task 14' }),
   bootstrap({ name: 'Bootstrap Init Project', file: 'bootstrap-init-project.ts', expectedTests: 4, task: 'Task 8' }),
-  retakeover({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 10, task: 'P0-T2' }),
+  retakeover({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 11, task: 'P0-T2' }),
   bootstrap({ name: 'Adopt CLI Surface', file: 'adopt-cli-surface.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Adopt Atomic', file: 'bootstrap-adopt-atomic.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 5, task: 'Task 7/P1-T4' }),

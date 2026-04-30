@@ -83,7 +83,7 @@ That is technically valuable, and the takeover path now makes the split explicit
 - `adopt-summary.md` is the compact adoption digest for accepted, edited, rejected, and deferred draft decisions
 - `verify-summary.md` is the compact decision digest for mergeability, blockers, advisory debt, and next action; Greenfield reports use the same language for policy, contract graph, spec delta, spec debt, and implementation fact ratchets
 
-The remaining explanation gap is now narrower: adopt and verify decisions now get compact summaries, and future work should keep tightening summary quality across the mainline.
+The post-V1 north-star task plan has closed the adopt summary, verify summary, bootstrap-summary naming, and Greenfield verify-summary language work. The remaining work is no longer "make summaries exist"; it is to keep making mainline summaries shorter, sharper, and closer to the reviewer's actual decision path.
 
 The desired output model should become:
 
@@ -478,9 +478,9 @@ npm run jispec-cli -- validate
 
 Current reality in this build:
 
-- `change` is still primarily a prompt-style step that persists lane/session state and returns next-step hints
-- `implement` already performs a post-implement verify handoff
-- the intended end state is a user-selectable `prompt / execute` mainline, with `execute` becoming the default once the orchestration path is fully landed
+- `change` supports both `prompt` and `execute`, and projects can opt into execute-default readiness through `change.default_mode: execute` in `jiproject/project.yaml`
+- `implement` is implementation mediation: it constrains, receives, records, and verifies external implementation attempts rather than acting as an autonomous business-code generator
+- the next mainline focus is not more command surface, but making execute-default readiness and retakeover decision packets easier for humans to judge
 
 Current mode split:
 
@@ -560,7 +560,7 @@ The `ordering` context includes one complete example slice:
 
 - North star:
   [docs/north-star.md](docs/north-star.md)
-- Post-V1 north-star task plan:
+- Post-V1 north-star task plan (completed record):
   [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
 - Post-release gate:
   [docs/post-release-gate.md](docs/post-release-gate.md)

@@ -2,6 +2,8 @@
 
 日期：2026-04-29
 
+当前状态：本文件列出的 post-v1 北极星推进任务已经开发完毕，并按任务完成定义完成收口。本文后续内容保留为完成记录、回归锚点和后续方向判断依据。
+
 这份任务安排承接已经发布的 V1 主线，目标不是立刻扩张产品面，而是继续把 JiSpec 推向北极星：
 
 > 把 AI 编程从个人英雄主义的手工作坊，推进到可验证、可审计、可阻断、可回放的现代软件交付流水线。
@@ -19,6 +21,8 @@
 目标：确保 V1 发布后的每次推进都不会把已经证明的主线打散。
 
 ### P0-T1 固化 post-release gate
+
+状态：已实现，固定入口为 `npm run post-release:gate`，回归锚点为 `scripts/post-release-gate.ts`。
 
 产物：
 
@@ -44,6 +48,8 @@ npm run ci:verify
 
 ### P0-T2 建立真实仓库 retakeover 回归池
 
+状态：已实现，回归锚点为 `bootstrap-retakeover-regression.ts`，回归池说明为 [docs/retakeover-regression-pool.md](retakeover-regression-pool.md)。
+
 产物：
 
 - 至少 3 类真实仓库夹具：
@@ -66,6 +72,8 @@ npm run ci:verify
 
 ### P1-T1 Discover noise suppression 第二轮
 
+状态：已实现，回归锚点为 `bootstrap-discover-exclusion-policy.ts` 和 `bootstrap-discover-signal-filtering.ts`。
+
 产物：
 
 - 扩展默认排除策略：vendor、cache、audit mirror、generated、dependency bundle、build output、coverage、tool mirror
@@ -81,6 +89,8 @@ npm run ci:verify
 - `bootstrap-discover-exclusion-policy.ts` 覆盖默认排除和 `--include-noise` forensic scan 两条路径
 
 ### P1-T2 Boundary-first ranking
+
+状态：已实现，回归锚点为 `bootstrap-adoption-ranked-evidence.ts` 和 `bootstrap-evidence-ranking-score.ts`。
 
 产物：
 
@@ -295,6 +305,8 @@ npm run ci:verify
 
 ### P3-T2 Greenfield verify summary 对齐
 
+状态：已实现，回归锚点为 `greenfield-verify-policy-ci-gate.ts`。
+
 产物：
 
 - Greenfield policy、contract graph、spec delta 的摘要语言与 takeover/verify summary 对齐
@@ -341,9 +353,9 @@ npm run ci:verify
 
 - `doctor v1` 继续不让 deferred surfaces 参与 V1 readiness
 
-## 建议执行顺序
+## 已完成批次记录
 
-### Batch 1：两周内优先
+### Batch 1：已完成
 
 1. P0-T1 post-release gate
 2. P0-T2 retakeover 回归池
@@ -352,9 +364,9 @@ npm run ci:verify
 5. P1-T4 adopt summary
 6. P1-T5 verify summary
 
-完成后应能明显改善首次 takeover 体验，并把人类 review 从“翻机器底账”推进到“读决策包”。
+这一批已经完成，改善了首次 takeover 体验，并把人类 review 从“翻机器底账”推进到“读决策包”。
 
-### Batch 2：主线实现中介化
+### Batch 2：已完成
 
 1. P1-T3 feature confidence gate
 2. P1-T6 bootstrap summary 命名
@@ -362,9 +374,9 @@ npm run ci:verify
 4. P2-T2 implementation mediation outcome 命名
 5. P2-T3 execute-default mediation 切换预备
 
-完成后再考虑把 `execute` 从显式模式推进到项目可选默认。
+这一批已经完成，`execute` 已从显式模式推进到项目可选默认的预备状态。
 
-### Batch 3：治理面打底
+### Batch 3：已完成
 
 1. P2-T4 waiver lifecycle hardening
 2. P2-T5 baseline drift 与 release compare 可读化
@@ -372,14 +384,14 @@ npm run ci:verify
 4. P3-T1 Greenfield -> change mainline handoff
 5. P3-T2 Greenfield verify summary 对齐
 
-完成后 JiSpec 会更接近“长期运行的 contract control layer”。
+这一批已经完成，JiSpec 更接近“长期运行的 contract control layer”。
 
-### Batch 4：外围面预留
+### Batch 4：已完成
 
 1. P4-T1 Console read model contract
 2. P4-T2 Collaboration surface 冻结边界
 
-只有当 Batch 1-3 的主线质量稳定后，才进入 Console UI、distributed execution 或 collaboration productization。
+外围面目前只完成了 contract 预留和冻结边界；Console UI、distributed execution 或 collaboration productization 仍不进入当前主线承诺。
 
 ## 当前不做
 
@@ -392,7 +404,7 @@ npm run ci:verify
 
 ## 每个任务的完成定义
 
-一个任务只有同时满足以下条件，才算完成：
+本文件任务已经按以下完成定义收口：
 
 - 有稳定落盘产物或明确 CLI 行为
 - 有至少一条回归测试覆盖

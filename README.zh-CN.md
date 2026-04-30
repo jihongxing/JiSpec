@@ -83,7 +83,7 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 - `adopt-summary.md` 是 accepted、edited、rejected、deferred draft 决策的紧凑认领摘要
 - `verify-summary.md` 是对能否合并、阻断点、advisory/debt 和下一步动作的紧凑验证摘要
 
-剩余的人类可读缺口已经更窄：adopt 和 verify 决策现在都有紧凑 summary，后续应继续把主线摘要质量打磨得更短、更准。
+Post-v1 北极星推进任务已经把 adopt summary、verify summary、bootstrap summary 命名和 Greenfield verify summary 语言对齐收口。剩余工作不再是“补齐摘要有无”，而是继续把主线摘要质量打磨得更短、更准、更接近 reviewer 的实际决策路径。
 
 理想的输出模型应该变成：
 
@@ -487,9 +487,9 @@ npm run jispec-cli -- validate
 
 当前现实状态：
 
-- `change` 目前仍主要是一个 prompt-style 步骤：它持久化 lane/session 状态，并返回 next-step hint
-- `implement` 已经具备 post-implement verify handoff
-- 目标终局是一个用户可选 `prompt / execute` 的主线，其中 `execute` 会在编排路径稳定后成为默认形态
+- `change` 支持 `prompt / execute` 双模式，并可通过 `jiproject/project.yaml` 的 `change.default_mode: execute` 进入项目级 execute-default 预备状态
+- `implement` 是 implementation mediation：它约束、接入、记录和验证外部实现尝试，而不是作为自治业务代码生成器
+- 当前下一步重点不是再扩命令面，而是让 execute-default readiness 和 retakeover 决策包更容易被人类判断
 
 当前模式拆分：
 
@@ -569,7 +569,7 @@ npm run check:jispec
 
 - 北极星：
   [docs/north-star.md](docs/north-star.md)
-- V1 后北极星推进任务：
+- V1 后北极星推进任务（已完成记录）：
   [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
 - V1 后发布门禁：
   [docs/post-release-gate.md](docs/post-release-gate.md)

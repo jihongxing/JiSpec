@@ -7,6 +7,14 @@ import { runBootstrapDiscover } from "../bootstrap/discover";
 import { runBootstrapDraft, type BootstrapDraftResult } from "../bootstrap/draft";
 import type { BootstrapDiscoverResult } from "../bootstrap/evidence-graph";
 import type { AdoptionRankedEvidence } from "../bootstrap/evidence-ranking";
+import {
+  parseRetakeoverFeatureRecommendation,
+  RETAKEOVER_METRICS_RELATIVE_PATH,
+  RETAKEOVER_SUMMARY_RELATIVE_PATH,
+  type RetakeoverFixtureClass,
+  type RetakeoverMetrics,
+  writeRetakeoverArtifacts,
+} from "../bootstrap/retakeover-metrics";
 import { runVerify } from "../verify/verify-runner";
 import type { VerifyRunResult } from "../verify/verdict";
 
@@ -60,34 +68,15 @@ interface RetakeoverResult {
   feature: string;
   ranked: AdoptionRankedEvidence;
   brief: string;
+  retakeoverSummary: string;
   verify: VerifyRunResult;
   metrics: RetakeoverMetrics;
 }
 
 interface RetakeoverFixtureOptions {
   fixtureId: string;
-  fixtureClass: "high-noise-protocol-repo" | "multilingual-finance-service-repo" | "docs-api-schema-scattered-repo";
+  fixtureClass: RetakeoverFixtureClass;
   featureDecision: "accept" | "skip_as_spec_debt";
-}
-
-interface RetakeoverMetrics {
-  version: 1;
-  fixtureId: string;
-  fixtureClass: RetakeoverFixtureOptions["fixtureClass"];
-  discoverSummary: BootstrapDiscoverResult["summary"];
-  topRankedEvidence: string[];
-  draftQuality: {
-    domainContextCount: number;
-    aggregateRootCount: number;
-    apiSurfaceCount: number;
-    featureRecommendation: "accept_candidate" | "defer_as_spec_debt" | "unknown";
-  };
-  adoptCorrection: {
-    acceptedArtifacts: string[];
-    deferredArtifacts: string[];
-  };
-  verifyVerdict: VerifyRunResult["verdict"];
-  verifyOk: boolean;
 }
 
 async function main(): Promise<void> {
@@ -275,7 +264,7 @@ async function main(): Promise<void> {
           result.metrics.draftQuality.domainContextCount > 0 &&
           result.metrics.draftQuality.apiSurfaceCount > 0 &&
           result.metrics.verifyOk &&
-          fs.existsSync(path.join(result.discover.graph.repoRoot, ".spec", "handoffs", "retakeover-metrics.json")),
+          fs.existsSync(path.join(result.discover.graph.repoRoot, RETAKEOVER_METRICS_RELATIVE_PATH)),
         ) &&
         remirage.metrics.fixtureClass === "high-noise-protocol-repo" &&
         breath.metrics.fixtureClass === "multilingual-finance-service-repo" &&
@@ -284,6 +273,30 @@ async function main(): Promise<void> {
         remirage.metrics.adoptCorrection.acceptedArtifacts.includes("feature") &&
         scattered.metrics.adoptCorrection.acceptedArtifacts.includes("feature"),
       error: `Expected each retakeover fixture to record metrics. metrics=${JSON.stringify([remirage.metrics, breath.metrics, scattered.metrics], null, 2)}.`,
+    });
+
+    results.push({
+      name: "Retakeover pool writes human-readable summary companion artifacts",
+      passed:
+        [remirage, breath, scattered].every((result) =>
+          fs.existsSync(path.join(result.discover.graph.repoRoot, RETAKEOVER_SUMMARY_RELATIVE_PATH)) &&
+          result.retakeoverSummary.includes("# JiSpec Retakeover Summary") &&
+          result.retakeoverSummary.includes(`Fixture: \`${result.metrics.fixtureId}\``) &&
+          result.retakeoverSummary.includes(`Fixture class: \`${result.metrics.fixtureClass}\``) &&
+          result.retakeoverSummary.includes("## Decision") &&
+          result.retakeoverSummary.includes("## Discover Ranking") &&
+          result.retakeoverSummary.includes("## Review Questions") &&
+          result.retakeoverSummary.includes("Top ranked evidence:") &&
+          result.retakeoverSummary.includes("Draft quality:") &&
+          result.retakeoverSummary.includes("Adopt correction:") &&
+          result.retakeoverSummary.includes(`Verify verdict: \`${result.metrics.verifyVerdict}\``) &&
+          result.retakeoverSummary.includes(RETAKEOVER_METRICS_RELATIVE_PATH) &&
+          result.retakeoverSummary.includes("not a machine API"),
+        ) &&
+        breath.retakeoverSummary.includes("explicit spec debt follow-up") &&
+        remirage.retakeoverSummary.includes("initial adopted contract packet") &&
+        scattered.retakeoverSummary.includes("behavior evidence should stay owner-reviewed"),
+      error: `Expected retakeover summaries to be human decision packets. summaries=${JSON.stringify([remirage.retakeoverSummary, breath.retakeoverSummary, scattered.retakeoverSummary], null, 2)}.`,
     });
 
     results.push({
@@ -372,6 +385,7 @@ async function runRetakeover(
     ranked,
     verify,
   });
+  const retakeoverSummary = fs.readFileSync(path.join(root, RETAKEOVER_SUMMARY_RELATIVE_PATH), "utf-8");
 
   return {
     discover,
@@ -381,6 +395,7 @@ async function runRetakeover(
     feature,
     ranked,
     brief,
+    retakeoverSummary,
     verify,
     metrics,
   };
@@ -726,13 +741,13 @@ function writeRetakeoverMetrics(
     version: 1,
     fixtureId: options.fixtureId,
     fixtureClass: options.fixtureClass,
-    discoverSummary: result.discover.summary,
+    discoverSummary: result.discover.summary as unknown as Record<string, unknown>,
     topRankedEvidence: result.ranked.evidence.slice(0, 10).map((entry) => entry.path),
     draftQuality: {
       domainContextCount: collectDomainNames(result.domain).length,
       aggregateRootCount: collectAggregateNames(result.domain).length,
       apiSurfaceCount: result.api.api_spec?.surfaces?.length ?? 0,
-      featureRecommendation: parseFeatureRecommendation(result.feature),
+      featureRecommendation: parseRetakeoverFeatureRecommendation(result.feature),
     },
     adoptCorrection: {
       acceptedArtifacts,
@@ -742,20 +757,8 @@ function writeRetakeoverMetrics(
     verifyOk: result.verify.ok,
   };
 
-  const metricsPath = path.join(root, ".spec", "handoffs", "retakeover-metrics.json");
-  fs.mkdirSync(path.dirname(metricsPath), { recursive: true });
-  fs.writeFileSync(metricsPath, JSON.stringify(metrics, null, 2), "utf-8");
+  writeRetakeoverArtifacts(root, metrics);
   return metrics;
-}
-
-function parseFeatureRecommendation(feature: string): RetakeoverMetrics["draftQuality"]["featureRecommendation"] {
-  if (feature.includes("# adoption_recommendation: accept_candidate")) {
-    return "accept_candidate";
-  }
-  if (feature.includes("# adoption_recommendation: defer_as_spec_debt")) {
-    return "defer_as_spec_debt";
-  }
-  return "unknown";
 }
 
 function writeBreathProject(root: string): void {

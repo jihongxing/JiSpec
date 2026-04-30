@@ -32,9 +32,10 @@ retakeover-regression-pool
 
 ```text
 .spec/handoffs/retakeover-metrics.json
+.spec/handoffs/retakeover-summary.md
 ```
 
-该文件记录：
+`retakeover-metrics.json` 是机器可读指标源，记录：
 
 - `fixtureId`
 - `fixtureClass`
@@ -50,6 +51,14 @@ retakeover-regression-pool
   - `deferredArtifacts`
 - `verifyVerdict`
 - `verifyOk`
+
+`retakeover-summary.md` 是人类可读 companion artifact，不作为机器 API。它从同一份 metrics 渲染，帮助 reviewer 快速判断：
+
+- 这次 takeover 的旧仓库风险类型是什么？
+- top ranked evidence 是否由真实产品资产主导？
+- draft quality 是否足够进入人工 review？
+- adopt 阶段哪些 artifact 已接管，哪些被延期为 spec debt？
+- takeover 后 verify 是否保持 non-blocking？
 
 这些指标用来回答四个问题：
 
@@ -67,4 +76,3 @@ retakeover-regression-pool
 - 在 `retakeover-regression-pool` 区域登记 expected test count
 - 不依赖网络、外部服务或本机专属路径
 - 通过 `npm run post-release:gate`
-
