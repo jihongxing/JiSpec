@@ -946,6 +946,7 @@ export class Doctor {
         "ci-verify-wrapper.ts",
         "package-script-surface.ts",
         "change-dual-mode.ts",
+        "change-default-mode-config.ts",
         "change-mainline-hints.ts",
         "implement-mainline-lane.ts",
         "implement-handoff-mainline.ts",

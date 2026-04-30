@@ -27,6 +27,13 @@ import { buildVerifyReport } from "./ci/verify-report";
 import { writeLocalVerifySummary } from "./ci/verify-summary";
 import { createWaiver, listWaivers, revokeWaiver, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
 import { runChangeCommand, renderChangeCommandJSON, type ChangeCommandOptions } from "./change/change-command";
+import {
+  renderChangeDefaultModeJSON,
+  renderChangeDefaultModeText,
+  resetChangeDefaultMode,
+  setChangeDefaultMode,
+  showChangeDefaultMode,
+} from "./change/default-mode-command";
 import type { SpecDeltaChangeType } from "./change/spec-delta";
 import { migrateVerifyPolicy, renderPolicyMigrationText } from "./policy/migrate-policy";
 import { renderGreenfieldInitText, runGreenfieldInit, type GreenfieldInitOptions, type GreenfieldInitResult } from "./greenfield/init";
@@ -63,6 +70,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli init --requirements <path> [--technical-solution <path>] [--json]",
     "  jispec-cli verify [--json]",
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
+    "  jispec-cli change default-mode show|set|reset [--json]",
     "  jispec-cli review list|adopt|reject|defer|waive|brief [--json]",
     "  jispec-cli release snapshot --version <version> [--json]",
     "  jispec-cli implement [--fast] [--external-patch <path>] [--json]",
@@ -528,10 +536,12 @@ function renderWaiverCreateResult(result: WaiverCreateResult, json: boolean): vo
 }
 
 function registerChangeCommand(program: Command): void {
-  program
+  const change = program
     .command("change")
-    .description("Record change intent, determine fast/strict lane, and either return hints or execute the mainline orchestration.")
-    .argument("<summary>", "Human summary of the intended change.")
+    .description("Record change intent, determine fast/strict lane, and either return hints or execute the mainline orchestration.");
+
+  change
+    .argument("[summary...]", "Human summary of the intended change, or `default-mode show|set|reset`.")
     .option("--root <path>", "Repository root.", ".")
     .option("--lane <lane>", "Requested lane: auto|fast|strict.", "auto")
     .option("--mode <mode>", "Orchestration mode: prompt|execute. Defaults to jiproject/project.yaml change.default_mode or prompt.")
@@ -543,9 +553,19 @@ function registerChangeCommand(program: Command): void {
     .option("--max-iterations <n>", "Maximum execute-mode implement iterations.", parseInt)
     .option("--max-tokens <n>", "Maximum execute-mode implement tokens.", parseInt)
     .option("--max-cost <n>", "Maximum execute-mode implement cost in USD.", parseFloat)
+    .option("--actor <actor>", "Actor recorded when using change default-mode set/reset.")
+    .option("--reason <reason>", "Reason recorded when using change default-mode set/reset.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (summary: string, options: { root: string; lane: string; mode?: string; slice?: string; context?: string; changeType?: SpecDeltaChangeType; baseRef: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
+    .action(async (summaryParts: string[] | undefined, options: { root: string; lane: string; mode?: string; slice?: string; context?: string; changeType?: SpecDeltaChangeType; baseRef: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; actor?: string; reason?: string; json: boolean }) => {
       try {
+        if (summaryParts?.[0] === "default-mode") {
+          handleChangeDefaultModeAction(summaryParts.slice(1), options);
+          return;
+        }
+        const summary = summaryParts?.join(" ").trim();
+        if (!summary) {
+          throw new Error("Missing change summary. Use `change <summary>` or `change default-mode show|set|reset`.");
+        }
         const result = await runChangeCommand({
           root: path.resolve(options.root),
           summary,
@@ -570,6 +590,48 @@ function registerChangeCommand(program: Command): void {
         process.exitCode = 1;
       }
     });
+}
+
+function handleChangeDefaultModeAction(
+  args: string[],
+  options: { root: string; actor?: string; reason?: string; json: boolean },
+): void {
+  const action = args[0];
+  if (action === "show") {
+    const result = showChangeDefaultMode(path.resolve(options.root));
+    console.log(options.json ? renderChangeDefaultModeJSON(result) : renderChangeDefaultModeText(result));
+    process.exitCode = 0;
+    return;
+  }
+
+  if (action === "set") {
+    const mode = args[1];
+    if (mode !== "prompt" && mode !== "execute") {
+      throw new Error("Usage: change default-mode set prompt|execute");
+    }
+    const result = setChangeDefaultMode({
+      root: path.resolve(options.root),
+      mode,
+      actor: options.actor,
+      reason: options.reason,
+    });
+    console.log(options.json ? renderChangeDefaultModeJSON(result) : renderChangeDefaultModeText(result));
+    process.exitCode = 0;
+    return;
+  }
+
+  if (action === "reset") {
+    const result = resetChangeDefaultMode({
+      root: path.resolve(options.root),
+      actor: options.actor,
+      reason: options.reason,
+    });
+    console.log(options.json ? renderChangeDefaultModeJSON(result) : renderChangeDefaultModeText(result));
+    process.exitCode = 0;
+    return;
+  }
+
+  throw new Error("Usage: change default-mode show|set|reset");
 }
 
 function registerImplementCommand(program: Command): void {

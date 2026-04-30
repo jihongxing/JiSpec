@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import * as yaml from "js-yaml";
 import { readArchivedChangeSession, readChangeSession } from "../change/change-session";
 import { cleanupVerifyFixture, createVerifyFixture, getRepoRoot } from "./verify-test-helpers";
 
@@ -321,12 +322,25 @@ function main(): void {
 function writeExecuteDefaultProjectConfig(root: string): void {
   fs.mkdirSync(path.join(root, "jiproject"), { recursive: true });
   const projectPath = path.join(root, "jiproject", "project.yaml");
-  const existing = fs.existsSync(projectPath) ? fs.readFileSync(projectPath, "utf-8").trimEnd() : [
-    "id: change-dual-mode-fixture",
-    "name: Change Dual Mode Fixture",
-  ].join("\n");
+  const parsed = fs.existsSync(projectPath)
+    ? yaml.load(fs.readFileSync(projectPath, "utf-8"))
+    : {
+        id: "change-dual-mode-fixture",
+        name: "Change Dual Mode Fixture",
+      };
+  const project = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : {
+        id: "change-dual-mode-fixture",
+        name: "Change Dual Mode Fixture",
+      };
+  const change = typeof project.change === "object" && project.change !== null && !Array.isArray(project.change)
+    ? project.change as Record<string, unknown>
+    : {};
+  change.default_mode = "execute";
+  project.change = change;
 
-  fs.writeFileSync(projectPath, `${existing}\nchange:\n  default_mode: execute\n`, "utf-8");
+  fs.writeFileSync(projectPath, yaml.dump(project, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf-8");
 }
 
 function runCli(args: string[]): CommandExecution {

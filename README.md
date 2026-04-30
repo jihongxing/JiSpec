@@ -225,6 +225,9 @@ The current first-class entry points in this build are:
 ```bash
 npm run verify
 npm run jispec-cli -- change "Update checkout copy"
+npm run jispec-cli -- change default-mode show
+npm run jispec-cli -- change default-mode set execute --actor <name> --reason <reason>
+npm run jispec-cli -- change default-mode reset
 npm run jispec-cli -- implement
 npm run jispec-cli -- implement --fast
 npm run jispec-cli -- bootstrap init-project
@@ -491,6 +494,8 @@ Current mode split:
   fast lane runs through `implement --fast -> verify --fast`, while strict lane either enters `implement -> verify` or pauses at the explicit `adopt` boundary when a bootstrap draft is still open.
 - `jiproject/project.yaml` with `change.default_mode: execute`
   Lets a project opt into execute-default mediation for `change` calls that omit `--mode`; explicit CLI mode remains the highest priority.
+- `change default-mode show|set|reset`
+  Lets teams inspect, enable, roll back, or reset the project default through the CLI while recording each transition in `.jispec/change-default-mode-history.jsonl`.
 - `doctor v1`
   Reports execute-default readiness as a decision packet: current default, mode source, whether switching is recommended, open-bootstrap-draft adopt boundary, and next action.
 

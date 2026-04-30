@@ -40,6 +40,7 @@ function main(): void {
     assertIncludes(help, "jispec-cli verify [--json]", "primary surface");
     assertIncludes(help, "jispec-cli init --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change <summary> [--mode prompt|execute] [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli change default-mode show|set|reset [--json]", "primary surface");
     assertIncludes(help, "jispec-cli release snapshot --version <version> [--json]", "primary surface");
     assertIncludes(help, "jispec-cli implement [--fast] [--external-patch <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]", "primary surface");

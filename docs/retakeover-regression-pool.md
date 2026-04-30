@@ -14,6 +14,17 @@ node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts
 retakeover-regression-pool
 ```
 
+回归池还会写出 pool-level 聚合视图：
+
+```text
+.spec/handoffs/retakeover-pool-metrics.json
+.spec/handoffs/retakeover-pool-summary.md
+```
+
+`retakeover-pool-metrics.json` 汇总所有 fixture 的机器指标，包括 fixture count、fixture class 覆盖、verify verdict 分布、draft quality totals、feature recommendation 分布和 deferred artifact 概览。
+
+`retakeover-pool-summary.md` 是人类可读 companion artifact，不作为机器 API。它帮助 reviewer 快速判断整个回归池是否仍然覆盖三类旧仓库风险、是否全部 non-blocking、哪些 fixture 需要 owner review 或 spec-debt follow-up，以及 top evidence 是否仍然来自产品资产。
+
 ## 覆盖的旧仓库类型
 
 当前回归池固定覆盖三类 real-like fixture：
@@ -66,6 +77,13 @@ retakeover-regression-pool
 - draft quality 是否仍能生成可审阅的 domain/API/feature 候选？
 - adopt 阶段需要哪些修正、延期或 spec debt 决策？
 - takeover 后 verify 是否保持 non-blocking？
+
+Pool-level summary 额外回答：
+
+- 三类 fixture 风险是否仍然都被覆盖？
+- 是否存在 blocking fixture？
+- 哪些 fixture 的 behavior evidence 需要 owner review？
+- 哪些 top evidence 代表了这次 pool 的 takeover signal？
 
 ## 扩展规则
 

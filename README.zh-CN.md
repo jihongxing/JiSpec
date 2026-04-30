@@ -225,6 +225,9 @@ Post-v1 北极星推进任务已经把 adopt summary、verify summary、bootstra
 ```bash
 npm run verify
 npm run jispec-cli -- change "Update checkout copy"
+npm run jispec-cli -- change default-mode show
+npm run jispec-cli -- change default-mode set execute --actor <name> --reason <reason>
+npm run jispec-cli -- change default-mode reset
 npm run jispec-cli -- implement
 npm run jispec-cli -- implement --fast
 npm run jispec-cli -- bootstrap init-project
@@ -500,6 +503,8 @@ npm run jispec-cli -- validate
   fast lane 会运行 `implement --fast -> verify --fast`，而 strict lane 会进入 `implement -> verify`，或者在仍有 bootstrap draft 未处理时停在显式 `adopt` 边界。
 - `jiproject/project.yaml` 中的 `change.default_mode: execute`
   允许项目让未显式传入 `--mode` 的 `change` 默认进入 execute mediation；显式 CLI mode 仍然最高优先级。
+- `change default-mode show|set|reset`
+  通过 CLI 查看、启用、回退或重置项目级默认模式，并把每次切换写入 `.jispec/change-default-mode-history.jsonl`。
 - `doctor v1`
   会用决策包语言报告 execute-default readiness：当前默认模式、mode 来源、是否建议切换、open bootstrap draft adopt 边界和下一步动作。
 

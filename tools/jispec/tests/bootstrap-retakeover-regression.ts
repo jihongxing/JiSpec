@@ -10,10 +10,13 @@ import type { AdoptionRankedEvidence } from "../bootstrap/evidence-ranking";
 import {
   parseRetakeoverFeatureRecommendation,
   RETAKEOVER_METRICS_RELATIVE_PATH,
+  RETAKEOVER_POOL_METRICS_RELATIVE_PATH,
+  RETAKEOVER_POOL_SUMMARY_RELATIVE_PATH,
   RETAKEOVER_SUMMARY_RELATIVE_PATH,
   type RetakeoverFixtureClass,
   type RetakeoverMetrics,
   writeRetakeoverArtifacts,
+  writeRetakeoverPoolArtifacts,
 } from "../bootstrap/retakeover-metrics";
 import { runVerify } from "../verify/verify-runner";
 import type { VerifyRunResult } from "../verify/verdict";
@@ -85,6 +88,7 @@ async function main(): Promise<void> {
   const remirageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-remirage-"));
   const breathRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-breath-"));
   const scatteredRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-scattered-"));
+  const poolRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-pool-"));
   const results: TestResult[] = [];
 
   try {
@@ -107,6 +111,17 @@ async function main(): Promise<void> {
       fixtureClass: "docs-api-schema-scattered-repo",
       featureDecision: "accept",
     });
+    writeRetakeoverPoolArtifacts(poolRoot, [remirage.metrics, breath.metrics, scattered.metrics]);
+    const poolMetrics = JSON.parse(
+      fs.readFileSync(path.join(poolRoot, RETAKEOVER_POOL_METRICS_RELATIVE_PATH), "utf-8"),
+    ) as {
+      fixtureCount?: number;
+      fixtureClasses?: string[];
+      verify?: { okCount?: number; blockingCount?: number; verdicts?: Record<string, number> };
+      draftQuality?: { featureRecommendations?: Record<string, number> };
+      adoptCorrection?: { fixturesWithDeferredArtifacts?: string[]; deferredArtifactCount?: number };
+    };
+    const poolSummary = fs.readFileSync(path.join(poolRoot, RETAKEOVER_POOL_SUMMARY_RELATIVE_PATH), "utf-8");
 
     const remirageRankedPaths = remirage.ranked.evidence.map((entry) => entry.path);
     const remirageExcludedRules = excludedRuleIds(remirage.ranked);
@@ -309,6 +324,38 @@ async function main(): Promise<void> {
         ),
       error: `Expected P0-T2 fixture pool to cover high-noise, multilingual, and scattered docs/API/schema classes. metrics=${JSON.stringify([remirage.metrics, breath.metrics, scattered.metrics])}.`,
     });
+
+    results.push({
+      name: "Retakeover pool writes aggregate metrics and a human-readable pool summary",
+      passed:
+        fs.existsSync(path.join(poolRoot, RETAKEOVER_POOL_METRICS_RELATIVE_PATH)) &&
+        fs.existsSync(path.join(poolRoot, RETAKEOVER_POOL_SUMMARY_RELATIVE_PATH)) &&
+        poolMetrics.fixtureCount === 3 &&
+        poolMetrics.verify?.okCount === 3 &&
+        poolMetrics.verify?.blockingCount === 0 &&
+        poolMetrics.draftQuality?.featureRecommendations?.accept_candidate === 1 &&
+        poolMetrics.draftQuality?.featureRecommendations?.defer_as_spec_debt === 2 &&
+        poolMetrics.adoptCorrection?.fixturesWithDeferredArtifacts?.includes("breathofearth-like") === true &&
+        containsAll(poolMetrics.fixtureClasses ?? [], [
+          "high-noise-protocol-repo",
+          "multilingual-finance-service-repo",
+          "docs-api-schema-scattered-repo",
+        ]) &&
+        poolSummary.includes("# JiSpec Retakeover Pool Summary") &&
+        poolSummary.includes("Fixture count: 3") &&
+        poolSummary.includes("All fixtures are non-blocking") &&
+        poolSummary.includes("Retakeover pool is non-blocking, with explicit owner-review or spec-debt follow-up") &&
+        poolSummary.includes("## Fixture Matrix") &&
+        poolSummary.includes("`remirage-like`") &&
+        poolSummary.includes("`breathofearth-like`") &&
+        poolSummary.includes("`scattered-contracts-like`") &&
+        poolSummary.includes("docs/governance/README.md") &&
+        poolSummary.includes("db/schema_portfolio.sql") &&
+        poolSummary.includes("docs/contracts/governance.md") &&
+        poolSummary.includes(RETAKEOVER_POOL_METRICS_RELATIVE_PATH) &&
+        poolSummary.includes("not a machine API"),
+      error: `Expected aggregate retakeover pool metrics and summary. metrics=${JSON.stringify(poolMetrics, null, 2)}\nsummary=\n${poolSummary}`,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({
@@ -320,6 +367,7 @@ async function main(): Promise<void> {
     fs.rmSync(remirageRoot, { recursive: true, force: true });
     fs.rmSync(breathRoot, { recursive: true, force: true });
     fs.rmSync(scatteredRoot, { recursive: true, force: true });
+    fs.rmSync(poolRoot, { recursive: true, force: true });
   }
 
   let passed = 0;
