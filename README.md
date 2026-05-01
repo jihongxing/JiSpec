@@ -323,7 +323,7 @@ Record a change in execute mode and let JiSpec continue into implement/verify wh
 npm run jispec-cli -- change "Add order refund validation" --mode execute
 ```
 
-Projects can prepare an execute-default rollout without changing existing behavior globally by setting:
+This repository now uses execute-default for `change` calls that omit `--mode`:
 
 ```yaml
 change:
@@ -348,6 +348,12 @@ Mediate an external patch produced by a human or AI coding tool:
 
 ```bash
 npm run jispec-cli -- implement --external-patch .jispec/patches/refund.patch
+```
+
+Resume a failed execute/implement attempt from its handoff packet:
+
+```bash
+npm run jispec-cli -- implement --from-handoff .jispec/handoff/<change-session-id>.json --external-patch .jispec/patches/refund.patch
 ```
 
 Implementation mediation JSON uses stable outcome names:
@@ -481,9 +487,9 @@ npm run jispec-cli -- validate
 
 Current reality in this build:
 
-- `change` supports both `prompt` and `execute`, and projects can opt into execute-default readiness through `change.default_mode: execute` in `jiproject/project.yaml`
+- `change` supports both `prompt` and `execute`; this repository now uses `change.default_mode: execute` in `jiproject/project.yaml`
 - `implement` is implementation mediation: it constrains, receives, records, and verifies external implementation attempts rather than acting as an autonomous business-code generator
-- the next mainline focus is not more command surface, but making execute-default readiness and retakeover decision packets easier for humans to judge
+- the next mainline focus is not more command surface, but making execute handoff quality and retakeover decision packets easier for humans to judge
 
 Current mode split:
 
@@ -493,11 +499,11 @@ Current mode split:
   Tries to continue the mainline automatically:
   fast lane runs through `implement --fast -> verify --fast`, while strict lane either enters `implement -> verify` or pauses at the explicit `adopt` boundary when a bootstrap draft is still open.
 - `jiproject/project.yaml` with `change.default_mode: execute`
-  Lets a project opt into execute-default mediation for `change` calls that omit `--mode`; explicit CLI mode remains the highest priority.
+  Makes execute mediation the project default for `change` calls that omit `--mode`; explicit CLI mode remains the highest priority.
 - `change default-mode show|set|reset`
-  Lets teams inspect, enable, roll back, or reset the project default through the CLI while recording each transition in `.jispec/change-default-mode-history.jsonl`.
+  Lets teams inspect, enable, roll back, or reset the project default through the CLI while recording each transition in `.jispec/change-default-mode-history.jsonl`; `set execute` is blocked until policy, verify stability, and external patch mediation readiness pass.
 - `doctor v1`
-  Reports execute-default readiness as a decision packet: current default, mode source, whether switching is recommended, open-bootstrap-draft adopt boundary, and next action.
+  Reports execute-default readiness as a decision packet: current default, mode source, blockers, warnings, owner actions, open-bootstrap-draft adopt boundary, and next action.
 
 - `change`
   Persists the active diff classification and lane decision into `.jispec/change-session.json`.
@@ -569,6 +575,8 @@ The `ordering` context includes one complete example slice:
   [docs/north-star.md](docs/north-star.md)
 - Post-V1 north-star task plan (completed record):
   [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
+- Next north-star development plan:
+  [docs/north-star-next-development-plan.md](docs/north-star-next-development-plan.md)
 - Post-release gate:
   [docs/post-release-gate.md](docs/post-release-gate.md)
 - Retakeover regression pool:

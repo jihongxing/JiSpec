@@ -54,6 +54,10 @@ export interface ChangeCommandExecutionSummary {
     decisionStopPoint?: NonNullable<ImplementRunResult["decisionPacket"]>["stopPoint"];
     decisionNextAction?: string;
     decisionNextActionOwner?: NonNullable<ImplementRunResult["decisionPacket"]>["executionStatus"]["nextActionOwner"];
+    decisionNextActionType?: NonNullable<ImplementRunResult["decisionPacket"]>["nextActionDetail"]["type"];
+    decisionFailedCheck?: NonNullable<ImplementRunResult["decisionPacket"]>["nextActionDetail"]["failedCheck"];
+    decisionNextCommand?: string;
+    decisionExternalHandoffRequest?: string;
     decisionChecks?: NonNullable<ImplementRunResult["decisionPacket"]>["executionStatus"];
     implementationBoundaryNote?: string;
     mergeable?: boolean;
@@ -349,6 +353,10 @@ async function runExecuteOrchestration(
       decisionStopPoint: implementResult.decisionPacket?.stopPoint,
       decisionNextAction: implementResult.decisionPacket?.nextAction,
       decisionNextActionOwner: implementResult.decisionPacket?.executionStatus.nextActionOwner,
+      decisionNextActionType: implementResult.decisionPacket?.nextActionDetail.type,
+      decisionFailedCheck: implementResult.decisionPacket?.nextActionDetail.failedCheck,
+      decisionNextCommand: implementResult.decisionPacket?.nextActionDetail.command,
+      decisionExternalHandoffRequest: implementResult.decisionPacket?.nextActionDetail.externalToolHandoff?.request,
       decisionChecks: implementResult.decisionPacket?.executionStatus,
       implementationBoundaryNote: implementResult.decisionPacket?.implementationBoundary.note,
       mergeable: implementResult.decisionPacket?.mergeable,
@@ -482,6 +490,18 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
     }
     if (execution.implement.decisionNextActionOwner) {
       lines.push(`- Next action owner: ${execution.implement.decisionNextActionOwner}`);
+    }
+    if (execution.implement.decisionNextActionType) {
+      lines.push(`- Next action type: ${execution.implement.decisionNextActionType}`);
+    }
+    if (execution.implement.decisionFailedCheck) {
+      lines.push(`- Failed check: ${execution.implement.decisionFailedCheck}`);
+    }
+    if (execution.implement.decisionNextCommand) {
+      lines.push(`- Next command: ${execution.implement.decisionNextCommand}`);
+    }
+    if (execution.implement.decisionExternalHandoffRequest) {
+      lines.push(`- External handoff: ${execution.implement.decisionExternalHandoffRequest}`);
     }
     if (execution.implement.decisionChecks) {
       lines.push(

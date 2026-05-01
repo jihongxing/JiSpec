@@ -4,7 +4,8 @@ dist/
 .jispec-cache/
 .jispec-ci/
 .tmp/
-.spec/
+.spec/*
+!.spec/policy.yaml
 *.log
 .DS_Store
 .env

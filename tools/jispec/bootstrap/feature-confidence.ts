@@ -1,4 +1,5 @@
 export type FeatureRecommendation = "accept_candidate" | "defer_as_spec_debt";
+export type BehaviorEvidenceLevel = "strong" | "partial" | "weak" | "unsupported";
 
 export interface FeatureScenarioConfidenceInput {
   boundaryName: string;
@@ -12,6 +13,7 @@ export interface FeatureScenarioConfidenceInput {
   relatedProtoServiceCount: number;
   relatedAggregateRootCount: number;
   genericBehaviorTemplate: boolean;
+  behaviorEvidenceLevel?: BehaviorEvidenceLevel;
 }
 
 export interface FeatureScenarioConfidenceAssessment {
@@ -90,6 +92,10 @@ export function assessFeatureScenarioConfidence(
     confidenceReasons.push(`repository evidence strength is ${input.evidenceStrength}`);
   }
 
+  if (input.behaviorEvidenceLevel) {
+    confidenceReasons.push(`behavior evidence level is ${input.behaviorEvidenceLevel}`);
+  }
+
   if (input.relatedDocumentCount > 0) {
     confidenceReasons.push("document evidence anchors the business behavior");
   }
@@ -116,6 +122,16 @@ export function assessFeatureScenarioConfidence(
 
   if (strongScenarioCorroboration) {
     confidenceReasons.push("scenario has enough corroborating evidence for initial adoption");
+  }
+
+  if (input.behaviorEvidenceLevel === "strong") {
+    confidenceReasons.push("behavior evidence is cross-corroborated across implementation and contract signals");
+  } else if (input.behaviorEvidenceLevel === "partial") {
+    confidenceReasons.push("behavior evidence is partial and should stay reviewable");
+  } else if (input.behaviorEvidenceLevel === "weak") {
+    confidenceReasons.push("behavior evidence is weak and needs owner confirmation");
+  } else if (input.behaviorEvidenceLevel === "unsupported") {
+    confidenceReasons.push("behavior evidence is unsupported beyond inferred boundary naming");
   }
 
   if (routeOnlyEvidence) {
@@ -145,6 +161,8 @@ export function assessFeatureScenarioConfidence(
     lacksExecutableBehaviorAnchor ||
     input.genericBehaviorTemplate ||
     genericBoundary ||
+    input.behaviorEvidenceLevel === "weak" ||
+    input.behaviorEvidenceLevel === "unsupported" ||
     input.confidenceScore < 0.58;
   const recommendation: FeatureRecommendation =
     humanReviewRequired || input.confidenceScore < ACCEPT_CONFIDENCE_THRESHOLD

@@ -23,6 +23,7 @@ import { buildProtoDomainMappings, type ProtoServiceDomainMapping } from "./prot
 import {
   assessFeatureScenarioConfidence,
   summarizeFeatureScenarioConfidence,
+  type BehaviorEvidenceLevel,
   type FeatureRecommendation,
 } from "./feature-confidence";
 import {
@@ -214,6 +215,8 @@ interface FeatureScenarioDraft {
   provenanceNote: string;
   confidenceReasons: string[];
   recommendation: FeatureRecommendation;
+  evidenceLevel: BehaviorEvidenceLevel;
+  evidenceKinds: string[];
   tests: string[];
   supportingRoute?: string;
   humanReviewRequired: boolean;
@@ -1076,6 +1079,8 @@ function buildFeatureArtifact(graph: EvidenceGraph, context: RankedDraftContext)
   for (const scenario of selectedScenarios) {
     lines.push(`  # source_files: ${JSON.stringify(scenario.sourceFiles)}`);
     lines.push(`  # confidence_score: ${scenario.confidenceScore}`);
+    lines.push(`  # evidence_level: ${scenario.evidenceLevel}`);
+    lines.push(`  # evidence_kinds: ${JSON.stringify(scenario.evidenceKinds)}`);
     lines.push(`  # provenance_note: ${scenario.provenanceNote}`);
     lines.push(`  # recommendation: ${scenario.recommendation}`);
     lines.push(`  # confidence_reasons: ${JSON.stringify(scenario.confidenceReasons)}`);
@@ -1130,13 +1135,18 @@ function buildFeatureScenarios(graph: EvidenceGraph, context: RankedDraftContext
         ];
 
   const scenarios = boundaries.map((boundary, index) => {
+    const boundarySourceFiles = new Set(boundary.sourceFiles.map((sourceFile) => normalizeEvidencePath(sourceFile)));
     const relatedRoute = selectRouteForBoundary(boundary.name, context.topRoutes, index);
-    const relatedTests = relatedRoute ? selectTestsForRoute(relatedRoute, topTests) : selectTestsForBoundary(boundary.name, topTests);
-    const relatedSchemas = relatedRoute
-      ? selectSchemasForRoute(relatedRoute, context.topSchemas)
-      : selectSchemasForBoundary(boundary.name, context.topSchemas);
+    const relatedTests = mergeEvidenceByPath(
+      relatedRoute ? selectTestsForRoute(relatedRoute, topTests) : [],
+      selectTestsForBoundary(boundary.name, topTests, boundarySourceFiles),
+    );
+    const relatedSchemas = mergeEvidenceByPath(
+      relatedRoute ? selectSchemasForRoute(relatedRoute, context.topSchemas) : [],
+      selectSchemasForBoundary(boundary.name, context.topSchemas, boundarySourceFiles),
+    );
     const relatedDocuments = context.topDocuments
-      .filter((document) => boundaryMatchesPath(boundary.name, document.path))
+      .filter((document) => boundaryMatchesPath(boundary.name, document.path) || boundarySourceFiles.has(normalizeEvidencePath(document.path)))
       .slice(0, 2);
     const relatedProtoMappings = context.protoServiceMappings.filter((mapping) => protoMappingMatchesBoundary(boundary.name, mapping));
     const relatedAggregateRoots = context.aggregateRoots.filter((aggregate) => aggregateRootMatchesBoundary(boundary.name, aggregate));
@@ -1158,9 +1168,25 @@ function buildFeatureScenarios(graph: EvidenceGraph, context: RankedDraftContext
       relatedDocuments.length +
       relatedProtoMappings.length +
       corroboratingAggregateRoots.length;
+    const evidenceKinds = collectBehaviorEvidenceKinds({
+      relatedRoute,
+      relatedTests,
+      relatedSchemas,
+      relatedDocuments,
+      relatedProtoMappings,
+      corroboratingAggregateRoots,
+    });
+    const evidenceLevel = classifyBehaviorEvidenceLevel({
+      evidenceKinds,
+      genericBehaviorTemplate,
+      contextEvidenceStrength: context.qualitySummary.evidenceStrength,
+    });
     const strongScenarioSupport =
-      relatedProtoMappings.length > 0 &&
-      relatedTests.length + relatedSchemas.length + relatedDocuments.length + corroboratingAggregateRoots.length > 0;
+      evidenceLevel === "strong" ||
+      (
+        relatedProtoMappings.length > 0 &&
+        relatedTests.length + relatedSchemas.length + relatedDocuments.length + corroboratingAggregateRoots.length > 0
+      );
     const preliminaryHumanReviewRequired =
       evidenceCoverage === 0 ||
       (context.qualitySummary.evidenceStrength === "thin" && !strongScenarioSupport) ||
@@ -1187,6 +1213,7 @@ function buildFeatureScenarios(graph: EvidenceGraph, context: RankedDraftContext
       relatedProtoServiceCount: relatedProtoMappings.length,
       relatedAggregateRootCount: corroboratingAggregateRoots.length,
       genericBehaviorTemplate,
+      behaviorEvidenceLevel: evidenceLevel,
     });
 
     return {
@@ -1195,10 +1222,12 @@ function buildFeatureScenarios(graph: EvidenceGraph, context: RankedDraftContext
       sourceFiles,
       confidenceScore,
       provenanceNote: confidenceAssessment.humanReviewRequired
-        ? `Boundary ${boundary.name} has thin behavior evidence; this scenario is a human-review candidate.`
-        : `Derived from the ${boundary.name} boundary, supporting contract evidence, and related tests.`,
+        ? `Boundary ${boundary.name} has ${evidenceLevel} behavior evidence; this scenario is a human-review candidate.`
+        : `Derived from the ${boundary.name} boundary with ${evidenceLevel} behavior evidence across ${evidenceKinds.join(", ")}.`,
       confidenceReasons: confidenceAssessment.confidenceReasons,
       recommendation: confidenceAssessment.recommendation,
+      evidenceLevel,
+      evidenceKinds,
       tests: relatedTests.slice(0, 2).map((test) => test.path),
       supportingRoute: relatedRoute && relatedRoute.method && relatedRoute.path.startsWith("/") ? `${relatedRoute.method} ${relatedRoute.path}` : undefined,
       humanReviewRequired: confidenceAssessment.humanReviewRequired,
@@ -1279,12 +1308,18 @@ function selectRouteForBoundary(boundaryName: string, routes: EvidenceRoute[], i
   return matched ?? routes[index % Math.max(routes.length, 1)];
 }
 
-function selectTestsForBoundary(boundaryName: string, tests: EvidenceTest[]): EvidenceTest[] {
-  return tests.filter((test) => boundaryMatchesPath(boundaryName, test.path));
+function selectTestsForBoundary(boundaryName: string, tests: EvidenceTest[], boundarySourceFiles?: Set<string>): EvidenceTest[] {
+  return tests.filter((test) =>
+    boundaryMatchesPath(boundaryName, test.path) ||
+    (boundarySourceFiles?.has(normalizeEvidencePath(test.path)) ?? false),
+  );
 }
 
-function selectSchemasForBoundary(boundaryName: string, schemas: EvidenceSchema[]): EvidenceSchema[] {
-  return schemas.filter((schema) => boundaryMatchesPath(boundaryName, schema.path));
+function selectSchemasForBoundary(boundaryName: string, schemas: EvidenceSchema[], boundarySourceFiles?: Set<string>): EvidenceSchema[] {
+  return schemas.filter((schema) =>
+    boundaryMatchesPath(boundaryName, schema.path) ||
+    (boundarySourceFiles?.has(normalizeEvidencePath(schema.path)) ?? false),
+  );
 }
 
 function boundaryMatchesPath(boundaryName: string, candidatePath: string): boolean {
@@ -1893,6 +1928,78 @@ function selectTestsForRoute(route: EvidenceRoute, tests: EvidenceTest[]): Evide
       return routeWords.some((word) => lower.includes(word));
     })
     .sort((left, right) => testPriorityScore(right) - testPriorityScore(left));
+}
+
+function mergeEvidenceByPath<T extends { path: string }>(...groups: T[][]): T[] {
+  const seen = new Set<string>();
+  const merged: T[] = [];
+  for (const group of groups) {
+    for (const entry of group) {
+      const key = normalizeEvidencePath(entry.path);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push(entry);
+    }
+  }
+  return merged;
+}
+
+function collectBehaviorEvidenceKinds(input: {
+  relatedRoute?: EvidenceRoute;
+  relatedTests: EvidenceTest[];
+  relatedSchemas: EvidenceSchema[];
+  relatedDocuments: EvidenceDocument[];
+  relatedProtoMappings: ProtoServiceDomainMapping[];
+  corroboratingAggregateRoots: AggregateRootCandidate[];
+}): string[] {
+  const kinds = new Set<string>();
+  if (input.relatedRoute) {
+    kinds.add("route");
+  }
+  if (input.relatedTests.length > 0) {
+    kinds.add("test");
+  }
+  if (input.relatedSchemas.length > 0) {
+    kinds.add("schema");
+  }
+  if (input.relatedDocuments.length > 0) {
+    kinds.add("document");
+  }
+  if (input.relatedProtoMappings.length > 0) {
+    kinds.add("proto");
+  }
+  if (input.corroboratingAggregateRoots.length > 0) {
+    kinds.add("aggregate");
+  }
+  return [...kinds].sort((left, right) => left.localeCompare(right));
+}
+
+function classifyBehaviorEvidenceLevel(input: {
+  evidenceKinds: string[];
+  genericBehaviorTemplate: boolean;
+  contextEvidenceStrength: "strong" | "moderate" | "thin";
+}): BehaviorEvidenceLevel {
+  const kinds = new Set(input.evidenceKinds);
+  const nonRouteKinds = input.evidenceKinds.filter((kind) => kind !== "route");
+  const hasExecutableAnchor = kinds.has("test") || kinds.has("proto");
+  const hasContractAnchor = kinds.has("schema") || kinds.has("proto");
+  const hasBusinessAnchor = kinds.has("document") || kinds.has("aggregate");
+
+  if (input.genericBehaviorTemplate && nonRouteKinds.length === 0) {
+    return kinds.has("route") ? "weak" : "unsupported";
+  }
+  if (input.contextEvidenceStrength !== "thin" && hasExecutableAnchor && hasContractAnchor && hasBusinessAnchor) {
+    return input.genericBehaviorTemplate ? "partial" : "strong";
+  }
+  if (nonRouteKinds.length >= 2 && hasBusinessAnchor && input.contextEvidenceStrength !== "thin") {
+    return input.genericBehaviorTemplate ? "partial" : "strong";
+  }
+  if (nonRouteKinds.length > 0) {
+    return "partial";
+  }
+  return kinds.has("route") ? "weak" : "unsupported";
 }
 
 function extractRouteKeywords(routePath: string): string[] {

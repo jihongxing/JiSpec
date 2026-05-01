@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { appendAuditEvent } from "../audit/event-ledger";
 
 export type GreenfieldSpecDebtKind = "waiver" | "defer" | "classified_drift" | "unsynced_asset";
 export type GreenfieldSpecDebtStatus = "open" | "repaid" | "cancelled";
@@ -22,6 +23,11 @@ export interface GreenfieldSpecDebtRecord {
   source?: {
     type: "manual" | "waiver" | "spec_delta" | "ratchet_classification";
     ref?: string;
+  };
+  owner_review?: {
+    requested_at: string;
+    requested_by: string;
+    reason: string;
   };
 }
 
@@ -55,6 +61,21 @@ export interface CreateGreenfieldSpecDebtOptions {
   affectedSlices?: string[];
   repaymentHint: string;
   source?: GreenfieldSpecDebtRecord["source"];
+}
+
+export interface UpdateGreenfieldSpecDebtStatusOptions {
+  id: string;
+  status: Extract<GreenfieldSpecDebtStatus, "repaid" | "cancelled">;
+  actor?: string;
+  reason: string;
+  updatedAt?: string;
+}
+
+export interface MarkGreenfieldSpecDebtOwnerReviewOptions {
+  id: string;
+  actor: string;
+  reason: string;
+  requestedAt?: string;
 }
 
 const LEDGER_PATH = ".spec/spec-debt/ledger.yaml";
@@ -108,6 +129,125 @@ export function writeGreenfieldSpecDebtRecord(
 
   writeGreenfieldSpecDebtLedger(root, nextLedger);
   return record;
+}
+
+export function updateGreenfieldSpecDebtStatus(
+  rootInput: string,
+  options: UpdateGreenfieldSpecDebtStatusOptions,
+): GreenfieldSpecDebtRecord {
+  if (!options.id.trim()) {
+    throw new Error("Spec debt id is required.");
+  }
+  if (!options.reason.trim()) {
+    throw new Error("Spec debt status update reason is required.");
+  }
+
+  const root = path.resolve(rootInput);
+  const ledger = loadGreenfieldSpecDebtLedger(root);
+  const existing = ledger.debts.find((record) => record.id === options.id);
+  if (!existing) {
+    throw new Error(`Spec debt not found: ${options.id}`);
+  }
+
+  const updated: GreenfieldSpecDebtRecord = {
+    ...existing,
+    status: options.status,
+  };
+  const nextLedger: GreenfieldSpecDebtLedger = {
+    version: 1,
+    debts: ledger.debts
+      .map((record) => record.id === options.id ? updated : record)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
+
+  const ledgerPath = writeGreenfieldSpecDebtLedger(root, nextLedger);
+  appendAuditEvent(root, {
+    type: options.status === "repaid" ? "spec_debt_repay" : "spec_debt_cancel",
+    actor: options.actor ?? existing.owner,
+    reason: options.reason,
+    timestamp: options.updatedAt,
+    sourceArtifact: {
+      kind: "greenfield-spec-debt-ledger",
+      path: ledgerPath,
+    },
+    affectedContracts: [
+      ...existing.affected_assets,
+      ...(existing.affected_contracts ?? []),
+      ...(existing.affected_scenarios ?? []),
+      ...(existing.affected_slices ?? []),
+    ],
+    details: {
+      debtId: existing.id,
+      previousStatus: existing.status,
+      nextStatus: options.status,
+      owner: existing.owner,
+      source: existing.source,
+    },
+  });
+  return updated;
+}
+
+export function markGreenfieldSpecDebtOwnerReview(
+  rootInput: string,
+  options: MarkGreenfieldSpecDebtOwnerReviewOptions,
+): GreenfieldSpecDebtRecord {
+  if (!options.id.trim()) {
+    throw new Error("Spec debt id is required.");
+  }
+  if (!options.actor.trim()) {
+    throw new Error("Spec debt owner review actor is required.");
+  }
+  if (!options.reason.trim()) {
+    throw new Error("Spec debt owner review reason is required.");
+  }
+
+  const root = path.resolve(rootInput);
+  const ledger = loadGreenfieldSpecDebtLedger(root);
+  const existing = ledger.debts.find((record) => record.id === options.id);
+  if (!existing) {
+    throw new Error(`Spec debt not found: ${options.id}`);
+  }
+  const ownerReview = {
+    requested_at: options.requestedAt ?? new Date().toISOString(),
+    requested_by: options.actor,
+    reason: options.reason,
+  };
+
+  const updated: GreenfieldSpecDebtRecord = {
+    ...existing,
+    owner_review: ownerReview,
+  };
+  const nextLedger: GreenfieldSpecDebtLedger = {
+    version: 1,
+    debts: ledger.debts
+      .map((record) => record.id === options.id ? updated : record)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
+
+  const ledgerPath = writeGreenfieldSpecDebtLedger(root, nextLedger);
+  appendAuditEvent(root, {
+    type: "spec_debt_owner_review",
+    actor: options.actor,
+    reason: options.reason,
+    timestamp: ownerReview.requested_at,
+    sourceArtifact: {
+      kind: "greenfield-spec-debt-ledger",
+      path: ledgerPath,
+    },
+    affectedContracts: [
+      ...existing.affected_assets,
+      ...(existing.affected_contracts ?? []),
+      ...(existing.affected_scenarios ?? []),
+      ...(existing.affected_slices ?? []),
+    ],
+    details: {
+      debtId: existing.id,
+      status: existing.status,
+      owner: existing.owner,
+      source: existing.source,
+    },
+  });
+  return updated;
 }
 
 export function loadGreenfieldSpecDebtLedger(rootInput: string): GreenfieldSpecDebtLedger {
@@ -228,6 +368,24 @@ function normalizeDebtRecord(record: Record<string, unknown>): GreenfieldSpecDeb
     affected_slices: stringArray(record.affected_slices),
     repayment_hint: repaymentHint,
     source: normalizeSource(record.source),
+    owner_review: normalizeOwnerReview(record.owner_review),
+  };
+}
+
+function normalizeOwnerReview(value: unknown): GreenfieldSpecDebtRecord["owner_review"] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const requestedAt = stringValue(value.requested_at);
+  const requestedBy = stringValue(value.requested_by);
+  const reason = stringValue(value.reason);
+  if (!requestedAt || !requestedBy || !reason) {
+    return undefined;
+  }
+  return {
+    requested_at: requestedAt,
+    requested_by: requestedBy,
+    reason,
   };
 }
 

@@ -888,11 +888,16 @@ export class Doctor {
   private async checkExecuteDefaultMediationReadiness(): Promise<DoctorCheckResult> {
     try {
       const readiness = evaluateChangeExecuteDefaultReadiness(this.root);
-      const status: "pass" | "fail" = readiness.warnings.length === 0 ? "pass" : "fail";
+      const status: "pass" | "fail" =
+        readiness.defaultMode === "execute" && readiness.blockers.length > 0 ? "fail" : "pass";
       return {
         name: "Execute-Default Mediation Readiness",
         status,
-        summary: readiness.readyForExecuteDefault ? "Execute default ready" : "Prompt default active",
+        summary: readiness.readyForExecuteDefault
+          ? "Execute default ready"
+          : readiness.canSetExecuteDefault
+            ? "Prompt default active"
+            : "Execute default blocked",
         details: readiness.details,
       };
     } catch (error: any) {

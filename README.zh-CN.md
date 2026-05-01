@@ -323,7 +323,7 @@ npm run jispec-cli -- change "Add order refund validation" --mode prompt
 npm run jispec-cli -- change "Add order refund validation" --mode execute
 ```
 
-项目可以通过下面的配置预备 execute-default rollout，同时不改变其它项目的默认行为：
+当前仓库已经使用 execute-default；未显式传入 `--mode` 的 `change` 会默认进入 execute mediation：
 
 ```yaml
 change:
@@ -348,6 +348,12 @@ npm run jispec-cli -- implement --fast
 
 ```bash
 npm run jispec-cli -- implement --external-patch .jispec/patches/refund.patch
+```
+
+从 handoff packet 恢复失败的 execute/implement 尝试：
+
+```bash
+npm run jispec-cli -- implement --from-handoff .jispec/handoff/<change-session-id>.json --external-patch .jispec/patches/refund.patch
 ```
 
 Implementation mediation JSON 使用稳定 outcome 名称：
@@ -490,9 +496,9 @@ npm run jispec-cli -- validate
 
 当前现实状态：
 
-- `change` 支持 `prompt / execute` 双模式，并可通过 `jiproject/project.yaml` 的 `change.default_mode: execute` 进入项目级 execute-default 预备状态
+- `change` 支持 `prompt / execute` 双模式；当前仓库已通过 `jiproject/project.yaml` 的 `change.default_mode: execute` 进入项目级 execute-default
 - `implement` 是 implementation mediation：它约束、接入、记录和验证外部实现尝试，而不是作为自治业务代码生成器
-- 当前下一步重点不是再扩命令面，而是让 execute-default readiness 和 retakeover 决策包更容易被人类判断
+- 当前下一步重点不是再扩命令面，而是让 execute handoff 质量和 retakeover 决策包更容易被人类判断
 
 当前模式拆分：
 
@@ -502,11 +508,11 @@ npm run jispec-cli -- validate
   尝试自动继续主线：
   fast lane 会运行 `implement --fast -> verify --fast`，而 strict lane 会进入 `implement -> verify`，或者在仍有 bootstrap draft 未处理时停在显式 `adopt` 边界。
 - `jiproject/project.yaml` 中的 `change.default_mode: execute`
-  允许项目让未显式传入 `--mode` 的 `change` 默认进入 execute mediation；显式 CLI mode 仍然最高优先级。
+  让未显式传入 `--mode` 的 `change` 默认进入 execute mediation；显式 CLI mode 仍然最高优先级。
 - `change default-mode show|set|reset`
-  通过 CLI 查看、启用、回退或重置项目级默认模式，并把每次切换写入 `.jispec/change-default-mode-history.jsonl`。
+  通过 CLI 查看、启用、回退或重置项目级默认模式，并把每次切换写入 `.jispec/change-default-mode-history.jsonl`；`set execute` 会在 policy、verify 稳定性和外部 patch mediation readiness 通过前被阻止。
 - `doctor v1`
-  会用决策包语言报告 execute-default readiness：当前默认模式、mode 来源、是否建议切换、open bootstrap draft adopt 边界和下一步动作。
+  会用决策包语言报告 execute-default readiness：当前默认模式、mode 来源、blocker、warning、owner action、open bootstrap draft adopt 边界和下一步动作。
 
 - `change`
   将当前 diff 分类与 lane 决策持久化到 `.jispec/change-session.json`。
@@ -578,6 +584,8 @@ npm run check:jispec
   [docs/north-star.md](docs/north-star.md)
 - V1 后北极星推进任务（已完成记录）：
   [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
+- 北极星下一阶段开发任务：
+  [docs/north-star-next-development-plan.md](docs/north-star-next-development-plan.md)
 - V1 后发布门禁：
   [docs/post-release-gate.md](docs/post-release-gate.md)
 - Retakeover 回归池：

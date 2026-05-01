@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import * as yaml from "js-yaml";
 import { evaluateChangeExecuteDefaultReadiness } from "../change/orchestration-config";
+import { cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
 
 interface DoctorReport {
   checks?: Array<{ name?: string; status?: string; summary?: string; details?: string[] }>;
@@ -77,6 +79,10 @@ async function main(): Promise<void> {
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Current default:")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Default change mode:")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Decision:")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Blockers:")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Current default: execute")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Decision: Execute-default mediation is configured and ready")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Blockers: none")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Guardrail: execute-default only enters implementation mediation")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Mode precedence: explicit --mode prompt or --mode execute overrides project configuration.")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Project default scope: change.default_mode applies only when --mode is omitted.")));
@@ -101,6 +107,8 @@ async function main(): Promise<void> {
       assert.equal(readiness.boundary.projectDefaultAppliesOnlyWhenModeOmitted, true);
       assert.equal(readiness.boundary.businessCodeGeneratedByJiSpec, false);
       assert.equal(readiness.boundary.adoptBoundary.status, "clear");
+      assert.equal(readiness.canSetExecuteDefault, false);
+      assert.ok(readiness.blockers?.some((entry) => entry.includes(".spec/policy.yaml is missing")));
       assert.ok(readiness.details.some((detail) => detail.includes("Decision: Prompt remains the default")));
       assert.ok(readiness.details.some((detail) => detail.includes("set change.default_mode: execute")));
     } finally {
@@ -109,31 +117,35 @@ async function main(): Promise<void> {
     console.log("✓ Test 5: execute-default decision packet explains the built-in prompt default");
     passed++;
 
-    const executeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-doctor-execute-"));
+    const executeRoot = createVerifyFixture("doctor-execute");
     try {
       writeProjectConfig(executeRoot, "execute");
+      writeStarterPolicy(executeRoot);
       const readiness = evaluateChangeExecuteDefaultReadiness(executeRoot);
       assert.equal(readiness.defaultMode, "execute");
       assert.equal(readiness.source, "project_config");
       assert.equal(readiness.readyForExecuteDefault, true);
+      assert.equal(readiness.canSetExecuteDefault, true);
       assert.equal(readiness.openDraftSessionId, undefined);
       assert.equal(readiness.boundary.adoptBoundary.status, "clear");
       assert.ok(readiness.details.some((detail) => detail.includes("Decision: Execute-default mediation is configured and ready")));
       assert.ok(readiness.details.some((detail) => detail.includes("run change without --mode")));
       assert.ok(readiness.details.some((detail) => detail.includes("does not generate business code autonomously")));
     } finally {
-      fs.rmSync(executeRoot, { recursive: true, force: true });
+      cleanupVerifyFixture(executeRoot);
     }
     console.log("✓ Test 6: execute-default decision packet explains project-configured execute mode");
     passed++;
 
-    const openDraftRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-doctor-open-draft-"));
+    const openDraftRoot = createVerifyFixture("doctor-open-draft");
     try {
       writeProjectConfig(openDraftRoot, "execute");
+      writeStarterPolicy(openDraftRoot);
       writeOpenDraftManifest(openDraftRoot, "bootstrap-open");
       const readiness = evaluateChangeExecuteDefaultReadiness(openDraftRoot);
       assert.equal(readiness.defaultMode, "execute");
       assert.equal(readiness.readyForExecuteDefault, true);
+      assert.equal(readiness.canSetExecuteDefault, true);
       assert.equal(readiness.openDraftSessionId, "bootstrap-open");
       assert.equal(readiness.boundary.strictLaneOpenDraftAction, "pause_at_adopt_boundary");
       assert.equal(readiness.boundary.adoptBoundary.status, "open_draft_pause_required");
@@ -143,7 +155,7 @@ async function main(): Promise<void> {
       assert.ok(readiness.details.some((detail) => detail.includes("adopt --interactive --session bootstrap-open")));
       assert.ok(readiness.details.some((detail) => detail.includes("strict-lane execute-default")));
     } finally {
-      fs.rmSync(openDraftRoot, { recursive: true, force: true });
+      cleanupVerifyFixture(openDraftRoot);
     }
     console.log("✓ Test 7: execute-default decision packet preserves the open-draft adopt boundary");
     passed++;
@@ -167,13 +179,45 @@ void main().catch((error) => {
 
 function writeProjectConfig(root: string, defaultMode: "prompt" | "execute"): void {
   fs.mkdirSync(path.join(root, "jiproject"), { recursive: true });
+  const projectPath = path.join(root, "jiproject", "project.yaml");
+  const parsed = fs.existsSync(projectPath)
+    ? yaml.load(fs.readFileSync(projectPath, "utf-8"))
+    : {
+        id: "doctor-execute-default-fixture",
+        name: "Doctor Execute Default Fixture",
+      };
+  const project = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : {
+        id: "doctor-execute-default-fixture",
+        name: "Doctor Execute Default Fixture",
+      };
+  const change = typeof project.change === "object" && project.change !== null && !Array.isArray(project.change)
+    ? project.change as Record<string, unknown>
+    : {};
+  change.default_mode = defaultMode;
+  project.change = change;
+
   fs.writeFileSync(
-    path.join(root, "jiproject", "project.yaml"),
+    projectPath,
+    yaml.dump(project, { lineWidth: 100, noRefs: true, sortKeys: false }),
+    "utf-8",
+  );
+}
+
+function writeStarterPolicy(root: string): void {
+  fs.mkdirSync(path.join(root, ".spec"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".spec", "policy.yaml"),
     [
-      "id: doctor-execute-default-fixture",
-      "name: Doctor Execute Default Fixture",
-      "change:",
-      `  default_mode: ${defaultMode}`,
+      "version: 1",
+      "requires:",
+      '  facts_contract: "1.0"',
+      "team:",
+      "  profile: small_team",
+      "  owner: unassigned",
+      "  reviewers: []",
+      "rules: []",
       "",
     ].join("\n"),
     "utf-8",

@@ -23,3 +23,5 @@ defaults:
     - released
 ai:
   provider: mock
+change:
+  default_mode: execute

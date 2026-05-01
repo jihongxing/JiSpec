@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { appendAuditEvent, readAuditEvents } from "../audit/event-ledger";
 import { computeIssueFingerprint, issueMatchesCodeAndPath } from "./issue-fingerprint";
 import { createVerifyRunResult } from "./verdict";
 import type { VerifyIssue, VerifyRunResult } from "./verdict";
@@ -28,6 +29,7 @@ export interface WaiverCreateOptions {
   owner: string;
   reason: string;
   expiresAt?: string;
+  actor?: string;
 }
 
 export interface WaiverCreateResult {
@@ -43,6 +45,18 @@ export interface WaiverRevokeOptions {
 export interface WaiverRevokeResult {
   waiver: VerifyWaiver;
   filePath: string;
+}
+
+export interface WaiverRenewOptions {
+  actor: string;
+  reason: string;
+  expiresAt: string;
+}
+
+export interface WaiverExpireAuditOptions {
+  now?: Date;
+  actor?: string;
+  reason?: string;
 }
 
 export interface WaiverApplyResult {
@@ -94,6 +108,21 @@ export function createWaiver(root: string, options: WaiverCreateOptions): Waiver
 
   const filePath = path.join(waiverDir, `${id}.json`);
   fs.writeFileSync(filePath, `${JSON.stringify(waiver, null, 2)}\n`, "utf-8");
+  appendAuditEvent(root, {
+    type: "waiver_create",
+    actor: options.actor ?? options.owner,
+    reason: options.reason,
+    sourceArtifact: {
+      kind: "verify-waiver",
+      path: filePath,
+    },
+    affectedContracts: describeAffectedWaiverContracts(waiver),
+    details: {
+      waiverId: waiver.id,
+      matcher: describeWaiverMatcher(waiver),
+      expiresAt: waiver.expiresAt,
+    },
+  });
 
   return { waiver, filePath };
 }
@@ -120,7 +149,61 @@ export function revokeWaiver(root: string, waiverId: string, options: WaiverRevo
   };
 
   fs.writeFileSync(filePath, `${JSON.stringify(revoked, null, 2)}\n`, "utf-8");
+  appendAuditEvent(root, {
+    type: "waiver_revoke",
+    actor: options.revokedBy,
+    reason: options.reason,
+    sourceArtifact: {
+      kind: "verify-waiver",
+      path: filePath,
+    },
+    affectedContracts: describeAffectedWaiverContracts(revoked),
+    details: {
+      waiverId: revoked.id,
+      matcher: describeWaiverMatcher(revoked),
+      revokedAt: revoked.revokedAt,
+    },
+  });
   return { waiver: revoked, filePath };
+}
+
+export function renewWaiver(root: string, waiverId: string, options: WaiverRenewOptions): WaiverCreateResult {
+  validateWaiverRenewOptions(options);
+  const filePath = path.join(root, WAIVER_DIR, `${waiverId}.json`);
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Waiver not found: ${waiverId}`);
+  }
+
+  const waiver = JSON.parse(fs.readFileSync(filePath, "utf-8")) as VerifyWaiver;
+  if (waiver.status === "revoked") {
+    throw new Error(`Cannot renew revoked waiver: ${waiverId}`);
+  }
+
+  const renewed: VerifyWaiver = {
+    ...waiver,
+    status: "active",
+    expiresAt: options.expiresAt,
+  };
+
+  fs.writeFileSync(filePath, `${JSON.stringify(renewed, null, 2)}\n`, "utf-8");
+  appendAuditEvent(root, {
+    type: "waiver_renew",
+    actor: options.actor,
+    reason: options.reason,
+    sourceArtifact: {
+      kind: "verify-waiver",
+      path: filePath,
+    },
+    affectedContracts: describeAffectedWaiverContracts(renewed),
+    details: {
+      waiverId: renewed.id,
+      matcher: describeWaiverMatcher(renewed),
+      previousExpiresAt: waiver.expiresAt,
+      nextExpiresAt: renewed.expiresAt,
+    },
+  });
+  return { waiver: renewed, filePath };
 }
 
 /**
@@ -189,6 +272,40 @@ export function summarizeWaiverLifecycle(root: string, now?: Date): WaiverLifecy
     revokedIds: stableSort(revokedIds),
     invalidIds: stableSort(invalidIds),
   };
+}
+
+export function recordExpiredWaiverAuditEvents(root: string, options: WaiverExpireAuditOptions = {}): VerifyWaiver[] {
+  const currentTime = options.now ?? new Date();
+  const alreadyRecorded = new Set(
+    readAuditEvents(root)
+      .filter((event) => event.type === "waiver_expire")
+      .map((event) => event.details ? String(event.details.waiverId ?? "") : "")
+      .filter(Boolean),
+  );
+  const expired = listWaivers(root)
+    .filter((waiver) => isWaiverShapeValid(waiver))
+    .filter((waiver) => !isWaiverRevoked(waiver) && isWaiverExpired(waiver, currentTime))
+    .filter((waiver) => !alreadyRecorded.has(waiver.id));
+
+  for (const waiver of expired) {
+    appendAuditEvent(root, {
+      type: "waiver_expire",
+      actor: options.actor ?? waiver.owner,
+      reason: options.reason ?? `Waiver ${waiver.id} expired at ${waiver.expiresAt}.`,
+      sourceArtifact: {
+        kind: "verify-waiver",
+        path: path.join(root, WAIVER_DIR, `${waiver.id}.json`),
+      },
+      affectedContracts: describeAffectedWaiverContracts(waiver),
+      details: {
+        waiverId: waiver.id,
+        matcher: describeWaiverMatcher(waiver),
+        expiresAt: waiver.expiresAt,
+      },
+    });
+  }
+
+  return expired;
 }
 
 /**
@@ -346,6 +463,19 @@ function validateWaiverRevokeOptions(options: WaiverRevokeOptions): void {
   }
 }
 
+function validateWaiverRenewOptions(options: WaiverRenewOptions): void {
+  if (!options.actor || !options.actor.trim()) {
+    throw new Error("Waiver renew actor is required.");
+  }
+  if (!options.reason || !options.reason.trim()) {
+    throw new Error("Waiver renew reason is required.");
+  }
+  const expiresAt = new Date(options.expiresAt);
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw new Error(`Waiver expiration is not a valid ISO timestamp: ${options.expiresAt}`);
+  }
+}
+
 function isWaiverActive(waiver: VerifyWaiver, now: Date): boolean {
   return isWaiverShapeValid(waiver) && !isWaiverRevoked(waiver) && !isWaiverExpired(waiver, now);
 }
@@ -371,6 +501,15 @@ function describeWaiverMatcher(waiver: VerifyWaiver): "fingerprint" | "code_path
     return "code_path";
   }
   return "rule_id";
+}
+
+function describeAffectedWaiverContracts(waiver: VerifyWaiver): string[] {
+  return [
+    waiver.ruleId ? `rule:${waiver.ruleId}` : undefined,
+    waiver.issueCode ? `issue:${waiver.issueCode}` : undefined,
+    waiver.issuePath ? `path:${waiver.issuePath}` : undefined,
+    waiver.issueFingerprint ? `fingerprint:${waiver.issueFingerprint}` : undefined,
+  ].filter((entry): entry is string => Boolean(entry));
 }
 
 function stableSort(values: string[]): string[] {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
+import { appendAuditEvent, inferAuditActor } from "../audit/event-ledger";
 import {
   getContractRelativePath,
   loadDraftSession,
@@ -44,6 +45,8 @@ export interface BootstrapAdoptOptions {
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
   testFailAfterOperation?: number;
+  actor?: string;
+  reason?: string;
 }
 
 export interface BootstrapAdoptResult {
@@ -150,6 +153,10 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
     };
 
     const manifestPath = saveDraftSessionManifest(root, finalManifest);
+    recordBootstrapAdoptAuditEvents(root, manifestPath, session.manifest.sessionId, session.artifacts, decisions, {
+      actor: options.actor,
+      reason: options.reason,
+    });
 
     return {
       sessionId: session.manifest.sessionId,
@@ -226,6 +233,65 @@ export function renderBootstrapAdoptText(result: BootstrapAdoptResult): string {
   }
 
   return lines.join("\n");
+}
+
+function recordBootstrapAdoptAuditEvents(
+  root: string,
+  manifestPath: string,
+  sessionId: string,
+  artifacts: DraftArtifact[],
+  decisions: AdoptDecision[],
+  options: { actor?: string; reason?: string },
+): void {
+  const actor = options.actor ?? inferAuditActor();
+  for (const decision of decisions) {
+    const artifact = artifacts.find((entry) => entry.kind === decision.artifactKind);
+    appendAuditEvent(root, {
+      type: auditEventTypeForAdoptDecision(decision.kind),
+      actor,
+      reason: decision.note ?? options.reason ?? `Bootstrap adopt ${decision.kind} for ${decision.artifactKind}.`,
+      sourceArtifact: {
+        kind: "bootstrap-draft-manifest",
+        path: manifestPath,
+      },
+      affectedContracts: [
+        targetPathForAdoptDecision(sessionId, decision),
+        ...(artifact?.sourceFiles ?? []),
+      ],
+      details: {
+        sessionId,
+        artifactKind: decision.artifactKind,
+        decision: decision.kind,
+        edited: decision.kind === "edit",
+        sourceFiles: artifact?.sourceFiles ?? [],
+        confidenceScore: artifact?.confidenceScore,
+        provenanceNote: artifact?.provenanceNote,
+      },
+    });
+  }
+}
+
+function auditEventTypeForAdoptDecision(kind: AdoptDecisionKind): "adopt_accept" | "adopt_edit" | "adopt_reject" | "adopt_defer" {
+  if (kind === "accept") {
+    return "adopt_accept";
+  }
+  if (kind === "edit") {
+    return "adopt_edit";
+  }
+  if (kind === "skip_as_spec_debt") {
+    return "adopt_defer";
+  }
+  return "adopt_reject";
+}
+
+function targetPathForAdoptDecision(sessionId: string, decision: AdoptDecision): string {
+  if (decision.kind === "accept" || decision.kind === "edit") {
+    return getContractRelativePath(decision.artifactKind);
+  }
+  if (decision.kind === "skip_as_spec_debt") {
+    return `.spec/spec-debt/${sessionId}/${decision.artifactKind}.json`;
+  }
+  return `rejected:${decision.artifactKind}`;
 }
 
 function normalizeDecisions(artifacts: DraftArtifact[], decisions: AdoptDecision[]): AdoptDecision[] {

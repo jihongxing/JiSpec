@@ -27,6 +27,7 @@ function main(): void {
 
   const promptFixture = createVerifyFixture("change-mode-default-prompt");
   try {
+    removeProjectDefaultMode(promptFixture);
     seedDocsFixture(promptFixture);
     initializeGitRepository(promptFixture);
     fs.appendFileSync(path.join(promptFixture, "README.md"), "\nDefault prompt mode docs-only change.\n", "utf-8");
@@ -226,6 +227,7 @@ function main(): void {
   const executeFastFixture = createVerifyFixture("change-mode-execute-fast");
   try {
     seedDocsFixture(executeFastFixture);
+    writeStarterPolicy(executeFastFixture);
     initializeGitRepository(executeFastFixture);
     fs.appendFileSync(path.join(executeFastFixture, "README.md"), "\nExecute mode docs-only change.\n", "utf-8");
 
@@ -405,6 +407,28 @@ function writeExecuteDefaultProjectConfig(root: string): void {
   project.change = change;
 
   fs.writeFileSync(projectPath, yaml.dump(project, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf-8");
+  writeStarterPolicy(root);
+}
+
+function removeProjectDefaultMode(root: string): void {
+  const projectPath = path.join(root, "jiproject", "project.yaml");
+  const parsed = fs.existsSync(projectPath)
+    ? yaml.load(fs.readFileSync(projectPath, "utf-8"))
+    : {};
+  const project = typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : {};
+  if (typeof project.change === "object" && project.change !== null && !Array.isArray(project.change)) {
+    const change = { ...(project.change as Record<string, unknown>) };
+    delete change.default_mode;
+    delete change.defaultMode;
+    if (Object.keys(change).length === 0) {
+      delete project.change;
+    } else {
+      project.change = change;
+    }
+  }
+  fs.writeFileSync(projectPath, yaml.dump(project, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf-8");
 }
 
 function runCli(args: string[]): CommandExecution {
@@ -450,6 +474,7 @@ function seedStrictFixture(root: string): void {
     "export interface Order { id: string; }\n",
     "utf-8",
   );
+  writeStarterPolicy(root);
 }
 
 function initializeGitRepository(root: string): void {
@@ -471,6 +496,26 @@ function initializeGitRepository(root: string): void {
       throw new Error(`Failed to initialize git repository at step '${command.label}': ${result.stderr}`);
     }
   }
+}
+
+function writeStarterPolicy(root: string): void {
+  const policyPath = path.join(root, ".spec", "policy.yaml");
+  fs.mkdirSync(path.dirname(policyPath), { recursive: true });
+  fs.writeFileSync(
+    policyPath,
+    [
+      "version: 1",
+      "requires:",
+      '  facts_contract: "1.0"',
+      "team:",
+      "  profile: small_team",
+      "  owner: unassigned",
+      "  reviewers: []",
+      "rules: []",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
 }
 
 main();

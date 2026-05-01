@@ -8,6 +8,7 @@ import { runBootstrapDraft, type BootstrapDraftResult } from "../bootstrap/draft
 import type { BootstrapDiscoverResult } from "../bootstrap/evidence-graph";
 import type { AdoptionRankedEvidence } from "../bootstrap/evidence-ranking";
 import {
+  buildRetakeoverAdoptCorrectionMetrics,
   buildRetakeoverQualityScorecard,
   parseRetakeoverFeatureRecommendation,
   RETAKEOVER_METRICS_RELATIVE_PATH,
@@ -116,10 +117,26 @@ async function main(): Promise<void> {
       fixtureClasses?: string[];
       verify?: { okCount?: number; blockingCount?: number };
       draftQuality?: { featureRecommendations?: Record<string, number> };
-      adoptCorrection?: { fixturesWithDeferredArtifacts?: string[]; deferredArtifactCount?: number };
+      adoptCorrection?: {
+        fixturesWithDeferredArtifacts?: string[];
+        fixturesWithEditedArtifacts?: string[];
+        fixturesWithRejectedArtifacts?: string[];
+        deferredArtifactCount?: number;
+        editedArtifactCount?: number;
+        rejectedArtifactCount?: number;
+        totalCorrectionLoad?: number;
+        ownerReviewArtifactCount?: number;
+        topCorrectionHotspots?: string[];
+      };
       qualityScorecard?: {
         averageTakeoverReadinessScore?: number;
         lowestReadinessScore?: number;
+        averageContractSignalPrecision?: number;
+        averageBehaviorEvidenceStrength?: number;
+        averageOverclaimBlockRate?: number;
+        totalAdoptionReadyArtifactCount?: number;
+        totalNeedsOwnerDecisionCount?: number;
+        fixturesWithHumanCorrectionHotspots?: string[];
         fixturesNeedingOwnerReview?: string[];
         fixturesWithBlockingVerify?: string[];
         featureOverclaimRisk?: Record<string, number>;
@@ -216,10 +233,16 @@ async function main(): Promise<void> {
           fs.existsSync(path.join(result.discover.graph.repoRoot, RETAKEOVER_SUMMARY_RELATIVE_PATH)) &&
           result.retakeoverSummary.includes("# JiSpec Retakeover Summary") &&
           result.retakeoverSummary.includes("## Review Questions") &&
+          result.retakeoverSummary.includes("## Adopt Correction Loop") &&
+          result.retakeoverSummary.includes("| Artifact | Decision | Load | Owner Review | Note |") &&
           result.retakeoverSummary.includes("## Quality Scorecard") &&
           result.retakeoverSummary.includes("| Signal | Value | Review Meaning |") &&
           result.retakeoverSummary.includes("Takeover readiness") &&
           result.retakeoverSummary.includes("Verify safety") &&
+          result.retakeoverSummary.includes("Contract signal precision") &&
+          result.retakeoverSummary.includes("Behavior evidence strength") &&
+          result.retakeoverSummary.includes("Overclaim block rate") &&
+          result.retakeoverSummary.includes("Owner decision count") &&
           result.retakeoverSummary.includes("Feature overclaim risk") &&
           result.retakeoverSummary.includes("Next action:") &&
           result.metrics.verifyOk,
@@ -229,8 +252,21 @@ async function main(): Promise<void> {
         poolMetrics.verify?.blockingCount === 0 &&
         (poolMetrics.draftQuality?.featureRecommendations?.defer_as_spec_debt ?? 0) === 4 &&
         poolMetrics.adoptCorrection?.deferredArtifactCount === 4 &&
+        poolMetrics.adoptCorrection?.editedArtifactCount === 0 &&
+        poolMetrics.adoptCorrection?.rejectedArtifactCount === 0 &&
+        poolMetrics.adoptCorrection?.ownerReviewArtifactCount === 4 &&
+        poolMetrics.adoptCorrection?.totalCorrectionLoad === 4 &&
+        poolMetrics.adoptCorrection?.topCorrectionHotspots?.some((hotspot) => hotspot.startsWith("deferred_feature:")) === true &&
         typeof poolMetrics.qualityScorecard?.averageTakeoverReadinessScore === "number" &&
+        typeof poolMetrics.qualityScorecard?.averageContractSignalPrecision === "number" &&
+        typeof poolMetrics.qualityScorecard?.averageBehaviorEvidenceStrength === "number" &&
+        typeof poolMetrics.qualityScorecard?.averageOverclaimBlockRate === "number" &&
+        typeof poolMetrics.qualityScorecard?.totalAdoptionReadyArtifactCount === "number" &&
+        typeof poolMetrics.qualityScorecard?.totalNeedsOwnerDecisionCount === "number" &&
         poolMetrics.qualityScorecard.averageTakeoverReadinessScore > 0 &&
+        poolMetrics.qualityScorecard.averageContractSignalPrecision > 0 &&
+        poolMetrics.qualityScorecard.totalNeedsOwnerDecisionCount > 0 &&
+        poolMetrics.qualityScorecard.fixturesWithHumanCorrectionHotspots?.length === 4 &&
         poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.length === 4 &&
         poolMetrics.qualityScorecard.fixturesWithBlockingVerify?.length === 0 &&
         poolMetrics.qualityScorecard.featureOverclaimRisk?.low === 4 &&
@@ -244,9 +280,17 @@ async function main(): Promise<void> {
         poolSummary.includes("Fixture count: 4") &&
         poolSummary.includes("All fixtures are non-blocking") &&
         poolSummary.includes("Average takeover readiness score:") &&
+        poolSummary.includes("V2 signal averages:") &&
+        poolSummary.includes("V2 decision load:") &&
+        poolSummary.includes("Correction loop:") &&
+        poolSummary.includes("Top correction hotspots:") &&
         poolSummary.includes("Owner-review fixtures:") &&
         poolSummary.includes("## Quality Scorecard") &&
         poolSummary.includes("| Fixture | Score | Verify Safety | Feature Risk | Deferred | Next Action | Risk Notes |") &&
+        poolSummary.includes("## Quality Scorecard V2") &&
+        poolSummary.includes("| Fixture | Contract Precision | Behavior Strength | Overclaim Blocked | Adoption Ready | Owner Decisions | Hotspots |") &&
+        poolSummary.includes("## Correction Loop") &&
+        poolSummary.includes("| Fixture | Accepted | Edited | Deferred | Rejected | Load | Hotspots |") &&
         poolSummary.includes("`owner_review_spec_debt`") &&
         poolSummary.includes("`god-file-monolith-like`") &&
         poolSummary.includes("`contract-drift-like`") &&
@@ -366,6 +410,13 @@ function writeMessyRetakeoverMetrics(
   } else {
     acceptedArtifacts.push("feature");
   }
+  const adoptCorrection = buildRetakeoverAdoptCorrectionMetrics({
+    acceptedArtifacts,
+    deferredArtifacts,
+    notes: options.featureDecision === "skip_as_spec_debt"
+      ? { feature: "synthetic messy legacy behavior needs owner confirmation" }
+      : undefined,
+  });
 
   const metrics: RetakeoverMetrics = {
     version: 1,
@@ -379,10 +430,7 @@ function writeMessyRetakeoverMetrics(
       apiSurfaceCount: result.api.api_spec?.surfaces?.length ?? 0,
       featureRecommendation: parseRetakeoverFeatureRecommendation(result.feature),
     },
-    adoptCorrection: {
-      acceptedArtifacts,
-      deferredArtifacts,
-    },
+    adoptCorrection,
     verifyVerdict: result.verify.verdict,
     verifyOk: result.verify.ok,
     qualityScorecard: buildRetakeoverQualityScorecard({
@@ -390,8 +438,10 @@ function writeMessyRetakeoverMetrics(
       discoverSummary: result.discover.summary as unknown as Record<string, unknown>,
       featureContent: result.feature,
       featureRecommendation: parseRetakeoverFeatureRecommendation(result.feature),
-      acceptedArtifacts,
-      deferredArtifacts,
+      acceptedArtifacts: adoptCorrection.acceptedArtifacts,
+      deferredArtifacts: adoptCorrection.deferredArtifacts,
+      editedArtifacts: adoptCorrection.editedArtifacts,
+      rejectedArtifacts: adoptCorrection.rejectedArtifacts,
       verifyOk: result.verify.ok,
     }),
   };

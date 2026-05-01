@@ -26,6 +26,9 @@ export interface VerifyPolicy {
     facts_contract?: string;
   };
   team?: TeamPolicyProfile;
+  waivers?: WaiverPolicy;
+  release?: ReleasePolicy;
+  execute_default?: ExecuteDefaultPolicy;
   greenfield?: {
     review_gate?: GreenfieldReviewGatePolicy;
   };
@@ -38,6 +41,34 @@ export interface TeamPolicyProfile {
   profile?: TeamPolicyProfileName;
   owner?: string;
   reviewers?: string[];
+  required_reviewers?: number;
+}
+
+export interface WaiverPolicy {
+  require_owner?: boolean;
+  require_reason?: boolean;
+  require_expiration?: boolean;
+  max_active_days?: number;
+  expiring_soon_days?: number;
+  unmatched_active_severity?: "ignore" | "advisory" | "blocking";
+}
+
+export interface ReleasePolicy {
+  require_snapshot?: boolean;
+  require_compare?: boolean;
+  drift_requires_owner_review?: boolean;
+  policy_drift_severity?: "ignore" | "advisory" | "blocking";
+  static_collector_drift_severity?: "ignore" | "advisory" | "blocking";
+  contract_graph_drift_severity?: "ignore" | "advisory" | "blocking";
+}
+
+export interface ExecuteDefaultPolicy {
+  allowed?: boolean;
+  require_policy?: boolean;
+  require_clear_adopt_boundary?: boolean;
+  require_clean_verify?: boolean;
+  max_cost_usd?: number;
+  max_iterations?: number;
 }
 
 export interface GreenfieldReviewGatePolicy {
@@ -101,10 +132,13 @@ export function validateVerifyPolicy(policy: unknown): VerifyPolicy {
   }
 
   const p = policy as Record<string, unknown>;
-  const allowedTopLevelKeys = new Set(["version", "requires", "team", "greenfield", "rules"]);
+  const allowedTopLevelKeys = new Set(["version", "requires", "team", "waivers", "release", "execute_default", "greenfield", "rules"]);
   const deprecatedTopLevelKeys = new Map([
     ["facts_contract", "requires.facts_contract"],
     ["team_profile", "team.profile"],
+    ["waiver_policy", "waivers"],
+    ["release_policy", "release"],
+    ["executeDefault", "execute_default"],
   ]);
 
   for (const key of Object.keys(p)) {
@@ -131,6 +165,18 @@ export function validateVerifyPolicy(policy: unknown): VerifyPolicy {
 
   if (p.team !== undefined) {
     validateTeamPolicyProfile(p.team);
+  }
+
+  if (p.waivers !== undefined) {
+    validateWaiverPolicy(p.waivers);
+  }
+
+  if (p.release !== undefined) {
+    validateReleasePolicy(p.release);
+  }
+
+  if (p.execute_default !== undefined) {
+    validateExecuteDefaultPolicy(p.execute_default);
   }
 
   if (p.greenfield !== undefined) {
@@ -248,7 +294,7 @@ function validateTeamPolicyProfile(team: unknown): void {
   }
 
   const typed = team as Record<string, unknown>;
-  const allowedKeys = new Set(["profile", "owner", "reviewers"]);
+  const allowedKeys = new Set(["profile", "owner", "reviewers", "required_reviewers"]);
   for (const key of Object.keys(typed)) {
     if (!allowedKeys.has(key)) {
       throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Policy team has unknown key: ${key}`, {
@@ -269,6 +315,105 @@ function validateTeamPolicyProfile(team: unknown): void {
       !typed.reviewers.every((entry) => typeof entry === "string" && entry.trim()))
   ) {
     throw new Error("Policy team.reviewers must be a string array when provided");
+  }
+  if (
+    typed.required_reviewers !== undefined &&
+    (!Number.isInteger(typed.required_reviewers) || (typed.required_reviewers as number) < 0)
+  ) {
+    throw new Error("Policy team.required_reviewers must be a non-negative integer when provided");
+  }
+}
+
+function validateWaiverPolicy(waivers: unknown): void {
+  validateObjectKeys("waivers", waivers, new Set([
+    "require_owner",
+    "require_reason",
+    "require_expiration",
+    "max_active_days",
+    "expiring_soon_days",
+    "unmatched_active_severity",
+  ]));
+  const typed = waivers as Record<string, unknown>;
+  validateOptionalBoolean(typed, "waivers", "require_owner");
+  validateOptionalBoolean(typed, "waivers", "require_reason");
+  validateOptionalBoolean(typed, "waivers", "require_expiration");
+  validateOptionalPositiveInteger(typed, "waivers", "max_active_days");
+  validateOptionalPositiveInteger(typed, "waivers", "expiring_soon_days");
+  validateOptionalSeverity(typed, "waivers", "unmatched_active_severity");
+}
+
+function validateReleasePolicy(release: unknown): void {
+  validateObjectKeys("release", release, new Set([
+    "require_snapshot",
+    "require_compare",
+    "drift_requires_owner_review",
+    "policy_drift_severity",
+    "static_collector_drift_severity",
+    "contract_graph_drift_severity",
+  ]));
+  const typed = release as Record<string, unknown>;
+  validateOptionalBoolean(typed, "release", "require_snapshot");
+  validateOptionalBoolean(typed, "release", "require_compare");
+  validateOptionalBoolean(typed, "release", "drift_requires_owner_review");
+  validateOptionalSeverity(typed, "release", "policy_drift_severity");
+  validateOptionalSeverity(typed, "release", "static_collector_drift_severity");
+  validateOptionalSeverity(typed, "release", "contract_graph_drift_severity");
+}
+
+function validateExecuteDefaultPolicy(executeDefault: unknown): void {
+  validateObjectKeys("execute_default", executeDefault, new Set([
+    "allowed",
+    "require_policy",
+    "require_clear_adopt_boundary",
+    "require_clean_verify",
+    "max_cost_usd",
+    "max_iterations",
+  ]));
+  const typed = executeDefault as Record<string, unknown>;
+  validateOptionalBoolean(typed, "execute_default", "allowed");
+  validateOptionalBoolean(typed, "execute_default", "require_policy");
+  validateOptionalBoolean(typed, "execute_default", "require_clear_adopt_boundary");
+  validateOptionalBoolean(typed, "execute_default", "require_clean_verify");
+  validateOptionalPositiveNumber(typed, "execute_default", "max_cost_usd");
+  validateOptionalPositiveInteger(typed, "execute_default", "max_iterations");
+}
+
+function validateObjectKeys(label: string, value: unknown, allowedKeys: Set<string>): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Policy ${label} must be an object when provided`);
+  }
+
+  const typed = value as Record<string, unknown>;
+  for (const key of Object.keys(typed)) {
+    if (!allowedKeys.has(key)) {
+      throw new PolicySchemaError("POLICY_UNKNOWN_KEY", `Policy ${label} has unknown key: ${key}`, {
+        key: `${label}.${key}`,
+      });
+    }
+  }
+}
+
+function validateOptionalBoolean(record: Record<string, unknown>, label: string, key: string): void {
+  if (record[key] !== undefined && typeof record[key] !== "boolean") {
+    throw new Error(`Policy ${label}.${key} must be a boolean when provided`);
+  }
+}
+
+function validateOptionalPositiveInteger(record: Record<string, unknown>, label: string, key: string): void {
+  if (record[key] !== undefined && (!Number.isInteger(record[key]) || (record[key] as number) <= 0)) {
+    throw new Error(`Policy ${label}.${key} must be a positive integer when provided`);
+  }
+}
+
+function validateOptionalPositiveNumber(record: Record<string, unknown>, label: string, key: string): void {
+  if (record[key] !== undefined && (typeof record[key] !== "number" || !Number.isFinite(record[key]) || record[key] <= 0)) {
+    throw new Error(`Policy ${label}.${key} must be a positive number when provided`);
+  }
+}
+
+function validateOptionalSeverity(record: Record<string, unknown>, label: string, key: string): void {
+  if (record[key] !== undefined && !["ignore", "advisory", "blocking"].includes(record[key] as string)) {
+    throw new Error(`Policy ${label}.${key} must be ignore, advisory, or blocking`);
   }
 }
 

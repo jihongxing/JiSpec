@@ -8,6 +8,8 @@ import {
   archiveChangeSession,
   isActiveChangeSession,
   loadChangeSession,
+  readChangeSession,
+  writeChangeSession,
   type ChangeSession,
 } from "../change/change-session";
 import { BudgetController, type BudgetLimits } from "./budget-controller";
@@ -18,6 +20,7 @@ import { StallDetector } from "./stall-detector";
 import {
   buildImplementationDecisionPacket,
   generateHandoffPacket,
+  readHandoffPacketFromInput,
   writeHandoffPacket,
   formatHandoffPacket,
   type HandoffPacket,
@@ -35,6 +38,7 @@ import {
 export interface ImplementRunOptions {
   root: string;
   sessionId?: string;
+  fromHandoff?: string;
   testCommand?: string;
   fast?: boolean;
   maxIterations?: number;
@@ -89,6 +93,13 @@ export interface ImplementRunResult {
     externalPatchPath?: string;
     verifyCommand?: string;
     sessionArchived?: boolean;
+    replay?: {
+      fromHandoffPath: string;
+      previousOutcome: HandoffPacket["outcome"];
+      previousStopPoint: HandoffPacket["decisionPacket"]["stopPoint"];
+      previousFailedCheck: HandoffPacket["decisionPacket"]["nextActionDetail"]["failedCheck"];
+      restoredSession: boolean;
+    };
   };
 }
 
@@ -116,6 +127,12 @@ interface LoadedImplementSession {
   source: "active" | "archived";
 }
 
+interface LoadedReplayState {
+  packet: HandoffPacket;
+  path: string;
+  restoredSession: boolean;
+}
+
 interface ImplementLaneResolution {
   lane: "fast" | "strict";
   requestedFast: boolean;
@@ -129,8 +146,12 @@ interface ImplementLaneResolution {
 export async function runImplement(options: ImplementRunOptions): Promise<ImplementRunResult> {
   const root = path.resolve(options.root);
   const startedAt = new Date().toISOString();
+  const replay = options.fromHandoff ? restoreReplayState(root, options.fromHandoff) : undefined;
+  if (options.sessionId && replay && options.sessionId !== replay.packet.sessionId) {
+    throw new Error(`--session-id ${options.sessionId} does not match replay handoff session ${replay.packet.sessionId}.`);
+  }
 
-  const loadedSession = loadImplementSession(root, options.sessionId);
+  const loadedSession = loadImplementSession(root, options.sessionId ?? replay?.packet.sessionId);
   if (!loadedSession) {
     throw new Error("No active change session found. Run 'jispec-cli change' first.");
   }
@@ -138,7 +159,11 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
   const session = loadedSession.session;
   const laneResolution = resolveImplementLane(session, options.fast === true);
 
-  const testCommandResolution = resolveTestCommandFromResolver(root, session, options.testCommand);
+  const testCommandResolution = resolveTestCommandFromResolver(
+    root,
+    session,
+    options.testCommand ?? replay?.packet.replay.inputs.testCommand,
+  );
   const testCommand = testCommandResolution.command;
   const validation = validateTestCommand(testCommand);
   if (!validation.valid) {
@@ -154,6 +179,9 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
 
   if (options.externalPatchPath) {
     result = mediatePatchIntake(root, session, laneResolution, testCommand, options.externalPatchPath, startedAt);
+    if (replay) {
+      result.metadata.replay = buildReplayMetadata(replay);
+    }
     lastError = result.patchMediation?.test?.errorMessage ?? result.patchMediation?.violations.join("\n") ?? "";
   } else {
     const preflightResult = await runPreflight(root, testCommand);
@@ -169,6 +197,7 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
           startedAt,
           completedAt: new Date().toISOString(),
           testCommand,
+          replay: replay ? buildReplayMetadata(replay) : undefined,
         },
       };
     } else {
@@ -194,6 +223,7 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
           completedAt: new Date().toISOString(),
           testCommand,
           stallReason: loopResult.stallReason,
+          replay: replay ? buildReplayMetadata(replay) : undefined,
         },
       };
     }
@@ -232,7 +262,7 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
     }
   }
 
-  result.decisionPacket = buildImplementationDecisionPacket(result);
+  result.decisionPacket = buildImplementationDecisionPacket(result, session);
 
   if (shouldWriteHandoffPacket(result)) {
     if (result.patchMediation?.touchedPaths.length && !episodeMemory) {
@@ -370,6 +400,44 @@ function mediatePatchIntake(
   };
 }
 
+function restoreReplayState(root: string, input: string): LoadedReplayState {
+  const resolved = readHandoffPacketFromInput(root, input);
+  if (!resolved) {
+    throw new Error(`Handoff packet not found: ${input}`);
+  }
+
+  const replay = resolved.packet.replay;
+  if (!replay?.replayable || !replay.sourceSession?.id) {
+    throw new Error(`Handoff packet is not replayable: ${input}`);
+  }
+
+  const active = readChangeSession(root);
+  if (active && active.id !== replay.sourceSession.id) {
+    throw new Error(`Cannot replay handoff ${resolved.packet.sessionId} while active change session ${active.id} is present.`);
+  }
+
+  let restoredSession = false;
+  if (!active) {
+    writeChangeSession(root, replay.sourceSession);
+    restoredSession = true;
+  }
+
+  return {
+    packet: resolved.packet,
+    path: resolved.path,
+    restoredSession,
+  };
+}
+
+function buildReplayMetadata(replay: LoadedReplayState): NonNullable<ImplementRunResult["metadata"]["replay"]> {
+  return {
+    fromHandoffPath: replay.path,
+    previousOutcome: replay.packet.replay.previousAttempt.outcome,
+    previousStopPoint: replay.packet.replay.previousAttempt.stopPoint,
+    previousFailedCheck: replay.packet.replay.previousAttempt.failedCheck,
+    restoredSession: replay.restoredSession,
+  };
+}
 
 function loadImplementSession(root: string, sessionId?: string): LoadedImplementSession | null {
   if (sessionId) {
@@ -538,6 +606,14 @@ export function renderImplementText(result: ImplementRunResult): string {
     lines.push(`  Summary: ${result.decisionPacket.summary}`);
     lines.push(`  Next action: ${result.decisionPacket.nextAction}`);
     lines.push(`  Next action owner: ${result.decisionPacket.executionStatus.nextActionOwner}`);
+    lines.push(`  Next action type: ${result.decisionPacket.nextActionDetail.type}`);
+    lines.push(`  Failed check: ${result.decisionPacket.nextActionDetail.failedCheck}`);
+    if (result.decisionPacket.nextActionDetail.command) {
+      lines.push(`  Next command: ${result.decisionPacket.nextActionDetail.command}`);
+    }
+    if (result.decisionPacket.nextActionDetail.externalToolHandoff?.required) {
+      lines.push(`  External handoff: ${result.decisionPacket.nextActionDetail.externalToolHandoff.request}`);
+    }
     lines.push(
       `  Checks: scope=${result.decisionPacket.executionStatus.scopeCheck}, patch=${result.decisionPacket.executionStatus.patchApply}, test=${result.decisionPacket.executionStatus.tests}, verify=${result.decisionPacket.executionStatus.verify}`,
     );
@@ -549,6 +625,16 @@ export function renderImplementText(result: ImplementRunResult): string {
   lines.push(`Test command: ${result.metadata.testCommand}`);
   if (result.laneReasons.length > 0) {
     lines.push(`Lane reasons: ${result.laneReasons.join("; ")}`);
+  }
+
+  if (result.metadata.replay) {
+    lines.push("");
+    lines.push("Replay:");
+    lines.push(`  From handoff: ${result.metadata.replay.fromHandoffPath}`);
+    lines.push(`  Previous outcome: ${result.metadata.replay.previousOutcome}`);
+    lines.push(`  Previous stop point: ${result.metadata.replay.previousStopPoint}`);
+    lines.push(`  Previous failed check: ${result.metadata.replay.previousFailedCheck}`);
+    lines.push(`  Restored session: ${result.metadata.replay.restoredSession}`);
   }
 
   if (result.metadata.stallReason) {

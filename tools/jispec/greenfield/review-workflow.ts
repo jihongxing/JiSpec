@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { appendAuditEvent } from "../audit/event-ledger";
 import { draftSpecDelta, type SpecDeltaDraftResult } from "../change/spec-delta";
 import { writeGreenfieldSpecDebtRecord, type GreenfieldSpecDebtRecord } from "./spec-debt-ledger";
 
@@ -232,6 +233,28 @@ export function runGreenfieldReviewTransition(
 
   updateGateStatus(record);
   writeGreenfieldReviewRecord(root, record);
+  appendAuditEvent(root, {
+    type: `review_${options.action}`,
+    actor,
+    reason,
+    sourceArtifact: {
+      kind: "greenfield-review-record",
+      path: REVIEW_RECORD_PATH,
+    },
+    affectedContracts: [
+      ...extractAffectedIds(decision, /^CTR-/),
+      ...decision.affected_assets,
+    ],
+    details: {
+      decisionId: decision.decision_id,
+      decisionType: decision.decision_type,
+      status: decision.status,
+      owner: options.owner,
+      correctionPath: correction?.correction_path,
+      specDebtId: specDebt?.id,
+      openDecisionPath,
+    },
+  });
 
   return {
     root: normalizePath(root),

@@ -49,6 +49,9 @@ async function main(): Promise<void> {
     assert.equal(result.decisionPacket?.state, "ready_to_merge");
     assert.equal(result.decisionPacket?.stopPoint, "post_verify");
     assert.equal(result.decisionPacket?.mergeable, true);
+    assert.equal(result.decisionPacket?.nextActionDetail.type, "review_and_merge");
+    assert.equal(result.decisionPacket?.nextActionDetail.failedCheck, "none");
+    assert.equal(result.decisionPacket?.nextActionDetail.command, "npm run ci:verify");
     assert.equal(result.autoPromoted, false);
     assert.equal(result.postVerify?.command, "npm run jispec-cli -- verify --fast");
     assert.equal(result.postVerify?.effectiveLane, "fast");
@@ -113,6 +116,10 @@ async function main(): Promise<void> {
     assert.equal(result.decisionPacket?.executionStatus.tests, "passed");
     assert.equal(result.decisionPacket?.executionStatus.verify, "failed");
     assert.equal(result.decisionPacket?.executionStatus.nextActionOwner, "verify_gate");
+    assert.equal(result.decisionPacket?.nextActionDetail.type, "fix_verify_blockers");
+    assert.equal(result.decisionPacket?.nextActionDetail.owner, "verify_gate");
+    assert.equal(result.decisionPacket?.nextActionDetail.failedCheck, "verify");
+    assert.equal(result.decisionPacket?.nextActionDetail.command, "npm run verify");
     assert.ok(result.decisionPacket?.nextAction.includes("Resolve blocking verify issues"));
     assert.ok(result.handoffPacket);
     assert.equal(result.handoffPacket?.outcome, "verify_blocked");

@@ -25,7 +25,7 @@ import {
 import { renderVerifyJSON, renderVerifyText, runVerify, type VerifyRunOptions } from "./verify/verify-runner";
 import { buildVerifyReport } from "./ci/verify-report";
 import { writeLocalVerifySummary } from "./ci/verify-summary";
-import { createWaiver, listWaivers, revokeWaiver, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
+import { createWaiver, listWaivers, renewWaiver, revokeWaiver, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
 import { runChangeCommand, renderChangeCommandJSON, type ChangeCommandOptions } from "./change/change-command";
 import {
   renderChangeDefaultModeJSON,
@@ -48,11 +48,31 @@ import {
   type GreenfieldReviewLanguage,
 } from "./greenfield/review-workflow";
 import {
+  markGreenfieldSpecDebtOwnerReview,
+  updateGreenfieldSpecDebtStatus,
+} from "./greenfield/spec-debt-ledger";
+import {
   compareReleaseBaselines,
   createReleaseSnapshot,
   renderReleaseCompareText,
   renderReleaseSnapshotText,
 } from "./release/baseline-snapshot";
+import {
+  buildConsoleGovernanceDashboard,
+  renderConsoleGovernanceDashboardJSON,
+  renderConsoleGovernanceDashboardText,
+} from "./console/governance-dashboard";
+import {
+  buildConsoleGovernanceActionPlan,
+  renderConsoleGovernanceActionPlanJSON,
+  renderConsoleGovernanceActionPlanText,
+} from "./console/governance-actions";
+import {
+  exportConsoleGovernanceSnapshot,
+  renderConsoleGovernanceExportJSON,
+  renderConsoleGovernanceExportText,
+} from "./console/governance-export";
+import type { TeamPolicyProfileName } from "./policy/policy-schema";
 
 type LegacySurface =
   | "slice"
@@ -72,14 +92,18 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
     "  jispec-cli change default-mode show|set|reset [--json]",
     "  jispec-cli review list|adopt|reject|defer|waive|brief [--json]",
+    "  jispec-cli spec-debt repay|cancel|owner-review <id> [--json]",
     "  jispec-cli release snapshot --version <version> [--json]",
-    "  jispec-cli implement [--fast] [--external-patch <path>] [--json]",
+    "  jispec-cli console dashboard [--json]",
+    "  jispec-cli console actions [--json]",
+    "  jispec-cli console export-governance [--json]",
+    "  jispec-cli implement [--fast] [--external-patch <path>] [--from-handoff <path-or-session>] [--json]",
     "  jispec-cli bootstrap init-project [--force] [--json]",
     "  jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]",
     "  jispec-cli bootstrap discover [--json]",
     "  jispec-cli bootstrap draft [--json]",
     "  jispec-cli adopt --interactive [--json]",
-    "  jispec-cli policy migrate [--json]",
+    "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--json]",
     "  jispec-cli doctor v1",
     "  jispec-cli doctor runtime",
     "",
@@ -233,10 +257,18 @@ function registerPolicyCommands(program: Command): void {
     .description("Scaffold or normalize .spec/policy.yaml onto the current facts contract.")
     .option("--root <path>", "Repository root.", ".")
     .option("--path <path>", "Override the policy file path.")
+    .option("--profile <profile>", "Policy profile: solo|small_team|regulated.")
+    .option("--actor <actor>", "Actor recorded in the audit event.")
+    .option("--reason <reason>", "Reason recorded in the audit event.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; path?: string; json: boolean }) => {
+    .action((options: { root: string; path?: string; profile?: string; actor?: string; reason?: string; json: boolean }) => {
       try {
-        const result = migrateVerifyPolicy(path.resolve(options.root), options.path);
+        const profile = parsePolicyProfileOption(options.profile);
+        const result = migrateVerifyPolicy(path.resolve(options.root), options.path, {
+          profile,
+          actor: options.actor,
+          reason: options.reason,
+        });
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
         } else {
@@ -249,6 +281,16 @@ function registerPolicyCommands(program: Command): void {
         process.exitCode = 1;
       }
     });
+}
+
+function parsePolicyProfileOption(profile?: string): TeamPolicyProfileName | undefined {
+  if (profile === undefined) {
+    return undefined;
+  }
+  if (profile === "solo" || profile === "small_team" || profile === "regulated") {
+    return profile;
+  }
+  throw new Error("--profile must be one of: solo, small_team, regulated");
 }
 
 function registerWaiverCommands(program: Command): void {
@@ -380,6 +422,38 @@ function registerWaiverCommands(program: Command): void {
         process.exitCode = 1;
       }
     });
+
+  waiver
+    .command("renew")
+    .description("Renew an active waiver expiration through an audited local update.")
+    .argument("<id>", "Waiver ID to renew.")
+    .option("--root <path>", "Repository root.", ".")
+    .requiredOption("--actor <actor>", "Actor renewing the waiver.")
+    .requiredOption("--reason <reason>", "Reason for renewal.")
+    .requiredOption("--expires-at <date>", "New expiration date (ISO 8601 format).")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((id: string, options: { root: string; actor: string; reason: string; expiresAt: string; json: boolean }) => {
+      try {
+        const result = renewWaiver(path.resolve(options.root), id, {
+          actor: options.actor,
+          reason: options.reason,
+          expiresAt: options.expiresAt,
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log("Waiver renewed successfully:");
+          console.log(`  ID: ${result.waiver.id}`);
+          console.log(`  Expires: ${result.waiver.expiresAt}`);
+          console.log(`  File: ${result.filePath}`);
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Waiver renew failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
 }
 
 function registerReleaseCommands(program: Command): void {
@@ -391,13 +465,17 @@ function registerReleaseCommands(program: Command): void {
     .requiredOption("--version <version>", "Release version to snapshot, for example v1.")
     .option("--root <path>", "Repository root.", ".")
     .option("--force", "Overwrite an existing release baseline.", false)
+    .option("--actor <actor>", "Actor recorded in the audit event.")
+    .option("--reason <reason>", "Reason recorded in the audit event.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; version: string; force: boolean; json: boolean }) => {
+    .action((options: { root: string; version: string; force: boolean; actor?: string; reason?: string; json: boolean }) => {
       try {
         const result = createReleaseSnapshot({
           root: path.resolve(options.root),
           version: options.version,
           force: options.force,
+          actor: options.actor,
+          reason: options.reason,
         });
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
@@ -418,13 +496,17 @@ function registerReleaseCommands(program: Command): void {
     .requiredOption("--from <ref>", "Source baseline ref: current, a release version, or a path.")
     .requiredOption("--to <ref>", "Target baseline ref: current, a release version, or a path.")
     .option("--root <path>", "Repository root.", ".")
+    .option("--actor <actor>", "Actor recorded in the audit event.")
+    .option("--reason <reason>", "Reason recorded in the audit event.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; from: string; to: string; json: boolean }) => {
+    .action((options: { root: string; from: string; to: string; actor?: string; reason?: string; json: boolean }) => {
       try {
         const result = compareReleaseBaselines({
           root: path.resolve(options.root),
           from: options.from,
           to: options.to,
+          actor: options.actor,
+          reason: options.reason,
         });
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
@@ -435,6 +517,142 @@ function registerReleaseCommands(program: Command): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Release compare failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerConsoleCommands(program: Command): void {
+  const consoleCommand = program.command("console").description("Read-only local governance console over declared JiSpec artifacts.");
+
+  consoleCommand
+    .command("dashboard")
+    .description("Show the governance dashboard shell without uploading source or replacing verify.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const dashboard = buildConsoleGovernanceDashboard(path.resolve(options.root));
+        console.log(options.json ? renderConsoleGovernanceDashboardJSON(dashboard) : renderConsoleGovernanceDashboardText(dashboard));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Console dashboard failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  consoleCommand
+    .command("actions")
+    .description("Generate audited local CLI action packets from the governance dashboard state.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const plan = buildConsoleGovernanceActionPlan(path.resolve(options.root));
+        console.log(options.json ? renderConsoleGovernanceActionPlanJSON(plan) : renderConsoleGovernanceActionPlanText(plan));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Console actions failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  consoleCommand
+    .command("export-governance")
+    .description("Export this repo's local governance snapshot for future multi-repo Console aggregation.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--out <path>", "Output JSON path.", ".spec/console/governance-snapshot.json")
+    .option("--repo-id <id>", "Stable repository ID for multi-repo aggregation.")
+    .option("--repo-name <name>", "Human-readable repository name.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; out: string; repoId?: string; repoName?: string; json: boolean }) => {
+      try {
+        const result = exportConsoleGovernanceSnapshot({
+          root: path.resolve(options.root),
+          outPath: options.out,
+          repoId: options.repoId,
+          repoName: options.repoName,
+        });
+        console.log(options.json ? renderConsoleGovernanceExportJSON(result) : renderConsoleGovernanceExportText(result.snapshot));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Console governance export failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerSpecDebtCommands(program: Command): void {
+  const specDebt = program.command("spec-debt").description("Manage Greenfield spec debt through audited local CLI actions.");
+
+  registerSpecDebtStatusCommand(specDebt, "repay", "Mark a spec debt record as repaid.");
+  registerSpecDebtStatusCommand(specDebt, "cancel", "Mark a spec debt record as cancelled.");
+
+  specDebt
+    .command("owner-review")
+    .description("Mark a spec debt record as needing owner review.")
+    .argument("<id>", "Spec debt ID.")
+    .option("--root <path>", "Repository root.", ".")
+    .requiredOption("--actor <actor>", "Actor requesting owner review.")
+    .requiredOption("--reason <reason>", "Reason for owner review.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((id: string, options: { root: string; actor: string; reason: string; json: boolean }) => {
+      try {
+        const record = markGreenfieldSpecDebtOwnerReview(path.resolve(options.root), {
+          id,
+          actor: options.actor,
+          reason: options.reason,
+        });
+        if (options.json) {
+          console.log(JSON.stringify({ record }, null, 2));
+        } else {
+          console.log("Spec debt owner review recorded:");
+          console.log(`  ID: ${record.id}`);
+          console.log(`  Owner: ${record.owner}`);
+          console.log(`  Requested by: ${record.owner_review?.requested_by}`);
+          console.log(`  Reason: ${record.owner_review?.reason}`);
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Spec debt owner-review failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerSpecDebtStatusCommand(specDebt: Command, action: "repay" | "cancel", description: string): void {
+  specDebt
+    .command(action)
+    .description(description)
+    .argument("<id>", "Spec debt ID.")
+    .option("--root <path>", "Repository root.", ".")
+    .requiredOption("--actor <actor>", "Actor recording the status update.")
+    .requiredOption("--reason <reason>", "Reason for the status update.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((id: string, options: { root: string; actor: string; reason: string; json: boolean }) => {
+      try {
+        const record = updateGreenfieldSpecDebtStatus(path.resolve(options.root), {
+          id,
+          status: action === "repay" ? "repaid" : "cancelled",
+          actor: options.actor,
+          reason: options.reason,
+        });
+        if (options.json) {
+          console.log(JSON.stringify({ record }, null, 2));
+        } else {
+          console.log(`Spec debt ${action === "repay" ? "repaid" : "cancelled"}:`);
+          console.log(`  ID: ${record.id}`);
+          console.log(`  Status: ${record.status}`);
+          console.log(`  Owner: ${record.owner}`);
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Spec debt ${action} failed: ${message}`);
         process.exitCode = 1;
       }
     });
@@ -640,6 +858,7 @@ function registerImplementCommand(program: Command): void {
     .description("Mediate external implementation patches through scope, test, and verify feedback.")
     .option("--root <path>", "Repository root.", ".")
     .option("--session-id <id>", "Optional session ID to resume.")
+    .option("--from-handoff <path-or-session>", "Restore an implement attempt from a replayable handoff packet.")
     .option("--fast", "Prefer the local fast-lane implement flow when the active change session allows it.", false)
     .option("--external-patch <path>", "Mediate an external patch file through scope, test, and verify gates.")
     .option("--test-command <cmd>", "Override test command.")
@@ -647,13 +866,14 @@ function registerImplementCommand(program: Command): void {
     .option("--max-tokens <n>", "Maximum tokens (default: 100000).", parseInt)
     .option("--max-cost <n>", "Maximum cost in USD (default: 5.00).", parseFloat)
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; sessionId?: string; fast: boolean; externalPatch?: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
+    .action(async (options: { root: string; sessionId?: string; fromHandoff?: string; fast: boolean; externalPatch?: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
       try {
         const { runImplement, renderImplementText, renderImplementJSON, computeImplementExitCode } = await import("./implement/implement-runner");
 
         const result = await runImplement({
           root: path.resolve(options.root),
           sessionId: options.sessionId,
+          fromHandoff: options.fromHandoff,
           fast: options.fast,
           externalPatchPath: options.externalPatch,
           testCommand: options.testCommand,
@@ -850,13 +1070,17 @@ function registerAdoptCommand(program: Command): void {
     .option("--root <path>", "Repository root.", ".")
     .option("--session <id|latest>", "Adopt a specific draft session or the latest open session.")
     .option("--interactive", "Collect decisions interactively with a terminal prompt.", false)
+    .option("--actor <actor>", "Actor recorded in the audit event.")
+    .option("--reason <reason>", "Reason recorded in the audit event.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; session?: string; interactive: boolean; json: boolean }) => {
+    .action(async (options: { root: string; session?: string; interactive: boolean; actor?: string; reason?: string; json: boolean }) => {
       try {
         const result = await runBootstrapAdopt({
           root: path.resolve(options.root),
           session: options.session,
           interactive: options.interactive,
+          actor: options.actor,
+          reason: options.reason,
         });
         renderBootstrapAdoptResult(result, options.json);
         process.exitCode = 0;
@@ -933,6 +1157,8 @@ export function buildProgram(): Command {
   registerChangeCommand(program);
   registerReviewCommands(program);
   registerReleaseCommands(program);
+  registerConsoleCommands(program);
+  registerSpecDebtCommands(program);
   registerImplementCommand(program);
 
   const slice = program.command("slice").description("Legacy slice-based protocol commands (compatibility surface).");

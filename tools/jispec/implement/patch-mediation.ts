@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { appendAuditEvent } from "../audit/event-ledger";
 import type { ChangeSession } from "../change/change-session";
 
 export type PatchMediationStatus =
@@ -144,6 +145,7 @@ export function mediateExternalPatch(
   if (!scope.valid) {
     artifact.completedAt = new Date().toISOString();
     const artifactPath = writePatchMediationArtifact(root, artifact);
+    recordPatchIntakeAudit(root, artifact, artifactPath, session);
     return { artifact, artifactPath };
   }
 
@@ -168,6 +170,7 @@ export function mediateExternalPatch(
   }
 
   const artifactPath = writePatchMediationArtifact(root, artifact);
+  recordPatchIntakeAudit(root, artifact, artifactPath, session);
   return { artifact, artifactPath };
 }
 
@@ -221,6 +224,41 @@ function isPathWithinAllowedScope(touchedPath: string, allowedPath: string): boo
 
   const directoryScope = allowedPath.endsWith("/") ? allowedPath : `${allowedPath}/`;
   return touchedPath.startsWith(directoryScope);
+}
+
+function recordPatchIntakeAudit(
+  root: string,
+  artifact: PatchMediationArtifact,
+  artifactPath: string,
+  session: ChangeSession,
+): void {
+  appendAuditEvent(root, {
+    type: "external_patch_intake",
+    reason: `External patch ${artifact.status.replace(/_/g, " ")} for change session ${session.id}.`,
+    sourceArtifact: {
+      kind: "implementation-patch-mediation",
+      path: artifactPath,
+    },
+    affectedContracts: [
+      ...artifact.allowedPaths,
+      ...artifact.touchedPaths,
+      ...extractSessionContractRefs(session),
+    ],
+    details: {
+      sessionId: session.id,
+      status: artifact.status,
+      applied: artifact.applied,
+      externalPatchPath: artifact.externalPatchPath,
+      touchedPaths: artifact.touchedPaths,
+      violations: artifact.violations,
+    },
+  });
+}
+
+function extractSessionContractRefs(session: ChangeSession): string[] {
+  const specDelta = session.specDelta as { affectedContracts?: unknown; affected_contracts?: unknown } | undefined;
+  const candidates = specDelta?.affectedContracts ?? specDelta?.affected_contracts;
+  return Array.isArray(candidates) ? candidates.filter((entry): entry is string => typeof entry === "string") : [];
 }
 
 function formatPatchPath(root: string, patchPath: string): string {

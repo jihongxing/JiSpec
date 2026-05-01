@@ -41,8 +41,12 @@ function main(): void {
     assertIncludes(help, "jispec-cli init --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change <summary> [--mode prompt|execute] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change default-mode show|set|reset [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli spec-debt repay|cancel|owner-review <id> [--json]", "primary surface");
     assertIncludes(help, "jispec-cli release snapshot --version <version> [--json]", "primary surface");
-    assertIncludes(help, "jispec-cli implement [--fast] [--external-patch <path>] [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli console dashboard [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli console actions [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli console export-governance [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli implement [--fast] [--external-patch <path>] [--from-handoff <path-or-session>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap discover [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap draft [--json]", "primary surface");
@@ -50,7 +54,7 @@ function main(): void {
     assertIncludes(help, "jispec-cli doctor v1", "primary surface");
     assertIncludes(help, "jispec-cli doctor runtime", "primary surface");
     assertIncludes(help, "npm run ci:verify", "primary surface");
-    console.log("✓ Test 2: primary surface lists init, verify, change, implement, bootstrap commands, adopt, doctor v1, doctor runtime, and ci:verify");
+    console.log("✓ Test 2: primary surface lists init, verify, change, console governance actions, export, spec-debt, implement, bootstrap commands, adopt, doctor v1, doctor runtime, and ci:verify");
     passed++;
 
     assertIncludes(help, "jispec-cli slice ...", "legacy surface");

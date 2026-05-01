@@ -1,0 +1,65 @@
+version: 1
+requires:
+  facts_contract: '1.0'
+team:
+  profile: small_team
+  owner: unassigned
+  reviewers: []
+  required_reviewers: 1
+rules:
+  - id: no-blocking-issues
+    enabled: true
+    action: fail_blocking
+    message: Repository has blocking verify issues
+    when:
+      fact: verify.blocking_issue_count
+      op: '>'
+      value: 0
+  - id: require-domain-contract
+    enabled: true
+    action: warn
+    message: Domain contract is missing
+    when:
+      not:
+        fact: contracts.domain.present
+        op: '=='
+        value: true
+  - id: require-api-contract
+    enabled: true
+    action: warn
+    message: API contract is missing
+    when:
+      not:
+        fact: contracts.api.present
+        op: '=='
+        value: true
+  - id: require-behavior-contract
+    enabled: true
+    action: warn
+    message: Behavior contract is missing
+    when:
+      not:
+        fact: contracts.behavior.present
+        op: '=='
+        value: true
+waivers:
+  require_owner: true
+  require_reason: true
+  require_expiration: true
+  max_active_days: 60
+  expiring_soon_days: 14
+  unmatched_active_severity: advisory
+release:
+  require_snapshot: true
+  require_compare: true
+  drift_requires_owner_review: true
+  policy_drift_severity: advisory
+  static_collector_drift_severity: advisory
+  contract_graph_drift_severity: blocking
+execute_default:
+  allowed: true
+  require_policy: true
+  require_clear_adopt_boundary: true
+  require_clean_verify: false
+  max_cost_usd: 5
+  max_iterations: 10

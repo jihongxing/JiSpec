@@ -38,6 +38,10 @@ async function main(): Promise<void> {
         ledgerFeature.includes('supporting API evidence includes "POST /withdrawals/request"') &&
         ledgerFeature.includes("# adoption_recommendation: accept_candidate") &&
         ledgerFeature.includes("# recommendation: accept_candidate") &&
+        ledgerFeature.includes("# evidence_level: strong") &&
+        ledgerFeature.includes('"document"') &&
+        ledgerFeature.includes('"schema"') &&
+        ledgerFeature.includes('"test"') &&
         ledgerFeature.includes("# confidence_reasons:") &&
         !ledgerFeature.includes("remains reviewable during the first adoption loop"),
       error: `Expected ledger behavior scenario, got:\n${ledgerFeature}`,
@@ -52,6 +56,10 @@ async function main(): Promise<void> {
         gatewayFeature.includes("Given a gateway is serving traffic under an active strategy") &&
         gatewayFeature.includes("Then the gateway applies the new strategy without losing recovery evidence") &&
         gatewayFeature.includes("# recommendation: accept_candidate") &&
+        gatewayFeature.includes("# evidence_level: partial") &&
+        gatewayFeature.includes('"document"') &&
+        gatewayFeature.includes('"proto"') &&
+        gatewayFeature.includes('"schema"') &&
         gatewayFeature.includes("protobuf service mapping anchors the boundary"),
       error: `Expected gateway/control/client behavior scenarios, got:\n${gatewayFeature}`,
     });
@@ -60,6 +68,8 @@ async function main(): Promise<void> {
       name: "thin route-only evidence is marked for human review",
       passed:
         thinFeature.includes("@behavior_needs_human_review") &&
+        thinFeature.includes("# evidence_level: weak") &&
+        thinFeature.includes('# evidence_kinds: ["route"]') &&
         thinFeature.includes("# adoption_recommendation: defer_as_spec_debt") &&
         thinFeature.includes("# recommendation: defer_as_spec_debt") &&
         thinFeature.includes("route-only behavior lacks contract, document, proto, aggregate, or test corroboration") &&

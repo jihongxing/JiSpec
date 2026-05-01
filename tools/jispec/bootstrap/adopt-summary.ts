@@ -22,6 +22,16 @@ export function buildBootstrapAdoptSummary(report: BootstrapTakeoverReport): Boo
     `- Accepted or edited contracts: ${report.adoptedArtifactPaths.length}`,
     `- Deferred spec debt records: ${report.specDebtPaths.length}`,
     `- Rejected draft artifacts: ${report.rejectedArtifactKinds.length}`,
+    `- Edited draft artifacts: ${report.decisions.filter((decision) => decision.edited).length}`,
+    `- Correction load: ${renderCorrectionLoad(report.decisions)}`,
+    "",
+    "## Correction Loop",
+    "",
+    `- Hotspots: ${renderCorrectionHotspots(report.decisions)}`,
+    "",
+    "| Artifact | Final State | Edited | Owner Review | Note |",
+    "| --- | --- | --- | --- | --- |",
+    ...renderCorrectionRows(report.decisions),
     "",
     "## Accepted Contracts",
     "",
@@ -101,6 +111,57 @@ function renderHumanEdits(decisions: BootstrapTakeoverDecisionRecord[]): string[
   });
 }
 
+function renderCorrectionRows(decisions: BootstrapTakeoverDecisionRecord[]): string[] {
+  if (decisions.length === 0) {
+    return ["| none | none | no | no | none |"];
+  }
+
+  return decisions.map((decision) =>
+    [
+      `\`${decision.artifactKind}\``,
+      `\`${decision.finalState}\``,
+      decision.edited ? "yes" : "no",
+      decision.finalState === "adopted" && !decision.edited ? "no" : "yes",
+      escapeTableCell(decision.note ?? "none"),
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"),
+  );
+}
+
+function renderCorrectionLoad(decisions: BootstrapTakeoverDecisionRecord[]): string {
+  if (decisions.length === 0) {
+    return "0%";
+  }
+
+  const load = decisions.reduce((sum, decision) => {
+    if (decision.finalState === "spec_debt" || decision.finalState === "rejected") {
+      return sum + 1;
+    }
+    if (decision.edited) {
+      return sum + 0.5;
+    }
+    return sum;
+  }, 0);
+
+  return `${Math.round((load / decisions.length) * 100)}%`;
+}
+
+function renderCorrectionHotspots(decisions: BootstrapTakeoverDecisionRecord[]): string {
+  const hotspots = Array.from(new Set(decisions.flatMap((decision) => {
+    if (decision.finalState === "spec_debt") {
+      return [`deferred_${decision.artifactKind}`, "spec_debt_defer"];
+    }
+    if (decision.finalState === "rejected") {
+      return [`rejected_${decision.artifactKind}`, "rejected_draft"];
+    }
+    if (decision.edited) {
+      return [`edited_${decision.artifactKind}`, "human_edit"];
+    }
+    return [];
+  }))).sort((left, right) => left.localeCompare(right));
+
+  return hotspots.length > 0 ? hotspots.map((hotspot) => `\`${hotspot}\``).join(", ") : "none";
+}
+
 function renderNextVerifyStep(report: BootstrapTakeoverReport): string[] {
   const lines = ["- Run `npm run jispec-cli -- verify` after reviewing this adopt summary."];
 
@@ -130,4 +191,8 @@ function renderSourceFiles(sourceFiles: string[]): string {
 
 function formatConfidence(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, "\\|");
 }

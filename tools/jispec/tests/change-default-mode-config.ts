@@ -25,7 +25,10 @@ interface DefaultModePayload {
     defaultMode?: string;
     source?: string;
     readyForExecuteDefault?: boolean;
+    canSetExecuteDefault?: boolean;
     openDraftSessionId?: string;
+    blockers?: string[];
+    warnings?: string[];
     boundary?: {
       promptModeRecordsOnly?: boolean;
       executeModeRunsMediationAndVerify?: boolean;
@@ -50,6 +53,7 @@ function main(): void {
 
   const fixture = createVerifyFixture("change-default-mode-config");
   try {
+    removeProjectDefaultMode(fixture);
     const show = runCli(["change", "default-mode", "show", "--root", fixture, "--json"]);
     assert.equal(show.status, 0, `show exited with ${show.status}. stderr: ${show.stderr}`);
     const payload = JSON.parse(show.stdout) as DefaultModePayload;
@@ -57,13 +61,15 @@ function main(): void {
     assert.equal(payload.currentMode, "prompt");
     assert.equal(payload.source, "built_in_default");
     assert.equal(payload.readiness?.readyForExecuteDefault, false);
+    assert.equal(payload.readiness?.canSetExecuteDefault, false);
+    assert.ok(payload.readiness?.blockers?.some((entry) => entry.includes(".spec/policy.yaml is missing")));
     assert.equal(payload.readiness?.boundary?.promptModeRecordsOnly, true);
     assert.equal(payload.readiness?.boundary?.executeModeRunsMediationAndVerify, true);
     assert.equal(payload.readiness?.boundary?.explicitCliModeOverridesProjectDefault, true);
     assert.equal(payload.readiness?.boundary?.projectDefaultAppliesOnlyWhenModeOmitted, true);
     assert.equal(payload.readiness?.boundary?.businessCodeGeneratedByJiSpec, false);
     assert.equal(payload.readiness?.boundary?.adoptBoundary?.status, "clear");
-    assert.ok(payload.nextActions?.some((action) => action.includes("set execute")));
+    assert.ok(payload.nextActions?.some((action) => action.includes("policy migrate")));
     console.log("✓ Test 1: show reports the built-in prompt default before project config exists");
     passed++;
   } catch (error) {
@@ -71,6 +77,7 @@ function main(): void {
   }
 
   try {
+    writeStarterPolicy(fixture);
     const setExecute = runCli([
       "change",
       "default-mode",
@@ -92,6 +99,7 @@ function main(): void {
     assert.equal(payload.previousMode, "prompt");
     assert.equal(payload.source, "project_config");
     assert.equal(payload.readiness?.readyForExecuteDefault, true);
+    assert.equal(payload.readiness?.canSetExecuteDefault, true);
     assert.equal(payload.readiness?.boundary?.adoptBoundary?.status, "clear");
     assert.equal((project.change as Record<string, unknown>).default_mode, "execute");
     assert.ok(payload.historyPath?.endsWith(".jispec/change-default-mode-history.jsonl"));
@@ -102,6 +110,7 @@ function main(): void {
   }
 
   try {
+    writeStarterPolicy(fixture);
     const setPrompt = runCli([
       "change",
       "default-mode",
@@ -130,6 +139,7 @@ function main(): void {
   }
 
   try {
+    writeStarterPolicy(fixture);
     const reset = runCli([
       "change",
       "default-mode",
@@ -165,6 +175,7 @@ function main(): void {
     assert.ok(entries.every((entry) => entry.actor === "n7-test"));
     assert.ok(entries[0].reason === "enable execute default");
     assert.ok(entries[0].readiness.readyForExecuteDefault === true);
+    assert.ok(entries[0].readiness.canSetExecuteDefault === true);
     assert.equal(entries[0].readiness.boundaryStatus, "clear");
     console.log("✓ Test 5: history jsonl records every default-mode transition");
     passed++;
@@ -188,6 +199,7 @@ function main(): void {
       ].join("\n"),
       "utf-8",
     );
+    writeStarterPolicy(invalidConfigFixture);
     const setExecute = runCli([
       "change",
       "default-mode",
@@ -198,7 +210,7 @@ function main(): void {
       "--json",
     ]);
     assert.equal(setExecute.status, 1);
-    assert.match(setExecute.stderr, /Cannot enable execute-default until configuration warning/);
+    assert.match(setExecute.stderr, /Cannot enable execute-default until readiness blocker/);
     assert.equal(fs.existsSync(path.join(invalidConfigFixture, ".jispec", "change-default-mode-history.jsonl")), false);
     console.log("✓ Test 6: set execute is blocked when existing default-mode config has warnings");
     passed++;
@@ -210,6 +222,7 @@ function main(): void {
 
   const openDraftFixture = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-change-default-open-draft-"));
   try {
+    writeStarterPolicy(openDraftFixture);
     writeOpenDraftManifest(openDraftFixture, "bootstrap-open");
     const setExecute = runCli([
       "change",
@@ -224,6 +237,7 @@ function main(): void {
     const payload = JSON.parse(setExecute.stdout) as DefaultModePayload;
     assert.equal(payload.currentMode, "execute");
     assert.equal(payload.readiness?.openDraftSessionId, "bootstrap-open");
+    assert.equal(payload.readiness?.canSetExecuteDefault, true);
     assert.equal(payload.readiness?.boundary?.adoptBoundary?.status, "open_draft_pause_required");
     assert.equal(payload.readiness?.boundary?.adoptBoundary?.openDraftSessionId, "bootstrap-open");
     assert.equal(payload.readiness?.boundary?.adoptBoundary?.nextAction, "npm run jispec-cli -- adopt --interactive --session bootstrap-open");
@@ -263,6 +277,22 @@ function readProject(root: string): Record<string, unknown> {
   return yaml.load(fs.readFileSync(path.join(root, "jiproject", "project.yaml"), "utf-8")) as Record<string, unknown>;
 }
 
+function removeProjectDefaultMode(root: string): void {
+  const projectPath = path.join(root, "jiproject", "project.yaml");
+  const project = readProject(root);
+  if (typeof project.change === "object" && project.change !== null && !Array.isArray(project.change)) {
+    const change = { ...(project.change as Record<string, unknown>) };
+    delete change.default_mode;
+    delete change.defaultMode;
+    if (Object.keys(change).length === 0) {
+      delete project.change;
+    } else {
+      project.change = change;
+    }
+  }
+  fs.writeFileSync(projectPath, yaml.dump(project, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf-8");
+}
+
 function readHistory(root: string): Array<Record<string, any>> {
   return fs.readFileSync(path.join(root, ".jispec", "change-default-mode-history.jsonl"), "utf-8")
     .trim()
@@ -285,6 +315,26 @@ function writeOpenDraftManifest(root: string, sessionId: string): void {
       artifactPaths: [],
       artifacts: [],
     }, null, 2),
+    "utf-8",
+  );
+}
+
+function writeStarterPolicy(root: string): void {
+  const policyPath = path.join(root, ".spec", "policy.yaml");
+  fs.mkdirSync(path.dirname(policyPath), { recursive: true });
+  fs.writeFileSync(
+    policyPath,
+    [
+      "version: 1",
+      "requires:",
+      '  facts_contract: "1.0"',
+      "team:",
+      "  profile: small_team",
+      "  owner: unassigned",
+      "  reviewers: []",
+      "rules: []",
+      "",
+    ].join("\n"),
     "utf-8",
   );
 }

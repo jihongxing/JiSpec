@@ -8,6 +8,7 @@ import { runBootstrapDraft, type BootstrapDraftResult } from "../bootstrap/draft
 import type { BootstrapDiscoverResult } from "../bootstrap/evidence-graph";
 import type { AdoptionRankedEvidence } from "../bootstrap/evidence-ranking";
 import {
+  buildRetakeoverAdoptCorrectionMetrics,
   buildRetakeoverQualityScorecard,
   parseRetakeoverFeatureRecommendation,
   RETAKEOVER_METRICS_RELATIVE_PATH,
@@ -80,7 +81,9 @@ interface RetakeoverResult {
 interface RetakeoverFixtureOptions {
   fixtureId: string;
   fixtureClass: RetakeoverFixtureClass;
-  featureDecision: "accept" | "skip_as_spec_debt";
+  domainDecision?: "accept" | "edit";
+  apiDecision?: "accept";
+  featureDecision: "accept" | "skip_as_spec_debt" | "reject";
 }
 
 async function main(): Promise<void> {
@@ -89,6 +92,9 @@ async function main(): Promise<void> {
   const remirageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-remirage-"));
   const breathRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-breath-"));
   const scatteredRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-scattered-"));
+  const monorepoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-monorepo-"));
+  const fullstackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-fullstack-"));
+  const debtRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-debt-"));
   const poolRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-pool-"));
   const results: TestResult[] = [];
 
@@ -96,10 +102,14 @@ async function main(): Promise<void> {
     seedReMirageLikeRepository(remirageRoot);
     seedBreathofEarthLikeRepository(breathRoot);
     seedScatteredContractsRepository(scatteredRoot);
+    seedMultiLanguageMonorepoRepository(monorepoRoot);
+    seedFrontendBackendMixedRepository(fullstackRoot);
+    seedHistoricalDebtServiceRepository(debtRoot);
 
     const remirage = await runRetakeover(remirageRoot, {
       fixtureId: "remirage-like",
       fixtureClass: "high-noise-protocol-repo",
+      domainDecision: "edit",
       featureDecision: "accept",
     });
     const breath = await runRetakeover(breathRoot, {
@@ -112,7 +122,23 @@ async function main(): Promise<void> {
       fixtureClass: "docs-api-schema-scattered-repo",
       featureDecision: "accept",
     });
-    writeRetakeoverPoolArtifacts(poolRoot, [remirage.metrics, breath.metrics, scattered.metrics]);
+    const monorepo = await runRetakeover(monorepoRoot, {
+      fixtureId: "retail-ops-monorepo-like",
+      fixtureClass: "multi-language-monorepo-repo",
+      featureDecision: "reject",
+    });
+    const fullstack = await runRetakeover(fullstackRoot, {
+      fixtureId: "member-portal-fullstack-like",
+      fixtureClass: "frontend-backend-mixed-repo",
+      featureDecision: "skip_as_spec_debt",
+    });
+    const debt = await runRetakeover(debtRoot, {
+      fixtureId: "legacy-saas-debt-like",
+      fixtureClass: "historical-debt-service-repo",
+      featureDecision: "skip_as_spec_debt",
+    });
+    const allFixtures = [remirage, breath, scattered, monorepo, fullstack, debt];
+    writeRetakeoverPoolArtifacts(poolRoot, allFixtures.map((fixture) => fixture.metrics));
     const poolMetrics = JSON.parse(
       fs.readFileSync(path.join(poolRoot, RETAKEOVER_POOL_METRICS_RELATIVE_PATH), "utf-8"),
     ) as {
@@ -120,10 +146,26 @@ async function main(): Promise<void> {
       fixtureClasses?: string[];
       verify?: { okCount?: number; blockingCount?: number; verdicts?: Record<string, number> };
       draftQuality?: { featureRecommendations?: Record<string, number> };
-      adoptCorrection?: { fixturesWithDeferredArtifacts?: string[]; deferredArtifactCount?: number };
+      adoptCorrection?: {
+        fixturesWithDeferredArtifacts?: string[];
+        fixturesWithEditedArtifacts?: string[];
+        fixturesWithRejectedArtifacts?: string[];
+        deferredArtifactCount?: number;
+        editedArtifactCount?: number;
+        rejectedArtifactCount?: number;
+        totalCorrectionLoad?: number;
+        ownerReviewArtifactCount?: number;
+        topCorrectionHotspots?: string[];
+      };
       qualityScorecard?: {
         averageTakeoverReadinessScore?: number;
         lowestReadinessScore?: number;
+        averageContractSignalPrecision?: number;
+        averageBehaviorEvidenceStrength?: number;
+        averageOverclaimBlockRate?: number;
+        totalAdoptionReadyArtifactCount?: number;
+        totalNeedsOwnerDecisionCount?: number;
+        fixturesWithHumanCorrectionHotspots?: string[];
         fixturesNeedingOwnerReview?: string[];
         fixturesWithBlockingVerify?: string[];
         featureOverclaimRisk?: Record<string, number>;
@@ -278,10 +320,86 @@ async function main(): Promise<void> {
       error: `Expected scattered fixture to synthesize finance/governance contracts. contexts=${JSON.stringify(scatteredContexts)}, aggregates=${JSON.stringify(scatteredAggregates)}, api=${JSON.stringify(scattered.api)}.`,
     });
 
+    const monorepoRankedPaths = monorepo.ranked.evidence.map((entry) => entry.path);
+    const monorepoContexts = collectDomainNames(monorepo.domain);
+    const monorepoAggregates = collectAggregateNames(monorepo.domain);
+    const monorepoSurfaces = monorepo.api.api_spec?.surfaces ?? [];
+
+    results.push({
+      name: "Multi-language monorepo fixture promotes service-local contracts without letting build outputs dominate",
+      passed:
+        monorepo.ranked.excludedSummary.totalExcludedFileCount >= 6 &&
+        !containsPathFragment(monorepoRankedPaths, ["target/", ".gradle/", "build/", "coverage/", "generated/"]) &&
+        containsAll(monorepoRankedPaths.slice(0, 15), [
+          "docs/architecture/service-map.md",
+          "services/orders/contracts/openapi.yaml",
+          "services/inventory/proto/inventory.proto",
+          "packages/contracts/schemas/fulfillment-task.schema.json",
+        ]) &&
+        containsAll(monorepoContexts, ["order", "inventory", "fulfillment"]) &&
+        containsAll(monorepoAggregates, ["Order", "InventoryItem", "FulfillmentTask"]) &&
+        (monorepo.api.api_spec?.surface_summary?.openapi_contract ?? 0) >= 1 &&
+        (monorepo.api.api_spec?.surface_summary?.protobuf_service ?? 0) >= 1 &&
+        monorepoSurfaces.some((surface) => surface.surface_kind === "explicit_endpoint" && surface.path === "/orders/:id/ship"),
+      error: `Expected multi-language monorepo fixture to connect service docs/contracts/proto/handlers. ranked=${JSON.stringify(monorepo.ranked.evidence)}, contexts=${JSON.stringify(monorepoContexts)}, aggregates=${JSON.stringify(monorepoAggregates)}, api=${JSON.stringify(monorepo.api)}.`,
+    });
+
+    const fullstackRankedPaths = fullstack.ranked.evidence.map((entry) => entry.path);
+    const fullstackContexts = collectDomainNames(fullstack.domain);
+    const fullstackAggregates = collectAggregateNames(fullstack.domain);
+    const fullstackSurfaces = fullstack.api.api_spec?.surfaces ?? [];
+    const fullstackSourceFiles = fullstack.discover.graph.sourceFiles.map((sourceFile) => sourceFile.path);
+
+    results.push({
+      name: "Frontend-backend mixed fixture links user journeys, UI routes, API contracts, and backend handlers",
+      passed:
+        containsAll(fullstackRankedPaths.slice(0, 15), [
+          "docs/product/member-journeys.md",
+          "services/api/openapi/openapi.yaml",
+          "packages/contracts/schemas/plan-change.schema.json",
+        ]) &&
+        fullstackSourceFiles.includes("apps/web/src/routes/plan-change.tsx") &&
+        containsAll(fullstackContexts, ["membership", "billing", "notification"]) &&
+        containsAll(fullstackAggregates, ["Membership", "BillingAccount", "Notification"]) &&
+        fullstackSurfaces.some((surface) => surface.surface_kind === "openapi_contract" && surface.path === "/members/{memberId}/plan") &&
+        fullstackSurfaces.some((surface) => surface.surface_kind === "explicit_endpoint" && surface.path === "/members/:id/plan") &&
+        fullstack.feature.includes("# adoption_recommendation: defer_as_spec_debt") &&
+        fullstack.feature.includes("@behavior_needs_human_review") &&
+        fullstack.metrics.adoptCorrection.deferredArtifacts.includes("feature") &&
+        fullstack.metrics.qualityScorecard.nextAction === "owner_review_spec_debt",
+      error: `Expected fullstack fixture to join product journey, UI, API, and backend evidence while keeping behavior owner-reviewed. ranked=${JSON.stringify(fullstack.ranked.evidence)}, sourceFiles=${JSON.stringify(fullstackSourceFiles)}, contexts=${JSON.stringify(fullstackContexts)}, aggregates=${JSON.stringify(fullstackAggregates)}, api=${JSON.stringify(fullstack.api)}, feature=\n${fullstack.feature}`,
+    });
+
+    const debtRankedPaths = debt.ranked.evidence.map((entry) => entry.path);
+    const debtContexts = collectDomainNames(debt.domain);
+    const debtAggregates = collectAggregateNames(debt.domain);
+    const debtSurfaces = debt.api.api_spec?.surfaces ?? [];
+
+    results.push({
+      name: "Historical debt fixture keeps migrated and legacy boundaries reviewable without overclaiming behavior",
+      passed:
+        containsAll(debtRankedPaths.slice(0, 15), [
+          "docs/debt/spec-debt-ledger.md",
+          "docs/contracts/subscription-lifecycle.md",
+          "api/openapi/openapi.yaml",
+          "/legacy/subscriptions/:id/renew",
+        ]) &&
+        containsAll(debtContexts, ["subscription", "invoice", "entitlement"]) &&
+        containsAll(debtAggregates, ["Subscription", "Invoice", "Entitlement"]) &&
+        debtSurfaces.some((surface) => surface.surface_kind === "openapi_contract" && surface.path === "/subscriptions/{id}/renew") &&
+        debtSurfaces.some((surface) => surface.surface_kind === "explicit_endpoint" && surface.path === "/legacy/subscriptions/:id/renew") &&
+        debt.feature.includes("# adoption_recommendation: defer_as_spec_debt") &&
+        debt.feature.includes("@behavior_needs_human_review") &&
+        debt.brief.includes("Recommendation: `defer_as_spec_debt`") &&
+        debt.metrics.adoptCorrection.deferredArtifacts.includes("feature") &&
+        debt.metrics.qualityScorecard.nextAction === "owner_review_spec_debt",
+      error: `Expected historical debt fixture to expose migrated/legacy boundaries and defer weak behavior. ranked=${JSON.stringify(debt.ranked.evidence)}, contexts=${JSON.stringify(debtContexts)}, aggregates=${JSON.stringify(debtAggregates)}, api=${JSON.stringify(debt.api)}, feature=\n${debt.feature}`,
+    });
+
     results.push({
       name: "Retakeover pool records ranking, draft quality, adopt corrections, and verify verdict per fixture",
       passed:
-        [remirage, breath, scattered].every((result) =>
+        allFixtures.every((result) =>
           result.metrics.version === 1 &&
           result.metrics.topRankedEvidence.length > 0 &&
           result.metrics.draftQuality.domainContextCount > 0 &&
@@ -290,27 +408,44 @@ async function main(): Promise<void> {
           result.metrics.qualityScorecard.verifySafety === "non_blocking" &&
           result.metrics.qualityScorecard.takeoverReadinessScore > 0 &&
           result.metrics.qualityScorecard.topEvidenceSignalRate >= 0.5 &&
+          result.metrics.qualityScorecard.contractSignalPrecision >= 0.4 &&
+          result.metrics.qualityScorecard.behaviorEvidenceStrength >= 0 &&
+          result.metrics.qualityScorecard.overclaimBlockRate >= 0 &&
+          result.metrics.qualityScorecard.adoptionReadyArtifactCount >= 2 &&
+          result.metrics.qualityScorecard.needsOwnerDecisionCount >= 0 &&
+          Array.isArray(result.metrics.qualityScorecard.humanCorrectionHotspots) &&
           result.metrics.qualityScorecard.riskNotes.length > 0 &&
           fs.existsSync(path.join(result.discover.graph.repoRoot, RETAKEOVER_METRICS_RELATIVE_PATH)),
         ) &&
         remirage.metrics.fixtureClass === "high-noise-protocol-repo" &&
         breath.metrics.fixtureClass === "multilingual-finance-service-repo" &&
         scattered.metrics.fixtureClass === "docs-api-schema-scattered-repo" &&
+        monorepo.metrics.fixtureClass === "multi-language-monorepo-repo" &&
+        fullstack.metrics.fixtureClass === "frontend-backend-mixed-repo" &&
+        debt.metrics.fixtureClass === "historical-debt-service-repo" &&
         remirage.metrics.qualityScorecard.featureOverclaimRisk === "low" &&
-        remirage.metrics.qualityScorecard.nextAction === "adoptable_initial_packet" &&
+        remirage.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
         breath.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
         scattered.metrics.qualityScorecard.featureOverclaimRisk === "high" &&
         scattered.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
+        monorepo.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
+        fullstack.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
+        debt.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
         breath.metrics.adoptCorrection.deferredArtifacts.includes("feature") &&
+        remirage.metrics.adoptCorrection.editedArtifacts.includes("domain") &&
+        remirage.metrics.adoptCorrection.correctionHotspots.includes("edited_domain") &&
         remirage.metrics.adoptCorrection.acceptedArtifacts.includes("feature") &&
-        scattered.metrics.adoptCorrection.acceptedArtifacts.includes("feature"),
-      error: `Expected each retakeover fixture to record metrics. metrics=${JSON.stringify([remirage.metrics, breath.metrics, scattered.metrics], null, 2)}.`,
+        scattered.metrics.adoptCorrection.acceptedArtifacts.includes("feature") &&
+        monorepo.metrics.adoptCorrection.rejectedArtifacts.includes("feature") &&
+        fullstack.metrics.adoptCorrection.deferredArtifacts.includes("feature") &&
+        debt.metrics.adoptCorrection.deferredArtifacts.includes("feature"),
+      error: `Expected each retakeover fixture to record metrics. metrics=${JSON.stringify(allFixtures.map((fixture) => fixture.metrics), null, 2)}.`,
     });
 
     results.push({
       name: "Retakeover pool writes human-readable summary companion artifacts",
       passed:
-        [remirage, breath, scattered].every((result) =>
+        allFixtures.every((result) =>
           fs.existsSync(path.join(result.discover.graph.repoRoot, RETAKEOVER_SUMMARY_RELATIVE_PATH)) &&
           result.retakeoverSummary.includes("# JiSpec Retakeover Summary") &&
           result.retakeoverSummary.includes(`Fixture: \`${result.metrics.fixtureId}\``) &&
@@ -321,10 +456,16 @@ async function main(): Promise<void> {
           result.retakeoverSummary.includes("Top ranked evidence:") &&
           result.retakeoverSummary.includes("Draft quality:") &&
           result.retakeoverSummary.includes("Adopt correction:") &&
+          result.retakeoverSummary.includes("## Adopt Correction Loop") &&
+          result.retakeoverSummary.includes("| Artifact | Decision | Load | Owner Review | Note |") &&
           result.retakeoverSummary.includes("## Quality Scorecard") &&
           result.retakeoverSummary.includes("| Signal | Value | Review Meaning |") &&
           result.retakeoverSummary.includes("Takeover readiness") &&
           result.retakeoverSummary.includes("Verify safety") &&
+          result.retakeoverSummary.includes("Contract signal precision") &&
+          result.retakeoverSummary.includes("Behavior evidence strength") &&
+          result.retakeoverSummary.includes("Overclaim block rate") &&
+          result.retakeoverSummary.includes("Owner decision count") &&
           result.retakeoverSummary.includes("Feature overclaim risk") &&
           result.retakeoverSummary.includes("### Risk Notes") &&
           result.retakeoverSummary.includes("Next action:") &&
@@ -333,20 +474,28 @@ async function main(): Promise<void> {
           result.retakeoverSummary.includes("not a machine API"),
         ) &&
         breath.retakeoverSummary.includes("explicit spec debt follow-up") &&
-        remirage.retakeoverSummary.includes("initial adopted contract packet") &&
-        scattered.retakeoverSummary.includes("behavior evidence should stay owner-reviewed"),
-      error: `Expected retakeover summaries to be human decision packets. summaries=${JSON.stringify([remirage.retakeoverSummary, breath.retakeoverSummary, scattered.retakeoverSummary], null, 2)}.`,
+        remirage.retakeoverSummary.includes("edited_domain") &&
+        scattered.retakeoverSummary.includes("initial adopted contract packet") &&
+        debt.retakeoverSummary.includes("explicit spec debt follow-up"),
+      error: `Expected retakeover summaries to be human decision packets. summaries=${JSON.stringify(allFixtures.map((fixture) => fixture.retakeoverSummary), null, 2)}.`,
     });
 
     results.push({
-      name: "Retakeover pool covers the three P0-T2 fixture classes",
+      name: "Retakeover pool covers the expanded P0-T1 real-like fixture classes",
       passed:
-        new Set([remirage.metrics.fixtureClass, breath.metrics.fixtureClass, scattered.metrics.fixtureClass]).size === 3 &&
+        new Set(allFixtures.map((fixture) => fixture.metrics.fixtureClass)).size === 6 &&
         containsAll(
-          [remirage.metrics.fixtureClass, breath.metrics.fixtureClass, scattered.metrics.fixtureClass],
-          ["high-noise-protocol-repo", "multilingual-finance-service-repo", "docs-api-schema-scattered-repo"],
+          allFixtures.map((fixture) => fixture.metrics.fixtureClass),
+          [
+            "high-noise-protocol-repo",
+            "multilingual-finance-service-repo",
+            "docs-api-schema-scattered-repo",
+            "multi-language-monorepo-repo",
+            "frontend-backend-mixed-repo",
+            "historical-debt-service-repo",
+          ],
         ),
-      error: `Expected P0-T2 fixture pool to cover high-noise, multilingual, and scattered docs/API/schema classes. metrics=${JSON.stringify([remirage.metrics, breath.metrics, scattered.metrics])}.`,
+      error: `Expected P0-T1 fixture pool to cover high-noise, multilingual, scattered docs/API/schema, monorepo, fullstack, and historical debt classes. metrics=${JSON.stringify(allFixtures.map((fixture) => fixture.metrics))}.`,
     });
 
     results.push({
@@ -354,43 +503,87 @@ async function main(): Promise<void> {
       passed:
         fs.existsSync(path.join(poolRoot, RETAKEOVER_POOL_METRICS_RELATIVE_PATH)) &&
         fs.existsSync(path.join(poolRoot, RETAKEOVER_POOL_SUMMARY_RELATIVE_PATH)) &&
-        poolMetrics.fixtureCount === 3 &&
-        poolMetrics.verify?.okCount === 3 &&
+        poolMetrics.fixtureCount === 6 &&
+        poolMetrics.verify?.okCount === 6 &&
         poolMetrics.verify?.blockingCount === 0 &&
-        poolMetrics.draftQuality?.featureRecommendations?.accept_candidate === 1 &&
-        poolMetrics.draftQuality?.featureRecommendations?.defer_as_spec_debt === 2 &&
+        poolMetrics.draftQuality?.featureRecommendations?.accept_candidate === 2 &&
+        poolMetrics.draftQuality?.featureRecommendations?.defer_as_spec_debt === 4 &&
         poolMetrics.adoptCorrection?.fixturesWithDeferredArtifacts?.includes("breathofearth-like") === true &&
+        poolMetrics.adoptCorrection?.fixturesWithDeferredArtifacts?.includes("member-portal-fullstack-like") === true &&
+        poolMetrics.adoptCorrection?.fixturesWithDeferredArtifacts?.includes("legacy-saas-debt-like") === true &&
+        poolMetrics.adoptCorrection?.fixturesWithEditedArtifacts?.includes("remirage-like") === true &&
+        poolMetrics.adoptCorrection?.fixturesWithRejectedArtifacts?.includes("retail-ops-monorepo-like") === true &&
+        poolMetrics.adoptCorrection?.deferredArtifactCount === 3 &&
+        poolMetrics.adoptCorrection?.editedArtifactCount === 1 &&
+        poolMetrics.adoptCorrection?.rejectedArtifactCount === 1 &&
+        poolMetrics.adoptCorrection?.ownerReviewArtifactCount === 5 &&
+        typeof poolMetrics.adoptCorrection?.totalCorrectionLoad === "number" &&
+        poolMetrics.adoptCorrection?.topCorrectionHotspots?.some((hotspot) => hotspot.startsWith("deferred_feature:")) === true &&
+        poolMetrics.adoptCorrection?.topCorrectionHotspots?.some((hotspot) => hotspot.startsWith("edited_domain:")) === true &&
+        poolMetrics.adoptCorrection?.topCorrectionHotspots?.some((hotspot) => hotspot.startsWith("rejected_feature:")) === true &&
         typeof poolMetrics.qualityScorecard?.averageTakeoverReadinessScore === "number" &&
         typeof poolMetrics.qualityScorecard?.lowestReadinessScore === "number" &&
+        typeof poolMetrics.qualityScorecard?.averageContractSignalPrecision === "number" &&
+        typeof poolMetrics.qualityScorecard?.averageBehaviorEvidenceStrength === "number" &&
+        typeof poolMetrics.qualityScorecard?.averageOverclaimBlockRate === "number" &&
+        typeof poolMetrics.qualityScorecard?.totalAdoptionReadyArtifactCount === "number" &&
+        typeof poolMetrics.qualityScorecard?.totalNeedsOwnerDecisionCount === "number" &&
         poolMetrics.qualityScorecard.averageTakeoverReadinessScore > 0 &&
+        poolMetrics.qualityScorecard.averageContractSignalPrecision > 0 &&
+        poolMetrics.qualityScorecard.averageBehaviorEvidenceStrength > 0 &&
+        poolMetrics.qualityScorecard.totalAdoptionReadyArtifactCount >= 12 &&
+        poolMetrics.qualityScorecard.totalNeedsOwnerDecisionCount > 0 &&
+        poolMetrics.qualityScorecard.fixturesWithHumanCorrectionHotspots?.includes("retail-ops-monorepo-like") === true &&
+        poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("remirage-like") === true &&
         poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("breathofearth-like") === true &&
         poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("scattered-contracts-like") === true &&
+        poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("retail-ops-monorepo-like") === true &&
+        poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("member-portal-fullstack-like") === true &&
+        poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("legacy-saas-debt-like") === true &&
         poolMetrics.qualityScorecard.fixturesWithBlockingVerify?.length === 0 &&
-        poolMetrics.qualityScorecard.featureOverclaimRisk?.low === 2 &&
+        poolMetrics.qualityScorecard.featureOverclaimRisk?.low === 5 &&
         poolMetrics.qualityScorecard.featureOverclaimRisk?.high === 1 &&
         containsAll(poolMetrics.fixtureClasses ?? [], [
           "high-noise-protocol-repo",
           "multilingual-finance-service-repo",
           "docs-api-schema-scattered-repo",
+          "multi-language-monorepo-repo",
+          "frontend-backend-mixed-repo",
+          "historical-debt-service-repo",
         ]) &&
         poolSummary.includes("# JiSpec Retakeover Pool Summary") &&
-        poolSummary.includes("Fixture count: 3") &&
+        poolSummary.includes("Fixture count: 6") &&
         poolSummary.includes("All fixtures are non-blocking") &&
-        poolSummary.includes("Retakeover pool is non-blocking, with explicit owner-review or spec-debt follow-up") &&
+        poolSummary.includes("Retakeover pool is non-blocking, with explicit owner-review, human correction, or spec-debt follow-up") &&
         poolSummary.includes("Average takeover readiness score:") &&
+        poolSummary.includes("V2 signal averages:") &&
+        poolSummary.includes("V2 decision load:") &&
+        poolSummary.includes("Correction loop:") &&
+        poolSummary.includes("Top correction hotspots:") &&
         poolSummary.includes("Feature overclaim risk:") &&
         poolSummary.includes("Owner-review fixtures:") &&
         poolSummary.includes("## Quality Scorecard") &&
         poolSummary.includes("| Fixture | Score | Verify Safety | Feature Risk | Deferred | Next Action | Risk Notes |") &&
+        poolSummary.includes("## Quality Scorecard V2") &&
+        poolSummary.includes("| Fixture | Contract Precision | Behavior Strength | Overclaim Blocked | Adoption Ready | Owner Decisions | Hotspots |") &&
+        poolSummary.includes("## Correction Loop") &&
+        poolSummary.includes("| Fixture | Accepted | Edited | Deferred | Rejected | Load | Hotspots |") &&
         poolSummary.includes("`owner_review_spec_debt`") &&
-        poolSummary.includes("`adoptable_initial_packet`") &&
+        poolSummary.includes("`edited_domain`") &&
+        poolSummary.includes("`rejected_feature`") &&
         poolSummary.includes("## Fixture Matrix") &&
         poolSummary.includes("`remirage-like`") &&
         poolSummary.includes("`breathofearth-like`") &&
         poolSummary.includes("`scattered-contracts-like`") &&
+        poolSummary.includes("`retail-ops-monorepo-like`") &&
+        poolSummary.includes("`member-portal-fullstack-like`") &&
+        poolSummary.includes("`legacy-saas-debt-like`") &&
         poolSummary.includes("docs/governance/README.md") &&
         poolSummary.includes("db/schema_portfolio.sql") &&
         poolSummary.includes("docs/contracts/governance.md") &&
+        poolSummary.includes("services/orders/contracts/openapi.yaml") &&
+        poolSummary.includes("docs/product/member-journeys.md") &&
+        poolSummary.includes("docs/contracts/subscription-lifecycle.md") &&
         poolSummary.includes(RETAKEOVER_POOL_METRICS_RELATIVE_PATH) &&
         poolSummary.includes("not a machine API"),
       error: `Expected aggregate retakeover pool metrics and summary. metrics=${JSON.stringify(poolMetrics, null, 2)}\nsummary=\n${poolSummary}`,
@@ -406,6 +599,9 @@ async function main(): Promise<void> {
     fs.rmSync(remirageRoot, { recursive: true, force: true });
     fs.rmSync(breathRoot, { recursive: true, force: true });
     fs.rmSync(scatteredRoot, { recursive: true, force: true });
+    fs.rmSync(monorepoRoot, { recursive: true, force: true });
+    fs.rmSync(fullstackRoot, { recursive: true, force: true });
+    fs.rmSync(debtRoot, { recursive: true, force: true });
     fs.rmSync(poolRoot, { recursive: true, force: true });
   }
 
@@ -448,12 +644,23 @@ async function runRetakeover(
     root,
     session: draft.sessionId,
     decisions: [
-      { artifactKind: "domain", kind: "accept" },
-      { artifactKind: "api", kind: "accept" },
+      {
+        artifactKind: "domain",
+        kind: options.domainDecision ?? "accept",
+        editedContent: options.domainDecision === "edit"
+          ? `${domainArtifact.content.trimEnd()}\nreview_notes:\n  - reviewer tightened takeover domain naming before adoption\n`
+          : undefined,
+        note: options.domainDecision === "edit" ? "domain naming tightened by reviewer" : undefined,
+      },
+      { artifactKind: "api", kind: options.apiDecision ?? "accept" },
       {
         artifactKind: "feature",
         kind: options.featureDecision,
-        note: options.featureDecision === "skip_as_spec_debt" ? "feature behavior needs owner confirmation" : undefined,
+        note: options.featureDecision === "skip_as_spec_debt"
+          ? "feature behavior needs owner confirmation"
+          : options.featureDecision === "reject"
+            ? "feature draft was too speculative for adoption"
+            : undefined,
       },
     ],
   });
@@ -803,6 +1010,373 @@ function seedScatteredContractsRepository(root: string): void {
   writeText(root, "services/python/tests/test_ledger.py", "def test_ledger_entries_are_auditable():\n    assert True\n");
 }
 
+function seedMultiLanguageMonorepoRepository(root: string): void {
+  writeCustomTaxonomyProject(root, "retail-ops-monorepo-retakeover", [
+    {
+      id: "retail-ops",
+      title: "Retail Operations",
+      terms: [
+        {
+          label: "order",
+          phrases: ["order", "order intake", "ship order", "order shipment"],
+          weight: 128,
+          aggregate_name: "Order",
+          scenario: {
+            scenarioName: "Order shipment preserves reservation evidence",
+            given: "an accepted order has inventory reserved",
+            when: "shipment is requested through the order boundary",
+            then: "reservation and fulfillment evidence remain traceable",
+          },
+        },
+        {
+          label: "inventory",
+          phrases: ["inventory", "stock", "reservation", "inventory item"],
+          weight: 122,
+          aggregate_name: "InventoryItem",
+          scenario: {
+            scenarioName: "Inventory reservation protects available stock",
+            given: "stock is available for an order",
+            when: "inventory is reserved",
+            then: "available quantity reflects the reservation before fulfillment",
+          },
+        },
+        {
+          label: "fulfillment",
+          phrases: ["fulfillment", "pick pack ship", "shipment", "fulfillment task"],
+          weight: 118,
+          aggregate_name: "FulfillmentTask",
+          scenario: {
+            scenarioName: "Fulfillment task follows order and inventory decisions",
+            given: "an order and inventory reservation are accepted",
+            when: "a fulfillment task is created",
+            then: "the task references both order and reservation evidence",
+          },
+        },
+      ],
+      path_hints: [
+        { label: "order", patterns: ["orders", "order"], boost: 20 },
+        { label: "inventory", patterns: ["inventory", "stock"], boost: 18 },
+        { label: "fulfillment", patterns: ["fulfillment", "shipment", "ship"], boost: 18 },
+      ],
+    },
+  ]);
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "retail-ops-monorepo", private: true, workspaces: ["services/*", "packages/*"] }, null, 2), "utf-8");
+  writeText(root, "go.mod", "module example.com/retail-ops\n\ngo 1.22\n");
+  writeText(
+    root,
+    "README.md",
+    [
+      "# Retail Operations Monorepo",
+      "",
+      "Orders, inventory, and fulfillment live in separate services and languages.",
+      "The takeover should connect service-local contracts instead of treating build output as product evidence.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "docs/architecture/service-map.md",
+    [
+      "# Service Map",
+      "",
+      "The TypeScript order service accepts shipment commands.",
+      "The Go inventory service exposes reservation protocol contracts.",
+      "The Python fulfillment service owns pick-pack-ship tasks.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "services/orders/contracts/openapi.yaml",
+    [
+      "openapi: 3.0.3",
+      "info:",
+      "  title: Orders API",
+      "  version: 1.0.0",
+      "paths:",
+      "  /orders/{id}/ship:",
+      "    post:",
+      "      operationId: shipOrder",
+      "      responses:",
+      "        '202':",
+      "          description: accepted",
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "services/inventory/proto/inventory.proto",
+    [
+      'syntax = "proto3";',
+      "service InventoryService {",
+      "  rpc ReserveStock(InventoryReservation) returns (InventoryItem);",
+      "}",
+      "message InventoryReservation { string id = 1; }",
+      "message InventoryItem { string sku = 1; }",
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "packages/contracts/schemas/fulfillment-task.schema.json",
+    JSON.stringify({
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      title: "FulfillmentTask",
+      type: "object",
+      properties: {
+        orderId: { type: "string" },
+        reservationId: { type: "string" },
+      },
+    }, null, 2),
+  );
+  writeText(
+    root,
+    "services/orders/src/routes.ts",
+    [
+      "const app = { post: () => undefined };",
+      'app.post("/orders/:id/ship", () => ({ accepted: true }));',
+      "",
+    ].join("\n"),
+  );
+  writeText(root, "services/fulfillment/app/routes.py", 'app.post("/fulfillment/tasks")(lambda: {"ok": True})\n');
+  writeText(root, "services/orders/tests/order-shipment.test.ts", "describe('order shipment preserves reservation evidence', () => {});\n");
+  writeText(root, "services/inventory/tests/reservation_test.go", "package tests\n\nfunc TestInventoryReservation(t *testing.T) {}\n");
+  for (let index = 0; index < 3; index += 1) {
+    writeText(root, `services/orders/build/chunk${index}.js`, "function buildOutput(){return true;}\n");
+    writeText(root, `services/inventory/target/pkg${index}/README.md`, "# build output\n");
+    writeText(root, `.gradle/caches/modules-${index}.bin`, "cache\n");
+    writeText(root, `coverage/orders/${index}.html`, "<html></html>\n");
+    writeText(root, `generated/clients/order-client-${index}.ts`, "export const generated = true;\n");
+  }
+}
+
+function seedFrontendBackendMixedRepository(root: string): void {
+  writeCustomTaxonomyProject(root, "member-portal-fullstack-retakeover", [
+    {
+      id: "membership-portal",
+      title: "Membership Portal",
+      terms: [
+        {
+          label: "membership",
+          phrases: ["membership", "member", "plan change", "member plan"],
+          weight: 126,
+          aggregate_name: "Membership",
+          scenario: {
+            scenarioName: "Member plan change stays aligned across UI and API",
+            given: "a member is eligible to change plan",
+            when: "the plan change is submitted from the portal",
+            then: "the API records the membership change with a reviewable result",
+          },
+        },
+        {
+          label: "billing",
+          phrases: ["billing", "billing account", "invoice preview", "proration"],
+          weight: 116,
+          aggregate_name: "BillingAccount",
+          scenario: {
+            scenarioName: "Billing preview accompanies a plan change",
+            given: "a member selects a new plan",
+            when: "the portal requests a billing preview",
+            then: "the displayed charge matches the API preview contract",
+          },
+        },
+        {
+          label: "notification",
+          phrases: ["notification", "email confirmation", "member notice"],
+          weight: 102,
+          aggregate_name: "Notification",
+          scenario: {
+            scenarioName: "Notification follows accepted membership change",
+            given: "a membership plan change is accepted",
+            when: "confirmation is sent",
+            then: "the notification references the accepted plan change",
+          },
+        },
+      ],
+      path_hints: [
+        { label: "membership", patterns: ["member", "membership", "plan"], boost: 20 },
+        { label: "billing", patterns: ["billing", "invoice"], boost: 16 },
+        { label: "notification", patterns: ["notification", "email"], boost: 12 },
+      ],
+    },
+  ]);
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "member-portal-fullstack", private: true }, null, 2), "utf-8");
+  writeText(
+    root,
+    "README.md",
+    [
+      "# Member Portal",
+      "",
+      "Plan changes pass through a React route, backend API contract, billing preview, and notification handoff.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "docs/product/member-journeys.md",
+    [
+      "# Member Journeys",
+      "",
+      "Members change plans in the portal, review billing impact, and receive notification after acceptance.",
+      "The UI route, API contract, backend handler, and E2E journey should stay connected during takeover.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "apps/web/src/routes/plan-change.tsx",
+    [
+      "export function PlanChangeRoute() {",
+      "  return <form data-testid=\"member-plan-change\">Change plan</form>;",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "services/api/openapi/openapi.yaml",
+    [
+      "openapi: 3.0.3",
+      "info:",
+      "  title: Member API",
+      "  version: 1.0.0",
+      "paths:",
+      "  /members/{memberId}/plan:",
+      "    post:",
+      "      operationId: changeMemberPlan",
+      "      responses:",
+      "        '200':",
+      "          description: changed",
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "packages/contracts/schemas/plan-change.schema.json",
+    JSON.stringify({
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      title: "PlanChangeRequest",
+      type: "object",
+      properties: {
+        memberId: { type: "string" },
+        targetPlan: { type: "string" },
+        billingPreviewId: { type: "string" },
+      },
+    }, null, 2),
+  );
+  writeText(
+    root,
+    "services/api/src/member-routes.ts",
+    [
+      "const app = { post: () => undefined };",
+      'app.post("/members/:id/plan", () => ({ changed: true }));',
+      'app.post("/members/:id/billing-preview", () => ({ amount: 10 }));',
+      "",
+    ].join("\n"),
+  );
+  writeText(root, "apps/web/tests/member-plan-change.spec.ts", "test('member plan change stays aligned across ui and api', async () => {});\n");
+}
+
+function seedHistoricalDebtServiceRepository(root: string): void {
+  writeCustomTaxonomyProject(root, "legacy-saas-debt-retakeover", [
+    {
+      id: "legacy-subscription",
+      title: "Legacy Subscription",
+      terms: [
+        { label: "subscription", phrases: ["subscription", "renewal", "subscription lifecycle"], weight: 124, aggregate_name: "Subscription" },
+        { label: "invoice", phrases: ["invoice", "invoice adjustment", "billing migration"], weight: 112, aggregate_name: "Invoice" },
+        { label: "entitlement", phrases: ["entitlement", "seat limit", "access grant"], weight: 108, aggregate_name: "Entitlement" },
+      ],
+      path_hints: [
+        { label: "subscription", patterns: ["subscription", "renew"], boost: 20 },
+        { label: "invoice", patterns: ["invoice", "billing"], boost: 16 },
+        { label: "entitlement", patterns: ["entitlement", "seat"], boost: 14 },
+      ],
+    },
+  ]);
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "legacy-saas-debt", private: true }, null, 2), "utf-8");
+  writeText(
+    root,
+    "README.md",
+    [
+      "# Legacy SaaS Billing",
+      "",
+      "Subscription renewal has a migrated v2 API and an old Ruby route still used by enterprise accounts.",
+      "Feature behavior must stay owner-reviewed until renewal, invoice, and entitlement debt is reconciled.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "docs/debt/spec-debt-ledger.md",
+    [
+      "# Spec Debt Ledger",
+      "",
+      "Subscription renewal behavior differs between the legacy route and the v2 API.",
+      "Invoice adjustment and entitlement grants require owner review before adoption.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "docs/contracts/subscription-lifecycle.md",
+    [
+      "# Subscription Lifecycle",
+      "",
+      "Subscription renewal updates invoice state and entitlement seat limits.",
+      "Legacy enterprise accounts still follow the old route until migration completes.",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "api/openapi/openapi.yaml",
+    [
+      "openapi: 3.0.3",
+      "info:",
+      "  title: Subscription V2",
+      "  version: 2.0.0",
+      "paths:",
+      "  /subscriptions/{id}/renew:",
+      "    post:",
+      "      operationId: renewSubscription",
+      "      responses:",
+      "        '202':",
+      "          description: accepted",
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "schemas/subscription-renewal.schema.json",
+    JSON.stringify({
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      title: "SubscriptionRenewal",
+      type: "object",
+      properties: {
+        subscriptionId: { type: "string" },
+        invoiceAdjustmentId: { type: "string" },
+        entitlementGrantId: { type: "string" },
+      },
+    }, null, 2),
+  );
+  writeText(
+    root,
+    "legacy/routes/subscription_renewal.rb",
+    [
+      "post '/legacy/subscriptions/:id/renew' do",
+      "  { ok: true }.to_json",
+      "end",
+      "",
+    ].join("\n"),
+  );
+  writeText(
+    root,
+    "legacy/routes/subscription-renewal.ts",
+    [
+      "const app = { post: () => undefined };",
+      'app.post("/legacy/subscriptions/:id/renew", () => ({ ok: true }));',
+      "",
+    ].join("\n"),
+  );
+  writeText(root, "migrations/20240101_subscription_renewal.sql", "create table subscription_renewals(id text primary key);\ncreate table invoices(id text primary key);\ncreate table entitlements(id text primary key);\n");
+  writeText(root, "tmp/cache/old-renewal.json", "{}\n");
+  writeText(root, "vendor/billing/README.md", "# vendored billing helper\n");
+}
+
 function writeRetakeoverMetrics(
   root: string,
   options: RetakeoverFixtureOptions,
@@ -816,15 +1390,34 @@ function writeRetakeoverMetrics(
   },
 ): RetakeoverMetrics {
   const acceptedArtifacts = ["domain", "api"];
+  const editedArtifacts: string[] = [];
   const deferredArtifacts: string[] = [];
+  const rejectedArtifacts: string[] = [];
+  const notes: Record<string, string> = {};
+
+  if (options.domainDecision === "edit") {
+    editedArtifacts.push("domain");
+    notes.domain = "domain naming tightened by reviewer";
+  }
 
   if (options.featureDecision === "skip_as_spec_debt") {
     deferredArtifacts.push("feature");
+    notes.feature = "feature behavior needs owner confirmation";
+  } else if (options.featureDecision === "reject") {
+    rejectedArtifacts.push("feature");
+    notes.feature = "feature draft was too speculative for adoption";
   } else {
     acceptedArtifacts.push("feature");
   }
+  const adoptCorrection = buildRetakeoverAdoptCorrectionMetrics({
+    acceptedArtifacts,
+    editedArtifacts,
+    deferredArtifacts,
+    rejectedArtifacts,
+    notes,
+  });
 
-    const metrics: RetakeoverMetrics = {
+  const metrics: RetakeoverMetrics = {
     version: 1,
     fixtureId: options.fixtureId,
     fixtureClass: options.fixtureClass,
@@ -837,8 +1430,7 @@ function writeRetakeoverMetrics(
       featureRecommendation: parseRetakeoverFeatureRecommendation(result.feature),
     },
     adoptCorrection: {
-      acceptedArtifacts,
-      deferredArtifacts,
+      ...adoptCorrection,
     },
     verifyVerdict: result.verify.verdict,
     verifyOk: result.verify.ok,
@@ -847,8 +1439,10 @@ function writeRetakeoverMetrics(
       discoverSummary: result.discover.summary as unknown as Record<string, unknown>,
       featureContent: result.feature,
       featureRecommendation: parseRetakeoverFeatureRecommendation(result.feature),
-      acceptedArtifacts,
-      deferredArtifacts,
+      acceptedArtifacts: adoptCorrection.acceptedArtifacts,
+      deferredArtifacts: adoptCorrection.deferredArtifacts,
+      editedArtifacts: adoptCorrection.editedArtifacts,
+      rejectedArtifacts: adoptCorrection.rejectedArtifacts,
       verifyOk: result.verify.ok,
     }),
   };
@@ -889,6 +1483,29 @@ function writeBreathProject(root: string): void {
             ],
           },
         ],
+      },
+      source_documents: {
+        requirements: "README.md",
+        technical_solution: "README.md",
+      },
+      global_gates: ["contracts_validated"],
+    }),
+    "utf-8",
+  );
+}
+
+function writeCustomTaxonomyProject(root: string, id: string, customPacks: Array<Record<string, unknown>>): void {
+  fs.mkdirSync(path.join(root, "jiproject"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "jiproject", "project.yaml"),
+    yaml.dump({
+      id,
+      name: id,
+      version: "0.1.0",
+      delivery_model: "bootstrap-takeover",
+      domain_taxonomy: {
+        packs: [],
+        custom_packs: customPacks,
       },
       source_documents: {
         requirements: "README.md",

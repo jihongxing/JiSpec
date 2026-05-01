@@ -1,6 +1,17 @@
-export type ConsoleReadModelFormat = "json" | "yaml" | "markdown" | "lock";
+export type ConsoleReadModelFormat = "json" | "jsonl" | "yaml" | "markdown" | "lock";
 export type ConsoleReadModelStability = "stable-machine-api" | "human-companion" | "local-contract";
 export type ConsoleReadModelFreshness = "per-verify-run" | "project-state" | "release-snapshot" | "release-compare";
+export type ConsoleGovernanceObjectId =
+  | "policy_posture"
+  | "waiver_lifecycle"
+  | "spec_debt_ledger"
+  | "contract_drift"
+  | "release_baseline"
+  | "verify_trend"
+  | "takeover_quality_trend"
+  | "implementation_mediation_outcomes"
+  | "audit_events"
+  | "multi_repo_export";
 
 export interface ConsoleReadModelArtifact {
   id: string;
@@ -24,6 +35,17 @@ export interface ConsoleReadModelContract {
     localArtifactsAreSourceOfTruth: true;
   };
   artifacts: ConsoleReadModelArtifact[];
+  governanceObjects: ConsoleGovernanceObjectContract[];
+}
+
+export interface ConsoleGovernanceObjectContract {
+  id: ConsoleGovernanceObjectId;
+  label: string;
+  sourceArtifactIds: string[];
+  missingState: "not_available_yet";
+  automationInputs: "json_yaml_jsonl_only";
+  markdownDisplayOnly: true;
+  readModelUse: string;
 }
 
 export const CONSOLE_READ_MODEL_CONTRACT_VERSION = 1;
@@ -185,6 +207,207 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     parseMarkdown: false,
     sourceUploadRequired: false,
   },
+  {
+    id: "release-drift-trend",
+    pathPattern: ".spec/releases/drift-trend.json",
+    producer: "release compare",
+    format: "json",
+    stability: "local-contract",
+    freshness: "release-compare",
+    readModelUse: "Release drift trend across compare reports, split into contract graph, static collector, and policy drift histories.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "release-drift-trend-summary",
+    pathPattern: ".spec/releases/drift-trend.md",
+    producer: "release compare",
+    format: "markdown",
+    stability: "human-companion",
+    freshness: "release-compare",
+    readModelUse: "Human release drift trend summary. Console may render it, but should read JSON for automation.",
+    machineReadable: false,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "multi-repo-governance-snapshot",
+    pathPattern: ".spec/console/governance-snapshot.json",
+    producer: "console export-governance",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Repo-level governance snapshot for future multi-repo Console aggregation across policy, waiver, debt, and drift posture.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "multi-repo-governance-summary",
+    pathPattern: ".spec/console/governance-snapshot.md",
+    producer: "console export-governance",
+    format: "markdown",
+    stability: "human-companion",
+    freshness: "project-state",
+    readModelUse: "Human companion summary for the exported repo-level governance snapshot.",
+    machineReadable: false,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "retakeover-metrics",
+    pathPattern: ".spec/handoffs/retakeover-metrics.json",
+    producer: "bootstrap retakeover regression",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Single-repository takeover quality scorecard, risk notes, feature overclaim risk, and next action.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "retakeover-pool-metrics",
+    pathPattern: ".spec/handoffs/retakeover-pool-metrics.json",
+    producer: "bootstrap retakeover regression pool",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Pool-level takeover quality trend across real and synthetic retakeover fixtures.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "implementation-handoff-packets",
+    pathPattern: ".jispec/handoff/*.json",
+    producer: "implement",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Implementation mediation outcomes, stop points, replay state, next-action owner, and external handoff requests.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "implementation-patch-mediation",
+    pathPattern: ".jispec/implement/<session-id>/patch-mediation.json",
+    producer: "implement --external-patch",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "External patch scope, apply, test, and verify intake records.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "audit-events",
+    pathPattern: ".spec/audit/events.jsonl",
+    producer: "governance commands",
+    format: "jsonl",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Append-only local audit ledger for governance actions once audit events are enabled.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+];
+
+export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
+  {
+    id: "policy_posture",
+    label: "Policy posture",
+    sourceArtifactIds: ["verify-policy"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show whether a local verify policy exists, its facts contract, team owner, reviewers, and rule count.",
+  },
+  {
+    id: "waiver_lifecycle",
+    label: "Waiver lifecycle",
+    sourceArtifactIds: ["verify-waivers", "ci-verify-report"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show active, revoked, expired, invalid, matched, and unmatched waiver posture without applying waivers.",
+  },
+  {
+    id: "spec_debt_ledger",
+    label: "Spec debt ledger",
+    sourceArtifactIds: ["greenfield-spec-debt-ledger", "bootstrap-spec-debt-records"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show known Greenfield and bootstrap spec debt records without scanning source files.",
+  },
+  {
+    id: "contract_drift",
+    label: "Contract drift",
+    sourceArtifactIds: ["release-compare-report", "release-drift-trend"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show release drift history and latest compare status from machine-readable trend and compare reports.",
+  },
+  {
+    id: "release_baseline",
+    label: "Release baseline",
+    sourceArtifactIds: ["release-baseline"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show frozen release baselines available for governance review.",
+  },
+  {
+    id: "verify_trend",
+    label: "Verify trend",
+    sourceArtifactIds: ["ci-verify-report", "verify-baseline"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show current verify verdict and baseline availability; Console does not recompute verify.",
+  },
+  {
+    id: "takeover_quality_trend",
+    label: "Takeover quality trend",
+    sourceArtifactIds: ["retakeover-metrics", "retakeover-pool-metrics"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show retakeover quality scorecards and next actions from generated metrics.",
+  },
+  {
+    id: "implementation_mediation_outcomes",
+    label: "Implementation mediation outcomes",
+    sourceArtifactIds: ["implementation-handoff-packets", "implementation-patch-mediation"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show execute/implement outcomes, stop points, replayability, and patch mediation posture.",
+  },
+  {
+    id: "audit_events",
+    label: "Audit events",
+    sourceArtifactIds: ["audit-events"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show local governance event ledger when audit events are enabled.",
+  },
+  {
+    id: "multi_repo_export",
+    label: "Multi-repo export",
+    sourceArtifactIds: ["multi-repo-governance-snapshot"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show the exported repo-level governance snapshot intended for future multi-repo aggregation.",
+  },
 ];
 
 export function getConsoleReadModelContract(): ConsoleReadModelContract {
@@ -197,6 +420,7 @@ export function getConsoleReadModelContract(): ConsoleReadModelContract {
       localArtifactsAreSourceOfTruth: true,
     },
     artifacts: CONSOLE_READ_MODEL_ARTIFACTS,
+    governanceObjects: CONSOLE_GOVERNANCE_OBJECTS,
   };
 }
 

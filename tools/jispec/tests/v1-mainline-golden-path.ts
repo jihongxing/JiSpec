@@ -144,24 +144,45 @@ async function main(): Promise<void> {
       fixtureRoot,
       "--lane",
       "fast",
+      "--test-command",
+      'node -e "process.exit(0)"',
       "--json",
     ]);
     assertCommandOk(change, "change");
     const changePayload = JSON.parse(change.stdout) as {
       id?: string;
+      mode?: string;
+      modeResolution?: { source?: string };
       laneDecision?: { lane?: string; autoPromoted?: boolean };
       changedPaths?: Array<{ path?: string; kind?: string }>;
       nextCommands?: Array<{ command?: string }>;
+      execution?: {
+        mode?: string;
+        state?: string;
+        implement?: {
+          outcome?: string;
+          lane?: string;
+          requestedFast?: boolean;
+          autoPromoted?: boolean;
+          testsPassed?: boolean;
+          exitCode?: number;
+          postVerifyCommand?: string;
+          postVerifyVerdict?: string;
+          postVerifyLane?: string;
+          sessionArchived?: boolean;
+        };
+      };
     };
 
     const activeSessionPath = path.join(fixtureRoot, ".jispec", "change-session.json");
-    const activeSession = JSON.parse(fs.readFileSync(activeSessionPath, "utf-8")) as {
-      id?: string;
-    };
 
     results.push({
-      name: "docs-only follow-up changes stay on fast lane and persist an active change session",
+      name: "docs-only follow-up changes use project execute-default on the fast lane",
       passed:
+        changePayload.mode === "execute" &&
+        changePayload.modeResolution?.source === "project_config" &&
+        changePayload.execution?.mode === "execute" &&
+        changePayload.execution?.state === "implemented" &&
         changePayload.laneDecision?.lane === "fast" &&
         changePayload.laneDecision?.autoPromoted === false &&
         changePayload.changedPaths?.length === 1 &&
@@ -169,19 +190,17 @@ async function main(): Promise<void> {
         changePayload.changedPaths[0]?.kind === "docs_only" &&
         changePayload.nextCommands?.map((entry) => entry.command).join("|") ===
           "npm run jispec-cli -- implement --fast|npm run jispec-cli -- verify --fast" &&
-        activeSession.id === changePayload.id,
-      error: "Expected a docs-only diff to remain on fast lane and write the active change session.",
+        changePayload.execution?.implement?.outcome === "preflight_passed" &&
+        changePayload.execution?.implement?.lane === "fast" &&
+        changePayload.execution?.implement?.requestedFast === true &&
+        changePayload.execution?.implement?.autoPromoted === false &&
+        changePayload.execution?.implement?.testsPassed === true &&
+        changePayload.execution?.implement?.exitCode === 0 &&
+        changePayload.execution?.implement?.postVerifyVerdict === "PASS" &&
+        changePayload.execution?.implement?.postVerifyLane === "fast" &&
+        changePayload.execution?.implement?.sessionArchived === true,
+      error: "Expected a docs-only diff to enter execute-default mediation, remain on fast lane, pass preflight, and return through verify.",
     });
-
-    const implement = runCli([
-      "implement",
-      "--root",
-      fixtureRoot,
-      "--fast",
-      "--test-command",
-      'node -e "process.exit(0)"',
-    ]);
-    assert.equal(implement.status, 0, `implement exited with ${implement.status}. stderr: ${implement.stderr}`);
 
     const archivedDir = path.join(fixtureRoot, ".jispec", "change-sessions");
     const archivedFiles = fs.existsSync(archivedDir) ? fs.readdirSync(archivedDir) : [];
@@ -198,19 +217,16 @@ async function main(): Promise<void> {
     };
 
     results.push({
-      name: "implement --fast returns to verify --fast, archives the change session, and keeps the golden path green",
+      name: "execute-default archives the change session and keeps the golden path green",
       passed:
-        implement.stdout.includes("Post-implement verify:") &&
-        implement.stdout.includes("Command: npm run jispec-cli -- verify --fast") &&
-        implement.stdout.includes("Lane: fast") &&
-        implement.stdout.includes("Verdict: PASS") &&
+        changePayload.execution?.implement?.postVerifyCommand === "npm run jispec-cli -- verify --fast" &&
         !fs.existsSync(activeSessionPath) &&
         archivedFiles.length === 1 &&
         verifyFastPayload.verdict === "PASS" &&
         verifyFastPayload.metadata?.lane === "fast" &&
         verifyFastPayload.metadata?.requestedFast === true &&
         verifyFastPayload.metadata?.fastAutoPromoted === false,
-      error: "Expected implement --fast to preserve fast-lane verify semantics and archive the successful change session.",
+      error: "Expected execute-default to preserve fast-lane verify semantics and archive the successful change session.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

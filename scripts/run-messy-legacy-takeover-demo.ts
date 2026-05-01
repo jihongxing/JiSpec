@@ -6,6 +6,7 @@ import { runBootstrapDiscover } from "../tools/jispec/bootstrap/discover";
 import { runBootstrapDraft } from "../tools/jispec/bootstrap/draft";
 import type { AdoptionRankedEvidence } from "../tools/jispec/bootstrap/evidence-ranking";
 import {
+  buildRetakeoverAdoptCorrectionMetrics,
   buildRetakeoverQualityScorecard,
   parseRetakeoverFeatureRecommendation,
   RETAKEOVER_METRICS_RELATIVE_PATH,
@@ -196,6 +197,15 @@ async function runFixtureTakeover(
   const api = JSON.parse(apiArtifact.content) as ApiDraft;
   const ranked = readRankedEvidence(root);
   const verify = await runVerify({ root, useBaseline: true, applyWaivers: true });
+  const acceptedArtifacts = fixture.featureDecision === "accept" ? ["domain", "api", "feature"] : ["domain", "api"];
+  const deferredArtifacts = fixture.featureDecision === "skip_as_spec_debt" ? ["feature"] : [];
+  const adoptCorrection = buildRetakeoverAdoptCorrectionMetrics({
+    acceptedArtifacts,
+    deferredArtifacts,
+    notes: fixture.featureDecision === "skip_as_spec_debt"
+      ? { feature: "messy legacy behavior needs owner confirmation" }
+      : undefined,
+  });
   const metrics: RetakeoverMetrics = {
     version: 1,
     fixtureId: fixture.id,
@@ -208,10 +218,7 @@ async function runFixtureTakeover(
       apiSurfaceCount: api.api_spec?.surfaces?.length ?? 0,
       featureRecommendation: parseRetakeoverFeatureRecommendation(featureArtifact.content),
     },
-    adoptCorrection: {
-      acceptedArtifacts: fixture.featureDecision === "accept" ? ["domain", "api", "feature"] : ["domain", "api"],
-      deferredArtifacts: fixture.featureDecision === "skip_as_spec_debt" ? ["feature"] : [],
-    },
+    adoptCorrection,
     verifyVerdict: verify.verdict,
     verifyOk: verify.ok,
     qualityScorecard: buildRetakeoverQualityScorecard({
@@ -219,8 +226,10 @@ async function runFixtureTakeover(
       discoverSummary: discover.summary as unknown as Record<string, unknown>,
       featureContent: featureArtifact.content,
       featureRecommendation: parseRetakeoverFeatureRecommendation(featureArtifact.content),
-      acceptedArtifacts: fixture.featureDecision === "accept" ? ["domain", "api", "feature"] : ["domain", "api"],
-      deferredArtifacts: fixture.featureDecision === "skip_as_spec_debt" ? ["feature"] : [],
+      acceptedArtifacts: adoptCorrection.acceptedArtifacts,
+      deferredArtifacts: adoptCorrection.deferredArtifacts,
+      editedArtifacts: adoptCorrection.editedArtifacts,
+      rejectedArtifacts: adoptCorrection.rejectedArtifacts,
       verifyOk: verify.ok,
     }),
   };

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { appendAuditEvent } from "../audit/event-ledger";
 import { summarizeGreenfieldSpecDebt } from "../greenfield/spec-debt-ledger";
 import { loadContractGraph } from "../greenfield/contract-graph";
 import {
@@ -24,6 +25,8 @@ export interface ReleaseSnapshotOptions {
   version: string;
   force?: boolean;
   frozenAt?: string;
+  actor?: string;
+  reason?: string;
 }
 
 export interface ReleaseSnapshotResult {
@@ -57,6 +60,9 @@ export interface ReleaseCompareOptions {
   root: string;
   from: string;
   to: string;
+  comparedAt?: string;
+  actor?: string;
+  reason?: string;
 }
 
 export interface ReleaseCompareResult {
@@ -71,6 +77,10 @@ export interface ReleaseCompareResult {
   diffs: BaselineDiff[];
   graphDiff: MerkleContractDagDiff;
   driftSummary: ReleaseDriftSummary;
+  comparedAt: string;
+  driftTrendJsonPath: string;
+  driftTrendMarkdownPath: string;
+  driftTrend: ReleaseDriftTrendSummary;
 }
 
 export interface BaselineDiff {
@@ -108,6 +118,46 @@ export interface DriftSurfaceSummary {
   status: DriftStatus;
   summary: string;
   details: Record<string, unknown>;
+}
+
+export interface ReleaseDriftTrendSummary {
+  schemaVersion: 1;
+  generatedAt: string;
+  compareCount: number;
+  changedCompareCount: number;
+  unchangedCompareCount: number;
+  notTrackedCompareCount: number;
+  latest?: ReleaseDriftTrendEntry;
+  surfaces: {
+    contractGraph: ReleaseDriftSurfaceTrend;
+    staticCollector: ReleaseDriftSurfaceTrend;
+    policy: ReleaseDriftSurfaceTrend;
+  };
+  comparisons: ReleaseDriftTrendEntry[];
+}
+
+export interface ReleaseDriftTrendEntry {
+  from: string;
+  to: string;
+  comparedAt: string;
+  reportPath: string;
+  markdownPath?: string;
+  identical: boolean;
+  overallStatus: DriftStatus;
+  contractGraphStatus: DriftStatus;
+  staticCollectorStatus: DriftStatus;
+  policyStatus: DriftStatus;
+  contractGraphSummary: string;
+  staticCollectorSummary: string;
+  policySummary: string;
+}
+
+export interface ReleaseDriftSurfaceTrend {
+  changed: number;
+  unchanged: number;
+  notTracked: number;
+  latestStatus: DriftStatus | "not_available_yet";
+  latestSummary: string;
 }
 
 interface PolicySnapshot {
@@ -148,7 +198,7 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
     const existingBaseline = readYamlObject(releaseBaselinePath);
     const existingGraph = readContractGraphRef(root, existingBaseline);
     const existingStaticCollector = readStaticCollectorManifestRef(root, existingBaseline);
-    return {
+    const result = {
       root: normalizePath(root),
       version,
       created: false,
@@ -165,6 +215,24 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
       counts: countBaseline(currentBaseline),
       summary: summarizeReleaseBaseline(existingBaseline),
     };
+    appendAuditEvent(root, {
+      type: "release_snapshot",
+      actor: options.actor,
+      reason: options.reason ?? `Release baseline ${version} already exists.`,
+      sourceArtifact: {
+        kind: "release-baseline",
+        path: releaseBaselinePath,
+      },
+      affectedContracts: [".spec/baselines/current.yaml", `.spec/baselines/releases/${version}.yaml`],
+      details: {
+        version,
+        created: result.created,
+        overwritten: result.overwritten,
+        baselineId: result.baselineId,
+        projectId: result.projectId,
+      },
+    });
+    return result;
   }
 
   const staticCollectorManifest = collectStaticImplementationFacts(root, { generatedAt: options.frozenAt });
@@ -220,7 +288,7 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
   fs.mkdirSync(path.dirname(releaseSummaryPath), { recursive: true });
   fs.writeFileSync(releaseSummaryPath, renderReleaseSummary(root, releaseBaseline, summary), "utf-8");
 
-  return {
+  const result = {
     root: normalizePath(root),
     version,
     created: !exists,
@@ -237,6 +305,25 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
     counts: countBaseline(currentBaseline),
     summary,
   };
+  appendAuditEvent(root, {
+    type: "release_snapshot",
+    actor: options.actor,
+    reason: options.reason ?? `Freeze current baseline as release ${version}.`,
+    sourceArtifact: {
+      kind: "release-baseline",
+      path: releaseBaselinePath,
+    },
+    affectedContracts: [".spec/baselines/current.yaml", `.spec/baselines/releases/${version}.yaml`],
+    details: {
+      version,
+      created: result.created,
+      overwritten: result.overwritten,
+      baselineId: result.baselineId,
+      projectId: result.projectId,
+      contractGraphRootHash: result.contractGraphRootHash,
+    },
+  });
+  return result;
 }
 
 export function compareReleaseBaselines(options: ReleaseCompareOptions): ReleaseCompareResult {
@@ -264,6 +351,9 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
   const compareReportDir = resolveCompareReportDir(root, options.from, options.to);
   const compareReportJsonPath = path.join(compareReportDir, "compare-report.json");
   const compareReportMarkdownPath = path.join(compareReportDir, "compare-report.md");
+  const comparedAt = options.comparedAt ?? new Date().toISOString();
+  const driftTrendJsonPath = resolveReleaseDriftTrendJsonPath(root);
+  const driftTrendMarkdownPath = resolveReleaseDriftTrendMarkdownPath(root);
   const result: ReleaseCompareResult = {
     root: normalizePath(root),
     from: options.from,
@@ -279,11 +369,36 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     diffs,
     graphDiff,
     driftSummary,
+    comparedAt,
+    driftTrendJsonPath: normalizePath(driftTrendJsonPath),
+    driftTrendMarkdownPath: normalizePath(driftTrendMarkdownPath),
+    driftTrend: createEmptyReleaseDriftTrend(comparedAt),
   };
 
   fs.mkdirSync(compareReportDir, { recursive: true });
   fs.writeFileSync(compareReportJsonPath, `${JSON.stringify(result, null, 2)}\n`, "utf-8");
+  const driftTrend = refreshReleaseDriftTrend(root, comparedAt);
+  result.driftTrend = driftTrend;
+  fs.writeFileSync(compareReportJsonPath, `${JSON.stringify(result, null, 2)}\n`, "utf-8");
   fs.writeFileSync(compareReportMarkdownPath, renderReleaseCompareText(result), "utf-8");
+  appendAuditEvent(root, {
+    type: "release_compare",
+    actor: options.actor,
+    reason: options.reason ?? `Compare release baselines ${options.from} to ${options.to}.`,
+    sourceArtifact: {
+      kind: "release-compare-report",
+      path: compareReportJsonPath,
+    },
+    affectedContracts: [normalizePath(path.relative(root, fromPath)), normalizePath(path.relative(root, toPath))],
+    details: {
+      from: options.from,
+      to: options.to,
+      identical: result.identical,
+      driftStatus: result.driftSummary.overallStatus,
+      driftTrendPath: normalizePath(path.relative(root, driftTrendJsonPath)),
+      diffCount: result.diffs.length,
+    },
+  });
   return result;
 }
 
@@ -336,6 +451,8 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
     `To: ${result.toPath}`,
     `JSON report: ${result.compareReportJsonPath}`,
     `Markdown report: ${result.compareReportMarkdownPath}`,
+    `Drift trend JSON: ${result.driftTrendJsonPath}`,
+    `Drift trend Markdown: ${result.driftTrendMarkdownPath}`,
     `Identical: ${result.identical ? "yes" : "no"}`,
   ];
 
@@ -358,6 +475,14 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   lines.push(`Contract graph drift: ${result.driftSummary.contractGraph.status} - ${result.driftSummary.contractGraph.summary}`);
   lines.push(`Static collector drift: ${result.driftSummary.staticCollector.status} - ${result.driftSummary.staticCollector.summary}`);
   lines.push(`Policy drift: ${result.driftSummary.policy.status} - ${result.driftSummary.policy.summary}`);
+
+  lines.push("", "## Drift Trend");
+  lines.push(`Comparisons: ${result.driftTrend.compareCount}`);
+  lines.push(`Changed comparisons: ${result.driftTrend.changedCompareCount}`);
+  lines.push(`Latest trend status: ${result.driftTrend.latest?.overallStatus ?? "not_available_yet"}`);
+  lines.push(`Contract graph changed: ${result.driftTrend.surfaces.contractGraph.changed}`);
+  lines.push(`Static collector changed: ${result.driftTrend.surfaces.staticCollector.changed}`);
+  lines.push(`Policy changed: ${result.driftTrend.surfaces.policy.changed}`);
 
   if (result.graphDiff.changedNodeContent.length > 0) {
     lines.push("", "Changed node content:");
@@ -394,6 +519,184 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   return lines.join("\n");
 }
 
+export function refreshReleaseDriftTrend(rootInput: string, generatedAt = new Date().toISOString()): ReleaseDriftTrendSummary {
+  const root = path.resolve(rootInput);
+  const trend = buildReleaseDriftTrend(root, generatedAt);
+  const trendJsonPath = resolveReleaseDriftTrendJsonPath(root);
+  const trendMarkdownPath = resolveReleaseDriftTrendMarkdownPath(root);
+  fs.mkdirSync(path.dirname(trendJsonPath), { recursive: true });
+  fs.writeFileSync(trendJsonPath, `${JSON.stringify(trend, null, 2)}\n`, "utf-8");
+  fs.writeFileSync(trendMarkdownPath, renderReleaseDriftTrendText(trend), "utf-8");
+  return trend;
+}
+
+export function renderReleaseDriftTrendText(trend: ReleaseDriftTrendSummary): string {
+  const lines = [
+    "# Release Drift Trend",
+    "",
+    `Generated at: ${trend.generatedAt}`,
+    `Comparisons: ${trend.compareCount}`,
+    `Changed comparisons: ${trend.changedCompareCount}`,
+    `Unchanged comparisons: ${trend.unchangedCompareCount}`,
+    `Not tracked comparisons: ${trend.notTrackedCompareCount}`,
+    "",
+    "## Latest",
+    "",
+    trend.latest
+      ? `- ${trend.latest.from} -> ${trend.latest.to}: ${trend.latest.overallStatus} (${trend.latest.reportPath})`
+      : "- No release compare reports available.",
+    "",
+    "## Surfaces",
+    "",
+    `- Contract graph: ${renderSurfaceTrendLine(trend.surfaces.contractGraph)}`,
+    `- Static collector: ${renderSurfaceTrendLine(trend.surfaces.staticCollector)}`,
+    `- Policy: ${renderSurfaceTrendLine(trend.surfaces.policy)}`,
+    "",
+    "## Comparisons",
+    "",
+    ...(trend.comparisons.length > 0
+      ? trend.comparisons.map((entry) =>
+          `- ${entry.from} -> ${entry.to}: ${entry.overallStatus} (graph=${entry.contractGraphStatus}, static=${entry.staticCollectorStatus}, policy=${entry.policyStatus})`,
+        )
+      : ["- None recorded."]),
+    "",
+  ];
+  return lines.join("\n");
+}
+
+function buildReleaseDriftTrend(root: string, generatedAt: string): ReleaseDriftTrendSummary {
+  const comparisons = listReleaseCompareReportPaths(root)
+    .map((reportPath) => readReleaseDriftTrendEntry(root, reportPath))
+    .filter((entry): entry is ReleaseDriftTrendEntry => Boolean(entry))
+    .sort((left, right) => {
+      const timeCompare = left.comparedAt.localeCompare(right.comparedAt);
+      return timeCompare === 0 ? left.reportPath.localeCompare(right.reportPath) : timeCompare;
+    });
+  const latest = comparisons.at(-1);
+
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    compareCount: comparisons.length,
+    changedCompareCount: comparisons.filter((entry) => entry.overallStatus === "changed").length,
+    unchangedCompareCount: comparisons.filter((entry) => entry.overallStatus === "unchanged").length,
+    notTrackedCompareCount: comparisons.filter((entry) => entry.overallStatus === "not_tracked").length,
+    ...(latest ? { latest } : {}),
+    surfaces: {
+      contractGraph: summarizeSurfaceTrend(comparisons, "contractGraphStatus", "contractGraphSummary"),
+      staticCollector: summarizeSurfaceTrend(comparisons, "staticCollectorStatus", "staticCollectorSummary"),
+      policy: summarizeSurfaceTrend(comparisons, "policyStatus", "policySummary"),
+    },
+    comparisons,
+  };
+}
+
+function createEmptyReleaseDriftTrend(generatedAt: string): ReleaseDriftTrendSummary {
+  return {
+    schemaVersion: 1,
+    generatedAt,
+    compareCount: 0,
+    changedCompareCount: 0,
+    unchangedCompareCount: 0,
+    notTrackedCompareCount: 0,
+    surfaces: {
+      contractGraph: emptySurfaceTrend(),
+      staticCollector: emptySurfaceTrend(),
+      policy: emptySurfaceTrend(),
+    },
+    comparisons: [],
+  };
+}
+
+function readReleaseDriftTrendEntry(root: string, reportPath: string): ReleaseDriftTrendEntry | undefined {
+  const report = readJsonObject(reportPath);
+  if (!report) {
+    return undefined;
+  }
+
+  const driftSummary = isRecord(report.driftSummary)
+    ? report.driftSummary
+    : isRecord(report.drift_summary)
+      ? report.drift_summary
+      : undefined;
+  if (!driftSummary) {
+    return undefined;
+  }
+
+  const contractGraph = isRecord(driftSummary.contractGraph) ? driftSummary.contractGraph : {};
+  const staticCollector = isRecord(driftSummary.staticCollector) ? driftSummary.staticCollector : {};
+  const policy = isRecord(driftSummary.policy) ? driftSummary.policy : {};
+  const stat = fs.statSync(reportPath);
+
+  return {
+    from: stringValue(report.from) ?? "unknown",
+    to: stringValue(report.to) ?? "unknown",
+    comparedAt: stringValue(report.comparedAt) ?? stat.mtime.toISOString(),
+    reportPath: normalizePath(path.relative(root, reportPath)),
+    markdownPath: stringValue(report.compareReportMarkdownPath)
+      ? normalizePath(path.relative(root, absolutePathFromMaybeRelative(root, stringValue(report.compareReportMarkdownPath)!)))
+      : undefined,
+    identical: report.identical === true,
+    overallStatus: driftStatusValue(driftSummary.overallStatus ?? driftSummary.overall_status),
+    contractGraphStatus: driftStatusValue(contractGraph.status),
+    staticCollectorStatus: driftStatusValue(staticCollector.status),
+    policyStatus: driftStatusValue(policy.status),
+    contractGraphSummary: stringValue(contractGraph.summary) ?? "not declared",
+    staticCollectorSummary: stringValue(staticCollector.summary) ?? "not declared",
+    policySummary: stringValue(policy.summary) ?? "not declared",
+  };
+}
+
+function listReleaseCompareReportPaths(root: string): string[] {
+  const compareRoot = path.join(root, ".spec", "releases", "compare");
+  if (!fs.existsSync(compareRoot)) {
+    return [];
+  }
+
+  return fs.readdirSync(compareRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(compareRoot, entry.name, "compare-report.json"))
+    .filter((reportPath) => fs.existsSync(reportPath))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function summarizeSurfaceTrend(
+  comparisons: ReleaseDriftTrendEntry[],
+  statusKey: "contractGraphStatus" | "staticCollectorStatus" | "policyStatus",
+  summaryKey: "contractGraphSummary" | "staticCollectorSummary" | "policySummary",
+): ReleaseDriftSurfaceTrend {
+  const latest = comparisons.at(-1);
+  return {
+    changed: comparisons.filter((entry) => entry[statusKey] === "changed").length,
+    unchanged: comparisons.filter((entry) => entry[statusKey] === "unchanged").length,
+    notTracked: comparisons.filter((entry) => entry[statusKey] === "not_tracked").length,
+    latestStatus: latest?.[statusKey] ?? "not_available_yet",
+    latestSummary: latest?.[summaryKey] ?? "not available yet",
+  };
+}
+
+function emptySurfaceTrend(): ReleaseDriftSurfaceTrend {
+  return {
+    changed: 0,
+    unchanged: 0,
+    notTracked: 0,
+    latestStatus: "not_available_yet",
+    latestSummary: "not available yet",
+  };
+}
+
+function renderSurfaceTrendLine(trend: ReleaseDriftSurfaceTrend): string {
+  return `${trend.latestStatus} latest, ${trend.changed} changed, ${trend.unchanged} unchanged, ${trend.notTracked} not tracked`;
+}
+
+function driftStatusValue(value: unknown): DriftStatus {
+  return value === "changed" || value === "unchanged" || value === "not_tracked" ? value : "not_tracked";
+}
+
+function absolutePathFromMaybeRelative(root: string, filePath: string): string {
+  return path.isAbsolute(filePath) ? filePath : path.join(root, filePath);
+}
+
 function resolveCurrentBaselinePath(root: string): string {
   return path.join(root, ".spec", "baselines", "current.yaml");
 }
@@ -424,6 +727,14 @@ function resolveReleaseStaticCollectorManifestPath(root: string, version: string
 
 function resolveCompareReportDir(root: string, from: string, to: string): string {
   return path.join(root, ".spec", "releases", "compare", `${slugifyRef(from)}-to-${slugifyRef(to)}`);
+}
+
+function resolveReleaseDriftTrendJsonPath(root: string): string {
+  return path.join(root, ".spec", "releases", "drift-trend.json");
+}
+
+function resolveReleaseDriftTrendMarkdownPath(root: string): string {
+  return path.join(root, ".spec", "releases", "drift-trend.md");
 }
 
 function resolveBaselineRef(root: string, ref: string): string {

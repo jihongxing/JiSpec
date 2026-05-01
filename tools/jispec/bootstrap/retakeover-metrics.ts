@@ -5,6 +5,9 @@ export type RetakeoverFixtureClass =
   | "high-noise-protocol-repo"
   | "multilingual-finance-service-repo"
   | "docs-api-schema-scattered-repo"
+  | "multi-language-monorepo-repo"
+  | "frontend-backend-mixed-repo"
+  | "historical-debt-service-repo"
   | "synthetic-god-file-monolith"
   | "synthetic-contract-drift"
   | "synthetic-noise-heavy-hidden-signal"
@@ -14,11 +17,52 @@ export type RetakeoverFeatureRecommendation = "accept_candidate" | "defer_as_spe
 export type RetakeoverFeatureOverclaimRisk = "low" | "medium" | "high";
 export type RetakeoverVerifySafety = "non_blocking" | "blocking";
 export type RetakeoverNextAction = "adoptable_initial_packet" | "owner_review_spec_debt" | "fix_blocking_verify";
+export type RetakeoverAdoptCorrectionDecision = "accepted" | "edited" | "deferred" | "rejected";
+
+export interface RetakeoverAdoptCorrectionDecisionCounts {
+  accepted: number;
+  edited: number;
+  deferred: number;
+  rejected: number;
+}
+
+export interface RetakeoverArtifactCorrectionLoad {
+  artifactKind: string;
+  decision: RetakeoverAdoptCorrectionDecision;
+  correctionLoad: number;
+  needsOwnerDecision: boolean;
+  note?: string;
+}
+
+export interface RetakeoverAdoptCorrectionInput {
+  acceptedArtifacts: string[];
+  deferredArtifacts: string[];
+  editedArtifacts?: string[];
+  rejectedArtifacts?: string[];
+  notes?: Record<string, string>;
+}
+
+export interface RetakeoverAdoptCorrectionMetrics {
+  acceptedArtifacts: string[];
+  editedArtifacts: string[];
+  deferredArtifacts: string[];
+  rejectedArtifacts: string[];
+  decisionCounts: RetakeoverAdoptCorrectionDecisionCounts;
+  artifactCorrectionLoad: RetakeoverArtifactCorrectionLoad[];
+  correctionHotspots: string[];
+  ownerReviewArtifactCount: number;
+}
 
 export interface RetakeoverQualityScorecard {
   noiseSuppressionRate: number;
   topEvidenceSignalRate: number;
+  contractSignalPrecision: number;
+  behaviorEvidenceStrength: number;
   adoptCorrectionLoad: number;
+  humanCorrectionHotspots: string[];
+  overclaimBlockRate: number;
+  adoptionReadyArtifactCount: number;
+  needsOwnerDecisionCount: number;
   featureOverclaimRisk: RetakeoverFeatureOverclaimRisk;
   verifySafety: RetakeoverVerifySafety;
   takeoverReadinessScore: number;
@@ -46,6 +90,8 @@ export interface RetakeoverQualityScorecardInput {
   featureRecommendation: RetakeoverFeatureRecommendation;
   acceptedArtifacts: string[];
   deferredArtifacts: string[];
+  editedArtifacts?: string[];
+  rejectedArtifacts?: string[];
   verifyOk: boolean;
 }
 
@@ -61,10 +107,7 @@ export interface RetakeoverMetrics {
     apiSurfaceCount: number;
     featureRecommendation: RetakeoverFeatureRecommendation;
   };
-  adoptCorrection: {
-    acceptedArtifacts: string[];
-    deferredArtifacts: string[];
-  };
+  adoptCorrection: RetakeoverAdoptCorrectionMetrics;
   verifyVerdict: string;
   verifyOk: boolean;
   qualityScorecard: RetakeoverQualityScorecard;
@@ -92,11 +135,24 @@ export interface RetakeoverPoolMetrics {
   };
   adoptCorrection: {
     fixturesWithDeferredArtifacts: string[];
+    fixturesWithEditedArtifacts: string[];
+    fixturesWithRejectedArtifacts: string[];
     deferredArtifactCount: number;
+    editedArtifactCount: number;
+    rejectedArtifactCount: number;
+    totalCorrectionLoad: number;
+    ownerReviewArtifactCount: number;
+    topCorrectionHotspots: string[];
   };
   qualityScorecard: {
     averageTakeoverReadinessScore: number;
     lowestReadinessScore: number;
+    averageContractSignalPrecision: number;
+    averageBehaviorEvidenceStrength: number;
+    averageOverclaimBlockRate: number;
+    totalAdoptionReadyArtifactCount: number;
+    totalNeedsOwnerDecisionCount: number;
+    fixturesWithHumanCorrectionHotspots: string[];
     fixturesNeedingOwnerReview: string[];
     fixturesWithBlockingVerify: string[];
     featureOverclaimRisk: Record<RetakeoverFeatureOverclaimRisk, number>;
@@ -124,9 +180,69 @@ export function parseRetakeoverFeatureRecommendation(feature: string): Retakeove
   return "unknown";
 }
 
+export function buildRetakeoverAdoptCorrectionMetrics(
+  input: RetakeoverAdoptCorrectionInput,
+): RetakeoverAdoptCorrectionMetrics {
+  const editedArtifacts = uniqueSorted(input.editedArtifacts ?? []);
+  const deferredArtifacts = uniqueSorted(input.deferredArtifacts);
+  const rejectedArtifacts = uniqueSorted(input.rejectedArtifacts ?? []);
+  const acceptedArtifacts = uniqueSorted([...input.acceptedArtifacts, ...editedArtifacts])
+    .filter((artifact) => !deferredArtifacts.includes(artifact) && !rejectedArtifacts.includes(artifact));
+  const artifactKinds = uniqueSorted([
+    ...acceptedArtifacts,
+    ...editedArtifacts,
+    ...deferredArtifacts,
+    ...rejectedArtifacts,
+  ]);
+  const artifactCorrectionLoad = artifactKinds.map((artifactKind): RetakeoverArtifactCorrectionLoad => {
+    const decision = selectCorrectionDecision({
+      artifactKind,
+      acceptedArtifacts,
+      editedArtifacts,
+      deferredArtifacts,
+      rejectedArtifacts,
+    });
+    return {
+      artifactKind,
+      decision,
+      correctionLoad: correctionLoadForDecision(decision),
+      needsOwnerDecision: decision !== "accepted",
+      note: input.notes?.[artifactKind],
+    };
+  });
+  const decisionCounts: RetakeoverAdoptCorrectionDecisionCounts = {
+    accepted: artifactCorrectionLoad.filter((entry) => entry.decision === "accepted").length,
+    edited: artifactCorrectionLoad.filter((entry) => entry.decision === "edited").length,
+    deferred: artifactCorrectionLoad.filter((entry) => entry.decision === "deferred").length,
+    rejected: artifactCorrectionLoad.filter((entry) => entry.decision === "rejected").length,
+  };
+  const correctionHotspots = uniqueSorted(
+    artifactCorrectionLoad
+      .filter((entry) => entry.decision !== "accepted")
+      .flatMap((entry) => [`${entry.decision}_${entry.artifactKind}`, correctionFamilyHotspot(entry.decision)]),
+  );
+
+  return {
+    acceptedArtifacts,
+    editedArtifacts,
+    deferredArtifacts,
+    rejectedArtifacts,
+    decisionCounts,
+    artifactCorrectionLoad,
+    correctionHotspots,
+    ownerReviewArtifactCount: artifactCorrectionLoad.filter((entry) => entry.needsOwnerDecision).length,
+  };
+}
+
 export function buildRetakeoverQualityScorecard(input: RetakeoverQualityScorecardInput): RetakeoverQualityScorecard {
   const rankedEvidence = input.rankedEvidence?.evidence ?? [];
   const topEvidence = rankedEvidence.slice(0, 10);
+  const adoptCorrection = buildRetakeoverAdoptCorrectionMetrics({
+    acceptedArtifacts: input.acceptedArtifacts,
+    deferredArtifacts: input.deferredArtifacts,
+    editedArtifacts: input.editedArtifacts,
+    rejectedArtifacts: input.rejectedArtifacts,
+  });
   const excludedCount = sanitizeCount(input.rankedEvidence?.excludedSummary?.totalExcludedFileCount);
   const candidateCount = Math.max(
     sanitizeCount(input.rankedEvidence?.summary?.candidateCount),
@@ -138,9 +254,38 @@ export function buildRetakeoverQualityScorecard(input: RetakeoverQualityScorecar
     : ratio(excludedCount, candidateCount + excludedCount);
   const strongTopEvidenceCount = topEvidence.filter(isStrongTakeoverSignal).length;
   const topEvidenceSignalRate = topEvidence.length > 0 ? ratio(strongTopEvidenceCount, topEvidence.length) : 0;
-  const artifactDecisionCount = input.acceptedArtifacts.length + input.deferredArtifacts.length;
-  const adoptCorrectionLoad = artifactDecisionCount > 0 ? ratio(input.deferredArtifacts.length, artifactDecisionCount) : 0;
+  const strongEvidenceCount = rankedEvidence.filter(isStrongTakeoverSignal).length;
+  const contractSignalPrecision = rankedEvidence.length > 0 ? ratio(strongEvidenceCount, rankedEvidence.length) : 0;
+  const artifactDecisionCount = adoptCorrection.artifactCorrectionLoad.length;
+  const adoptCorrectionLoad = artifactDecisionCount > 0
+    ? ratio(
+        adoptCorrection.artifactCorrectionLoad.reduce((sum, entry) => sum + entry.correctionLoad, 0),
+        artifactDecisionCount,
+      )
+    : 0;
   const featureOverclaimRisk = classifyFeatureOverclaimRisk(input);
+  const featureStats = summarizeFeatureEvidence(input.featureContent ?? "");
+  const behaviorEvidenceStrength = calculateBehaviorEvidenceStrength(input.featureRecommendation, featureStats);
+  const overclaimBlockRate = calculateOverclaimBlockRate(input, featureStats);
+  const adoptionReadyArtifactCount = calculateAdoptionReadyArtifactCount(input, featureOverclaimRisk);
+  const humanCorrectionHotspots = buildHumanCorrectionHotspots({
+    topEvidenceSignalRate,
+    contractSignalPrecision,
+    adoptCorrectionLoad,
+    featureOverclaimRisk,
+    featureStats,
+    verifyOk: input.verifyOk,
+    deferredArtifacts: adoptCorrection.deferredArtifacts,
+    editedArtifacts: adoptCorrection.editedArtifacts,
+    rejectedArtifacts: adoptCorrection.rejectedArtifacts,
+    correctionHotspots: adoptCorrection.correctionHotspots,
+  });
+  const needsOwnerDecisionCount = calculateNeedsOwnerDecisionCount({
+    ownerReviewArtifactCount: adoptCorrection.ownerReviewArtifactCount,
+    featureOverclaimRisk,
+    featureStats,
+    verifyOk: input.verifyOk,
+  });
   const verifySafety: RetakeoverVerifySafety = input.verifyOk ? "non_blocking" : "blocking";
   const takeoverReadinessScore = calculateTakeoverReadinessScore({
     noiseSuppressionRate,
@@ -165,7 +310,13 @@ export function buildRetakeoverQualityScorecard(input: RetakeoverQualityScorecar
   return {
     noiseSuppressionRate,
     topEvidenceSignalRate,
+    contractSignalPrecision,
+    behaviorEvidenceStrength,
     adoptCorrectionLoad,
+    humanCorrectionHotspots,
+    overclaimBlockRate,
+    adoptionReadyArtifactCount,
+    needsOwnerDecisionCount,
     featureOverclaimRisk,
     verifySafety,
     takeoverReadinessScore,
@@ -205,6 +356,10 @@ export function buildRetakeoverPoolMetrics(fixtures: RetakeoverMetrics[]): Retak
     featureOverclaimRisk[fixture.qualityScorecard.featureOverclaimRisk] += 1;
   }
   const readinessScores = fixtures.map((fixture) => fixture.qualityScorecard.takeoverReadinessScore);
+  const contractSignalPrecisions = fixtures.map((fixture) => fixture.qualityScorecard.contractSignalPrecision);
+  const behaviorEvidenceStrengths = fixtures.map((fixture) => fixture.qualityScorecard.behaviorEvidenceStrength);
+  const overclaimBlockRates = fixtures.map((fixture) => fixture.qualityScorecard.overclaimBlockRate);
+  const correctionHotspotCounts = countCorrectionHotspots(fixtures);
 
   return {
     version: 1,
@@ -225,16 +380,43 @@ export function buildRetakeoverPoolMetrics(fixtures: RetakeoverMetrics[]): Retak
       fixturesWithDeferredArtifacts: fixtures
         .filter((fixture) => fixture.adoptCorrection.deferredArtifacts.length > 0)
         .map((fixture) => fixture.fixtureId),
+      fixturesWithEditedArtifacts: fixtures
+        .filter((fixture) => fixture.adoptCorrection.editedArtifacts.length > 0)
+        .map((fixture) => fixture.fixtureId),
+      fixturesWithRejectedArtifacts: fixtures
+        .filter((fixture) => fixture.adoptCorrection.rejectedArtifacts.length > 0)
+        .map((fixture) => fixture.fixtureId),
       deferredArtifactCount: fixtures.reduce((sum, fixture) => sum + fixture.adoptCorrection.deferredArtifacts.length, 0),
+      editedArtifactCount: fixtures.reduce((sum, fixture) => sum + fixture.adoptCorrection.editedArtifacts.length, 0),
+      rejectedArtifactCount: fixtures.reduce((sum, fixture) => sum + fixture.adoptCorrection.rejectedArtifacts.length, 0),
+      totalCorrectionLoad: Number(fixtures
+        .reduce(
+          (sum, fixture) =>
+            sum + fixture.adoptCorrection.artifactCorrectionLoad.reduce((fixtureSum, entry) => fixtureSum + entry.correctionLoad, 0),
+          0,
+        )
+        .toFixed(2)),
+      ownerReviewArtifactCount: fixtures.reduce((sum, fixture) => sum + fixture.adoptCorrection.ownerReviewArtifactCount, 0),
+      topCorrectionHotspots: correctionHotspotCounts
+        .slice(0, 8)
+        .map(([hotspot, count]) => `${hotspot}:${count}`),
     },
     qualityScorecard: {
       averageTakeoverReadinessScore: average(readinessScores),
       lowestReadinessScore: readinessScores.length > 0 ? Math.min(...readinessScores) : 0,
+      averageContractSignalPrecision: average(contractSignalPrecisions),
+      averageBehaviorEvidenceStrength: average(behaviorEvidenceStrengths),
+      averageOverclaimBlockRate: average(overclaimBlockRates),
+      totalAdoptionReadyArtifactCount: fixtures.reduce((sum, fixture) => sum + fixture.qualityScorecard.adoptionReadyArtifactCount, 0),
+      totalNeedsOwnerDecisionCount: fixtures.reduce((sum, fixture) => sum + fixture.qualityScorecard.needsOwnerDecisionCount, 0),
+      fixturesWithHumanCorrectionHotspots: fixtures
+        .filter((fixture) => fixture.qualityScorecard.humanCorrectionHotspots.length > 0)
+        .map((fixture) => fixture.fixtureId),
       fixturesNeedingOwnerReview: fixtures
         .filter((fixture) =>
           fixture.qualityScorecard.nextAction === "owner_review_spec_debt" ||
           fixture.qualityScorecard.featureOverclaimRisk !== "low" ||
-          fixture.adoptCorrection.deferredArtifacts.length > 0,
+          fixture.adoptCorrection.ownerReviewArtifactCount > 0,
         )
         .map((fixture) => fixture.fixtureId),
       fixturesWithBlockingVerify: fixtures
@@ -277,6 +459,17 @@ export function renderRetakeoverSummaryMarkdown(metrics: RetakeoverMetrics): str
     `- Draft quality: ${renderDraftQuality(metrics)}.`,
     `- Adopt correction: ${renderAdoptCorrection(metrics)}.`,
     `- Next action: \`${metrics.qualityScorecard.nextAction}\`.`,
+    "",
+    "## Adopt Correction Loop",
+    "",
+    `- Decision counts: ${renderCorrectionDecisionCounts(metrics.adoptCorrection.decisionCounts)}.`,
+    `- Correction load: ${formatPercent(metrics.qualityScorecard.adoptCorrectionLoad)} across ${metrics.adoptCorrection.artifactCorrectionLoad.length} artifact decision(s).`,
+    `- Owner-review artifacts: ${metrics.adoptCorrection.ownerReviewArtifactCount}.`,
+    `- Correction hotspots: ${renderHotspots(metrics.adoptCorrection.correctionHotspots)}.`,
+    "",
+    "| Artifact | Decision | Load | Owner Review | Note |",
+    "| --- | --- | --- | --- | --- |",
+    ...renderArtifactCorrectionRows(metrics.adoptCorrection),
     "",
     "## Quality Scorecard",
     "",
@@ -324,7 +517,11 @@ export function renderRetakeoverPoolSummaryMarkdown(pool: RetakeoverPoolMetrics)
     `- Draft totals: ${pool.draftQuality.totalDomainContextCount} domain context(s), ${pool.draftQuality.totalAggregateRootCount} aggregate root(s), ${pool.draftQuality.totalApiSurfaceCount} API surface(s).`,
     `- Feature recommendations: ${renderFeatureRecommendationCounts(pool.draftQuality.featureRecommendations)}.`,
     `- Deferred artifacts: ${pool.adoptCorrection.deferredArtifactCount} across ${pool.adoptCorrection.fixturesWithDeferredArtifacts.length} fixture(s).`,
+    `- Correction loop: edited=${pool.adoptCorrection.editedArtifactCount}, deferred=${pool.adoptCorrection.deferredArtifactCount}, rejected=${pool.adoptCorrection.rejectedArtifactCount}, total load=${pool.adoptCorrection.totalCorrectionLoad}, owner-review artifacts=${pool.adoptCorrection.ownerReviewArtifactCount}.`,
+    `- Top correction hotspots: ${pool.adoptCorrection.topCorrectionHotspots.map((hotspot) => `\`${hotspot}\``).join(", ") || "none"}.`,
     `- Average takeover readiness score: ${pool.qualityScorecard.averageTakeoverReadinessScore}/100; lowest score: ${pool.qualityScorecard.lowestReadinessScore}/100.`,
+    `- V2 signal averages: contract precision=${formatPercent(pool.qualityScorecard.averageContractSignalPrecision)}, behavior strength=${formatPercent(pool.qualityScorecard.averageBehaviorEvidenceStrength)}, overclaim blocked=${formatPercent(pool.qualityScorecard.averageOverclaimBlockRate)}.`,
+    `- V2 decision load: adoption-ready artifacts=${pool.qualityScorecard.totalAdoptionReadyArtifactCount}, owner decision count=${pool.qualityScorecard.totalNeedsOwnerDecisionCount}, hotspot fixtures=${pool.qualityScorecard.fixturesWithHumanCorrectionHotspots.length}.`,
     `- Feature overclaim risk: low=${pool.qualityScorecard.featureOverclaimRisk.low}, medium=${pool.qualityScorecard.featureOverclaimRisk.medium}, high=${pool.qualityScorecard.featureOverclaimRisk.high}.`,
     `- Owner-review fixtures: ${pool.qualityScorecard.fixturesNeedingOwnerReview.map((fixture) => `\`${fixture}\``).join(", ") || "none"}.`,
     "",
@@ -333,6 +530,18 @@ export function renderRetakeoverPoolSummaryMarkdown(pool: RetakeoverPoolMetrics)
     "| Fixture | Score | Verify Safety | Feature Risk | Deferred | Next Action | Risk Notes |",
     "| --- | --- | --- | --- | --- | --- | --- |",
     ...pool.fixtures.map(renderPoolScorecardRow),
+    "",
+    "## Quality Scorecard V2",
+    "",
+    "| Fixture | Contract Precision | Behavior Strength | Overclaim Blocked | Adoption Ready | Owner Decisions | Hotspots |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...pool.fixtures.map(renderPoolScorecardV2Row),
+    "",
+    "## Correction Loop",
+    "",
+    "| Fixture | Accepted | Edited | Deferred | Rejected | Load | Hotspots |",
+    "| --- | --- | --- | --- | --- | --- | --- |",
+    ...pool.fixtures.map(renderPoolCorrectionRow),
     "",
     "## Fixture Matrix",
     "",
@@ -364,6 +573,9 @@ function renderRiskDecision(metrics: RetakeoverMetrics): string {
   if (metrics.adoptCorrection.deferredArtifacts.length > 0) {
     return "Retakeover can proceed with explicit spec debt follow-up.";
   }
+  if (metrics.adoptCorrection.ownerReviewArtifactCount > 0) {
+    return "Retakeover can proceed with explicit human correction follow-up.";
+  }
   if (metrics.draftQuality.featureRecommendation === "defer_as_spec_debt") {
     return "Retakeover can proceed, but behavior evidence should stay owner-reviewed.";
   }
@@ -374,8 +586,8 @@ function renderPoolDecision(pool: RetakeoverPoolMetrics): string {
   if (pool.verify.blockingCount > 0) {
     return "Retakeover pool needs follow-up because at least one fixture is blocking.";
   }
-  if (pool.adoptCorrection.deferredArtifactCount > 0 || pool.draftQuality.featureRecommendations.defer_as_spec_debt > 0) {
-    return "Retakeover pool is non-blocking, with explicit owner-review or spec-debt follow-up for weaker behavior evidence.";
+  if (pool.adoptCorrection.ownerReviewArtifactCount > 0 || pool.draftQuality.featureRecommendations.defer_as_spec_debt > 0) {
+    return "Retakeover pool is non-blocking, with explicit owner-review, human correction, or spec-debt follow-up.";
   }
   return "Retakeover pool is non-blocking and all fixture packets are adoptable as initial contracts.";
 }
@@ -411,8 +623,14 @@ function renderFixtureScorecardRows(metrics: RetakeoverMetrics): string[] {
     renderScorecardRow("Takeover readiness", `${scorecard.takeoverReadinessScore}/100`, "Conservative aggregate score for trend review, not a standalone gate."),
     renderScorecardRow("Verify safety", `\`${scorecard.verifySafety}\``, scorecard.verifySafety === "non_blocking" ? "Adopted and deferred output does not block verify." : "Verify is blocking and must be fixed before merge."),
     renderScorecardRow("Top evidence signal", formatPercent(scorecard.topEvidenceSignalRate), "Share of top ranked evidence carrying strong boundary or contract signal."),
+    renderScorecardRow("Contract signal precision", formatPercent(scorecard.contractSignalPrecision), "Share of ranked takeover evidence backed by strong deterministic contract or boundary signal."),
+    renderScorecardRow("Behavior evidence strength", formatPercent(scorecard.behaviorEvidenceStrength), "Share of behavior scenarios that are strong enough to avoid owner-review fallback."),
     renderScorecardRow("Noise suppression", formatPercent(scorecard.noiseSuppressionRate), "How much noisy inventory pressure was excluded or absent from this fixture."),
-    renderScorecardRow("Adopt correction load", formatPercent(scorecard.adoptCorrectionLoad), "Share of adopted decision surface deferred as spec debt."),
+    renderScorecardRow("Adopt correction load", formatPercent(scorecard.adoptCorrectionLoad), "Weighted share of artifact decisions that required edit, defer, or reject correction."),
+    renderScorecardRow("Overclaim block rate", formatPercent(scorecard.overclaimBlockRate), "Whether weak behavior evidence was blocked or deferred instead of being adopted as ready."),
+    renderScorecardRow("Adoption-ready artifacts", String(scorecard.adoptionReadyArtifactCount), "Artifact count that can be treated as review-ready after conservative overclaim adjustment."),
+    renderScorecardRow("Owner decision count", String(scorecard.needsOwnerDecisionCount), "How many explicit owner decisions remain after takeover."),
+    renderScorecardRow("Human correction hotspots", renderHotspots(scorecard.humanCorrectionHotspots), "Where reviewer correction should focus before broader adoption."),
     renderScorecardRow("Feature overclaim risk", `\`${scorecard.featureOverclaimRisk}\``, "Risk that weak behavior evidence was treated as contract-ready."),
     renderScorecardRow("Next action", `\`${scorecard.nextAction}\``, renderNextActionMeaning(scorecard.nextAction)),
   ];
@@ -441,6 +659,36 @@ function renderPoolScorecardRow(fixture: RetakeoverMetrics): string {
   ].join(" | ").replace(/^/, "| ").replace(/$/, " |");
 }
 
+function renderPoolScorecardV2Row(fixture: RetakeoverMetrics): string {
+  const scorecard = fixture.qualityScorecard;
+  return [
+    `\`${fixture.fixtureId}\``,
+    formatPercent(scorecard.contractSignalPrecision),
+    formatPercent(scorecard.behaviorEvidenceStrength),
+    formatPercent(scorecard.overclaimBlockRate),
+    String(scorecard.adoptionReadyArtifactCount),
+    String(scorecard.needsOwnerDecisionCount),
+    renderHotspots(scorecard.humanCorrectionHotspots),
+  ].join(" | ").replace(/^/, "| ").replace(/$/, " |");
+}
+
+function renderPoolCorrectionRow(fixture: RetakeoverMetrics): string {
+  const correction = fixture.adoptCorrection;
+  const decisionCount = correction.artifactCorrectionLoad.length;
+  const load = decisionCount > 0
+    ? formatPercent(correction.artifactCorrectionLoad.reduce((sum, entry) => sum + entry.correctionLoad, 0) / decisionCount)
+    : "0%";
+  return [
+    `\`${fixture.fixtureId}\``,
+    renderArtifactList(correction.acceptedArtifacts),
+    renderArtifactList(correction.editedArtifacts),
+    renderArtifactList(correction.deferredArtifacts),
+    renderArtifactList(correction.rejectedArtifacts),
+    load,
+    renderHotspots(correction.correctionHotspots),
+  ].join(" | ").replace(/^/, "| ").replace(/$/, " |");
+}
+
 function renderNextActionMeaning(nextAction: RetakeoverNextAction): string {
   if (nextAction === "fix_blocking_verify") {
     return "Resolve deterministic verify issues before treating this takeover as mergeable.";
@@ -455,6 +703,10 @@ function escapeTableCell(value: string): string {
   return value.replace(/\|/g, "\\|");
 }
 
+function renderHotspots(hotspots: string[]): string {
+  return hotspots.length > 0 ? escapeTableCell(hotspots.map((hotspot) => `\`${hotspot}\``).join(", ")) : "none";
+}
+
 function renderDraftQuality(metrics: RetakeoverMetrics): string {
   const quality = metrics.draftQuality;
   return [
@@ -466,14 +718,41 @@ function renderDraftQuality(metrics: RetakeoverMetrics): string {
 }
 
 function renderAdoptCorrection(metrics: RetakeoverMetrics): string {
-  const accepted = metrics.adoptCorrection.acceptedArtifacts.length > 0
-    ? metrics.adoptCorrection.acceptedArtifacts.map((artifact) => `\`${artifact}\``).join(", ")
-    : "none";
-  const deferred = metrics.adoptCorrection.deferredArtifacts.length > 0
-    ? metrics.adoptCorrection.deferredArtifacts.map((artifact) => `\`${artifact}\``).join(", ")
-    : "none";
+  const accepted = renderArtifactList(metrics.adoptCorrection.acceptedArtifacts);
+  const edited = renderArtifactList(metrics.adoptCorrection.editedArtifacts);
+  const deferred = renderArtifactList(metrics.adoptCorrection.deferredArtifacts);
+  const rejected = renderArtifactList(metrics.adoptCorrection.rejectedArtifacts);
 
-  return `accepted ${accepted}; deferred ${deferred}`;
+  return `accepted ${accepted}; edited ${edited}; deferred ${deferred}; rejected ${rejected}`;
+}
+
+function renderArtifactList(artifacts: string[]): string {
+  return artifacts.length > 0 ? artifacts.map((artifact) => `\`${artifact}\``).join(", ") : "none";
+}
+
+function renderCorrectionDecisionCounts(counts: RetakeoverAdoptCorrectionDecisionCounts): string {
+  return [
+    `accepted=${counts.accepted}`,
+    `edited=${counts.edited}`,
+    `deferred=${counts.deferred}`,
+    `rejected=${counts.rejected}`,
+  ].join(", ");
+}
+
+function renderArtifactCorrectionRows(correction: RetakeoverAdoptCorrectionMetrics): string[] {
+  if (correction.artifactCorrectionLoad.length === 0) {
+    return ["| none | none | 0% | no | none |"];
+  }
+
+  return correction.artifactCorrectionLoad.map((entry) =>
+    [
+      `\`${entry.artifactKind}\``,
+      `\`${entry.decision}\``,
+      formatPercent(entry.correctionLoad),
+      entry.needsOwnerDecision ? "yes" : "no",
+      escapeTableCell(entry.note ?? "none"),
+    ].join(" | ").replace(/^/, "| ").replace(/$/, " |"),
+  );
 }
 
 function renderDiscoverSummary(summary: Record<string, unknown>): string {
@@ -515,6 +794,62 @@ function ratio(numerator: number, denominator: number): number {
   return Number(Math.max(0, Math.min(1, numerator / denominator)).toFixed(4));
 }
 
+function uniqueSorted(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0))).sort((left, right) => left.localeCompare(right));
+}
+
+function selectCorrectionDecision(input: {
+  artifactKind: string;
+  acceptedArtifacts: string[];
+  editedArtifacts: string[];
+  deferredArtifacts: string[];
+  rejectedArtifacts: string[];
+}): RetakeoverAdoptCorrectionDecision {
+  if (input.rejectedArtifacts.includes(input.artifactKind)) {
+    return "rejected";
+  }
+  if (input.deferredArtifacts.includes(input.artifactKind)) {
+    return "deferred";
+  }
+  if (input.editedArtifacts.includes(input.artifactKind)) {
+    return "edited";
+  }
+  return "accepted";
+}
+
+function correctionLoadForDecision(decision: RetakeoverAdoptCorrectionDecision): number {
+  if (decision === "accepted") {
+    return 0;
+  }
+  if (decision === "edited") {
+    return 0.5;
+  }
+  return 1;
+}
+
+function correctionFamilyHotspot(decision: RetakeoverAdoptCorrectionDecision): string {
+  if (decision === "edited") {
+    return "human_edit";
+  }
+  if (decision === "deferred") {
+    return "spec_debt_defer";
+  }
+  if (decision === "rejected") {
+    return "rejected_draft";
+  }
+  return "accepted";
+}
+
+function countCorrectionHotspots(fixtures: RetakeoverMetrics[]): Array<[string, number]> {
+  const counts = new Map<string, number>();
+  for (const fixture of fixtures) {
+    for (const hotspot of fixture.adoptCorrection.correctionHotspots) {
+      counts.set(hotspot, (counts.get(hotspot) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+}
+
 function average(values: number[]): number {
   if (values.length === 0) {
     return 0;
@@ -548,6 +883,123 @@ function classifyFeatureOverclaimRisk(input: RetakeoverQualityScorecardInput): R
     return "medium";
   }
   return "low";
+}
+
+interface RetakeoverFeatureEvidenceStats {
+  scenarioCount: number;
+  acceptCandidateScenarioCount: number;
+  deferScenarioCount: number;
+  humanReviewScenarioCount: number;
+}
+
+function summarizeFeatureEvidence(feature: string): RetakeoverFeatureEvidenceStats {
+  return {
+    scenarioCount: (feature.match(/^  Scenario:/gm) ?? []).length,
+    acceptCandidateScenarioCount: (feature.match(/# recommendation: accept_candidate/g) ?? []).length,
+    deferScenarioCount: (feature.match(/# recommendation: defer_as_spec_debt/g) ?? []).length,
+    humanReviewScenarioCount: (feature.match(/@behavior_needs_human_review/g) ?? []).length,
+  };
+}
+
+function calculateBehaviorEvidenceStrength(
+  featureRecommendation: RetakeoverFeatureRecommendation,
+  featureStats: RetakeoverFeatureEvidenceStats,
+): number {
+  if (featureStats.scenarioCount === 0) {
+    return 0;
+  }
+
+  const scenarioStrength = ratio(featureStats.acceptCandidateScenarioCount, featureStats.scenarioCount);
+  if (featureRecommendation === "accept_candidate") {
+    return Math.max(scenarioStrength, 0.85);
+  }
+  if (featureRecommendation === "unknown") {
+    return Number((scenarioStrength * 0.5).toFixed(4));
+  }
+  return scenarioStrength;
+}
+
+function calculateOverclaimBlockRate(
+  input: RetakeoverQualityScorecardInput,
+  featureStats: RetakeoverFeatureEvidenceStats,
+): number {
+  const hasOverclaimPressure =
+    input.featureRecommendation !== "accept_candidate" ||
+    featureStats.deferScenarioCount > 0 ||
+    featureStats.humanReviewScenarioCount > 0;
+  if (!hasOverclaimPressure) {
+    return 1;
+  }
+
+  const featureWasDeferred = input.deferredArtifacts.includes("feature");
+  const featureWasRejected = (input.rejectedArtifacts ?? []).includes("feature");
+  return featureWasDeferred || featureWasRejected ? 1 : 0;
+}
+
+function calculateAdoptionReadyArtifactCount(
+  input: RetakeoverQualityScorecardInput,
+  featureOverclaimRisk: RetakeoverFeatureOverclaimRisk,
+): number {
+  const acceptedNonFeatureCount = input.acceptedArtifacts.filter((artifact) => artifact !== "feature").length;
+  const acceptedFeatureIsReady =
+    input.acceptedArtifacts.includes("feature") &&
+    input.featureRecommendation === "accept_candidate" &&
+    featureOverclaimRisk === "low";
+  return acceptedNonFeatureCount + (acceptedFeatureIsReady ? 1 : 0);
+}
+
+function buildHumanCorrectionHotspots(input: {
+  topEvidenceSignalRate: number;
+  contractSignalPrecision: number;
+  adoptCorrectionLoad: number;
+  featureOverclaimRisk: RetakeoverFeatureOverclaimRisk;
+  featureStats: RetakeoverFeatureEvidenceStats;
+  verifyOk: boolean;
+  deferredArtifacts: string[];
+  editedArtifacts: string[];
+  rejectedArtifacts: string[];
+  correctionHotspots: string[];
+}): string[] {
+  const hotspots = new Set<string>(input.correctionHotspots);
+  for (const artifact of input.deferredArtifacts) {
+    hotspots.add(`deferred_${artifact}`);
+  }
+  for (const artifact of input.editedArtifacts) {
+    hotspots.add(`edited_${artifact}`);
+  }
+  for (const artifact of input.rejectedArtifacts) {
+    hotspots.add(`rejected_${artifact}`);
+  }
+  if (!input.verifyOk) {
+    hotspots.add("blocking_verify");
+  }
+  if (input.topEvidenceSignalRate < 0.6 || input.contractSignalPrecision < 0.55) {
+    hotspots.add("contract_signal_precision");
+  }
+  if (input.featureStats.humanReviewScenarioCount > 0 || input.featureStats.deferScenarioCount > 0) {
+    hotspots.add("behavior_owner_review");
+  }
+  if (input.featureOverclaimRisk !== "low") {
+    hotspots.add("feature_overclaim_risk");
+  }
+  if (input.adoptCorrectionLoad > 0) {
+    hotspots.add("adopt_correction_load");
+  }
+  return [...hotspots].sort((left, right) => left.localeCompare(right));
+}
+
+function calculateNeedsOwnerDecisionCount(input: {
+  ownerReviewArtifactCount: number;
+  featureOverclaimRisk: RetakeoverFeatureOverclaimRisk;
+  featureStats: RetakeoverFeatureEvidenceStats;
+  verifyOk: boolean;
+}): number {
+  const ownerDecisionCandidates =
+    input.ownerReviewArtifactCount +
+    input.featureStats.humanReviewScenarioCount +
+    (input.featureOverclaimRisk !== "low" ? 1 : 0) +
+    (input.verifyOk ? 0 : 1);
+  return ownerDecisionCandidates;
 }
 
 function calculateTakeoverReadinessScore(input: {

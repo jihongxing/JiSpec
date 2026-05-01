@@ -36,6 +36,8 @@ async function main(): Promise<void> {
       name: "route-only fixtures produce human-review scenarios and deferred recommendations",
       passed:
         routeOnlyDraft.feature.includes("@behavior_needs_human_review") &&
+        routeOnlyDraft.feature.includes("# evidence_level: weak") &&
+        routeOnlyDraft.feature.includes('# evidence_kinds: ["route"]') &&
         routeOnlyDraft.feature.includes("# adoption_recommendation: defer_as_spec_debt") &&
         routeOnlyDraft.feature.includes("# recommendation: defer_as_spec_debt") &&
         routeOnlyDraft.feature.includes("route-only behavior lacks contract, document, proto, aggregate, or test corroboration"),
@@ -48,6 +50,8 @@ async function main(): Promise<void> {
         remirageDraft.feature.includes("# adoption_recommendation: accept_candidate") &&
         remirageDraft.feature.includes("Scenario: Control plane applies a policy change safely") &&
         remirageDraft.feature.includes("Scenario: Gateway strategy switch preserves transport continuity") &&
+        remirageDraft.feature.includes("# evidence_level: strong") &&
+        remirageDraft.feature.includes('"proto"') &&
         remirageDraft.feature.includes("protobuf service mapping anchors the boundary") &&
         !remirageDraft.feature.includes("@behavior_needs_human_review"),
       error: `Expected ReMirage-like feature draft to pass the confidence gate, got:\n${remirageDraft.feature}`,
@@ -70,6 +74,7 @@ async function main(): Promise<void> {
       passed:
         thinFinanceDraft.feature.includes("# adoption_recommendation: defer_as_spec_debt") &&
         thinFinanceDraft.feature.includes("@behavior_needs_human_review") &&
+        thinFinanceDraft.feature.includes("# evidence_level: partial") &&
         thinFinanceBrief.includes("Recommendation: `defer_as_spec_debt`") &&
         thinFinanceBrief.includes("owner confirms the tagged behavior scenarios") &&
         thinFinanceBrief.includes("human-review"),

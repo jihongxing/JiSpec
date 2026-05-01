@@ -66,6 +66,10 @@ async function main(): Promise<void> {
     assert.equal(result.decisionPacket?.state, "ready_to_merge");
     assert.equal(result.decisionPacket?.stopPoint, "post_verify");
     assert.equal(result.decisionPacket?.mergeable, true);
+    assert.equal(result.decisionPacket?.nextActionDetail.type, "review_and_merge");
+    assert.equal(result.decisionPacket?.nextActionDetail.owner, "reviewer");
+    assert.equal(result.decisionPacket?.nextActionDetail.failedCheck, "none");
+    assert.equal(result.decisionPacket?.nextActionDetail.command, "npm run ci:verify");
     assert.equal(result.decisionPacket?.implementationBoundary.businessCodeGeneratedByJiSpec, false);
     assert.equal(result.decisionPacket?.implementationBoundary.implementationOwner, "external_patch_author");
     assert.deepEqual(result.patchMediation?.touchedPaths, ["docs/patch-mediated.md"]);
@@ -110,6 +114,7 @@ async function main(): Promise<void> {
     assert.equal(result.lane, "strict");
     assert.equal(result.decisionPacket?.state, "ready_to_merge");
     assert.equal(result.decisionPacket?.verify.status, "passed");
+    assert.equal(result.decisionPacket?.nextActionDetail.command, "npm run ci:verify");
     assert.equal(result.patchMediation?.applied, true);
     assert.deepEqual(result.patchMediation?.allowedPaths, ["src/domain/order.ts"]);
     assert.equal(result.postVerify?.command, "npm run verify");
@@ -152,6 +157,16 @@ async function main(): Promise<void> {
     assert.equal(result.decisionPacket?.executionStatus.patchApply, "not_run");
     assert.equal(result.decisionPacket?.executionStatus.tests, "not_run");
     assert.equal(result.decisionPacket?.executionStatus.nextActionOwner, "human_or_external_tool");
+    assert.equal(result.decisionPacket?.nextActionDetail.type, "fix_patch_scope");
+    assert.equal(result.decisionPacket?.nextActionDetail.failedCheck, "scope_check");
+    assert.equal(
+      result.decisionPacket?.nextActionDetail.command,
+      "npm run jispec-cli -- implement --session-id change-rejected-patch --external-patch <path>",
+    );
+    assert.deepEqual(result.decisionPacket?.nextActionDetail.externalToolHandoff?.allowedPaths, [
+      "docs/allowed.md",
+    ]);
+    assert.ok(result.decisionPacket?.nextActionDetail.externalToolHandoff?.filesNeedingAttention.includes("src/domain/order.ts"));
     assert.ok(result.decisionPacket?.nextAction.includes("Revise the external patch"));
     assert.equal(result.patchMediation?.applied, false);
     assert.ok(result.handoffPacket);
@@ -205,6 +220,16 @@ async function main(): Promise<void> {
     assert.equal(result.handoffPacket?.decisionPacket.executionStatus.patchApply, "passed");
     assert.equal(result.handoffPacket?.decisionPacket.executionStatus.tests, "failed");
     assert.equal(result.handoffPacket?.decisionPacket.implementationBoundary.implementationOwner, "external_patch_author");
+    assert.equal(result.handoffPacket?.decisionPacket.nextActionDetail.type, "fix_patch_tests");
+    assert.equal(result.handoffPacket?.decisionPacket.nextActionDetail.failedCheck, "tests");
+    assert.equal(result.handoffPacket?.decisionPacket.nextActionDetail.owner, "external_patch_author");
+    assert.equal(
+      result.handoffPacket?.decisionPacket.nextActionDetail.command,
+      "npm run jispec-cli -- implement --session-id change-failing-patch --external-patch <path>",
+    );
+    assert.ok(result.handoffPacket?.decisionPacket.nextActionDetail.externalToolHandoff?.request.includes("mediated test command passes"));
+    assert.equal(result.handoffPacket?.nextSteps.externalToolHandoff?.required, true);
+    assert.ok(result.handoffPacket?.nextSteps.externalToolHandoff?.request.includes("mediated test command passes"));
     assert.ok(result.handoffPacket?.nextSteps.filesNeedingAttention.includes("docs/failing-mediated.md"));
     console.log("✓ Test 4: applied external patch with failing tests writes a handoff packet");
     passed++;

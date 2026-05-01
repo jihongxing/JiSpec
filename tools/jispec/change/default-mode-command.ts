@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { appendAuditEvent } from "../audit/event-ledger";
 import type { ChangeSessionOrchestrationMode } from "./change-session";
 import {
   evaluateChangeExecuteDefaultReadiness,
@@ -29,8 +30,10 @@ export interface ChangeDefaultModeHistoryEntry {
   configPath?: string;
   readiness: {
     readyForExecuteDefault: boolean;
+    canSetExecuteDefault: boolean;
     openDraftSessionId?: string;
     boundaryStatus: ChangeExecuteDefaultReadiness["boundary"]["adoptBoundary"]["status"];
+    blockers: string[];
     warnings: string[];
   };
 }
@@ -64,7 +67,7 @@ export function showChangeDefaultMode(rootInput: string): ChangeDefaultModeResul
     source: resolution.source,
     configPath: resolution.configPath,
     readiness,
-    warnings: readiness.warnings,
+    warnings: renderWarnings(readiness),
     nextActions: buildNextActions(readiness, "show"),
   };
 }
@@ -76,8 +79,11 @@ export function setChangeDefaultMode(options: ChangeDefaultModeOptions): ChangeD
   }
 
   const beforeResolution = resolveChangeCommandMode(root);
-  if (options.mode === "execute" && beforeResolution.warnings.length > 0) {
-    throw new Error(`Cannot enable execute-default until configuration warning(s) are fixed: ${beforeResolution.warnings.join("; ")}`);
+  if (options.mode === "execute") {
+    const beforeReadiness = evaluateChangeExecuteDefaultReadiness(root);
+    if (!beforeReadiness.canSetExecuteDefault) {
+      throw new Error(`Cannot enable execute-default until readiness blocker(s) are fixed: ${beforeReadiness.blockers.join("; ")}`);
+    }
   }
 
   writeProjectDefaultMode(root, options.mode);
@@ -94,9 +100,29 @@ export function setChangeDefaultMode(options: ChangeDefaultModeOptions): ChangeD
     configPath: PROJECT_CONFIG_RELATIVE_PATH,
     readiness: {
       readyForExecuteDefault: readiness.readyForExecuteDefault,
+      canSetExecuteDefault: readiness.canSetExecuteDefault,
       openDraftSessionId: readiness.openDraftSessionId,
       boundaryStatus: readiness.boundary.adoptBoundary.status,
+      blockers: readiness.blockers,
       warnings: readiness.warnings,
+    },
+  });
+  appendAuditEvent(root, {
+    type: "default_mode_set",
+    actor: options.actor,
+    reason: options.reason,
+    sourceArtifact: {
+      kind: "change-default-mode-history",
+      path: historyPath,
+    },
+    affectedContracts: [PROJECT_CONFIG_RELATIVE_PATH, "change.default_mode"],
+    details: {
+      previousMode: beforeResolution.mode,
+      nextMode: options.mode,
+      previousSource: beforeResolution.source,
+      source: "project_config",
+      readyForExecuteDefault: readiness.readyForExecuteDefault,
+      canSetExecuteDefault: readiness.canSetExecuteDefault,
     },
   });
 
@@ -109,9 +135,7 @@ export function setChangeDefaultMode(options: ChangeDefaultModeOptions): ChangeD
     configPath: path.join(root, PROJECT_CONFIG_RELATIVE_PATH),
     historyPath,
     readiness,
-    warnings: readiness.openDraftSessionId
-      ? [`Open bootstrap draft ${readiness.openDraftSessionId}; strict-lane execute-default still pauses at adopt.`]
-      : readiness.warnings,
+    warnings: renderWarnings(readiness),
     nextActions: buildNextActions(readiness, "set"),
   };
 }
@@ -133,9 +157,29 @@ export function resetChangeDefaultMode(options: Omit<ChangeDefaultModeOptions, "
     configPath: fs.existsSync(path.join(root, PROJECT_CONFIG_RELATIVE_PATH)) ? PROJECT_CONFIG_RELATIVE_PATH : undefined,
     readiness: {
       readyForExecuteDefault: readiness.readyForExecuteDefault,
+      canSetExecuteDefault: readiness.canSetExecuteDefault,
       openDraftSessionId: readiness.openDraftSessionId,
       boundaryStatus: readiness.boundary.adoptBoundary.status,
+      blockers: readiness.blockers,
       warnings: readiness.warnings,
+    },
+  });
+  appendAuditEvent(root, {
+    type: "default_mode_reset",
+    actor: options.actor,
+    reason: options.reason,
+    sourceArtifact: {
+      kind: "change-default-mode-history",
+      path: historyPath,
+    },
+    affectedContracts: [PROJECT_CONFIG_RELATIVE_PATH, "change.default_mode"],
+    details: {
+      previousMode: beforeResolution.mode,
+      nextMode: readiness.defaultMode,
+      previousSource: beforeResolution.source,
+      source: readiness.source,
+      readyForExecuteDefault: readiness.readyForExecuteDefault,
+      canSetExecuteDefault: readiness.canSetExecuteDefault,
     },
   });
 
@@ -148,7 +192,7 @@ export function resetChangeDefaultMode(options: Omit<ChangeDefaultModeOptions, "
     configPath: readiness.configPath,
     historyPath,
     readiness,
-    warnings: readiness.warnings,
+    warnings: renderWarnings(readiness),
     nextActions: buildNextActions(readiness, "reset"),
   };
 }
@@ -266,6 +310,13 @@ function appendHistory(root: string, entry: ChangeDefaultModeHistoryEntry): stri
 }
 
 function buildNextActions(readiness: ChangeExecuteDefaultReadiness, action: ChangeDefaultModeAction): string[] {
+  if (!readiness.canSetExecuteDefault) {
+    return [
+      ...readiness.ownerActions,
+      "Keep prompt as the default until execute-default blockers are resolved.",
+    ];
+  }
+
   if (readiness.openDraftSessionId) {
     return [
       `Run npm run jispec-cli -- adopt --interactive --session ${readiness.openDraftSessionId} before relying on strict-lane execute-default.`,
@@ -293,6 +344,18 @@ function buildNextActions(readiness: ChangeExecuteDefaultReadiness, action: Chan
   ];
 }
 
+function renderWarnings(readiness: ChangeExecuteDefaultReadiness): string[] {
+  const warnings = [...readiness.warnings];
+  if (readiness.openDraftSessionId) {
+    warnings.push(`Open bootstrap draft ${readiness.openDraftSessionId}; strict-lane execute-default still pauses at adopt.`);
+  }
+  return uniqueSorted(warnings);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
 }

@@ -46,6 +46,25 @@ export type ImplementationNextActionOwner =
   | "human_or_external_tool"
   | "external_patch_author";
 
+export type ImplementationFailedCheck =
+  | "none"
+  | "scope_check"
+  | "patch_apply"
+  | "tests"
+  | "verify"
+  | "budget"
+  | "stall";
+
+export type ImplementationNextActionType =
+  | "submit_external_patch"
+  | "resubmit_external_patch"
+  | "fix_patch_scope"
+  | "fix_patch_tests"
+  | "fix_verify_blockers"
+  | "review_and_merge"
+  | "run_verify"
+  | "adjust_approach";
+
 export interface ImplementationDecisionPacket {
   state:
     | "ready_for_verify"
@@ -58,6 +77,20 @@ export interface ImplementationDecisionPacket {
   mergeable: boolean;
   summary: string;
   nextAction: string;
+  nextActionDetail: {
+    type: ImplementationNextActionType;
+    owner: ImplementationNextActionOwner;
+    failedCheck: ImplementationFailedCheck;
+    command?: string;
+    externalToolHandoff?: {
+      required: boolean;
+      request: string;
+      allowedPaths: string[];
+      filesNeedingAttention: string[];
+      testCommand: string;
+      verifyCommand: string;
+    };
+  };
   executionStatus: {
     stoppedAt: ImplementationDecisionStopPoint;
     scopeCheck: ImplementationCheckStatus;
@@ -112,6 +145,7 @@ export interface HandoffPacket {
   nextSteps: {
     suggestedActions: string[];
     filesNeedingAttention: string[];
+    externalToolHandoff?: NonNullable<ImplementationDecisionPacket["nextActionDetail"]["externalToolHandoff"]>;
     testCommand: string;
     verifyCommand: string;
     verifyRecommendation: string;
@@ -122,12 +156,49 @@ export interface HandoffPacket {
     rejectedPaths: string[];
   };
 
+  replay: {
+    version: 1;
+    replayable: boolean;
+    source: "handoff_packet";
+    sourceSession: ChangeSession;
+    previousAttempt: {
+      outcome: ImplementationMediationOutcome;
+      stopPoint: ImplementationDecisionStopPoint;
+      failedCheck: ImplementationFailedCheck;
+      summary: string;
+      lastError: string;
+      patchMediationPath?: string;
+      externalPatchPath?: string;
+      postVerifyVerdict?: string;
+      postVerifyCommand?: string;
+    };
+    inputs: {
+      testCommand: string;
+      verifyCommand: string;
+      lane: "fast" | "strict";
+      changedPaths: string[];
+      allowedPatchPaths: string[];
+    };
+    commands: {
+      restore: string;
+      retryWithExternalPatch: string;
+      rerunVerify: string;
+    };
+  };
+
   metadata: {
     createdAt: string;
     startedAt: string;
     completedAt: string;
   };
 }
+
+export interface ResolvedHandoffPacket {
+  packet: HandoffPacket;
+  path: string;
+}
+
+const HANDOFF_RELATIVE_DIR = ".jispec/handoff";
 
 /**
  * Generate handoff packet from implement result.
@@ -147,7 +218,7 @@ export function generateHandoffPacket(
   const suggestedActions = buildSuggestedActions(result, episodeMemory, session);
   const filesNeedingAttention = buildFilesNeedingAttention(episodeMemory, session);
   const contractContext = buildContractContext(root, session, result);
-  const decisionPacket = buildImplementationDecisionPacket(result);
+  const decisionPacket = buildImplementationDecisionPacket(result, session);
   const verifyCommand = buildVerifyCommandForLane(result.lane);
   const verifyRecommendation =
     result.lane === "fast"
@@ -177,6 +248,7 @@ export function generateHandoffPacket(
         `Run verify next: ${verifyCommand}`,
       ],
       filesNeedingAttention,
+      externalToolHandoff: decisionPacket.nextActionDetail.externalToolHandoff,
       testCommand: result.metadata.testCommand,
       verifyCommand,
       verifyRecommendation,
@@ -187,6 +259,8 @@ export function generateHandoffPacket(
       rejectedPaths: getRejectedPaths(episodeMemory),
     },
 
+    replay: buildReplayState(session, result, decisionPacket, lastError, verifyCommand),
+
     metadata: {
       createdAt: new Date().toISOString(),
       startedAt: result.metadata.startedAt,
@@ -195,7 +269,47 @@ export function generateHandoffPacket(
   };
 }
 
-export function buildImplementationDecisionPacket(result: ImplementRunResult): ImplementationDecisionPacket {
+function buildReplayState(
+  session: ChangeSession,
+  result: ImplementRunResult,
+  decisionPacket: ImplementationDecisionPacket,
+  lastError: string,
+  verifyCommand: string,
+): HandoffPacket["replay"] {
+  const handoffPath = `${HANDOFF_RELATIVE_DIR}/${result.sessionId}.json`;
+
+  return {
+    version: 1,
+    replayable: true,
+    source: "handoff_packet",
+    sourceSession: session,
+    previousAttempt: {
+      outcome: result.outcome,
+      stopPoint: decisionPacket.stopPoint,
+      failedCheck: decisionPacket.nextActionDetail.failedCheck,
+      summary: decisionPacket.summary,
+      lastError,
+      patchMediationPath: result.metadata.patchMediationPath,
+      externalPatchPath: result.metadata.externalPatchPath,
+      postVerifyVerdict: result.postVerify?.verdict,
+      postVerifyCommand: result.postVerify?.command,
+    },
+    inputs: {
+      testCommand: result.metadata.testCommand,
+      verifyCommand,
+      lane: result.lane,
+      changedPaths: session.changedPaths.map((entry) => entry.path).sort((left, right) => left.localeCompare(right)),
+      allowedPatchPaths: decisionPacket.nextActionDetail.externalToolHandoff?.allowedPaths ?? session.changedPaths.map((entry) => entry.path).sort((left, right) => left.localeCompare(right)),
+    },
+    commands: {
+      restore: `npm run jispec-cli -- implement --from-handoff ${handoffPath}`,
+      retryWithExternalPatch: `npm run jispec-cli -- implement --from-handoff ${handoffPath} --external-patch <path>`,
+      rerunVerify: verifyCommand,
+    },
+  };
+}
+
+export function buildImplementationDecisionPacket(result: ImplementRunResult, session?: ChangeSession): ImplementationDecisionPacket {
   const patch = result.patchMediation;
   const postVerify = result.postVerify;
   const scope = {
@@ -235,6 +349,13 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
       mergeable: false,
       summary: "External patch was rejected before apply because it touched paths outside the active change scope.",
       nextAction: "Revise the external patch so it only touches allowed paths, or start a new change session with the broader scope.",
+      nextActionDetail: buildNextActionDetail(result, session, {
+        type: "fix_patch_scope",
+        owner: "human_or_external_tool",
+        failedCheck: "scope_check",
+        command: buildExternalPatchCommand(result),
+        request: "Revise the external patch so every touched path is inside the active change scope, then submit it through implementation mediation again.",
+      }),
       executionStatus: buildExecutionStatus(result, stopPoint, "human_or_external_tool"),
       suggestedActions: [
         `Allowed paths: ${scope.allowedPaths.join(", ") || "none"}`,
@@ -253,6 +374,13 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
       mergeable: false,
       summary: "External patch was in scope, but applying it failed.",
       nextAction: "Refresh the patch against the current workspace and submit it again.",
+      nextActionDetail: buildNextActionDetail(result, session, {
+        type: "resubmit_external_patch",
+        owner: "external_patch_author",
+        failedCheck: "patch_apply",
+        command: buildExternalPatchCommand(result),
+        request: "Refresh the patch against the current workspace so git apply succeeds, then submit it through implementation mediation again.",
+      }),
       executionStatus: buildExecutionStatus(result, stopPoint, "external_patch_author"),
       suggestedActions: [
         "Regenerate the patch from the current repository state.",
@@ -270,6 +398,13 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
       mergeable: false,
       summary: "External patch applied inside scope, but mediated tests failed.",
       nextAction: "Fix the patch and rerun implementation mediation with the same scoped change session.",
+      nextActionDetail: buildNextActionDetail(result, session, {
+        type: "fix_patch_tests",
+        owner: "external_patch_author",
+        failedCheck: "tests",
+        command: buildExternalPatchCommand(result),
+        request: "Fix the accepted patch so the mediated test command passes, then submit the corrected patch through implementation mediation again.",
+      }),
       executionStatus: buildExecutionStatus(result, stopPoint, "external_patch_author"),
       suggestedActions: [
         `Run tests manually: ${result.metadata.testCommand}`,
@@ -287,6 +422,13 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
       mergeable: false,
       summary: "Implementation mediation stopped because the configured budget was exhausted.",
       nextAction: "Use the handoff packet as the request for a human or external coding tool patch.",
+      nextActionDetail: buildNextActionDetail(result, session, {
+        type: "submit_external_patch",
+        owner: "human_or_external_tool",
+        failedCheck: "budget",
+        command: buildExternalPatchCommand(result),
+        request: "Use this focused handoff as the implementation request for a human or external coding tool, then submit the resulting patch through implementation mediation.",
+      }),
       executionStatus: buildExecutionStatus(result, stopPoint, "human_or_external_tool"),
       suggestedActions: [
         "Review files needing attention in the handoff packet.",
@@ -304,6 +446,13 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
       mergeable: false,
       summary: "Implementation mediation stopped because progress stalled.",
       nextAction: "Change approach or hand off to a human/external coding tool with the recorded stall reason.",
+      nextActionDetail: buildNextActionDetail(result, session, {
+        type: "adjust_approach",
+        owner: "human_or_external_tool",
+        failedCheck: "stall",
+        command: buildExternalPatchCommand(result),
+        request: "Change implementation approach using the recorded stall reason, then submit a fresh patch through implementation mediation.",
+      }),
       executionStatus: buildExecutionStatus(result, stopPoint, "human_or_external_tool"),
       suggestedActions: [
         result.metadata.stallReason ? `Stall reason: ${result.metadata.stallReason}` : "Inspect repeated failure patterns in the handoff packet.",
@@ -321,6 +470,12 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
       mergeable: false,
       summary: "Tests passed, but post-implement verify produced a blocking verdict.",
       nextAction: "Resolve blocking verify issues before merging or archiving the change session.",
+      nextActionDetail: buildNextActionDetail(result, session, {
+        type: "fix_verify_blockers",
+        owner: "verify_gate",
+        failedCheck: "verify",
+        command: postVerify?.command ?? buildVerifyCommandForLane(result.lane),
+      }),
       executionStatus: buildExecutionStatus(result, stopPoint, "verify_gate"),
       suggestedActions: [
         postVerify?.command ? `Rerun verify: ${postVerify.command}` : "Rerun verify after fixing blocking issues.",
@@ -338,6 +493,12 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
       mergeable: true,
       summary: "External patch was scoped, applied, tested, and verified.",
       nextAction: "Review the mediated patch and proceed with normal merge/review.",
+      nextActionDetail: buildNextActionDetail(result, session, {
+        type: "review_and_merge",
+        owner: "reviewer",
+        failedCheck: "none",
+        command: "npm run ci:verify",
+      }),
       executionStatus: buildExecutionStatus(result, stopPoint, "reviewer"),
       suggestedActions: [
         postVerify?.command ? `Verified with: ${postVerify.command}` : "Review post-implement verify result.",
@@ -359,11 +520,82 @@ export function buildImplementationDecisionPacket(result: ImplementRunResult): I
     nextAction: postVerify?.ok
       ? "Review and merge according to your normal workflow."
       : "Run verify next before treating this change as mergeable.",
+    nextActionDetail: buildNextActionDetail(result, session, {
+      type: postVerify?.ok ? "review_and_merge" : "run_verify",
+      owner: mergeable ? "reviewer" : "verify_gate",
+      failedCheck: "none",
+      command: postVerify?.ok ? "npm run ci:verify" : buildVerifyCommandForLane(result.lane),
+    }),
     executionStatus: buildExecutionStatus(result, stopPoint, mergeable ? "reviewer" : "verify_gate"),
     suggestedActions: [
       postVerify?.command ? `Verified with: ${postVerify.command}` : `Run verify next: ${buildVerifyCommandForLane(result.lane)}`,
     ],
   };
+}
+
+function buildNextActionDetail(
+  result: ImplementRunResult,
+  session: ChangeSession | undefined,
+  options: {
+    type: ImplementationNextActionType;
+    owner: ImplementationNextActionOwner;
+    failedCheck: ImplementationFailedCheck;
+    command?: string;
+    request?: string;
+  },
+): ImplementationDecisionPacket["nextActionDetail"] {
+  const detail: ImplementationDecisionPacket["nextActionDetail"] = {
+    type: options.type,
+    owner: options.owner,
+    failedCheck: options.failedCheck,
+    command: options.command,
+  };
+
+  if (options.request) {
+    detail.externalToolHandoff = {
+      required: true,
+      request: options.request,
+      allowedPaths: buildAllowedActionPaths(result, session),
+      filesNeedingAttention: buildActionAttentionPaths(result, session),
+      testCommand: result.metadata.testCommand,
+      verifyCommand: buildVerifyCommandForLane(result.lane),
+    };
+  }
+
+  return detail;
+}
+
+function buildExternalPatchCommand(result: ImplementRunResult): string {
+  return `npm run jispec-cli -- implement --session-id ${result.sessionId} --external-patch <path>`;
+}
+
+function buildAllowedActionPaths(result: ImplementRunResult, session?: ChangeSession): string[] {
+  const patchAllowedPaths = result.patchMediation?.allowedPaths ?? [];
+  if (patchAllowedPaths.length > 0) {
+    return [...patchAllowedPaths].sort((left, right) => left.localeCompare(right));
+  }
+
+  return (session?.changedPaths ?? [])
+    .map((entry) => entry.path)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function buildActionAttentionPaths(result: ImplementRunResult, session?: ChangeSession): string[] {
+  const paths = new Set<string>();
+  for (const path of result.patchMediation?.touchedPaths ?? []) {
+    paths.add(path);
+  }
+  for (const path of result.patchMediation?.violations ?? []) {
+    const match = path.match(/(?:out-of-scope path|path):\s*(.+)$/);
+    if (match?.[1]) {
+      paths.add(match[1]);
+    }
+  }
+  for (const entry of session?.changedPaths ?? []) {
+    paths.add(entry.path);
+  }
+
+  return Array.from(paths).sort((left, right) => left.localeCompare(right));
 }
 
 function buildTestStatus(result: ImplementRunResult): ImplementationDecisionPacket["test"]["status"] {
@@ -617,6 +849,36 @@ export function readHandoffPacket(root: string, sessionId: string): HandoffPacke
   return JSON.parse(content);
 }
 
+export function readHandoffPacketFromInput(root: string, input: string): ResolvedHandoffPacket | null {
+  const filepath = resolveHandoffPacketInput(root, input);
+  if (!filepath || !fs.existsSync(filepath)) {
+    return null;
+  }
+
+  const content = fs.readFileSync(filepath, "utf-8");
+  return {
+    packet: JSON.parse(content) as HandoffPacket,
+    path: filepath,
+  };
+}
+
+export function resolveHandoffPacketInput(root: string, input: string): string | null {
+  if (!input.trim()) {
+    return null;
+  }
+
+  const direct = path.resolve(root, input);
+  if (fs.existsSync(direct)) {
+    return direct;
+  }
+
+  if (!input.includes("/") && !input.includes("\\") && !input.endsWith(".json")) {
+    return path.join(root, HANDOFF_RELATIVE_DIR, `${input}.json`);
+  }
+
+  return direct;
+}
+
 /**
  * List all handoff packets.
  */
@@ -657,6 +919,14 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   lines.push(`Summary: ${packet.decisionPacket.summary}`);
   lines.push(`Next action: ${packet.decisionPacket.nextAction}`);
   lines.push(`Next action owner: ${packet.decisionPacket.executionStatus.nextActionOwner}`);
+  lines.push(`Next action type: ${packet.decisionPacket.nextActionDetail.type}`);
+  lines.push(`Failed check: ${packet.decisionPacket.nextActionDetail.failedCheck}`);
+  if (packet.decisionPacket.nextActionDetail.command) {
+    lines.push(`Next command: ${packet.decisionPacket.nextActionDetail.command}`);
+  }
+  if (packet.decisionPacket.nextActionDetail.externalToolHandoff?.required) {
+    lines.push(`External handoff: ${packet.decisionPacket.nextActionDetail.externalToolHandoff.request}`);
+  }
   lines.push(
     `Checks: scope=${packet.decisionPacket.executionStatus.scopeCheck}, patch=${packet.decisionPacket.executionStatus.patchApply}, test=${packet.decisionPacket.executionStatus.tests}, verify=${packet.decisionPacket.executionStatus.verify}`,
   );
@@ -721,6 +991,14 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
     lines.push("");
   }
 
+  if (packet.nextSteps.externalToolHandoff?.required) {
+    lines.push("External Tool Handoff:");
+    lines.push(`  Request: ${packet.nextSteps.externalToolHandoff.request}`);
+    lines.push(`  Allowed paths: ${packet.nextSteps.externalToolHandoff.allowedPaths.join(", ") || "none"}`);
+    lines.push(`  Files needing attention: ${packet.nextSteps.externalToolHandoff.filesNeedingAttention.join(", ") || "none"}`);
+    lines.push("");
+  }
+
   lines.push(`Test Command: ${packet.nextSteps.testCommand}`);
   lines.push(`Verify Command: ${packet.nextSteps.verifyCommand}`);
   lines.push(`Verify Recommendation: ${packet.nextSteps.verifyRecommendation}`);
@@ -742,6 +1020,15 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
     }
     lines.push("");
   }
+
+  lines.push("=== Replay ===");
+  lines.push(`Replayable: ${packet.replay.replayable}`);
+  lines.push(`Previous outcome: ${packet.replay.previousAttempt.outcome}`);
+  lines.push(`Previous stop point: ${packet.replay.previousAttempt.stopPoint}`);
+  lines.push(`Previous failed check: ${packet.replay.previousAttempt.failedCheck}`);
+  lines.push(`Restore command: ${packet.replay.commands.restore}`);
+  lines.push(`Retry with patch: ${packet.replay.commands.retryWithExternalPatch}`);
+  lines.push("");
 
   // Metadata
   lines.push("=== Metadata ===");
