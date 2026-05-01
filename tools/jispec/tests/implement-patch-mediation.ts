@@ -57,8 +57,17 @@ async function main(): Promise<void> {
 
     assert.equal(result.outcome, "patch_verified");
     assert.ok(renderImplementText(result).includes("Outcome: patch_verified"));
+    assert.ok(renderImplementText(result).includes("Decision:"));
+    assert.ok(renderImplementText(result).includes("State: ready_to_merge"));
+    assert.ok(renderImplementText(result).includes("Checks: scope=passed, patch=passed, test=passed, verify=passed"));
     assert.equal(JSON.parse(renderImplementJSON(result)).outcome, "patch_verified");
+    assert.equal(JSON.parse(renderImplementJSON(result)).decisionPacket.state, "ready_to_merge");
     assert.equal(result.patchMediation?.status, "accepted");
+    assert.equal(result.decisionPacket?.state, "ready_to_merge");
+    assert.equal(result.decisionPacket?.stopPoint, "post_verify");
+    assert.equal(result.decisionPacket?.mergeable, true);
+    assert.equal(result.decisionPacket?.implementationBoundary.businessCodeGeneratedByJiSpec, false);
+    assert.equal(result.decisionPacket?.implementationBoundary.implementationOwner, "external_patch_author");
     assert.deepEqual(result.patchMediation?.touchedPaths, ["docs/patch-mediated.md"]);
     assert.equal(result.patchMediation?.test?.passed, true);
     assert.equal(result.postVerify?.verdict, "PASS");
@@ -99,6 +108,8 @@ async function main(): Promise<void> {
 
     assert.equal(result.outcome, "patch_verified");
     assert.equal(result.lane, "strict");
+    assert.equal(result.decisionPacket?.state, "ready_to_merge");
+    assert.equal(result.decisionPacket?.verify.status, "passed");
     assert.equal(result.patchMediation?.applied, true);
     assert.deepEqual(result.patchMediation?.allowedPaths, ["src/domain/order.ts"]);
     assert.equal(result.postVerify?.command, "npm run verify");
@@ -133,7 +144,18 @@ async function main(): Promise<void> {
     });
 
     assert.equal(result.outcome, "patch_rejected_out_of_scope");
+    assert.equal(result.decisionPacket?.state, "needs_patch_rescope");
+    assert.equal(result.decisionPacket?.stopPoint, "scope_check");
+    assert.equal(result.decisionPacket?.scope.status, "rejected_out_of_scope");
+    assert.equal(result.decisionPacket?.test.status, "not_run");
+    assert.equal(result.decisionPacket?.executionStatus.scopeCheck, "failed");
+    assert.equal(result.decisionPacket?.executionStatus.patchApply, "not_run");
+    assert.equal(result.decisionPacket?.executionStatus.tests, "not_run");
+    assert.equal(result.decisionPacket?.executionStatus.nextActionOwner, "human_or_external_tool");
+    assert.ok(result.decisionPacket?.nextAction.includes("Revise the external patch"));
     assert.equal(result.patchMediation?.applied, false);
+    assert.ok(result.handoffPacket);
+    assert.equal(result.handoffPacket?.outcome, "patch_rejected_out_of_scope");
     assert.ok(result.patchMediation?.violations.includes("out-of-scope path: src/domain/order.ts"));
     assert.equal(fs.existsSync(path.join(rejectedFixture, "src", "domain", "order.ts")), false);
     assert.ok(result.metadata.patchMediationPath);
@@ -169,11 +191,20 @@ async function main(): Promise<void> {
 
     assert.equal(result.outcome, "external_patch_received");
     assert.ok(renderImplementText(result).includes("Outcome: external_patch_received"));
+    assert.ok(renderImplementText(result).includes("State: needs_patch_rework"));
+    assert.ok(renderImplementText(result).includes("Stop point: test"));
     assert.equal(JSON.parse(renderImplementJSON(result)).outcome, "external_patch_received");
+    assert.equal(JSON.parse(renderImplementJSON(result)).decisionPacket.state, "needs_patch_rework");
     assert.equal(result.patchMediation?.status, "accepted");
     assert.equal(result.patchMediation?.test?.passed, false);
     assert.ok(result.handoffPacket);
     assert.equal(result.handoffPacket?.outcome, "external_patch_received");
+    assert.equal(result.handoffPacket?.decisionPacket.state, "needs_patch_rework");
+    assert.equal(result.handoffPacket?.decisionPacket.stopPoint, "test");
+    assert.equal(result.handoffPacket?.decisionPacket.executionStatus.scopeCheck, "passed");
+    assert.equal(result.handoffPacket?.decisionPacket.executionStatus.patchApply, "passed");
+    assert.equal(result.handoffPacket?.decisionPacket.executionStatus.tests, "failed");
+    assert.equal(result.handoffPacket?.decisionPacket.implementationBoundary.implementationOwner, "external_patch_author");
     assert.ok(result.handoffPacket?.nextSteps.filesNeedingAttention.includes("docs/failing-mediated.md"));
     console.log("✓ Test 4: applied external patch with failing tests writes a handoff packet");
     passed++;

@@ -78,8 +78,12 @@ async function main(): Promise<void> {
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Default change mode:")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Decision:")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Guardrail: execute-default only enters implementation mediation")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Mode precedence: explicit --mode prompt or --mode execute overrides project configuration.")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Project default scope: change.default_mode applies only when --mode is omitted.")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Adopt boundary: strict-lane changes still stop before implement")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Adopt boundary status:")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Open bootstrap draft:")));
+    assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Implementation ownership: JiSpec does not generate or own business-code implementation.")));
     assert.ok(executeDefaultCheck?.details?.some((detail) => detail.includes("Next action:")));
     console.log("✓ Test 4: doctor v1 reports execute-default readiness as a decision packet");
     passed++;
@@ -91,6 +95,12 @@ async function main(): Promise<void> {
       assert.equal(readiness.source, "built_in_default");
       assert.equal(readiness.readyForExecuteDefault, false);
       assert.equal(readiness.openDraftSessionId, undefined);
+      assert.equal(readiness.boundary.promptModeRecordsOnly, true);
+      assert.equal(readiness.boundary.executeModeRunsMediationAndVerify, true);
+      assert.equal(readiness.boundary.explicitCliModeOverridesProjectDefault, true);
+      assert.equal(readiness.boundary.projectDefaultAppliesOnlyWhenModeOmitted, true);
+      assert.equal(readiness.boundary.businessCodeGeneratedByJiSpec, false);
+      assert.equal(readiness.boundary.adoptBoundary.status, "clear");
       assert.ok(readiness.details.some((detail) => detail.includes("Decision: Prompt remains the default")));
       assert.ok(readiness.details.some((detail) => detail.includes("set change.default_mode: execute")));
     } finally {
@@ -107,6 +117,7 @@ async function main(): Promise<void> {
       assert.equal(readiness.source, "project_config");
       assert.equal(readiness.readyForExecuteDefault, true);
       assert.equal(readiness.openDraftSessionId, undefined);
+      assert.equal(readiness.boundary.adoptBoundary.status, "clear");
       assert.ok(readiness.details.some((detail) => detail.includes("Decision: Execute-default mediation is configured and ready")));
       assert.ok(readiness.details.some((detail) => detail.includes("run change without --mode")));
       assert.ok(readiness.details.some((detail) => detail.includes("does not generate business code autonomously")));
@@ -124,6 +135,10 @@ async function main(): Promise<void> {
       assert.equal(readiness.defaultMode, "execute");
       assert.equal(readiness.readyForExecuteDefault, true);
       assert.equal(readiness.openDraftSessionId, "bootstrap-open");
+      assert.equal(readiness.boundary.strictLaneOpenDraftAction, "pause_at_adopt_boundary");
+      assert.equal(readiness.boundary.adoptBoundary.status, "open_draft_pause_required");
+      assert.equal(readiness.boundary.adoptBoundary.openDraftSessionId, "bootstrap-open");
+      assert.equal(readiness.boundary.adoptBoundary.nextAction, "npm run jispec-cli -- adopt --interactive --session bootstrap-open");
       assert.ok(readiness.details.some((detail) => detail.includes("Open bootstrap draft: bootstrap-open")));
       assert.ok(readiness.details.some((detail) => detail.includes("adopt --interactive --session bootstrap-open")));
       assert.ok(readiness.details.some((detail) => detail.includes("strict-lane execute-default")));

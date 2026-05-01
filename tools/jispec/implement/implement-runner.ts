@@ -15,7 +15,14 @@ import { runTestCommand, extractErrorMessage, type TestResult } from "./test-run
 import { buildContextBundle } from "./context-pruning";
 import { createEpisodeMemory, addEpisode, type EpisodeMemory } from "./episode-memory";
 import { StallDetector } from "./stall-detector";
-import { generateHandoffPacket, writeHandoffPacket, formatHandoffPacket, type HandoffPacket } from "./handoff-packet";
+import {
+  buildImplementationDecisionPacket,
+  generateHandoffPacket,
+  writeHandoffPacket,
+  formatHandoffPacket,
+  type HandoffPacket,
+  type ImplementationDecisionPacket,
+} from "./handoff-packet";
 import { resolveTestCommand as resolveTestCommandFromResolver, describeTestCommand, validateTestCommand } from "./test-command-resolver";
 import { runVerify } from "../verify/verify-runner";
 import type { VerifyRunResult } from "../verify/verdict";
@@ -69,6 +76,7 @@ export interface ImplementRunResult {
   costUSD: number;
   testsPassed: boolean;
   handoffPacket?: HandoffPacket;
+  decisionPacket?: ImplementationDecisionPacket;
   patchMediation?: PatchMediationArtifact;
   postVerify?: ImplementPostVerifySummary;
   metadata: {
@@ -191,38 +199,6 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
     }
   }
 
-  if (
-    result.outcome === "budget_exhausted" ||
-    result.outcome === "stall_detected" ||
-    (result.outcome === "external_patch_received" && !result.testsPassed)
-  ) {
-    if (result.patchMediation?.touchedPaths.length) {
-      episodeMemory = createEpisodeMemory();
-      addEpisode(episodeMemory, {
-        iteration: 1,
-        hypothesis: `External patch intake from ${result.metadata.externalPatchPath ?? "provided patch"}`,
-        outcome: "failure",
-        changedFiles: result.patchMediation.touchedPaths,
-        errorMessage: lastError,
-      });
-    }
-
-    const handoffPacket = generateHandoffPacket(
-      root,
-      session,
-      result,
-      episodeMemory ?? createEpisodeMemory(),
-      lastError,
-    );
-    const handoffPath = writeHandoffPacket(root, handoffPacket);
-
-    result.handoffPacket = handoffPacket;
-    result.metadata.handoffPacketPath = handoffPath;
-
-    console.log(`\nHandoff packet written to: ${handoffPath}`);
-    console.log("\n" + formatHandoffPacket(handoffPacket));
-  }
-
   if (result.testsPassed) {
     const postVerify = await runPostImplementVerify(root, laneResolution.lane);
     result.postVerify = postVerify;
@@ -245,6 +221,7 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
 
     if (!postVerify.ok) {
       result.outcome = "verify_blocked";
+      lastError = buildPostVerifyErrorSummary(postVerify);
     } else if (result.patchMediation) {
       result.outcome = "patch_verified";
     }
@@ -255,7 +232,56 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
     }
   }
 
+  result.decisionPacket = buildImplementationDecisionPacket(result);
+
+  if (shouldWriteHandoffPacket(result)) {
+    if (result.patchMediation?.touchedPaths.length && !episodeMemory) {
+      episodeMemory = createEpisodeMemory();
+      addEpisode(episodeMemory, {
+        iteration: Math.max(result.iterations, 1),
+        hypothesis: `External patch intake from ${result.metadata.externalPatchPath ?? "provided patch"}`,
+        outcome: result.testsPassed ? "success" : "failure",
+        changedFiles: result.patchMediation.touchedPaths,
+        errorMessage: lastError,
+      });
+    }
+
+    const handoffPacket = generateHandoffPacket(
+      root,
+      session,
+      result,
+      episodeMemory ?? createEpisodeMemory(),
+      lastError,
+    );
+    const handoffPath = writeHandoffPacket(root, handoffPacket);
+
+    result.handoffPacket = handoffPacket;
+    result.metadata.handoffPacketPath = handoffPath;
+
+    console.log(`\nHandoff packet written to: ${handoffPath}`);
+    console.log("\n" + formatHandoffPacket(handoffPacket));
+  }
+
   return result;
+}
+
+function shouldWriteHandoffPacket(result: ImplementRunResult): boolean {
+  return (
+    result.outcome === "budget_exhausted" ||
+    result.outcome === "stall_detected" ||
+    result.outcome === "patch_rejected_out_of_scope" ||
+    result.outcome === "verify_blocked" ||
+    (result.outcome === "external_patch_received" && !result.testsPassed)
+  );
+}
+
+function buildPostVerifyErrorSummary(postVerify: ImplementPostVerifySummary): string {
+  return [
+    `Post-implement verify ${postVerify.verdict}`,
+    `${postVerify.blockingIssueCount} blocking issue(s)`,
+    `${postVerify.advisoryIssueCount} advisory issue(s)`,
+    `${postVerify.nonBlockingErrorCount} non-blocking error(s)`,
+  ].join("; ");
 }
 
 function mediatePatchIntake(
@@ -504,6 +530,20 @@ export function renderImplementText(result: ImplementRunResult): string {
   lines.push(`Cost: $${result.costUSD.toFixed(2)}`);
   lines.push(`Tests passed: ${result.testsPassed}`);
   lines.push("");
+  if (result.decisionPacket) {
+    lines.push("Decision:");
+    lines.push(`  State: ${result.decisionPacket.state}`);
+    lines.push(`  Stop point: ${result.decisionPacket.stopPoint}`);
+    lines.push(`  Mergeable: ${result.decisionPacket.mergeable}`);
+    lines.push(`  Summary: ${result.decisionPacket.summary}`);
+    lines.push(`  Next action: ${result.decisionPacket.nextAction}`);
+    lines.push(`  Next action owner: ${result.decisionPacket.executionStatus.nextActionOwner}`);
+    lines.push(
+      `  Checks: scope=${result.decisionPacket.executionStatus.scopeCheck}, patch=${result.decisionPacket.executionStatus.patchApply}, test=${result.decisionPacket.executionStatus.tests}, verify=${result.decisionPacket.executionStatus.verify}`,
+    );
+    lines.push(`  JiSpec role: ${result.decisionPacket.implementationBoundary.note}`);
+    lines.push("");
+  }
   lines.push(`Started: ${result.metadata.startedAt}`);
   lines.push(`Completed: ${result.metadata.completedAt}`);
   lines.push(`Test command: ${result.metadata.testCommand}`);

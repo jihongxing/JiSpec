@@ -52,6 +52,17 @@ function main(): void {
       execution?: {
         mode?: string;
         state?: string;
+        boundary?: {
+          promptModeRecordsOnly?: boolean;
+          executeModeRunsMediationAndVerify?: boolean;
+          explicitCliModeOverridesProjectDefault?: boolean;
+          projectDefaultAppliesOnlyWhenModeOmitted?: boolean;
+          businessCodeGeneratedByJiSpec?: boolean;
+          adoptBoundary?: {
+            status?: string;
+            enforced?: boolean;
+          };
+        };
       };
       laneDecision?: {
         lane?: string;
@@ -65,6 +76,11 @@ function main(): void {
     assert.equal(payload.orchestrationMode, "prompt");
     assert.equal(payload.execution?.mode, "prompt");
     assert.equal(payload.execution?.state, "planned");
+    assert.equal(payload.execution?.boundary?.promptModeRecordsOnly, true);
+    assert.equal(payload.execution?.boundary?.executeModeRunsMediationAndVerify, true);
+    assert.equal(payload.execution?.boundary?.projectDefaultAppliesOnlyWhenModeOmitted, true);
+    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
+    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "not_applicable");
     assert.equal(payload.laneDecision?.lane, "fast");
     assert.equal(activeSession?.id, payload.id);
     assert.equal(activeSession?.orchestrationMode, "prompt");
@@ -108,6 +124,10 @@ function main(): void {
         mode?: string;
         state?: string;
         implement?: unknown;
+        boundary?: {
+          explicitCliModeOverridesProjectDefault?: boolean;
+          businessCodeGeneratedByJiSpec?: boolean;
+        };
       };
     };
 
@@ -117,6 +137,8 @@ function main(): void {
     assert.equal(payload.execution?.mode, "prompt");
     assert.equal(payload.execution?.state, "planned");
     assert.equal(payload.execution?.implement, undefined);
+    assert.equal(payload.execution?.boundary?.explicitCliModeOverridesProjectDefault, true);
+    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
     console.log("✓ Test 2: explicit prompt mode overrides project execute-default mediation");
     passed++;
   } catch (error) {
@@ -163,6 +185,15 @@ function main(): void {
           sessionArchived?: boolean;
           postVerifyVerdict?: string;
         };
+        boundary?: {
+          modeSource?: string;
+          explicitCliModeOverridesProjectDefault?: boolean;
+          projectDefaultAppliesOnlyWhenModeOmitted?: boolean;
+          businessCodeGeneratedByJiSpec?: boolean;
+          adoptBoundary?: {
+            status?: string;
+          };
+        };
       };
     };
 
@@ -175,6 +206,11 @@ function main(): void {
     assert.equal(payload.execution?.implement?.testsPassed, true);
     assert.equal(payload.execution?.implement?.postVerifyVerdict, "PASS");
     assert.equal(payload.execution?.implement?.sessionArchived, true);
+    assert.equal(payload.execution?.boundary?.modeSource, "project_config");
+    assert.equal(payload.execution?.boundary?.explicitCliModeOverridesProjectDefault, false);
+    assert.equal(payload.execution?.boundary?.projectDefaultAppliesOnlyWhenModeOmitted, true);
+    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
+    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "not_applicable");
     assert.ok(payload.id);
     assert.ok(readArchivedChangeSession(configuredExecuteFixture, payload.id ?? ""));
     console.log("✓ Test 3: project config can opt into execute-default mediation without --mode");
@@ -221,6 +257,13 @@ function main(): void {
           postVerifyVerdict?: string;
           postVerifyCommand?: string;
         };
+        boundary?: {
+          modeSource?: string;
+          explicitCliModeOverridesProjectDefault?: boolean;
+          adoptBoundary?: {
+            status?: string;
+          };
+        };
       };
     };
 
@@ -232,6 +275,9 @@ function main(): void {
     assert.equal(payload.execution?.implement?.postVerifyVerdict, "PASS");
     assert.equal(payload.execution?.implement?.postVerifyCommand, "npm run jispec-cli -- verify --fast");
     assert.equal(payload.execution?.implement?.sessionArchived, true);
+    assert.equal(payload.execution?.boundary?.modeSource, "cli");
+    assert.equal(payload.execution?.boundary?.explicitCliModeOverridesProjectDefault, true);
+    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "not_applicable");
     assert.equal(readChangeSession(executeFastFixture), null);
     assert.ok(payload.id);
     assert.ok(readArchivedChangeSession(executeFastFixture, payload.id ?? ""));
@@ -290,6 +336,17 @@ function main(): void {
         state?: string;
         blockedOn?: string;
         openDraftSessionId?: string;
+        implement?: unknown;
+        boundary?: {
+          modeSource?: string;
+          businessCodeGeneratedByJiSpec?: boolean;
+          adoptBoundary?: {
+            enforced?: boolean;
+            status?: string;
+            openDraftSessionId?: string;
+            nextAction?: string;
+          };
+        };
       };
       nextCommands?: Array<{ command?: string }>;
     };
@@ -300,6 +357,13 @@ function main(): void {
     assert.equal(payload.execution?.state, "awaiting_adopt");
     assert.equal(payload.execution?.blockedOn, "adopt");
     assert.equal(payload.execution?.openDraftSessionId, "bootstrap-test");
+    assert.equal(payload.execution?.implement, undefined);
+    assert.equal(payload.execution?.boundary?.modeSource, "cli");
+    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
+    assert.equal(payload.execution?.boundary?.adoptBoundary?.enforced, true);
+    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "paused_open_bootstrap_draft");
+    assert.equal(payload.execution?.boundary?.adoptBoundary?.openDraftSessionId, "bootstrap-test");
+    assert.equal(payload.execution?.boundary?.adoptBoundary?.nextAction, "npm run jispec-cli -- adopt --interactive --session bootstrap-test");
     assert.equal(payload.nextCommands?.[0]?.command, "npm run jispec-cli -- adopt --interactive --session bootstrap-test");
     assert.equal(readChangeSession(strictFixture)?.id, payload.id);
     console.log("✓ Test 5: execute mode pauses at the adopt boundary when a strict-lane change still has an open bootstrap draft");

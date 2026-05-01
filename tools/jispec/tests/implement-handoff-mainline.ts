@@ -64,13 +64,27 @@ async function main(): Promise<void> {
 
     assert.equal(result.outcome, "budget_exhausted");
     assert.ok(result.handoffPacket);
+    assert.ok(result.decisionPacket);
+    assert.equal(result.decisionPacket?.state, "needs_external_patch");
+    assert.equal(result.decisionPacket?.stopPoint, "budget");
+    assert.equal(result.decisionPacket?.mergeable, false);
+    assert.equal(result.decisionPacket?.executionStatus.scopeCheck, "not_applicable");
+    assert.equal(result.decisionPacket?.executionStatus.tests, "failed");
+    assert.equal(result.decisionPacket?.executionStatus.verify, "not_run");
+    assert.equal(result.decisionPacket?.executionStatus.nextActionOwner, "human_or_external_tool");
+    assert.equal(result.decisionPacket?.implementationBoundary.businessCodeGeneratedByJiSpec, false);
+    assert.equal(result.decisionPacket?.implementationBoundary.implementationOwner, "human_or_external_tool");
     assert.equal(result.handoffPacket?.contractContext.lane, "strict");
+    assert.equal(result.handoffPacket?.decisionPacket.state, "needs_external_patch");
+    assert.equal(result.handoffPacket?.decisionPacket.nextAction, result.decisionPacket?.nextAction);
+    assert.ok(result.handoffPacket?.decisionPacket.implementationBoundary.note.includes("does not generate or own business-code implementation"));
     assert.deepEqual(result.handoffPacket?.contractContext.adoptedContractPaths, [
       ".spec/contracts/api_spec.json",
       ".spec/contracts/domain.yaml",
     ]);
     assert.equal(result.handoffPacket?.nextSteps.verifyCommand, "npm run verify");
     assert.ok(result.handoffPacket?.nextSteps.verifyRecommendation.includes("full verify gate"));
+    assert.ok(result.decisionPacket?.nextAction.includes("handoff packet"));
     console.log("✓ Test 1: failed strict-lane implement handoff includes contract context and the next verify guidance");
     passed++;
   } catch (error) {

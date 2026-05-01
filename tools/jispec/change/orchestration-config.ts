@@ -10,12 +10,27 @@ export interface ChangeDefaultModeResolution {
   warnings: string[];
 }
 
+export interface ChangeExecuteDefaultBoundary {
+  promptModeRecordsOnly: true;
+  executeModeRunsMediationAndVerify: true;
+  explicitCliModeOverridesProjectDefault: true;
+  projectDefaultAppliesOnlyWhenModeOmitted: true;
+  strictLaneOpenDraftAction: "pause_at_adopt_boundary";
+  businessCodeGeneratedByJiSpec: false;
+  adoptBoundary: {
+    status: "clear" | "open_draft_pause_required";
+    openDraftSessionId?: string;
+    nextAction?: string;
+  };
+}
+
 export interface ChangeExecuteDefaultReadiness {
   defaultMode: ChangeSessionOrchestrationMode;
   source: ChangeDefaultModeResolution["source"];
   configPath?: string;
   readyForExecuteDefault: boolean;
   openDraftSessionId?: string;
+  boundary: ChangeExecuteDefaultBoundary;
   warnings: string[];
   details: string[];
 }
@@ -54,6 +69,7 @@ export function resolveChangeCommandMode(
 export function evaluateChangeExecuteDefaultReadiness(root: string): ChangeExecuteDefaultReadiness {
   const resolution = resolveChangeCommandMode(root);
   const openDraftSessionId = findOpenBootstrapDraftSessionId(root);
+  const boundary = buildExecuteDefaultBoundary(openDraftSessionId);
   const details: string[] = [];
 
   if (resolution.configPath) {
@@ -69,8 +85,12 @@ export function evaluateChangeExecuteDefaultReadiness(root: string): ChangeExecu
   const readyForExecuteDefault = resolution.mode === "execute" && resolution.warnings.length === 0;
   details.push(`Decision: ${renderExecuteDefaultDecision(resolution.mode, readyForExecuteDefault, resolution.warnings)}`);
   details.push("Guardrail: execute-default only enters implementation mediation and verify orchestration; JiSpec still does not generate business code autonomously.");
+  details.push("Mode precedence: explicit --mode prompt or --mode execute overrides project configuration.");
+  details.push("Project default scope: change.default_mode applies only when --mode is omitted.");
   details.push("Adopt boundary: strict-lane changes still stop before implement when an open bootstrap draft exists.");
+  details.push(`Adopt boundary status: ${boundary.adoptBoundary.status}`);
   details.push(`Open bootstrap draft: ${openDraftSessionId ?? "none"}`);
+  details.push("Implementation ownership: JiSpec does not generate or own business-code implementation.");
 
   if (openDraftSessionId) {
     details.push(`Next action: run npm run jispec-cli -- adopt --interactive --session ${openDraftSessionId} before relying on strict-lane execute-default.`);
@@ -90,8 +110,29 @@ export function evaluateChangeExecuteDefaultReadiness(root: string): ChangeExecu
     configPath: resolution.configPath,
     readyForExecuteDefault,
     openDraftSessionId,
+    boundary,
     warnings: resolution.warnings,
     details,
+  };
+}
+
+function buildExecuteDefaultBoundary(openDraftSessionId?: string): ChangeExecuteDefaultBoundary {
+  return {
+    promptModeRecordsOnly: true,
+    executeModeRunsMediationAndVerify: true,
+    explicitCliModeOverridesProjectDefault: true,
+    projectDefaultAppliesOnlyWhenModeOmitted: true,
+    strictLaneOpenDraftAction: "pause_at_adopt_boundary",
+    businessCodeGeneratedByJiSpec: false,
+    adoptBoundary: openDraftSessionId
+      ? {
+          status: "open_draft_pause_required",
+          openDraftSessionId,
+          nextAction: `npm run jispec-cli -- adopt --interactive --session ${openDraftSessionId}`,
+        }
+      : {
+          status: "clear",
+        },
   };
 }
 

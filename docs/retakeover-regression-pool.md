@@ -8,6 +8,24 @@
 node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts
 ```
 
+Synthetic messy legacy stress 入口：
+
+```bash
+node --import tsx ./tools/jispec/tests/bootstrap-messy-legacy-takeover.ts
+```
+
+如果要保留一份可以人工打开检查的接管输出，运行 demo：
+
+```bash
+node --import tsx ./scripts/run-messy-legacy-takeover-demo.ts --force
+```
+
+默认输出目录：
+
+```text
+.tmp/messy-legacy-takeover-demo/
+```
+
 统一回归矩阵中，该测试位于独立区域：
 
 ```text
@@ -21,7 +39,7 @@ retakeover-regression-pool
 .spec/handoffs/retakeover-pool-summary.md
 ```
 
-`retakeover-pool-metrics.json` 汇总所有 fixture 的机器指标，包括 fixture count、fixture class 覆盖、verify verdict 分布、draft quality totals、feature recommendation 分布和 deferred artifact 概览。
+`retakeover-pool-metrics.json` 汇总所有 fixture 的机器指标，包括 fixture count、fixture class 覆盖、verify verdict 分布、draft quality totals、feature recommendation 分布、deferred artifact 概览和 takeover quality scorecard。
 
 `retakeover-pool-summary.md` 是人类可读 companion artifact，不作为机器 API。它帮助 reviewer 快速判断整个回归池是否仍然覆盖三类旧仓库风险、是否全部 non-blocking、哪些 fixture 需要 owner review 或 spec-debt follow-up，以及 top evidence 是否仍然来自产品资产。
 
@@ -36,6 +54,25 @@ retakeover-regression-pool
 | `scattered-contracts-like` | 文档/API/schema 分散仓库 | 产品文档、OpenAPI、JSON schema、Node/Python/Go 实现分布在不同目录，需要汇成同一 takeover packet |
 
 这些 fixture 不依赖外部仓库下载。测试会在临时目录中构造真实仓库形态，保证本地和 CI 可重复。
+
+## N9 Synthetic Messy Legacy Takeover Stress
+
+N9 额外构造一组 synthetic messy legacy fixture，用来补足没有真实“屎山代码”样本时的接管压力测试。它不是 JiSpec 能全自动理解任意旧系统的承诺，而是验证北极星路径上的保守能力：
+
+- 噪声目录、生成物、依赖包和构建产物不会淹没首次 takeover evidence ranking
+- god-file / 大杂烩路由只生成小而可审阅的 domain/API/feature packet，不把糟糕命名美化成确定边界
+- 文档、OpenAPI、JSON schema 和代码路由发生 contract drift 时，冲突证据会一起留在 reviewer 面前
+- 行为证据薄弱时，feature draft 会带上 human-review 标记并进入 spec debt，而不是伪装成可直接采纳
+- adopt + verify 应保持 deterministic、non-blocking；若未来变成 blocking，需要明确说明原因
+
+当前 synthetic fixture：
+
+| Fixture | 类型 | 主要风险 |
+| --- | --- | --- |
+| `god-file-monolith-like` | synthetic god-file monolith | 单个 `server.js` 混合订单、支付、库存、客户、报表和坏命名函数 |
+| `contract-drift-like` | synthetic contract drift | README、OpenAPI、JSON schema 和实际 route 对同一 checkout 行为给出不同路径/命名 |
+| `noise-heavy-hidden-signal-like` | synthetic noise-heavy hidden signal | `vendor`、`dist`、`.cache`、`coverage`、`generated` 中有大量噪声，真实合同信号藏在 service 子目录 |
+| `thin-behavior-evidence-like` | synthetic thin behavior evidence | 有 route/schema，但缺少测试或行为文档，需要 owner review/spec debt |
 
 ## 每个 fixture 必须记录的指标
 
@@ -62,6 +99,25 @@ retakeover-regression-pool
   - `deferredArtifacts`
 - `verifyVerdict`
 - `verifyOk`
+- `qualityScorecard`
+  - `noiseSuppressionRate`
+  - `topEvidenceSignalRate`
+  - `adoptCorrectionLoad`
+  - `featureOverclaimRisk`
+  - `verifySafety`
+  - `takeoverReadinessScore`
+  - `riskNotes`
+  - `nextAction`
+
+Scorecard 字段是 deterministic review signal，不是 LLM 评分：
+
+- `noiseSuppressionRate` 用来观察噪声目录、生成物、依赖包、构建产物是否被压下去；没有发现噪声时视为 `1`，表示该 fixture 当前没有噪声压力。
+- `topEvidenceSignalRate` 统计 top ranked evidence 中强边界信号占比，例如 governance/protocol doc、schema truth source、explicit endpoint 和 service entrypoint。
+- `adoptCorrectionLoad` 统计 adopt 阶段 deferred artifact 占比，用来估算人工修正负担。
+- `featureOverclaimRisk` 标记行为证据是否有被过度采纳的风险；当 feature draft 自己建议 `defer_as_spec_debt` 但被直接 accept 时会升为 `high`。
+- `verifySafety` 只表达 takeover 后 deterministic verify 是否 blocking。
+- `takeoverReadinessScore` 是 0-100 的保守综合分，供趋势观察和 regression 审计使用，不作为 release gate 的唯一裁判。
+- `nextAction` 给 reviewer 一个紧凑动作建议：接管、owner review/spec debt，或先修 blocking verify。
 
 `retakeover-summary.md` 是人类可读 companion artifact，不作为机器 API。它从同一份 metrics 渲染，帮助 reviewer 快速判断：
 
@@ -70,6 +126,9 @@ retakeover-regression-pool
 - draft quality 是否足够进入人工 review？
 - adopt 阶段哪些 artifact 已接管，哪些被延期为 spec debt？
 - takeover 后 verify 是否保持 non-blocking？
+- 当前 fixture 的 readiness score、verify safety、feature overclaim risk、risk notes 和 next action 是什么？
+
+每份 `retakeover-summary.md` 都包含一个 `Quality Scorecard` 表格，固定面向人类审计，不作为机器 API。机器消费者应读取 `retakeover-metrics.json` 中的 `qualityScorecard`。
 
 这些指标用来回答四个问题：
 
@@ -84,6 +143,11 @@ Pool-level summary 额外回答：
 - 是否存在 blocking fixture？
 - 哪些 fixture 的 behavior evidence 需要 owner review？
 - 哪些 top evidence 代表了这次 pool 的 takeover signal？
+- 当前平均 takeover readiness score 是多少，最低分 fixture 是哪个风险带？
+- feature overclaim risk 是否集中在某类 fixture 上？
+- 哪些 fixture 的 next action 是 owner review/spec debt 或 blocking verify fix？
+
+每份 `retakeover-pool-summary.md` 都包含 pool-level `Quality Scorecard` 表格，按 fixture 展示 score、verify safety、feature risk、deferred artifact、next action 和 risk notes。
 
 ## 扩展规则
 

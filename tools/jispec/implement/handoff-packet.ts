@@ -20,14 +20,87 @@ export interface ImplementContractContext {
   deferredSpecDebtPaths: string[];
 }
 
+export type ImplementationDecisionStopPoint =
+  | "preflight"
+  | "scope_check"
+  | "patch_apply"
+  | "test"
+  | "post_verify"
+  | "budget"
+  | "stall";
+
+export type ImplementationMediationOutcome =
+  | "preflight_passed"
+  | "external_patch_received"
+  | "patch_verified"
+  | "patch_rejected_out_of_scope"
+  | "budget_exhausted"
+  | "stall_detected"
+  | "verify_blocked";
+
+export type ImplementationCheckStatus = "passed" | "failed" | "not_run" | "not_applicable";
+
+export type ImplementationNextActionOwner =
+  | "reviewer"
+  | "verify_gate"
+  | "human_or_external_tool"
+  | "external_patch_author";
+
+export interface ImplementationDecisionPacket {
+  state:
+    | "ready_for_verify"
+    | "ready_to_merge"
+    | "needs_external_patch"
+    | "needs_patch_rescope"
+    | "needs_patch_rework"
+    | "blocked_by_verify";
+  stopPoint: ImplementationDecisionStopPoint;
+  mergeable: boolean;
+  summary: string;
+  nextAction: string;
+  executionStatus: {
+    stoppedAt: ImplementationDecisionStopPoint;
+    scopeCheck: ImplementationCheckStatus;
+    patchApply: ImplementationCheckStatus;
+    tests: ImplementationCheckStatus;
+    verify: ImplementationCheckStatus;
+    nextActionOwner: ImplementationNextActionOwner;
+  };
+  implementationBoundary: {
+    jispecRole: "mediation_and_verification";
+    businessCodeGeneratedByJiSpec: false;
+    implementationOwner: "existing_workspace" | "external_patch_author" | "human_or_external_tool";
+    note: string;
+  };
+  scope: {
+    status: "not_applicable" | "accepted" | "rejected_out_of_scope" | "apply_failed";
+    touchedPaths: string[];
+    allowedPaths: string[];
+    violations: string[];
+  };
+  test: {
+    command: string;
+    passed: boolean;
+    status: "passed" | "failed" | "not_run";
+  };
+  verify: {
+    command?: string;
+    verdict?: string;
+    ok?: boolean;
+    status: "passed" | "blocking" | "not_run";
+  };
+  suggestedActions: string[];
+}
+
 export interface HandoffPacket {
   sessionId: string;
   changeIntent: string;
-  outcome: "budget_exhausted" | "stall_detected" | "external_patch_received";
+  outcome: ImplementationMediationOutcome;
   iterations: number;
   tokensUsed: number;
   costUSD: number;
   contractContext: ImplementContractContext;
+  decisionPacket: ImplementationDecisionPacket;
 
   summary: {
     whatWorked: string[];
@@ -74,6 +147,7 @@ export function generateHandoffPacket(
   const suggestedActions = buildSuggestedActions(result, episodeMemory, session);
   const filesNeedingAttention = buildFilesNeedingAttention(episodeMemory, session);
   const contractContext = buildContractContext(root, session, result);
+  const decisionPacket = buildImplementationDecisionPacket(result);
   const verifyCommand = buildVerifyCommandForLane(result.lane);
   const verifyRecommendation =
     result.lane === "fast"
@@ -83,11 +157,12 @@ export function generateHandoffPacket(
   return {
     sessionId: result.sessionId,
     changeIntent: session.summary,
-    outcome: result.outcome as "budget_exhausted" | "stall_detected" | "external_patch_received",
+    outcome: result.outcome,
     iterations: result.iterations,
     tokensUsed: result.tokensUsed,
     costUSD: result.costUSD,
     contractContext,
+    decisionPacket,
 
     summary: {
       whatWorked,
@@ -117,6 +192,273 @@ export function generateHandoffPacket(
       startedAt: result.metadata.startedAt,
       completedAt: result.metadata.completedAt,
     },
+  };
+}
+
+export function buildImplementationDecisionPacket(result: ImplementRunResult): ImplementationDecisionPacket {
+  const patch = result.patchMediation;
+  const postVerify = result.postVerify;
+  const scope = {
+    status: patch?.status ?? "not_applicable" as ImplementationDecisionPacket["scope"]["status"],
+    touchedPaths: patch?.touchedPaths ?? [],
+    allowedPaths: patch?.allowedPaths ?? [],
+    violations: patch?.violations ?? [],
+  };
+  const testPassed = result.testsPassed;
+  const testStatus = buildTestStatus(result);
+  const verifyStatus: ImplementationDecisionPacket["verify"]["status"] = postVerify
+    ? (postVerify.ok ? "passed" : "blocking")
+    : "not_run";
+  const base = {
+    implementationBoundary: buildImplementationBoundary(result),
+    scope,
+    test: {
+      command: result.metadata.testCommand,
+      passed: testPassed,
+      status: testStatus,
+    },
+    verify: {
+      command: postVerify?.command,
+      verdict: postVerify?.verdict,
+      ok: postVerify?.ok,
+      status: verifyStatus,
+    },
+  };
+
+  if (result.outcome === "patch_rejected_out_of_scope") {
+    const stopPoint = "scope_check";
+    const state = "needs_patch_rescope";
+    return {
+      ...base,
+      state,
+      stopPoint,
+      mergeable: false,
+      summary: "External patch was rejected before apply because it touched paths outside the active change scope.",
+      nextAction: "Revise the external patch so it only touches allowed paths, or start a new change session with the broader scope.",
+      executionStatus: buildExecutionStatus(result, stopPoint, "human_or_external_tool"),
+      suggestedActions: [
+        `Allowed paths: ${scope.allowedPaths.join(", ") || "none"}`,
+        `Rejected paths: ${scope.violations.join("; ") || "none"}`,
+        "Submit a new external patch after scope is corrected.",
+      ],
+    };
+  }
+
+  if (patch?.status === "apply_failed") {
+    const stopPoint = "patch_apply";
+    return {
+      ...base,
+      state: "needs_patch_rework",
+      stopPoint,
+      mergeable: false,
+      summary: "External patch was in scope, but applying it failed.",
+      nextAction: "Refresh the patch against the current workspace and submit it again.",
+      executionStatus: buildExecutionStatus(result, stopPoint, "external_patch_author"),
+      suggestedActions: [
+        "Regenerate the patch from the current repository state.",
+        patch.violations.length > 0 ? `Apply failure: ${patch.violations.join("; ")}` : "Inspect git apply output in the patch mediation artifact.",
+      ],
+    };
+  }
+
+  if (result.outcome === "external_patch_received" && !result.testsPassed) {
+    const stopPoint = "test";
+    return {
+      ...base,
+      state: "needs_patch_rework",
+      stopPoint,
+      mergeable: false,
+      summary: "External patch applied inside scope, but mediated tests failed.",
+      nextAction: "Fix the patch and rerun implementation mediation with the same scoped change session.",
+      executionStatus: buildExecutionStatus(result, stopPoint, "external_patch_author"),
+      suggestedActions: [
+        `Run tests manually: ${result.metadata.testCommand}`,
+        "Review the handoff packet and patch mediation artifact before submitting a corrected patch.",
+      ],
+    };
+  }
+
+  if (result.outcome === "budget_exhausted") {
+    const stopPoint = "budget";
+    return {
+      ...base,
+      state: "needs_external_patch",
+      stopPoint,
+      mergeable: false,
+      summary: "Implementation mediation stopped because the configured budget was exhausted.",
+      nextAction: "Use the handoff packet as the request for a human or external coding tool patch.",
+      executionStatus: buildExecutionStatus(result, stopPoint, "human_or_external_tool"),
+      suggestedActions: [
+        "Review files needing attention in the handoff packet.",
+        `Run tests after patching: ${result.metadata.testCommand}`,
+      ],
+    };
+  }
+
+  if (result.outcome === "stall_detected") {
+    const stopPoint = "stall";
+    return {
+      ...base,
+      state: "needs_external_patch",
+      stopPoint,
+      mergeable: false,
+      summary: "Implementation mediation stopped because progress stalled.",
+      nextAction: "Change approach or hand off to a human/external coding tool with the recorded stall reason.",
+      executionStatus: buildExecutionStatus(result, stopPoint, "human_or_external_tool"),
+      suggestedActions: [
+        result.metadata.stallReason ? `Stall reason: ${result.metadata.stallReason}` : "Inspect repeated failure patterns in the handoff packet.",
+        `Run tests after patching: ${result.metadata.testCommand}`,
+      ],
+    };
+  }
+
+  if (result.outcome === "verify_blocked") {
+    const stopPoint = "post_verify";
+    return {
+      ...base,
+      state: "blocked_by_verify",
+      stopPoint,
+      mergeable: false,
+      summary: "Tests passed, but post-implement verify produced a blocking verdict.",
+      nextAction: "Resolve blocking verify issues before merging or archiving the change session.",
+      executionStatus: buildExecutionStatus(result, stopPoint, "verify_gate"),
+      suggestedActions: [
+        postVerify?.command ? `Rerun verify: ${postVerify.command}` : "Rerun verify after fixing blocking issues.",
+        "Review verify-summary.md for the blocking issue list.",
+      ],
+    };
+  }
+
+  if (result.outcome === "patch_verified") {
+    const stopPoint = "post_verify";
+    return {
+      ...base,
+      state: "ready_to_merge",
+      stopPoint,
+      mergeable: true,
+      summary: "External patch was scoped, applied, tested, and verified.",
+      nextAction: "Review the mediated patch and proceed with normal merge/review.",
+      executionStatus: buildExecutionStatus(result, stopPoint, "reviewer"),
+      suggestedActions: [
+        postVerify?.command ? `Verified with: ${postVerify.command}` : "Review post-implement verify result.",
+        "Review the patch mediation artifact for scope and provenance.",
+      ],
+    };
+  }
+
+  const stopPoint = postVerify ? "post_verify" : "preflight";
+  const mergeable = postVerify?.ok === true;
+  return {
+    ...base,
+    state: postVerify?.ok ? "ready_to_merge" : "ready_for_verify",
+    stopPoint,
+    mergeable,
+    summary: postVerify?.ok
+      ? "Preflight tests passed and post-implement verify is non-blocking."
+      : "Preflight tests already pass; no patch was applied by JiSpec.",
+    nextAction: postVerify?.ok
+      ? "Review and merge according to your normal workflow."
+      : "Run verify next before treating this change as mergeable.",
+    executionStatus: buildExecutionStatus(result, stopPoint, mergeable ? "reviewer" : "verify_gate"),
+    suggestedActions: [
+      postVerify?.command ? `Verified with: ${postVerify.command}` : `Run verify next: ${buildVerifyCommandForLane(result.lane)}`,
+    ],
+  };
+}
+
+function buildTestStatus(result: ImplementRunResult): ImplementationDecisionPacket["test"]["status"] {
+  if (result.testsPassed) {
+    return "passed";
+  }
+
+  if (
+    result.patchMediation?.status === "rejected_out_of_scope" ||
+    result.patchMediation?.status === "apply_failed"
+  ) {
+    return "not_run";
+  }
+
+  if (
+    result.iterations > 0 ||
+    result.outcome === "external_patch_received" ||
+    result.outcome === "budget_exhausted" ||
+    result.outcome === "stall_detected"
+  ) {
+    return "failed";
+  }
+
+  return "not_run";
+}
+
+function buildExecutionStatus(
+  result: ImplementRunResult,
+  stoppedAt: ImplementationDecisionStopPoint,
+  nextActionOwner: ImplementationNextActionOwner,
+): ImplementationDecisionPacket["executionStatus"] {
+  return {
+    stoppedAt,
+    scopeCheck: buildScopeCheckStatus(result),
+    patchApply: buildPatchApplyStatus(result),
+    tests: mapTestStatusToCheck(buildTestStatus(result)),
+    verify: buildVerifyCheckStatus(result),
+    nextActionOwner,
+  };
+}
+
+function buildScopeCheckStatus(result: ImplementRunResult): ImplementationCheckStatus {
+  const patch = result.patchMediation;
+  if (!patch) {
+    return "not_applicable";
+  }
+
+  return patch.status === "rejected_out_of_scope" ? "failed" : "passed";
+}
+
+function buildPatchApplyStatus(result: ImplementRunResult): ImplementationCheckStatus {
+  const patch = result.patchMediation;
+  if (!patch) {
+    return "not_applicable";
+  }
+
+  if (patch.status === "rejected_out_of_scope") {
+    return "not_run";
+  }
+
+  return patch.applied ? "passed" : "failed";
+}
+
+function mapTestStatusToCheck(status: ImplementationDecisionPacket["test"]["status"]): ImplementationCheckStatus {
+  if (status === "passed") {
+    return "passed";
+  }
+
+  if (status === "failed") {
+    return "failed";
+  }
+
+  return "not_run";
+}
+
+function buildVerifyCheckStatus(result: ImplementRunResult): ImplementationCheckStatus {
+  if (!result.postVerify) {
+    return "not_run";
+  }
+
+  return result.postVerify.ok ? "passed" : "failed";
+}
+
+function buildImplementationBoundary(result: ImplementRunResult): ImplementationDecisionPacket["implementationBoundary"] {
+  const implementationOwner = result.patchMediation
+    ? "external_patch_author"
+    : result.outcome === "budget_exhausted" || result.outcome === "stall_detected"
+      ? "human_or_external_tool"
+      : "existing_workspace";
+
+  return {
+    jispecRole: "mediation_and_verification",
+    businessCodeGeneratedByJiSpec: false,
+    implementationOwner,
+    note: "JiSpec constrains, records, tests, and verifies implementation work; it does not generate or own business-code implementation.",
   };
 }
 
@@ -306,6 +648,21 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   lines.push(`Iterations: ${packet.iterations}`);
   lines.push(`Tokens used: ${packet.tokensUsed}`);
   lines.push(`Cost: $${packet.costUSD.toFixed(2)}`);
+  lines.push("");
+
+  lines.push("=== Decision Packet ===");
+  lines.push(`State: ${packet.decisionPacket.state}`);
+  lines.push(`Stop point: ${packet.decisionPacket.stopPoint}`);
+  lines.push(`Mergeable: ${packet.decisionPacket.mergeable}`);
+  lines.push(`Summary: ${packet.decisionPacket.summary}`);
+  lines.push(`Next action: ${packet.decisionPacket.nextAction}`);
+  lines.push(`Next action owner: ${packet.decisionPacket.executionStatus.nextActionOwner}`);
+  lines.push(
+    `Checks: scope=${packet.decisionPacket.executionStatus.scopeCheck}, patch=${packet.decisionPacket.executionStatus.patchApply}, test=${packet.decisionPacket.executionStatus.tests}, verify=${packet.decisionPacket.executionStatus.verify}`,
+  );
+  lines.push(`Test: ${packet.decisionPacket.test.status} via ${packet.decisionPacket.test.command}`);
+  lines.push(`Verify: ${packet.decisionPacket.verify.status}${packet.decisionPacket.verify.command ? ` via ${packet.decisionPacket.verify.command}` : ""}`);
+  lines.push(`JiSpec role: ${packet.decisionPacket.implementationBoundary.note}`);
   lines.push("");
 
   lines.push("=== Contract Context ===");

@@ -26,6 +26,18 @@ interface DefaultModePayload {
     source?: string;
     readyForExecuteDefault?: boolean;
     openDraftSessionId?: string;
+    boundary?: {
+      promptModeRecordsOnly?: boolean;
+      executeModeRunsMediationAndVerify?: boolean;
+      explicitCliModeOverridesProjectDefault?: boolean;
+      projectDefaultAppliesOnlyWhenModeOmitted?: boolean;
+      businessCodeGeneratedByJiSpec?: boolean;
+      adoptBoundary?: {
+        status?: string;
+        openDraftSessionId?: string;
+        nextAction?: string;
+      };
+    };
     details?: string[];
   };
 }
@@ -45,6 +57,12 @@ function main(): void {
     assert.equal(payload.currentMode, "prompt");
     assert.equal(payload.source, "built_in_default");
     assert.equal(payload.readiness?.readyForExecuteDefault, false);
+    assert.equal(payload.readiness?.boundary?.promptModeRecordsOnly, true);
+    assert.equal(payload.readiness?.boundary?.executeModeRunsMediationAndVerify, true);
+    assert.equal(payload.readiness?.boundary?.explicitCliModeOverridesProjectDefault, true);
+    assert.equal(payload.readiness?.boundary?.projectDefaultAppliesOnlyWhenModeOmitted, true);
+    assert.equal(payload.readiness?.boundary?.businessCodeGeneratedByJiSpec, false);
+    assert.equal(payload.readiness?.boundary?.adoptBoundary?.status, "clear");
     assert.ok(payload.nextActions?.some((action) => action.includes("set execute")));
     console.log("✓ Test 1: show reports the built-in prompt default before project config exists");
     passed++;
@@ -74,6 +92,7 @@ function main(): void {
     assert.equal(payload.previousMode, "prompt");
     assert.equal(payload.source, "project_config");
     assert.equal(payload.readiness?.readyForExecuteDefault, true);
+    assert.equal(payload.readiness?.boundary?.adoptBoundary?.status, "clear");
     assert.equal((project.change as Record<string, unknown>).default_mode, "execute");
     assert.ok(payload.historyPath?.endsWith(".jispec/change-default-mode-history.jsonl"));
     console.log("✓ Test 2: set execute writes project config and reports execute readiness");
@@ -146,6 +165,7 @@ function main(): void {
     assert.ok(entries.every((entry) => entry.actor === "n7-test"));
     assert.ok(entries[0].reason === "enable execute default");
     assert.ok(entries[0].readiness.readyForExecuteDefault === true);
+    assert.equal(entries[0].readiness.boundaryStatus, "clear");
     console.log("✓ Test 5: history jsonl records every default-mode transition");
     passed++;
   } catch (error) {
@@ -204,6 +224,9 @@ function main(): void {
     const payload = JSON.parse(setExecute.stdout) as DefaultModePayload;
     assert.equal(payload.currentMode, "execute");
     assert.equal(payload.readiness?.openDraftSessionId, "bootstrap-open");
+    assert.equal(payload.readiness?.boundary?.adoptBoundary?.status, "open_draft_pause_required");
+    assert.equal(payload.readiness?.boundary?.adoptBoundary?.openDraftSessionId, "bootstrap-open");
+    assert.equal(payload.readiness?.boundary?.adoptBoundary?.nextAction, "npm run jispec-cli -- adopt --interactive --session bootstrap-open");
     assert.ok(payload.warnings?.some((warning) => warning.includes("strict-lane execute-default still pauses at adopt")));
     assert.ok(payload.nextActions?.some((action) => action.includes("adopt --interactive --session bootstrap-open")));
     console.log("✓ Test 7: set execute allows open drafts but surfaces the adopt-boundary warning");

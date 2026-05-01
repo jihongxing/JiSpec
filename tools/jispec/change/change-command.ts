@@ -37,6 +37,7 @@ export interface ChangeCommandExecutionSummary {
   message: string;
   blockedOn?: "adopt";
   openDraftSessionId?: string;
+  boundary: ChangeExecutionBoundary;
   implement?: {
     outcome: ImplementRunResult["outcome"];
     lane: ImplementRunResult["lane"];
@@ -49,6 +50,28 @@ export interface ChangeCommandExecutionSummary {
     postVerifyLane?: "fast" | "strict";
     sessionArchived?: boolean;
     handoffPacketPath?: string;
+    decisionState?: NonNullable<ImplementRunResult["decisionPacket"]>["state"];
+    decisionStopPoint?: NonNullable<ImplementRunResult["decisionPacket"]>["stopPoint"];
+    decisionNextAction?: string;
+    decisionNextActionOwner?: NonNullable<ImplementRunResult["decisionPacket"]>["executionStatus"]["nextActionOwner"];
+    decisionChecks?: NonNullable<ImplementRunResult["decisionPacket"]>["executionStatus"];
+    implementationBoundaryNote?: string;
+    mergeable?: boolean;
+  };
+}
+
+export interface ChangeExecutionBoundary {
+  modeSource: ChangeDefaultModeResolution["source"];
+  promptModeRecordsOnly: true;
+  executeModeRunsMediationAndVerify: true;
+  explicitCliModeOverridesProjectDefault: boolean;
+  projectDefaultAppliesOnlyWhenModeOmitted: true;
+  businessCodeGeneratedByJiSpec: false;
+  adoptBoundary: {
+    enforced: boolean;
+    status: "not_applicable" | "clear" | "paused_open_bootstrap_draft";
+    openDraftSessionId?: string;
+    nextAction?: string;
   };
 }
 
@@ -135,13 +158,14 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
 
   const execution = effectiveMode === "execute"
     ? await runExecuteOrchestration(root, session, {
+        modeResolution,
         quiet: json,
         testCommand,
         maxIterations,
         maxTokens,
         maxCostUSD,
       })
-    : buildPromptExecutionSummary();
+    : buildPromptExecutionSummary(modeResolution);
 
   const result: ChangeCommandResult = {
     session,
@@ -250,11 +274,12 @@ function relativePath(root: string, target: string): string {
   return path.relative(root, target).replace(/\\/g, "/");
 }
 
-function buildPromptExecutionSummary(): ChangeCommandExecutionSummary {
+function buildPromptExecutionSummary(modeResolution: ChangeDefaultModeResolution): ChangeCommandExecutionSummary {
   return {
     mode: "prompt",
     state: "planned",
     message: "Prompt mode selected. JiSpec recorded the change session and surfaced next commands without executing downstream steps.",
+    boundary: buildChangeExecutionBoundary(modeResolution, "prompt", "fast"),
   };
 }
 
@@ -262,6 +287,7 @@ async function runExecuteOrchestration(
   root: string,
   session: ChangeSession,
   options: {
+    modeResolution: ChangeDefaultModeResolution;
     quiet?: boolean;
     testCommand?: string;
     maxIterations?: number;
@@ -276,6 +302,7 @@ async function runExecuteOrchestration(
       state: "awaiting_adopt",
       blockedOn: "adopt",
       openDraftSessionId,
+      boundary: buildChangeExecutionBoundary(options.modeResolution, "execute", session.laneDecision.lane, openDraftSessionId),
       message: `Execute mode paused before implement because strict lane requires an explicit bootstrap adopt decision for session ${openDraftSessionId}.`,
     };
   }
@@ -305,6 +332,7 @@ async function runExecuteOrchestration(
     mode: "execute",
     state: "implemented",
     message: `Execute mode ran implement on the ${implementResult.lane} lane and returned control after post-implement verify.`,
+    boundary: buildChangeExecutionBoundary(options.modeResolution, "execute", session.laneDecision.lane),
     implement: {
       outcome: implementResult.outcome,
       lane: implementResult.lane,
@@ -317,6 +345,46 @@ async function runExecuteOrchestration(
       postVerifyLane: implementResult.postVerify?.effectiveLane,
       sessionArchived: implementResult.metadata.sessionArchived,
       handoffPacketPath: implementResult.metadata.handoffPacketPath,
+      decisionState: implementResult.decisionPacket?.state,
+      decisionStopPoint: implementResult.decisionPacket?.stopPoint,
+      decisionNextAction: implementResult.decisionPacket?.nextAction,
+      decisionNextActionOwner: implementResult.decisionPacket?.executionStatus.nextActionOwner,
+      decisionChecks: implementResult.decisionPacket?.executionStatus,
+      implementationBoundaryNote: implementResult.decisionPacket?.implementationBoundary.note,
+      mergeable: implementResult.decisionPacket?.mergeable,
+    },
+  };
+}
+
+function buildChangeExecutionBoundary(
+  modeResolution: ChangeDefaultModeResolution,
+  mode: ChangeCommandMode,
+  lane: LaneType,
+  openDraftSessionId?: string,
+): ChangeExecutionBoundary {
+  const executeMode = mode === "execute";
+  const strictLane = lane === "strict";
+  const pausedAtAdopt = executeMode && strictLane && Boolean(openDraftSessionId);
+  const adoptStatus: ChangeExecutionBoundary["adoptBoundary"]["status"] = pausedAtAdopt
+    ? "paused_open_bootstrap_draft"
+    : executeMode && strictLane
+      ? "clear"
+      : "not_applicable";
+
+  return {
+    modeSource: modeResolution.source,
+    promptModeRecordsOnly: true,
+    executeModeRunsMediationAndVerify: true,
+    explicitCliModeOverridesProjectDefault: modeResolution.source === "cli",
+    projectDefaultAppliesOnlyWhenModeOmitted: true,
+    businessCodeGeneratedByJiSpec: false,
+    adoptBoundary: {
+      enforced: executeMode && strictLane,
+      status: adoptStatus,
+      openDraftSessionId,
+      nextAction: pausedAtAdopt
+        ? `npm run jispec-cli -- adopt --interactive --session ${openDraftSessionId}`
+        : undefined,
     },
   };
 }
@@ -388,12 +456,44 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
 
   lines.push("Execution:");
   lines.push(`- ${execution.message}`);
+  lines.push(`- Mode boundary: prompt records the session only; execute runs implementation mediation followed by verify.`);
+  lines.push(`- Mode source: ${execution.boundary.modeSource}`);
+  lines.push(`- Explicit CLI mode overrides project default: ${execution.boundary.explicitCliModeOverridesProjectDefault}`);
+  lines.push(`- Project default applies only when --mode is omitted: ${execution.boundary.projectDefaultAppliesOnlyWhenModeOmitted}`);
+  lines.push(`- Adopt boundary: ${execution.boundary.adoptBoundary.status}`);
+  if (execution.boundary.adoptBoundary.nextAction) {
+    lines.push(`- Adopt next action: ${execution.boundary.adoptBoundary.nextAction}`);
+  }
+  lines.push(`- Business code generated by JiSpec: ${execution.boundary.businessCodeGeneratedByJiSpec}`);
   if (execution.blockedOn && execution.openDraftSessionId) {
     lines.push(`- Blocked on: ${execution.blockedOn} (${execution.openDraftSessionId})`);
   }
   if (execution.implement) {
     lines.push(`- Implement outcome: ${execution.implement.outcome}`);
     lines.push(`- Effective lane: ${execution.implement.lane}${execution.implement.autoPromoted ? " (auto-promoted)" : ""}`);
+    if (execution.implement.decisionState) {
+      lines.push(`- Decision state: ${execution.implement.decisionState}`);
+    }
+    if (execution.implement.decisionStopPoint) {
+      lines.push(`- Stopped at: ${execution.implement.decisionStopPoint}`);
+    }
+    if (execution.implement.decisionNextAction) {
+      lines.push(`- Next action: ${execution.implement.decisionNextAction}`);
+    }
+    if (execution.implement.decisionNextActionOwner) {
+      lines.push(`- Next action owner: ${execution.implement.decisionNextActionOwner}`);
+    }
+    if (execution.implement.decisionChecks) {
+      lines.push(
+        `- Checks: scope=${execution.implement.decisionChecks.scopeCheck}, patch=${execution.implement.decisionChecks.patchApply}, test=${execution.implement.decisionChecks.tests}, verify=${execution.implement.decisionChecks.verify}`,
+      );
+    }
+    if (typeof execution.implement.mergeable === "boolean") {
+      lines.push(`- Mergeable: ${execution.implement.mergeable}`);
+    }
+    if (execution.implement.implementationBoundaryNote) {
+      lines.push(`- JiSpec role: ${execution.implement.implementationBoundaryNote}`);
+    }
     if (execution.implement.postVerifyVerdict) {
       lines.push(`- Post-implement verify: ${execution.implement.postVerifyVerdict} via ${execution.implement.postVerifyCommand}`);
     }

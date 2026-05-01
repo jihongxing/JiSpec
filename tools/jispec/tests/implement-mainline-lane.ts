@@ -42,8 +42,13 @@ async function main(): Promise<void> {
 
     assert.equal(result.outcome, "preflight_passed");
     assert.ok(renderImplementText(result).includes("Outcome: preflight_passed"));
+    assert.ok(renderImplementText(result).includes("State: ready_to_merge"));
     assert.equal(JSON.parse(renderImplementJSON(result)).outcome, "preflight_passed");
+    assert.equal(JSON.parse(renderImplementJSON(result)).decisionPacket.state, "ready_to_merge");
     assert.equal(result.lane, "fast");
+    assert.equal(result.decisionPacket?.state, "ready_to_merge");
+    assert.equal(result.decisionPacket?.stopPoint, "post_verify");
+    assert.equal(result.decisionPacket?.mergeable, true);
     assert.equal(result.autoPromoted, false);
     assert.equal(result.postVerify?.command, "npm run jispec-cli -- verify --fast");
     assert.equal(result.postVerify?.effectiveLane, "fast");
@@ -72,6 +77,7 @@ async function main(): Promise<void> {
 
     assert.equal(result.lane, "strict");
     assert.equal(result.autoPromoted, true);
+    assert.equal(result.decisionPacket?.state, "ready_to_merge");
     assert.equal(result.postVerify?.command, "npm run verify");
     assert.equal(result.postVerify?.effectiveLane, "strict");
     assert.equal(result.postVerify?.verdict, "PASS");
@@ -100,6 +106,17 @@ async function main(): Promise<void> {
     assert.equal(result.testsPassed, true);
     assert.equal(result.outcome, "verify_blocked");
     assert.equal(JSON.parse(renderImplementJSON(result)).outcome, "verify_blocked");
+    assert.equal(JSON.parse(renderImplementJSON(result)).decisionPacket.state, "blocked_by_verify");
+    assert.equal(result.decisionPacket?.state, "blocked_by_verify");
+    assert.equal(result.decisionPacket?.stopPoint, "post_verify");
+    assert.equal(result.decisionPacket?.mergeable, false);
+    assert.equal(result.decisionPacket?.executionStatus.tests, "passed");
+    assert.equal(result.decisionPacket?.executionStatus.verify, "failed");
+    assert.equal(result.decisionPacket?.executionStatus.nextActionOwner, "verify_gate");
+    assert.ok(result.decisionPacket?.nextAction.includes("Resolve blocking verify issues"));
+    assert.ok(result.handoffPacket);
+    assert.equal(result.handoffPacket?.outcome, "verify_blocked");
+    assert.equal(result.handoffPacket?.decisionPacket.executionStatus.verify, "failed");
     assert.equal(result.postVerify?.verdict, "FAIL_BLOCKING");
     assert.equal(computeImplementExitCode(result), 1);
     assert.equal(result.metadata.sessionArchived, undefined);

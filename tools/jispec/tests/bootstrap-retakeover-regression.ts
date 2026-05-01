@@ -8,6 +8,7 @@ import { runBootstrapDraft, type BootstrapDraftResult } from "../bootstrap/draft
 import type { BootstrapDiscoverResult } from "../bootstrap/evidence-graph";
 import type { AdoptionRankedEvidence } from "../bootstrap/evidence-ranking";
 import {
+  buildRetakeoverQualityScorecard,
   parseRetakeoverFeatureRecommendation,
   RETAKEOVER_METRICS_RELATIVE_PATH,
   RETAKEOVER_POOL_METRICS_RELATIVE_PATH,
@@ -120,6 +121,13 @@ async function main(): Promise<void> {
       verify?: { okCount?: number; blockingCount?: number; verdicts?: Record<string, number> };
       draftQuality?: { featureRecommendations?: Record<string, number> };
       adoptCorrection?: { fixturesWithDeferredArtifacts?: string[]; deferredArtifactCount?: number };
+      qualityScorecard?: {
+        averageTakeoverReadinessScore?: number;
+        lowestReadinessScore?: number;
+        fixturesNeedingOwnerReview?: string[];
+        fixturesWithBlockingVerify?: string[];
+        featureOverclaimRisk?: Record<string, number>;
+      };
     };
     const poolSummary = fs.readFileSync(path.join(poolRoot, RETAKEOVER_POOL_SUMMARY_RELATIVE_PATH), "utf-8");
 
@@ -279,11 +287,20 @@ async function main(): Promise<void> {
           result.metrics.draftQuality.domainContextCount > 0 &&
           result.metrics.draftQuality.apiSurfaceCount > 0 &&
           result.metrics.verifyOk &&
+          result.metrics.qualityScorecard.verifySafety === "non_blocking" &&
+          result.metrics.qualityScorecard.takeoverReadinessScore > 0 &&
+          result.metrics.qualityScorecard.topEvidenceSignalRate >= 0.5 &&
+          result.metrics.qualityScorecard.riskNotes.length > 0 &&
           fs.existsSync(path.join(result.discover.graph.repoRoot, RETAKEOVER_METRICS_RELATIVE_PATH)),
         ) &&
         remirage.metrics.fixtureClass === "high-noise-protocol-repo" &&
         breath.metrics.fixtureClass === "multilingual-finance-service-repo" &&
         scattered.metrics.fixtureClass === "docs-api-schema-scattered-repo" &&
+        remirage.metrics.qualityScorecard.featureOverclaimRisk === "low" &&
+        remirage.metrics.qualityScorecard.nextAction === "adoptable_initial_packet" &&
+        breath.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
+        scattered.metrics.qualityScorecard.featureOverclaimRisk === "high" &&
+        scattered.metrics.qualityScorecard.nextAction === "owner_review_spec_debt" &&
         breath.metrics.adoptCorrection.deferredArtifacts.includes("feature") &&
         remirage.metrics.adoptCorrection.acceptedArtifacts.includes("feature") &&
         scattered.metrics.adoptCorrection.acceptedArtifacts.includes("feature"),
@@ -304,6 +321,13 @@ async function main(): Promise<void> {
           result.retakeoverSummary.includes("Top ranked evidence:") &&
           result.retakeoverSummary.includes("Draft quality:") &&
           result.retakeoverSummary.includes("Adopt correction:") &&
+          result.retakeoverSummary.includes("## Quality Scorecard") &&
+          result.retakeoverSummary.includes("| Signal | Value | Review Meaning |") &&
+          result.retakeoverSummary.includes("Takeover readiness") &&
+          result.retakeoverSummary.includes("Verify safety") &&
+          result.retakeoverSummary.includes("Feature overclaim risk") &&
+          result.retakeoverSummary.includes("### Risk Notes") &&
+          result.retakeoverSummary.includes("Next action:") &&
           result.retakeoverSummary.includes(`Verify verdict: \`${result.metrics.verifyVerdict}\``) &&
           result.retakeoverSummary.includes(RETAKEOVER_METRICS_RELATIVE_PATH) &&
           result.retakeoverSummary.includes("not a machine API"),
@@ -336,6 +360,14 @@ async function main(): Promise<void> {
         poolMetrics.draftQuality?.featureRecommendations?.accept_candidate === 1 &&
         poolMetrics.draftQuality?.featureRecommendations?.defer_as_spec_debt === 2 &&
         poolMetrics.adoptCorrection?.fixturesWithDeferredArtifacts?.includes("breathofearth-like") === true &&
+        typeof poolMetrics.qualityScorecard?.averageTakeoverReadinessScore === "number" &&
+        typeof poolMetrics.qualityScorecard?.lowestReadinessScore === "number" &&
+        poolMetrics.qualityScorecard.averageTakeoverReadinessScore > 0 &&
+        poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("breathofearth-like") === true &&
+        poolMetrics.qualityScorecard.fixturesNeedingOwnerReview?.includes("scattered-contracts-like") === true &&
+        poolMetrics.qualityScorecard.fixturesWithBlockingVerify?.length === 0 &&
+        poolMetrics.qualityScorecard.featureOverclaimRisk?.low === 2 &&
+        poolMetrics.qualityScorecard.featureOverclaimRisk?.high === 1 &&
         containsAll(poolMetrics.fixtureClasses ?? [], [
           "high-noise-protocol-repo",
           "multilingual-finance-service-repo",
@@ -345,6 +377,13 @@ async function main(): Promise<void> {
         poolSummary.includes("Fixture count: 3") &&
         poolSummary.includes("All fixtures are non-blocking") &&
         poolSummary.includes("Retakeover pool is non-blocking, with explicit owner-review or spec-debt follow-up") &&
+        poolSummary.includes("Average takeover readiness score:") &&
+        poolSummary.includes("Feature overclaim risk:") &&
+        poolSummary.includes("Owner-review fixtures:") &&
+        poolSummary.includes("## Quality Scorecard") &&
+        poolSummary.includes("| Fixture | Score | Verify Safety | Feature Risk | Deferred | Next Action | Risk Notes |") &&
+        poolSummary.includes("`owner_review_spec_debt`") &&
+        poolSummary.includes("`adoptable_initial_packet`") &&
         poolSummary.includes("## Fixture Matrix") &&
         poolSummary.includes("`remirage-like`") &&
         poolSummary.includes("`breathofearth-like`") &&
@@ -785,7 +824,7 @@ function writeRetakeoverMetrics(
     acceptedArtifacts.push("feature");
   }
 
-  const metrics: RetakeoverMetrics = {
+    const metrics: RetakeoverMetrics = {
     version: 1,
     fixtureId: options.fixtureId,
     fixtureClass: options.fixtureClass,
@@ -803,6 +842,15 @@ function writeRetakeoverMetrics(
     },
     verifyVerdict: result.verify.verdict,
     verifyOk: result.verify.ok,
+    qualityScorecard: buildRetakeoverQualityScorecard({
+      rankedEvidence: result.ranked,
+      discoverSummary: result.discover.summary as unknown as Record<string, unknown>,
+      featureContent: result.feature,
+      featureRecommendation: parseRetakeoverFeatureRecommendation(result.feature),
+      acceptedArtifacts,
+      deferredArtifacts,
+      verifyOk: result.verify.ok,
+    }),
   };
 
   writeRetakeoverArtifacts(root, metrics);

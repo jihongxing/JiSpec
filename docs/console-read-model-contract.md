@@ -13,6 +13,7 @@ Console is a read-only view over local JiSpec artifacts:
 - It may add remote sync later, but local artifacts remain the source of truth for the V1 mainline.
 
 The code-level contract lives in `tools/jispec/console/read-model-contract.ts`.
+The local snapshot collector lives in `tools/jispec/console/read-model-snapshot.ts`; it reads only the declared artifacts below and returns missing inputs as `not_available_yet`.
 
 ## Stable Read Model
 
@@ -45,3 +46,13 @@ The code-level contract lives in `tools/jispec/console/read-model-contract.ts`.
 Console consumers should read `.jispec-ci/verify-report.json` for current CI state, `.spec/policy.yaml` for policy posture, `.spec/waivers/*.json` for waiver lifecycle, `.spec/baselines/*` for baseline state, `.spec/spec-debt/*` for known debt, and `.spec/releases/compare/*/compare-report.json` for release drift.
 
 When an artifact is missing, Console should display it as `not available yet` rather than synthesizing state from source code. The CLI remains responsible for producing or refreshing artifacts.
+
+## Local Snapshot Rules
+
+The local snapshot is a read-only aggregation surface, not a gate:
+
+- It reads only declared JiSpec artifacts from `.spec/` and `.jispec-ci/`.
+- It may parse JSON, YAML, and lock artifacts for display state.
+- It may carry Markdown text for rendering, but Markdown remains display-only and is not a machine API.
+- It marks missing artifacts as `not_available_yet`.
+- It does not evaluate policy, override verify, synthesize gate results, scan source code, or replace any CLI command.

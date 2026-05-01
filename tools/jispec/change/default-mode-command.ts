@@ -30,6 +30,7 @@ export interface ChangeDefaultModeHistoryEntry {
   readiness: {
     readyForExecuteDefault: boolean;
     openDraftSessionId?: string;
+    boundaryStatus: ChangeExecuteDefaultReadiness["boundary"]["adoptBoundary"]["status"];
     warnings: string[];
   };
 }
@@ -94,6 +95,7 @@ export function setChangeDefaultMode(options: ChangeDefaultModeOptions): ChangeD
     readiness: {
       readyForExecuteDefault: readiness.readyForExecuteDefault,
       openDraftSessionId: readiness.openDraftSessionId,
+      boundaryStatus: readiness.boundary.adoptBoundary.status,
       warnings: readiness.warnings,
     },
   });
@@ -132,6 +134,7 @@ export function resetChangeDefaultMode(options: Omit<ChangeDefaultModeOptions, "
     readiness: {
       readyForExecuteDefault: readiness.readyForExecuteDefault,
       openDraftSessionId: readiness.openDraftSessionId,
+      boundaryStatus: readiness.boundary.adoptBoundary.status,
       warnings: readiness.warnings,
     },
   });
