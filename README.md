@@ -274,6 +274,8 @@ What they do:
   Runs broader runtime and compatibility health diagnostics outside the V1 mainline readiness gate.
 - `doctor pilot`
   Checks commercial pilot readiness for a repository: installation path, first takeover baseline, CI verify, policy profile, waiver/spec debt hygiene, Console governance snapshot, and privacy report.
+- `pilot:ready`
+  Runs the repeatable pilot readiness gate for local or CI use; failures print blocker owner actions and next commands, and `--json` returns the underlying `doctor pilot` report.
 - `metrics value-report`
   Writes a repo-local ROI and adoption report under `.spec/metrics/`, with traceable local artifact sources and no default network access.
 - `ci:verify`

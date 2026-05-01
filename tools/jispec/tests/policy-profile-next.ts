@@ -208,7 +208,7 @@ async function main(): Promise<void> {
     }
   });
 
-  record("policy migrate CLI accepts explicit profile selection", () => {
+  record("policy migrate CLI accepts explicit profile, owner, and reviewer selection", () => {
     const fixtureRoot = createFixtureRoot("jispec-policy-profile-cli-");
     const repoRoot = path.resolve(__dirname, "..", "..", "..");
     try {
@@ -224,6 +224,11 @@ async function main(): Promise<void> {
           fixtureRoot,
           "--profile",
           "regulated",
+          "--owner",
+          "platform-team",
+          "--reviewer",
+          "qa",
+          "compliance",
           "--json",
         ],
         {
@@ -231,9 +236,13 @@ async function main(): Promise<void> {
           encoding: "utf-8",
         },
       );
-      const result = JSON.parse(output) as { policy?: { team?: { profile?: string; required_reviewers?: number } } };
+      const result = JSON.parse(output) as { policy?: { team?: { profile?: string; owner?: string; reviewers?: string[]; required_reviewers?: number } }; changes?: string[] };
       assert.equal(result.policy?.team?.profile, "regulated");
+      assert.equal(result.policy?.team?.owner, "platform-team");
+      assert.deepEqual(result.policy?.team?.reviewers, ["qa", "compliance"]);
       assert.equal(result.policy?.team?.required_reviewers, 2);
+      assert.ok(result.changes?.some((change) => change.includes("Set team owner to platform-team")));
+      assert.ok(result.changes?.some((change) => change.includes("Set team reviewers to qa, compliance")));
     } finally {
       removeFixtureRoot(fixtureRoot);
     }

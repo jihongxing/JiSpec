@@ -171,7 +171,7 @@ const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Privacy Redaction', file: 'privacy-redaction.ts', expectedTests: 5, task: 'P6-T2' }),
   runtime({ name: 'Policy Approval Workflow', file: 'policy-approval-workflow.ts', expectedTests: 5, task: 'P6-T3' }),
   runtime({ name: 'Value Report', file: 'value-report.ts', expectedTests: 5, task: 'P8-T1' }),
-  runtime({ name: 'Commercial Pilot Readiness', file: 'pilot-readiness.ts', expectedTests: 5, task: 'P8-T2' }),
+  runtime({ name: 'Commercial Pilot Readiness', file: 'pilot-readiness.ts', expectedTests: 6, task: 'P8-T2/T0-5' }),
   runtime({ name: 'Collaboration Surface Freeze', file: 'collaboration-surface-freeze.ts', expectedTests: 4, task: 'P4-T2' }),
 ];
 

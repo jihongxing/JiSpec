@@ -46,6 +46,7 @@ npm run jispec-cli -- bootstrap discover --init-project
 npm run jispec-cli -- bootstrap draft
 npm run jispec-cli -- adopt --interactive
 npm run jispec-cli -- policy migrate
+npm run jispec-cli -- policy migrate --profile small_team --owner <owner> --reviewer <reviewer>
 npm run jispec-cli -- verify
 npm run jispec-cli -- verify --json
 npm run jispec-cli -- verify --fast
@@ -73,7 +74,7 @@ npm run jispec-cli -- doctor v1
 | `bootstrap discover --include-noise` | 显式 opt in 到 vendored、generated、cache、build、audit 和 tool-mirror 路径扫描，用于 forensic/exhaustive takeover 调查；默认主线不使用 |
 | `bootstrap draft` | 基于 ranked bootstrap evidence 生成首批 draft bundle 和 session manifest；可选 BYOK provider 只能做语义重锚 |
 | `adopt --interactive` | 对 draft 做 accept / reject / edit / skip_as_spec_debt 决策，并写入 takeover report、takeover brief 与 adopt summary |
-| `policy migrate` | 生成或规范化 `.spec/policy.yaml` |
+| `policy migrate` | 生成或规范化 `.spec/policy.yaml`，可显式声明 team profile、owner 和 reviewer |
 | `verify` | 运行确定性 gate，输出四态 verdict |
 | `verify --fast` | 运行本地 fast-lane precheck，必要时可自动提升回 strict 语义 |
 | `ci:verify` | 运行 CI 包装层，写出 `.jispec-ci` 报告产物 |
@@ -391,8 +392,9 @@ requires:
   facts_contract: "1.0"
 team:
   profile: small_team
-  owner: unassigned
-  reviewers: []
+  owner: <owner>
+  reviewers:
+    - <reviewer>
   required_reviewers: 1
 waivers:
   require_owner: true
@@ -418,7 +420,7 @@ execute_default:
 rules: []
 ```
 
-`team.profile` 当前支持 `solo`、`small_team`、`regulated`。P3-T1 后，`policy migrate --profile <profile>` 会按 profile 补齐 owner/reviewer、waiver、release 和 execute-default 默认治理姿态：`solo` 更宽松、`small_team` 要求 1 名 reviewer、`regulated` 要求 2 名 reviewer 且 execute-default 需要 clean verify。新增 profile 字段只描述治理姿态；除既有 policy rules 和 facts contract 校验外，不会隐式改变 verify 的确定性执行方式。
+`team.profile` 当前支持 `solo`、`small_team`、`regulated`。P3-T1 后，`policy migrate --profile <profile>` 会按 profile 补齐 owner/reviewer、waiver、release 和 execute-default 默认治理姿态：`solo` 更宽松、`small_team` 要求 1 名 reviewer、`regulated` 要求 2 名 reviewer 且 execute-default 需要 clean verify。T0-2 后，`policy migrate --owner <owner> --reviewer <reviewer>` 可显式写入 accountable owner 和 reviewer posture。新增 profile / owner / reviewer 字段只描述治理姿态；除既有 policy rules 和 facts contract 校验外，不会隐式改变 verify 的确定性执行方式。
 
 Policy migration 会把已知 deprecated key 迁到当前结构：
 

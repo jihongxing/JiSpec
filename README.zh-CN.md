@@ -274,6 +274,8 @@ npm run ci:verify
   运行 V1 主线 readiness gate 之外的扩展 runtime 与兼容层健康诊断。
 - `doctor pilot`
   检查仓库的商业试点 readiness：安装入口、首次 takeover baseline、CI verify、policy profile、waiver/spec debt 治理、Console governance snapshot 和 privacy report。
+- `pilot:ready`
+  运行可重复的试点 readiness gate，适合本地或 CI 收口；失败时输出 blocker owner action 和 next command，`--json` 返回底层 `doctor pilot` 报告。
 - `metrics value-report`
   在 `.spec/metrics/` 下写出 repo-local ROI 与 adoption report，指标来源可追溯到本地 artifacts，默认不联网。
 - `ci:verify`

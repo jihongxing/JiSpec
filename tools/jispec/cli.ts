@@ -145,7 +145,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli bootstrap discover [--json]",
     "  jispec-cli bootstrap draft [--json]",
     "  jispec-cli adopt --interactive [--json]",
-    "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--json]",
+    "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--owner <owner>] [--reviewer <reviewer...>] [--json]",
     "  jispec-cli policy approval status|record [--json]",
     "  jispec-cli doctor v1",
     "  jispec-cli doctor runtime",
@@ -327,14 +327,18 @@ function registerPolicyCommands(program: Command): void {
     .option("--root <path>", "Repository root.", ".")
     .option("--path <path>", "Override the policy file path.")
     .option("--profile <profile>", "Policy profile: solo|small_team|regulated.")
+    .option("--owner <owner>", "Accountable team owner for the policy profile.")
+    .option("--reviewer <reviewer...>", "Reviewer identifier(s) for the policy profile.")
     .option("--actor <actor>", "Actor recorded in the audit event.")
     .option("--reason <reason>", "Reason recorded in the audit event.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; path?: string; profile?: string; actor?: string; reason?: string; json: boolean }) => {
+    .action((options: { root: string; path?: string; profile?: string; owner?: string; reviewer?: string[]; actor?: string; reason?: string; json: boolean }) => {
       try {
         const profile = parsePolicyProfileOption(options.profile);
         const result = migrateVerifyPolicy(path.resolve(options.root), options.path, {
           profile,
+          owner: options.owner,
+          reviewers: options.reviewer,
           actor: options.actor,
           reason: options.reason,
         });

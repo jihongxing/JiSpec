@@ -93,6 +93,11 @@ function main(): void {
       "node --import tsx ./scripts/post-release-gate.ts",
       "primary script `post-release:gate`",
     );
+    assertEqual(
+      scripts["pilot:ready"],
+      "node --import tsx ./scripts/pilot-ready-gate.ts",
+      "primary script `pilot:ready`",
+    );
     assertEqual(scripts["ci:verify"], "node --import tsx ./scripts/check-jispec.ts", "primary script `ci:verify`");
     console.log("✓ Test 3: primary scripts point at the current first-class entry points");
     passed++;

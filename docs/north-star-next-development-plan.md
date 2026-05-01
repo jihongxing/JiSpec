@@ -28,6 +28,203 @@ governance productization -> adoption packaging -> ecosystem integration -> ente
 - 当前项目已经具备 AI 原生软件交付控制内核的雏形；下一阶段要把这个内核推进到可安装、可试用、可运营、可审计、可商业化的产品形态。
 - 商业化增强不能改变北极星边界：JiSpec 仍是 contract control layer，不是 autonomous code implementation agent，也不是 LLM-first blocking judge。
 
+## 当前仓库的试点闭环缺口
+
+`doctor v1` 已经通过，但 `doctor pilot` 仍暴露出 4 个明确缺口。它们不是新的产品方向，而是把现有主线补成可对外试点的交付包。
+
+### T0-1 首个 takeover baseline 落盘
+
+状态：已完成
+
+目标：
+
+- 让当前仓库至少拥有一份可复查、可回放的 bootstrap takeover 或 Greenfield baseline。
+- 让首次接管从“能演示”变成“有归档、有 owner、有后续动作”。
+
+需要补齐的产物：
+
+- `.spec/handoffs/bootstrap-takeover.json`
+- `.spec/handoffs/takeover-brief.md`
+- `.spec/handoffs/adopt-summary.md`
+- 或者 `.spec/baselines/current.yaml` / Greenfield baseline
+
+建议执行顺序：
+
+```bash
+npm run jispec -- first-run --root .
+npm run jispec -- bootstrap discover --root .
+npm run jispec -- bootstrap draft --root .
+npm run jispec -- adopt --interactive --root .
+```
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot First Takeover` 通过。
+- 试点 reviewer 能看到明确的 owner review、adopt decision 和 baseline 来源。
+
+完成记录：
+
+- 当前仓库已写出首个 committed bootstrap takeover baseline，session 为 `bootstrap-20260501T200659806Z`。
+- 关键落盘产物：
+  - `.spec/handoffs/bootstrap-takeover.json`
+  - `.spec/handoffs/takeover-brief.md`
+  - `.spec/handoffs/adopt-summary.md`
+  - `.spec/contracts/domain.yaml`
+  - `.spec/contracts/api_spec.json`
+  - `.spec/spec-debt/bootstrap-20260501T200659806Z/feature.json`
+- baseline 选择保守边界：`domain` 与 `api` 接管，`feature` 进入 spec debt，避免把薄弱行为证据误写成 blocking contract。
+
+### T0-2 Policy profile 与 accountable owner 补全
+
+状态：已完成
+
+目标：
+
+- 让 `.spec/policy.yaml` 不只声明 profile，还明确 team owner 和 reviewer posture。
+- 把 `unassigned` 变成可追踪的责任人，而不是默认占位。
+
+需要补齐的产物：
+
+- `.spec/policy.yaml`
+- `team.profile`
+- `team.owner`
+- `team.reviewers`
+- `team.required_reviewers`
+
+建议执行顺序：
+
+```bash
+npm run jispec -- policy migrate --profile small_team --owner <owner> --reviewer <reviewer> --root .
+```
+
+然后记录必要的 approval / audit 轨迹。
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot Policy Profile` 通过。
+- `doctor v1` 和 `policy approval` 看到的治理姿态与实际负责人一致。
+
+完成记录：
+
+- `policy migrate` 已支持 `--owner <owner>` 与 `--reviewer <reviewer...>`，让 pilot policy owner/reviewer posture 可以通过稳定 CLI 重放。
+- 当前仓库已通过以下命令把 `.spec/policy.yaml` 更新为 `small_team` 试点姿态：
+
+```bash
+npm run jispec -- policy migrate --root . --profile small_team --owner jispec-maintainers --reviewer pilot-reviewer --actor codex --reason "T0-2 declare accountable policy owner for pilot readiness"
+```
+
+- 当前 policy owner 为 `jispec-maintainers`，reviewer 为 `pilot-reviewer`，`required_reviewers` 为 `1`。
+- 已写入 policy owner approval 记录：`.spec/approvals/approval-ee8c45b8-c7cc-4706-86f6-b436fb48d4c7.json`。
+- 已写入 execute-default owner approval 记录：`.spec/approvals/approval-51758cb0-a23d-4081-bfe4-10c07c24675e.json`。
+- `policy approval status` 当前为 `approval_satisfied`。
+
+### T0-3 Console governance snapshot 导出
+
+状态：已完成
+
+目标：
+
+- 把当前仓库的治理状态导出成只读快照，供试点 review 直接读取。
+- 不扫描源码，不替代 `verify`，只做本地治理读模型。
+
+需要补齐的产物：
+
+- `.spec/console/governance-snapshot.json`
+- `.spec/console/governance-snapshot.md`
+
+建议执行顺序：
+
+```bash
+npm run jispec -- console export-governance --root .
+```
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot Console Governance` 通过。
+- Console snapshot 能回答 policy、waiver、spec debt、drift、verify posture 和 takeover quality。
+
+完成记录：
+
+- 当前仓库已通过以下命令导出本地只读治理快照：
+
+```bash
+npm run jispec -- console export-governance --root . --repo-id jispec-main --repo-name JiSpec
+```
+
+- 关键落盘产物：
+  - `.spec/console/governance-snapshot.json`
+  - `.spec/console/governance-snapshot.md`
+- Snapshot 当前显示 `policyProfile=small_team`、`policyOwner=jispec-maintainers`、`verifyVerdict=WARN_ADVISORY`、`approvalWorkflowStatus=approval_satisfied`、`bootstrapSpecDebt=1`。
+- Snapshot boundary 固定为 local-only、read-only、does not scan source、does not run verify、does not replace CLI gate。
+
+### T0-4 Privacy report 与可分享包
+
+状态：已完成。
+
+目标：
+
+- 在外部试点前，先把本地 JiSpec 产物里的敏感信息识别和脱敏做成固定动作。
+- 让共享包、审阅包和 Console 导出保持可控边界。
+
+需要补齐的产物：
+
+- `.spec/privacy/privacy-report.json`
+- `.spec/privacy/redacted/**`
+
+建议执行顺序：
+
+```bash
+npm run jispec -- privacy report --root .
+```
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot Privacy Report` 通过。
+- 外部共享包只保留 redacted companion，不泄漏原文 secret。
+
+本仓库完成记录：
+
+- 已执行：
+
+```bash
+npm run jispec -- privacy report --root . --json
+```
+
+- 关键落盘产物：
+  - `.spec/privacy/privacy-report.json`
+  - `.spec/privacy/privacy-report.md`
+- Privacy report 当前扫描 834 个 JiSpec 本地产物，`findingCount=0`，`highSeverityFindingCount=0`，没有需要额外 redacted companion 的发现。
+- 已执行 `npm run jispec -- doctor pilot --json`，当前 `ready=true`、`blockerCount=0`、7/7 检查通过。
+
+### T0-5 Pilot ready gate 收口
+
+状态：已完成。
+
+目标：
+
+- 把上面 4 个缺口收敛成一个可重复执行的试点门禁。
+- 让接下来的开发默认围绕 `doctor pilot --json` 的失败项推进，而不是自由扩散 surface。
+
+建议完成定义：
+
+```bash
+npm run pilot:ready
+npm run jispec -- doctor pilot --json
+```
+
+判定标准：
+
+- `ready: true`
+- `blockerCount: 0`
+- 所有 blocker 都有明确 owner action 和 next command
+
+完成记录：
+
+- 新增 `npm run pilot:ready`，由 `scripts/pilot-ready-gate.ts` 执行 `Doctor.checkCommercialPilotReadiness()`，以 `doctor pilot` 的 ready 结果作为唯一 gate 判定。
+- `pilot:ready` 默认输出人工可读摘要；失败时列出 blocker、owner action、next command 和 source artifacts；`--json` 输出底层 `doctor pilot` 机器报告。
+- 当前仓库执行 `npm run pilot:ready` 通过，`doctor pilot --json` 仍为 `ready=true`、`blockerCount=0`、7/7 检查通过。
+- `tools/jispec/tests/pilot-readiness.ts` 已覆盖 gate 脚本成功、JSON 输出和失败 blocker action；regression matrix 的 Commercial Pilot Readiness 期望测试数更新为 6。
+
 ## 排序原则
 
 1. Takeover 质量优先于新增命令面。

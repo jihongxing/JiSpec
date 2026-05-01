@@ -3,8 +3,9 @@ requires:
   facts_contract: '1.0'
 team:
   profile: small_team
-  owner: unassigned
-  reviewers: []
+  owner: jispec-maintainers
+  reviewers:
+    - pilot-reviewer
   required_reviewers: 1
 rules:
   - id: no-blocking-issues
