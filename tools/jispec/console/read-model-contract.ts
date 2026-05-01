@@ -11,6 +11,7 @@ export type ConsoleGovernanceObjectId =
   | "takeover_quality_trend"
   | "implementation_mediation_outcomes"
   | "audit_events"
+  | "approval_workflow"
   | "multi_repo_export";
 
 export interface ConsoleReadModelArtifact {
@@ -280,6 +281,18 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     sourceUploadRequired: false,
   },
   {
+    id: "value-report",
+    pathPattern: ".spec/metrics/value-report.json",
+    producer: "metrics value-report",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Repo-local ROI and adoption metrics: manual sorting reduction, surfaced risks, waiver/debt aging, and execute mediation stop points.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
     id: "implementation-handoff-packets",
     pathPattern: ".jispec/handoff/*.json",
     producer: "implement",
@@ -299,6 +312,18 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     stability: "local-contract",
     freshness: "project-state",
     readModelUse: "External patch scope, apply, test, and verify intake records.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "policy-approvals",
+    pathPattern: ".spec/approvals/*.json",
+    producer: "policy approval record",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Structured local approval decisions for policy, waiver, release drift, and execute-default changes.",
     machineReadable: true,
     parseMarkdown: false,
     sourceUploadRequired: false,
@@ -375,7 +400,7 @@ export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
   {
     id: "takeover_quality_trend",
     label: "Takeover quality trend",
-    sourceArtifactIds: ["retakeover-metrics", "retakeover-pool-metrics"],
+    sourceArtifactIds: ["retakeover-metrics", "retakeover-pool-metrics", "value-report"],
     missingState: "not_available_yet",
     automationInputs: "json_yaml_jsonl_only",
     markdownDisplayOnly: true,
@@ -398,6 +423,15 @@ export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
     automationInputs: "json_yaml_jsonl_only",
     markdownDisplayOnly: true,
     readModelUse: "Show local governance event ledger when audit events are enabled.",
+  },
+  {
+    id: "approval_workflow",
+    label: "Approval workflow",
+    sourceArtifactIds: ["verify-policy", "policy-approvals", "verify-waivers", "release-compare-report"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show approval missing, stale, or satisfied for policy, waiver, release drift, and execute-default changes.",
   },
   {
     id: "multi_repo_export",

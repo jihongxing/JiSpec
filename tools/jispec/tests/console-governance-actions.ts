@@ -25,8 +25,17 @@ async function main(): Promise<void> {
       assert.equal(plan.boundary.readOnly, true);
       assert.equal(plan.boundary.executesCommands, false);
       assert.equal(plan.boundary.writesLocalArtifacts, false);
-      assert.ok(plan.actions.some((action) => action.kind === "migrate_policy" && action.command.includes("policy migrate")));
-      assert.ok(plan.actions.some((action) => action.kind === "compare_release_drift" && action.command.includes("release compare")));
+      assert.ok(plan.actions.every((action) => action.decisionPacket.recommendedCommand === action.recommendedCommand));
+      assert.ok(plan.actions.every((action) => action.decisionPacket.sourceArtifacts.length > 0));
+      const policy = plan.actions.find((action) => action.kind === "migrate_policy");
+      const release = plan.actions.find((action) => action.kind === "compare_release_drift");
+      assert.ok(policy?.recommendedCommand.includes("policy migrate"));
+      assert.equal(policy?.owner, "policy owner");
+      assert.equal(policy?.decisionPacket.risk.level, "high");
+      assert.deepEqual(policy?.affectedContracts, [".spec/policy.yaml"]);
+      assert.ok(release?.recommendedCommand.includes("release compare"));
+      assert.equal(release?.decisionPacket.owner, "release owner");
+      assert.equal(release?.decisionPacket.risk.level, "medium");
       assert.equal(fs.existsSync(path.join(root, ".spec", "policy.yaml")), false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -66,8 +75,16 @@ async function main(): Promise<void> {
       const revoke = plan.actions.find((action) => action.kind === "revoke_waiver");
       assert.ok(renew?.command.includes("waiver renew waiver-soon"));
       assert.equal(renew?.status, "needs_input");
+      assert.equal(renew?.decisionPacket.owner, "team");
+      assert.equal(renew?.decisionPacket.risk.level, "medium");
+      assert.ok(renew?.decisionPacket.affectedContracts.includes("issue:API_CONTRACT_INVALID_JSON"));
+      assert.ok(renew?.decisionPacket.sourceArtifacts.some((source) => source.includes("waiver-soon.json")));
+      assert.equal(renew?.recommendedCommand, renew?.command);
       assert.ok(revoke?.command.includes("waiver revoke waiver-stale"));
       assert.equal(revoke?.status, "ready");
+      assert.equal(revoke?.decisionPacket.owner, "team");
+      assert.equal(revoke?.decisionPacket.risk.level, "high");
+      assert.ok(revoke?.decisionPacket.affectedContracts.includes("issue:STALE"));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -108,9 +125,19 @@ async function main(): Promise<void> {
       const plan = buildConsoleGovernanceActionPlan(root);
       const ownerReview = plan.actions.find((action) => action.kind === "mark_spec_debt_owner_review");
       const repay = plan.actions.find((action) => action.kind === "repay_spec_debt");
+      const cancel = plan.actions.find((action) => action.kind === "cancel_spec_debt");
       assert.ok(ownerReview?.command.includes("spec-debt owner-review debt-open"));
+      assert.equal(ownerReview?.decisionPacket.owner, "domain-owner");
+      assert.equal(ownerReview?.decisionPacket.risk.level, "medium");
+      assert.ok(ownerReview?.decisionPacket.affectedContracts.includes("CTR-DOMAIN-001"));
+      assert.ok(ownerReview?.decisionPacket.affectedContracts.includes("asset:.spec/contracts/domain.yaml"));
       assert.ok(repay?.command.includes("spec-debt repay debt-expired"));
       assert.equal(repay?.status, "ready");
+      assert.equal(repay?.decisionPacket.risk.level, "high");
+      assert.ok(repay?.decisionPacket.affectedContracts.includes("asset:.spec/contracts/behaviors.feature"));
+      assert.ok(cancel?.command.includes("spec-debt cancel debt-expired"));
+      assert.equal(cancel?.status, "needs_input");
+      assert.equal(cancel?.decisionPacket.risk.level, "medium");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -148,6 +175,9 @@ async function main(): Promise<void> {
       assert.equal(actions.status, 0, actions.stderr);
       const plan = JSON.parse(actions.stdout) as ReturnType<typeof buildConsoleGovernanceActionPlan>;
       assert.equal(plan.boundary.executesCommands, false);
+      assert.ok(plan.actions.every((action) => action.decisionPacket.auditEventRequired));
+      assert.ok(plan.actions.every((action) => action.decisionPacket.recommendedCommand === action.command));
+      assert.ok(plan.actions.every((action) => action.decisionPacket.commandWrites.includes(".spec/audit/events.jsonl")));
       assert.ok(plan.actions.some((action) => action.command.includes("spec-debt owner-review debt-cli")));
       assert.equal(readAuditEvents(root).length, 0);
 

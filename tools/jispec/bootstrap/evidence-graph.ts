@@ -23,8 +23,8 @@ export interface EvidenceTest extends EvidenceSignal {
 
 export interface EvidenceSchema extends EvidenceSignal {
   path: string;
-  format: "openapi" | "json-schema" | "protobuf" | "database-schema" | "unknown";
-  signal?: "openapi_file" | "json_schema_file" | "protobuf_file" | "database_schema_file" | "schema_directory";
+  format: "openapi" | "json-schema" | "protobuf" | "graphql" | "database-schema" | "unknown";
+  signal?: "openapi_file" | "json_schema_file" | "protobuf_file" | "graphql_schema_file" | "database_schema_file" | "schema_directory";
 }
 
 export interface EvidenceMigration extends EvidenceSignal {
@@ -50,7 +50,12 @@ export interface EvidenceManifest extends EvidenceSignal {
     | "cargo"
     | "go-mod"
     | "gemfile"
-    | "composer";
+    | "composer"
+    | "pnpm-workspace"
+    | "nx"
+    | "turbo"
+    | "lerna"
+    | "rush";
 }
 
 export interface EvidenceSourceFile {

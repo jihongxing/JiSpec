@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { collectConsoleLocalSnapshot, type ConsoleGovernanceObjectSnapshot } from "./read-model-snapshot";
+import { redactJsonForSharing } from "../privacy/redaction";
 
 export interface ConsoleGovernanceExportOptions {
   root: string;
@@ -40,12 +41,21 @@ export interface MultiRepoGovernanceSnapshot {
     policyProfile: unknown;
     policyOwner: unknown;
     activeWaivers: unknown;
+    expiringSoonWaivers: unknown;
+    expiredWaivers: unknown;
     unmatchedActiveWaivers: unknown;
     openSpecDebt: unknown;
     bootstrapSpecDebt: unknown;
     releaseDriftStatus: unknown;
     releaseDriftTrendComparisons: unknown;
+    approvalWorkflowStatus: unknown;
     latestAuditActor: unknown;
+  };
+  privacy?: {
+    redactionApplied: true;
+    findingCount: number;
+    findingTypes: string[];
+    reportPath: string;
   };
   governanceObjects: Array<Pick<
     ConsoleGovernanceObjectSnapshot,
@@ -79,7 +89,7 @@ export function exportConsoleGovernanceSnapshot(options: ConsoleGovernanceExport
     summary: object.summary,
   }));
   const exportedAt = options.exportedAt ?? new Date().toISOString();
-  const snapshot: MultiRepoGovernanceSnapshot = {
+  const snapshot: Omit<MultiRepoGovernanceSnapshot, "privacy"> = {
     schemaVersion: 1,
     kind: "jispec-multi-repo-governance-snapshot",
     exportedAt,
@@ -110,16 +120,26 @@ export function exportConsoleGovernanceSnapshot(options: ConsoleGovernanceExport
     aggregateHints: buildAggregateHints(governanceObjects),
     governanceObjects,
   };
+  const redacted = redactJsonForSharing(snapshot);
+  const exportedSnapshot: MultiRepoGovernanceSnapshot = {
+    ...redacted.value,
+    privacy: {
+      redactionApplied: true,
+      findingCount: redacted.findings.length,
+      findingTypes: Array.from(new Set(redacted.findings.map((finding) => finding.type))).sort((left, right) => left.localeCompare(right)),
+      reportPath: ".spec/privacy/privacy-report.json",
+    },
+  };
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf-8");
-  fs.writeFileSync(summaryPath, renderConsoleGovernanceExportText(snapshot), "utf-8");
+  fs.writeFileSync(outPath, `${JSON.stringify(exportedSnapshot, null, 2)}\n`, "utf-8");
+  fs.writeFileSync(summaryPath, renderConsoleGovernanceExportText(exportedSnapshot), "utf-8");
 
   return {
     root: normalizePath(root),
     snapshotPath: normalizePath(outPath),
     summaryPath: normalizePath(summaryPath),
-    snapshot,
+    snapshot: exportedSnapshot,
   };
 }
 
@@ -139,8 +159,10 @@ export function renderConsoleGovernanceExportText(snapshot: MultiRepoGovernanceS
     `- Verify verdict: ${String(snapshot.aggregateHints.verifyVerdict ?? "not_available_yet")}`,
     `- Policy profile: ${String(snapshot.aggregateHints.policyProfile ?? "not_available_yet")}`,
     `- Active waivers: ${String(snapshot.aggregateHints.activeWaivers ?? "not_available_yet")}`,
+    `- Expiring soon waivers: ${formatList(snapshot.aggregateHints.expiringSoonWaivers)}`,
     `- Open spec debt: ${String(snapshot.aggregateHints.openSpecDebt ?? "not_available_yet")}`,
     `- Release drift: ${String(snapshot.aggregateHints.releaseDriftStatus ?? "not_available_yet")}`,
+    `- Privacy redactions: ${snapshot.privacy?.findingCount ?? 0}`,
     "",
     "## Boundary",
     "",
@@ -165,17 +187,21 @@ function buildAggregateHints(
   const drift = governanceObject(governanceObjects, "contract_drift");
   const verify = governanceObject(governanceObjects, "verify_trend");
   const audit = governanceObject(governanceObjects, "audit_events");
+  const approval = governanceObject(governanceObjects, "approval_workflow");
 
   return {
     verifyVerdict: verify?.summary.verdict ?? "not_available_yet",
     policyProfile: policy?.summary.teamProfile ?? "not_available_yet",
     policyOwner: policy?.summary.owner ?? "not_available_yet",
     activeWaivers: waivers?.summary.active ?? "not_available_yet",
+    expiringSoonWaivers: waivers?.summary.expiringSoonIds ?? [],
+    expiredWaivers: waivers?.summary.expiredIds ?? [],
     unmatchedActiveWaivers: waivers?.summary.unmatchedActiveIds ?? [],
     openSpecDebt: debt?.summary.greenfieldLedgerItems ?? "not_available_yet",
     bootstrapSpecDebt: debt?.summary.bootstrapDebtRecords ?? "not_available_yet",
     releaseDriftStatus: extractNestedValue(drift?.summary.driftSummary, ["overallStatus"]) ?? "not_available_yet",
     releaseDriftTrendComparisons: drift?.summary.trendCompareCount ?? "not_available_yet",
+    approvalWorkflowStatus: approval?.summary.status ?? "not_available_yet",
     latestAuditActor: audit?.summary.latestActor ?? "not_available_yet",
   };
 }
@@ -196,6 +222,13 @@ function extractNestedValue(value: unknown, pathSegments: string[]): unknown {
     current = current[segment];
   }
   return current;
+}
+
+function formatList(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.map(String).join(", ") : "none";
+  }
+  return String(value ?? "not_available_yet");
 }
 
 function resolveExportPath(root: string, outPath?: string): string {

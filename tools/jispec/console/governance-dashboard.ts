@@ -11,6 +11,7 @@ export type ConsoleGovernanceQuestionId =
   | "spec_debt_attention"
   | "contract_drift_review"
   | "execute_mediation_status"
+  | "approval_workflow_status"
   | "audit_traceability";
 
 export type ConsoleGovernanceStatus = "ok" | "attention" | "blocked" | "unknown";
@@ -59,6 +60,7 @@ export function buildConsoleGovernanceDashboard(rootInput: string): ConsoleGover
     buildSpecDebtQuestion(snapshot),
     buildContractDriftQuestion(snapshot),
     buildImplementationQuestion(snapshot),
+    buildApprovalQuestion(snapshot),
     buildAuditQuestion(snapshot),
   ];
   const headline = buildHeadline(questions);
@@ -417,6 +419,87 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
   });
 }
 
+function buildApprovalQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
+  const approval = governanceObject(snapshot, "approval_workflow");
+  const summary = approval?.summary ?? {};
+  const status = stringValue(summary.status);
+  const subjects = Array.isArray(summary.subjects) ? summary.subjects.filter(isRecord) : [];
+  const missing = numberValue(summary.missing) ?? 0;
+  const stale = numberValue(summary.stale) ?? 0;
+  const satisfied = numberValue(summary.satisfied) ?? 0;
+  const totalSubjects = numberValue(summary.totalSubjects) ?? 0;
+
+  if (!approval || summary.state === "not_available_yet") {
+    return question({
+      id: "approval_workflow_status",
+      label: "Are policy approvals satisfied?",
+      status: "unknown",
+      answer: "No policy approval workflow artifact or policy subject is available yet.",
+      evidence: ["Missing .spec/policy.yaml and/or .spec/approvals/*.json"],
+      nextActions: ["Run npm run jispec-cli -- policy migrate, then record approvals through policy approval record when governance changes need review."],
+    });
+  }
+
+  if (summary.state === "invalid") {
+    return question({
+      id: "approval_workflow_status",
+      label: "Are policy approvals satisfied?",
+      status: "attention",
+      answer: `Approval workflow could not be evaluated: ${stringValue(summary.error) ?? "invalid approval artifacts"}.`,
+      evidence: ["Approval workflow is based only on local structured artifacts."],
+      nextActions: ["Review .spec/approvals/*.json and .spec/policy.yaml before relying on approval posture."],
+    });
+  }
+
+  if (status === "approval_stale" || stale > 0) {
+    return question({
+      id: "approval_workflow_status",
+      label: "Are policy approvals satisfied?",
+      status: "attention",
+      answer: `${stale} approval subject(s) have stale approvals; ${missing} subject(s) are still missing approval.`,
+      evidence: [
+        `Approval profile: ${String(summary.profile ?? "not_declared")}`,
+        `Subjects: ${totalSubjects}, satisfied=${satisfied}, stale=${stale}, missing=${missing}`,
+        ...subjects
+          .filter((subject) => subject.status === "approval_stale")
+          .slice(0, 3)
+          .map((subject) => `Stale approval: ${String(subject.kind)} ${String(subject.ref)}`),
+      ],
+      nextActions: ["Record a fresh local approval after reviewing the current policy, waiver, release drift, or execute-default subject."],
+    });
+  }
+
+  if (status === "approval_missing" || missing > 0) {
+    return question({
+      id: "approval_workflow_status",
+      label: "Are policy approvals satisfied?",
+      status: "attention",
+      answer: `${missing} approval subject(s) are missing reviewer quorum or owner approval.`,
+      evidence: [
+        `Approval profile: ${String(summary.profile ?? "not_declared")}`,
+        `Requirement: ${String(summary.requiredReviewers ?? "unknown")} reviewer(s) or owner approval`,
+        ...subjects
+          .filter((subject) => subject.status === "approval_missing")
+          .slice(0, 3)
+          .map((subject) => `Missing approval: ${String(subject.kind)} ${String(subject.ref)}`),
+      ],
+      nextActions: ["Run npm run jispec-cli -- policy approval record --subject-kind <kind> --actor <name> --role reviewer --reason <reason>."],
+    });
+  }
+
+  return question({
+    id: "approval_workflow_status",
+    label: "Are policy approvals satisfied?",
+    status: "ok",
+    answer: `Approval workflow is satisfied for ${satisfied} subject(s).`,
+    evidence: [
+      `Approval profile: ${String(summary.profile ?? "not_declared")}`,
+      `Current approvals: ${String(summary.currentApprovals ?? 0)}`,
+    ],
+    nextActions: [],
+  });
+}
+
 function buildAuditQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
   const audit = governanceObject(snapshot, "audit_events");
   const summary = audit?.summary ?? {};
@@ -425,6 +508,9 @@ function buildAuditQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDa
   const latestTimestamp = stringValue(summary.latestTimestamp);
   const latestReason = stringValue(summary.latestReason);
   const eventCount = numberValue(summary.eventCount) ?? 0;
+  const integrityStatus = stringValue(summary.integrityStatus);
+  const integrityIssueCount = numberValue(summary.integrityIssueCount) ?? 0;
+  const integrityIssues = Array.isArray(summary.integrityIssues) ? summary.integrityIssues : [];
 
   if (!audit || summary.state === "not_available_yet") {
     return question({
@@ -437,6 +523,23 @@ function buildAuditQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDa
     });
   }
 
+  if (integrityStatus === "warning" || integrityStatus === "invalid") {
+    return question({
+      id: "audit_traceability",
+      label: "Who approved the latest exception or boundary change?",
+      status: "attention",
+      answer: `Audit ledger integrity is ${integrityStatus}; review the ledger before relying on traceability.`,
+      evidence: [
+        `Audit events: ${eventCount}`,
+        `Integrity issues: ${integrityIssueCount}`,
+        ...integrityIssues.slice(0, 3).map((issue) => isRecord(issue)
+          ? `Line ${String(issue.line ?? "unknown")}: ${String(issue.code ?? "unknown")}`
+          : String(issue)),
+      ],
+      nextActions: ["Review .spec/audit/events.jsonl and append new governance actions only after the integrity warning is understood."],
+    });
+  }
+
   return question({
     id: "audit_traceability",
     label: "Who approved the latest exception or boundary change?",
@@ -444,6 +547,7 @@ function buildAuditQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDa
     answer: `${latestActor ?? "unknown"} recorded ${latestType ?? "unknown"} at ${latestTimestamp ?? "unknown"}.`,
     evidence: [
       `Audit events: ${eventCount}`,
+      `Integrity: ${integrityStatus ?? "not_available_yet"}`,
       `Latest reason: ${latestReason ?? "not declared"}`,
       `Latest source artifact: ${stringValue(summary.latestSourceArtifact) ?? "not declared"}`,
     ],

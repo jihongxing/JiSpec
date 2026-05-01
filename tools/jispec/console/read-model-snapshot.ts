@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { inspectAuditLedger } from "../audit/event-ledger";
+import { evaluatePolicyApprovalWorkflow } from "../policy/approval";
 import {
   CONSOLE_READ_MODEL_ARTIFACTS,
   CONSOLE_GOVERNANCE_OBJECTS,
@@ -101,7 +103,7 @@ export function collectConsoleLocalSnapshot(rootInput: string, options: ConsoleL
   const artifacts = CONSOLE_READ_MODEL_ARTIFACTS
     .filter((artifact) => !excludedIds.has(artifact.id))
     .map((artifact) => readSnapshotArtifact(root, artifact));
-  const governanceObjects = buildGovernanceObjects(artifacts);
+  const governanceObjects = buildGovernanceObjects(root, artifacts);
   const governanceSummary = summarizeGovernanceObjects(governanceObjects);
   const summary = artifacts.reduce(
     (acc, artifact) => {
@@ -187,6 +189,10 @@ function resolveArtifactRelativePaths(root: string, pathPattern: string): string
 
   if (pathPattern === ".spec/waivers/*.json") {
     return listDirectFiles(root, ".spec/waivers", ".json");
+  }
+
+  if (pathPattern === ".spec/approvals/*.json") {
+    return listDirectFiles(root, ".spec/approvals", ".json");
   }
 
   if (pathPattern === ".spec/spec-debt/<session-id>/*.json") {
@@ -306,7 +312,7 @@ function summarizeInstanceStatuses(instances: ConsoleSnapshotArtifactInstance[])
   return "available";
 }
 
-function buildGovernanceObjects(artifacts: ConsoleSnapshotArtifact[]): ConsoleGovernanceObjectSnapshot[] {
+function buildGovernanceObjects(root: string, artifacts: ConsoleSnapshotArtifact[]): ConsoleGovernanceObjectSnapshot[] {
   return CONSOLE_GOVERNANCE_OBJECTS.map((object) => {
     const sourceArtifacts = object.sourceArtifactIds
       .map((id) => artifacts.find((artifact) => artifact.id === id))
@@ -326,7 +332,7 @@ function buildGovernanceObjects(artifacts: ConsoleSnapshotArtifact[]): ConsoleGo
       missingSourceArtifactIds,
       automationInputs: object.automationInputs,
       markdownDisplayOnly: true,
-      summary: buildGovernanceSummary(object.id, sourceArtifacts),
+      summary: buildGovernanceSummary(root, object.id, sourceArtifacts),
       message: status === "not_available_yet"
         ? "Governance object not available yet. Run the producing JiSpec command to create its source artifact."
         : undefined,
@@ -376,11 +382,16 @@ function summarizeGovernanceObjects(objects: ConsoleGovernanceObjectSnapshot[]):
 }
 
 function buildGovernanceSummary(
+  root: string,
   id: ConsoleGovernanceObjectId,
   sourceArtifacts: ConsoleSnapshotArtifact[],
 ): Record<string, unknown> {
   if (sourceArtifacts.every((artifact) => artifact.status === "not_available_yet")) {
     return { state: "not_available_yet" };
+  }
+
+  if (id === "audit_events") {
+    return summarizeAuditEvents(root, sourceArtifacts);
   }
 
   if (sourceArtifacts.some((artifact) => artifact.status === "invalid" || artifact.status === "unreadable")) {
@@ -411,11 +422,11 @@ function buildGovernanceSummary(
   if (id === "implementation_mediation_outcomes") {
     return summarizeImplementationMediation(sourceArtifacts);
   }
-  if (id === "audit_events") {
-    return summarizeAuditEvents(sourceArtifacts);
-  }
   if (id === "multi_repo_export") {
     return summarizeMultiRepoExport(sourceArtifacts);
+  }
+  if (id === "approval_workflow") {
+    return summarizeApprovalWorkflow(root);
   }
 
   return { state: "available" };
@@ -457,6 +468,7 @@ function summarizeWaiverLifecycle(sourceArtifacts: ConsoleSnapshotArtifact[]): R
   const report = getFirstData(sourceArtifacts, "ci-verify-report");
   const counts = countByStatus(waivers.map((waiver) => String(waiver.status ?? "active")));
   const modes = isRecord(report) && isRecord(report.modes) ? report.modes : {};
+  const activeWaivers = waivers.filter((waiver) => String(waiver.status ?? "active") === "active");
 
   return {
     state: waivers.length > 0 || isRecord(report) ? "available" : "not_available_yet",
@@ -467,6 +479,12 @@ function summarizeWaiverLifecycle(sourceArtifacts: ConsoleSnapshotArtifact[]): R
     invalid: counts.invalid ?? 0,
     matchedInLatestVerify: modes.waiversApplied ?? 0,
     unmatchedActiveIds: Array.isArray(modes.unmatchedActiveWaiverIds) ? modes.unmatchedActiveWaiverIds : [],
+    expiringSoonIds: activeWaivers
+      .filter((waiver) => expiresWithinDays(stringValue(waiver.expiresAt) ?? stringValue(waiver.expires_at), 14))
+      .map((waiver) => stringValue(waiver.id) ?? "unknown"),
+    expiredIds: activeWaivers
+      .filter((waiver) => isPastDate(stringValue(waiver.expiresAt) ?? stringValue(waiver.expires_at)))
+      .map((waiver) => stringValue(waiver.id) ?? "unknown"),
   };
 }
 
@@ -554,13 +572,25 @@ function summarizeVerifyTrend(sourceArtifacts: ConsoleSnapshotArtifact[]): Recor
 function summarizeTakeoverQuality(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
   const single = getFirstData(sourceArtifacts, "retakeover-metrics");
   const pool = getFirstData(sourceArtifacts, "retakeover-pool-metrics");
+  const valueReport = getFirstData(sourceArtifacts, "value-report");
+  const headline = isRecord(valueReport) && isRecord(valueReport.headline) ? valueReport.headline : {};
+  const metrics = isRecord(valueReport) && isRecord(valueReport.metrics) ? valueReport.metrics : {};
+  const manualSorting = isRecord(metrics.manualSortingReduction) ? metrics.manualSortingReduction : {};
+  const risks = isRecord(metrics.riskSurfacing) ? metrics.riskSurfacing : {};
+  const execute = isRecord(metrics.executeMediationStopPoints) ? metrics.executeMediationStopPoints : {};
 
   return {
-    state: single !== undefined || pool !== undefined ? "available" : "not_available_yet",
+    state: single !== undefined || pool !== undefined || valueReport !== undefined ? "available" : "not_available_yet",
     hasSingleMetrics: single !== undefined,
     hasPoolMetrics: pool !== undefined,
+    hasValueReport: valueReport !== undefined,
     singleScore: extractNestedValue(single, ["qualityScorecard", "score"]) ?? extractNestedValue(single, ["quality_scorecard", "score"]),
     poolFixtureCount: extractArrayFromRecord(pool, ["fixtures", "fixtureMetrics", "fixture_metrics"]).length,
+    estimatedManualSortingMinutesSaved: headline.estimatedManualSortingMinutesSaved ?? manualSorting.estimatedMinutesSaved ?? "not_available_yet",
+    blockingIssuesCaught: headline.blockingIssuesCaught ?? risks.blockingIssuesCaught ?? "not_available_yet",
+    advisoryRisksSurfaced: headline.advisoryRisksSurfaced ?? risks.advisoryRisksSurfaced ?? "not_available_yet",
+    executeStopsNeedingReview: headline.executeStopsNeedingReview ?? "not_available_yet",
+    executeStopPoints: isRecord(execute.stopPoints) ? execute.stopPoints : {},
   };
 }
 
@@ -583,18 +613,31 @@ function summarizeImplementationMediation(sourceArtifacts: ConsoleSnapshotArtifa
   };
 }
 
-function summarizeAuditEvents(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
-  const events = getAllData(sourceArtifacts, "audit-events").flatMap((entry) => Array.isArray(entry) ? entry : [entry]).filter(isRecord);
+function summarizeAuditEvents(root: string, sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const inspection = inspectAuditLedger(root);
+  const events = inspection.events.filter(isRecord);
   const latest = events.at(-1);
-  const typedEvents = events.map((event) => String(event.type ?? event.event ?? "unknown"));
-  const approvalEvents = events.filter((event) => isApprovalAuditEvent(String(event.type ?? event.event ?? "")));
-  const boundaryEvents = events.filter((event) => isBoundaryAuditEvent(String(event.type ?? event.event ?? "")));
-  const exceptionEvents = events.filter((event) => isExceptionAuditEvent(String(event.type ?? event.event ?? "")));
+  const typedEvents = events.map(auditEventType);
+  const approvalEvents = events.filter((event) => isApprovalAuditEvent(auditEventType(event)));
+  const boundaryEvents = events.filter((event) => isBoundaryAuditEvent(auditEventType(event)));
+  const exceptionEvents = events.filter((event) => isExceptionAuditEvent(auditEventType(event)));
 
   return {
     state: events.length > 0 ? "available" : "not_available_yet",
     eventCount: events.length,
-    latestEventType: latest?.type ?? latest?.event ?? "not_available_yet",
+    integrityStatus: inspection.status,
+    integrityVerifiedEventCount: inspection.verifiedEventCount,
+    integrityLegacyEventCount: inspection.legacyEventCount,
+    integrityParseErrorCount: inspection.parseErrorCount,
+    integrityLatestSequence: inspection.latestSequence,
+    integrityLatestHash: inspection.latestHash ?? "not_available_yet",
+    integrityIssueCount: inspection.issues.length,
+    integrityIssues: inspection.issues.slice(0, 10).map((issue) => ({
+      line: issue.line,
+      code: issue.code,
+      message: issue.message,
+    })),
+    latestEventType: latest ? auditEventType(latest) : "not_available_yet",
     latestActor: latest?.actor ?? "not_available_yet",
     latestTimestamp: latest?.timestamp ?? "not_available_yet",
     latestReason: latest?.reason ?? "not_available_yet",
@@ -629,6 +672,53 @@ function summarizeMultiRepoExport(sourceArtifacts: ConsoleSnapshotArtifact[]): R
     openSpecDebt: aggregateHints.openSpecDebt ?? "not_declared",
     releaseDriftStatus: aggregateHints.releaseDriftStatus ?? "not_declared",
   };
+}
+
+function summarizeApprovalWorkflow(root: string): Record<string, unknown> {
+  try {
+    const posture = evaluatePolicyApprovalWorkflow(root);
+    return {
+      state: posture.summary.totalSubjects > 0 || posture.summary.approvals > 0 ? "available" : "not_available_yet",
+      status: posture.status,
+      profile: posture.profile,
+      requiredReviewers: posture.requirement.requiredReviewers,
+      ownerApprovalAllowed: posture.requirement.ownerApprovalAllowed,
+      totalSubjects: posture.summary.totalSubjects,
+      satisfied: posture.summary.satisfied,
+      missing: posture.summary.missing,
+      stale: posture.summary.stale,
+      approvals: posture.summary.approvals,
+      currentApprovals: posture.summary.currentApprovals,
+      staleApprovals: posture.summary.staleApprovals,
+      rejectedApprovals: posture.summary.rejectedApprovals,
+      subjects: posture.subjects.map((subject) => ({
+        kind: subject.subject.kind,
+        ref: subject.subject.ref,
+        hash: subject.subject.hash,
+        status: subject.status,
+        approvedReviewers: subject.approvedReviewers,
+        ownerApprovedBy: subject.ownerApprovedBy,
+        currentApprovalIds: subject.currentApprovalIds,
+        staleApprovalIds: subject.staleApprovalIds,
+        rejectedApprovalIds: subject.rejectedApprovalIds,
+        missingReviewers: subject.missingReviewers,
+        reason: subject.reason,
+      })),
+      boundary: posture.boundary,
+    };
+  } catch (error) {
+    return {
+      state: "invalid",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function auditEventType(event: unknown): string {
+  if (!isRecord(event)) {
+    return "unknown";
+  }
+  return String(event.type ?? event.event ?? "unknown");
 }
 
 function getInstances(artifacts: ConsoleSnapshotArtifact[], id: string): ConsoleSnapshotArtifactInstance[] {
@@ -678,12 +768,37 @@ function extractNestedValue(value: unknown, pathSegments: string[]): unknown {
   return current;
 }
 
+function expiresWithinDays(value: string | undefined, days: number): boolean {
+  if (!value) {
+    return false;
+  }
+  const expires = new Date(value).getTime();
+  if (Number.isNaN(expires)) {
+    return false;
+  }
+  const now = Date.now();
+  return expires >= now && expires <= now + days * 24 * 60 * 60 * 1000;
+}
+
+function isPastDate(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const time = new Date(value).getTime();
+  return !Number.isNaN(time) && time < Date.now();
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
 function isApprovalAuditEvent(type: string): boolean {
   return [
     "adopt_accept",
     "adopt_edit",
     "review_adopt",
     "release_snapshot",
+    "policy_approval_decision",
   ].includes(type);
 }
 

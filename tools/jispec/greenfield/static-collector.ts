@@ -17,6 +17,7 @@ export type StaticCollectorFactKind =
   | "migration"
   | "type_definition"
   | "package_script"
+  | "monorepo_manifest"
   | "config"
   | "unresolved_surface";
 
@@ -125,10 +126,12 @@ export function collectStaticImplementationFacts(
     const drafts = [
       ...discoverRouteFacts(relativePath, content),
       ...discoverSchemaFacts(relativePath, content),
+      ...discoverGraphqlUnresolvedSurfaces(relativePath, content),
       ...discoverMigrationFacts(relativePath, content),
       ...discoverTypeDefinitionFacts(relativePath, content),
       ...discoverTestFacts(relativePath, content),
       ...discoverPackageScriptFacts(relativePath, content),
+      ...discoverMonorepoManifestFacts(relativePath, content),
       ...discoverConfigFacts(relativePath),
     ];
 
@@ -337,6 +340,55 @@ function discoverRouteFacts(relativePath: string, content: string): FactDraft[] 
 
 function discoverSchemaFacts(relativePath: string, content: string): FactDraft[] {
   const facts: FactDraft[] = [];
+  const extension = path.extname(relativePath).toLowerCase();
+  const fileName = path.basename(relativePath).toLowerCase();
+
+  if (extension === ".proto") {
+    const services = stableUnique(Array.from(content.matchAll(/\bservice\s+([A-Za-z_][\w]*)\s*{/g)).map((match) => match[1] ?? "").filter(Boolean));
+    const messages = stableUnique(Array.from(content.matchAll(/\bmessage\s+([A-Za-z_][\w]*)\s*{/g)).map((match) => match[1] ?? "").filter(Boolean));
+    facts.push({
+      id: `schema:${relativePath}`,
+      kind: "schema",
+      label: `Protobuf schema ${relativePath}`,
+      path: relativePath,
+      metadata: {
+        adapter_id: "protobuf",
+        extractor: "protobuf-file",
+        services,
+        messages,
+      },
+    });
+  }
+
+  if ([".graphql", ".gql"].includes(extension)) {
+    facts.push({
+      id: `schema:${relativePath}`,
+      kind: "schema",
+      label: `GraphQL schema ${relativePath}`,
+      path: relativePath,
+      metadata: {
+        adapter_id: "graphql",
+        extractor: "graphql-schema-file",
+        operations: discoverGraphqlOperationTypes(content),
+        types: discoverGraphqlTypes(content),
+      },
+    });
+  }
+
+  if (/openapi|swagger/.test(fileName) && [".yaml", ".yml", ".json"].includes(extension)) {
+    facts.push({
+      id: `schema:${relativePath}`,
+      kind: "schema",
+      label: `OpenAPI schema ${relativePath}`,
+      path: relativePath,
+      metadata: {
+        adapter_id: "openapi",
+        extractor: "openapi-file",
+        paths: discoverOpenApiPaths(content),
+      },
+    });
+  }
+
   for (const table of discoverSqlTables(content)) {
     facts.push({
       id: `schema:${table.name}`,
@@ -344,6 +396,7 @@ function discoverSchemaFacts(relativePath: string, content: string): FactDraft[]
       label: `Schema ${table.name}`,
       path: relativePath,
       metadata: {
+        adapter_id: "db_migration",
         table: table.name,
         columns: table.columns,
         primary_keys: table.primaryKeys,
@@ -352,7 +405,11 @@ function discoverSchemaFacts(relativePath: string, content: string): FactDraft[]
     });
   }
 
-  if (/schema|z\.object|object\s*\(|typeDefs|GraphQLObjectType/i.test(content) && /schemas?|models?|dto|contract/i.test(relativePath)) {
+  if (
+    !isContractSourceSchemaFile(relativePath) &&
+    /schema|z\.object|object\s*\(|typeDefs|GraphQLObjectType/i.test(content) &&
+    /schemas?|models?|dto|contract/i.test(relativePath)
+  ) {
     facts.push({
       id: `schema:${relativePath}`,
       kind: "schema",
@@ -363,6 +420,28 @@ function discoverSchemaFacts(relativePath: string, content: string): FactDraft[]
   }
 
   return facts;
+}
+
+function discoverGraphqlUnresolvedSurfaces(relativePath: string, content: string): FactDraft[] {
+  if (isGraphqlSchemaFile(relativePath)) {
+    return [];
+  }
+  if (!/\b(gql\s*`|typeDefs\s*=|GraphQLObjectType|GraphQLSchema|resolver[s]?\b)/i.test(content)) {
+    return [];
+  }
+
+  return [{
+    id: `unresolved_surface:graphql:${relativePath}`,
+    kind: "unresolved_surface",
+    label: `Unresolved GraphQL surface ${relativePath}`,
+    path: relativePath,
+    confidence: "unresolved",
+    metadata: {
+      adapter_id: "graphql",
+      surface_kind: "graphql",
+      reason: "GraphQL surface is embedded in source code and requires owner review before contract adoption.",
+    },
+  }];
 }
 
 function discoverMigrationFacts(relativePath: string, content: string): FactDraft[] {
@@ -458,6 +537,59 @@ function discoverPackageScriptFacts(relativePath: string, content: string): Fact
   } catch {
     return [];
   }
+}
+
+function discoverMonorepoManifestFacts(relativePath: string, content: string): FactDraft[] {
+  const fileName = path.basename(relativePath).toLowerCase();
+  const manifestKinds: Record<string, string> = {
+    "pnpm-workspace.yaml": "pnpm",
+    "nx.json": "nx",
+    "turbo.json": "turbo",
+    "lerna.json": "lerna",
+    "rush.json": "rush",
+  };
+  const directKind = manifestKinds[fileName];
+  if (directKind) {
+    return [{
+      id: `monorepo_manifest:${relativePath}`,
+      kind: "monorepo_manifest",
+      label: `Monorepo manifest ${relativePath}`,
+      path: relativePath,
+      confidence: "heuristic",
+      metadata: {
+        adapter_id: "monorepo_manifest",
+        manifest_kind: directKind,
+        advisory_only: true,
+      },
+    }];
+  }
+
+  if (relativePath !== "package.json") {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(content) as { workspaces?: unknown };
+    const workspaces = parsed.workspaces;
+    if (Array.isArray(workspaces) || (isRecord(workspaces) && Array.isArray(workspaces.packages))) {
+      return [{
+        id: "monorepo_manifest:package.json:workspaces",
+        kind: "monorepo_manifest",
+        label: "Monorepo manifest package.json workspaces",
+        path: relativePath,
+        confidence: "heuristic",
+        metadata: {
+          adapter_id: "monorepo_manifest",
+          manifest_kind: "package-json-workspaces",
+          advisory_only: true,
+        },
+      }];
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
 }
 
 function discoverConfigFacts(relativePath: string): FactDraft[] {
@@ -763,9 +895,20 @@ function shouldSkipDirectory(relativePath: string): boolean {
 }
 
 function isCollectableFile(fileName: string): boolean {
-  return /\.(ts|tsx|js|jsx|mjs|cjs|json|yaml|yml|sql|go|rs|java|kt|py|rb|php|feature)$/.test(fileName) ||
+  return /\.(ts|tsx|js|jsx|mjs|cjs|json|yaml|yml|sql|go|rs|java|kt|py|rb|php|feature|proto|graphql|gql)$/.test(fileName) ||
     fileName === "go.mod" ||
     fileName === "pom.xml";
+}
+
+function isGraphqlSchemaFile(relativePath: string): boolean {
+  const extension = path.extname(relativePath).toLowerCase();
+  return extension === ".graphql" || extension === ".gql";
+}
+
+function isContractSourceSchemaFile(relativePath: string): boolean {
+  const extension = path.extname(relativePath).toLowerCase();
+  const fileName = path.basename(relativePath).toLowerCase();
+  return extension === ".proto" || isGraphqlSchemaFile(relativePath) || (/openapi|swagger/.test(fileName) && [".yaml", ".yml", ".json"].includes(extension));
 }
 
 function isMigrationPath(relativePath: string): boolean {
@@ -850,6 +993,15 @@ function collectorDeclarations(): StaticCollectorDeclaration[] {
       failure_mode: "advisory_only",
     },
     {
+      id: "p1-contract-source-adapters",
+      priority: "P1",
+      languages: ["graphql", "protobuf", "yaml", "json"],
+      frameworks: ["openapi", "protobuf", "graphql"],
+      fact_kinds: ["schema", "unresolved_surface"],
+      confidence_levels: ["explicit_anchor", "stable_id", "manual_mapping", "heuristic", "unresolved"],
+      failure_mode: "emit_unresolved_surface",
+    },
+    {
       id: "p1-type-interface-shallow",
       priority: "P1",
       languages: ["typescript", "go", "rust"],
@@ -863,7 +1015,7 @@ function collectorDeclarations(): StaticCollectorDeclaration[] {
       priority: "P2",
       languages: ["json", "yaml", "toml", "xml"],
       frameworks: [],
-      fact_kinds: ["package_script", "config"],
+      fact_kinds: ["package_script", "monorepo_manifest", "config"],
       confidence_levels: ["heuristic"],
       failure_mode: "advisory_only",
     },
@@ -892,6 +1044,25 @@ function hasAnyAnchor(anchors: Partial<AnchorSet>): boolean {
 
 function isGreenfieldImplementationFactKind(kind: StaticCollectorFactKind): kind is GreenfieldImplementationFactKind {
   return kind === "route" || kind === "schema" || kind === "test" || kind === "migration" || kind === "type_definition";
+}
+
+function discoverGraphqlOperationTypes(content: string): string[] {
+  return stableUnique(Array.from(content.matchAll(/\btype\s+(Query|Mutation|Subscription)\b/g)).map((match) => match[1] ?? "").filter(Boolean));
+}
+
+function discoverGraphqlTypes(content: string): string[] {
+  return stableUnique(Array.from(content.matchAll(/\b(?:type|interface|input|enum)\s+([A-Za-z_][\w]*)\b/g)).map((match) => match[1] ?? "").filter(Boolean));
+}
+
+function discoverOpenApiPaths(content: string): string[] {
+  const paths = new Set<string>();
+  for (const match of content.matchAll(/^\s{2}([/][^:\s]+)\s*:/gm)) {
+    paths.add(match[1] ?? "");
+  }
+  for (const match of content.matchAll(/"([/][^"]+)":\s*{/g)) {
+    paths.add(match[1] ?? "");
+  }
+  return stableUnique(Array.from(paths).filter(Boolean));
 }
 
 function codeNodeIdForStaticFact(fact: StaticImplementationFact): string {
@@ -1010,6 +1181,10 @@ function stableUnknownArray(values: unknown[]): unknown[] {
 
 function stableUnique(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizePath(filePath: string): string {

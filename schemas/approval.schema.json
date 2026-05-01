@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jispec.local/schemas/approval.schema.json",
+  "title": "JiSpec Policy Approval Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "id", "status", "subject", "requirement", "decision", "boundary"],
+  "properties": {
+    "version": { "const": 1 },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["approved", "rejected"]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref", "hash"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["policy_change", "waiver_change", "release_drift", "execute_default_change"]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hash": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "owner", "reviewers", "requiredReviewers", "ownerApprovalAllowed", "contract"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": ["solo", "small_team", "regulated"]
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "requiredReviewers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ownerApprovalAllowed": { "const": true },
+        "contract": { "const": "reviewer_quorum_or_owner_approval" }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "role", "reason", "decidedAt"],
+      "properties": {
+        "actor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "enum": ["owner", "reviewer"]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decidedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["localOnly", "sourceUploadRequired", "llmBlockingJudge", "consoleOverridesVerify"],
+      "properties": {
+        "localOnly": { "const": true },
+        "sourceUploadRequired": { "const": false },
+        "llmBlockingJudge": { "const": false },
+        "consoleOverridesVerify": { "const": false }
+      }
+    }
+  }
+}

@@ -240,6 +240,8 @@ npm run jispec-cli -- release snapshot --version v1
 npm run jispec-cli -- release compare --from v1 --to current
 npm run jispec-cli -- doctor v1
 npm run jispec-cli -- doctor runtime
+npm run jispec-cli -- doctor pilot
+npm run jispec-cli -- metrics value-report
 npm run ci:verify
 ```
 
@@ -270,6 +272,10 @@ npm run ci:verify
   运行 V1 主线 readiness 检查，不让延后的 distributed/collaboration surface 直接阻断结果。
 - `doctor runtime`
   运行 V1 主线 readiness gate 之外的扩展 runtime 与兼容层健康诊断。
+- `doctor pilot`
+  检查仓库的商业试点 readiness：安装入口、首次 takeover baseline、CI verify、policy profile、waiver/spec debt 治理、Console governance snapshot 和 privacy report。
+- `metrics value-report`
+  在 `.spec/metrics/` 下写出 repo-local ROI 与 adoption report，指标来源可追溯到本地 artifacts，默认不联网。
 - `ci:verify`
   为 CI 使用包装仓库 verify 路径，并写出 `.jispec-ci/verify-report.json`、`.jispec-ci/ci-summary.md` 和 `.jispec-ci/verify-summary.md`。
 
@@ -429,11 +435,33 @@ npm run jispec-cli -- release compare --from v1 --to current
 node --import tsx ./scripts/run-v1-sample-repo.ts --workspace ./.tmp/v1-sample-run
 ```
 
+直接运行 P4 首次采用样例：
+
+```bash
+npm run jispec -- bootstrap discover --root examples/minimal-legacy-takeover --init-project --json
+npm run jispec -- init --root .tmp/minimal-greenfield --requirements examples/minimal-greenfield/requirements.md --technical-solution examples/minimal-greenfield/technical-solution.md --force --json
+```
+
+首次接管步骤与 CI 接入说明见 [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md) 和 [docs/ci-templates.md](docs/ci-templates.md)。
+
+如果不确定当前仓库应该从哪里开始：
+
+```bash
+npm run jispec -- first-run --root .
+```
+
 运行健康检查：
 
 ```bash
 npm run jispec-cli -- doctor v1
 npm run jispec-cli -- doctor runtime
+npm run jispec-cli -- doctor pilot
+```
+
+生成仓库本地采用价值报告：
+
+```bash
+npm run jispec-cli -- metrics value-report
 ```
 
 运行更广义的 runtime 与兼容层健康检查：
@@ -544,7 +572,9 @@ npm run jispec-cli -- validate
 主脚本：
 
 ```bash
+npm run jispec -- --version
 npm run jispec-cli -- <command>
+npm run jispec -- <command>
 npm run verify
 npm run ci:verify
 ```
@@ -552,10 +582,16 @@ npm run ci:verify
 兼容脚本：
 
 ```bash
-npm run jispec -- <command>
 npm run validate:repo
 npm run check:jispec
 ```
+
+Package/bin 命令面：
+
+- `package.json` 通过 `bin/jispec.js` 暴露 `jispec` 和 `jispec-cli`。
+- 本地开发可以用 `npm run jispec -- --version` 和 `npm run jispec -- doctor v1` 做入口 smoke。
+- P4 采用资产包括 `examples/minimal-legacy-takeover/`、`examples/minimal-greenfield/`、`.github/workflows/jispec-verify-template.yml` 和 `.gitlab-ci.jispec-template.yml`。
+- 详见 [docs/install.md](docs/install.md)。
 
 ## 当前仓库状态
 
@@ -598,6 +634,24 @@ npm run check:jispec
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
 - Greenfield 输入契约：
   [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
+- 首次接管 walkthrough：
+  [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md)
+- Quickstart：
+  [docs/quickstart.md](docs/quickstart.md)
+- Takeover guide：
+  [docs/takeover-guide.md](docs/takeover-guide.md)
+- Execute-default guide：
+  [docs/execute-default-guide.md](docs/execute-default-guide.md)
+- Console governance guide：
+  [docs/console-governance-guide.md](docs/console-governance-guide.md)
+- Policy、waiver、spec debt cookbook：
+  [docs/policy-waiver-spec-debt-cookbook.md](docs/policy-waiver-spec-debt-cookbook.md)
+- 价值指标：
+  [docs/value-metrics.md](docs/value-metrics.md)
+- 商业试点 readiness checklist：
+  [docs/pilot-readiness-checklist.md](docs/pilot-readiness-checklist.md)
+- CI 模板：
+  [docs/ci-templates.md](docs/ci-templates.md)
 - V1 最小样板仓库：
   [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
 - 发布说明：

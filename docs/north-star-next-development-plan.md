@@ -12,6 +12,12 @@
 takeover quality first -> execute by default -> Console as governance control room
 ```
 
+下一阶段商业化方向：
+
+```text
+governance productization -> adoption packaging -> ecosystem integration -> enterprise trust
+```
+
 ## 已确认产品判断
 
 - V1 主线已经成立，后续开发应围绕北极星继续推进。
@@ -19,6 +25,8 @@ takeover quality first -> execute by default -> Console as governance control ro
 - `execute` 从可选模式推进到默认模式是必须演化，最终状态应是默认 `execute`。
 - Console 不做轻量 artifact viewer 终局，而是直接朝团队治理台设计。
 - 安装、样例 repo、CI 模板和文档体验重要，但放到产品核心继续成型之后处理。
+- 当前项目已经具备 AI 原生软件交付控制内核的雏形；下一阶段要把这个内核推进到可安装、可试用、可运营、可审计、可商业化的产品形态。
+- 商业化增强不能改变北极星边界：JiSpec 仍是 contract control layer，不是 autonomous code implementation agent，也不是 LLM-first blocking judge。
 
 ## 排序原则
 
@@ -28,6 +36,7 @@ takeover quality first -> execute by default -> Console as governance control ro
 4. LLM 仍不能成为 blocking gate 的唯一裁判。
 5. JiSpec 继续做 implementation mediation，不变成 autonomous business-code generator。
 6. 每个任务必须有稳定落盘产物、回归测试和可审计的人类决策包。
+7. 产品化任务必须降低采用摩擦，但不能绕过本地优先、deterministic gate、audit 和 replay 语义。
 
 ## P0：Takeover 质量继续提升
 
@@ -494,35 +503,90 @@ node --import tsx ./tools/jispec/tests/doctor-v1-readiness.ts
 - Console read model 新增 `multi-repo-governance-snapshot` artifact 与 `multi_repo_export` governance object，为未来多 repo 汇总提供统一本地契约。
 - 回归套件：`tools/jispec/tests/console-governance-export.ts`。
 
-## P4：最后处理的产品包装
+## P4：采用与包装产品化
 
-目标：在核心产品继续成型后，再打磨对外采用体验。
+目标：把已经成型的本地控制内核包装成外部团队可以低摩擦安装、试用、接入 CI 并完成首次 takeover 的产品入口。
 
 ### P4-T1 安装入口与 npm/bin 包装
 
-状态：暂缓
+状态：已实现
 
 范围：
 
-- npm package entry
-- `jispec` bin
-- platform smoke
-- version/migration command
+- 提供稳定 npm package entry 和 `jispec` bin。
+- 明确 `jispec --version`、`jispec doctor`、`jispec init`、`jispec upgrade` 或 `jispec migrate` 的最小语义。
+- 增加 Windows、macOS、Linux 的 platform smoke。
+- 保持本地优先，不要求云账号或源码上传。
+
+预期文件：
+
+- `package.json`
+- `README.md`
+- `README.zh-CN.md`
+- `docs/install.md`
+- `tools/jispec/tests/package-script-surface.ts`
+- 新增 platform smoke 测试，按实现需要命名
+
+验收：
+
+```bash
+npm run typecheck
+npm run jispec -- --version
+npm run jispec -- doctor v1
+node --import tsx ./tools/jispec/tests/package-script-surface.ts
+```
+
+完成定义：
+
+- 新用户能通过一个稳定入口运行 `doctor v1`、`bootstrap discover` 和 `verify`。
+- 安装入口不得改变 V1 主线命令的退出码和 artifact 语义。
+
+完成记录：
+
+- `package.json` 增加 `bin`，通过 `bin/jispec.js` 暴露 `jispec` 和 `jispec-cli`。
+- CLI 绑定 `package.json` version，支持 `jispec --version` / `npm run jispec -- --version`。
+- `tsx` 移入 runtime dependencies，保证 npm bin 安装后能执行 TypeScript CLI。
+- 新增 [docs/install.md](install.md)，README 和中文 README 同步说明 package/bin smoke。
+- `package-script-surface.ts` 扩展为 P4-T1 回归锚点，覆盖 bin、files、engine、runtime dependency、CLI version 和 bin shim dispatch。
 
 ### P4-T2 样例 repo 与 CI 模板
 
-状态：暂缓
+状态：已实现
 
 范围：
 
-- 最小 sample repo
-- GitHub Actions template
-- GitLab CI template
-- first takeover walkthrough
+- 提供最小 sample repo，覆盖 legacy takeover 与 Greenfield 两条入口。
+- 提供 GitHub Actions 和 GitLab CI 模板。
+- 提供 first takeover walkthrough，从 `bootstrap discover` 到 `adopt`、`verify`、`ci:verify`。
+- 样例必须演示 spec debt、waiver、verify summary 和 handoff packet 的基本用法。
+
+预期文件：
+
+- `examples/minimal-legacy-takeover/`
+- `examples/minimal-greenfield/`
+- `docs/first-takeover-walkthrough.md`
+- `.github/workflows/jispec-verify-template.yml`
+- `docs/ci-templates.md`
+- 新增样例 smoke 测试，按实现需要命名
+
+验收：
+
+- 一个外部团队可以在 15 分钟内跑完最小 takeover。
+- CI 模板只调用本地 CLI gate，不上传源码，不把 LLM 放入 blocking path。
+- 样例 repo 的期望输出可回归，避免文档与实际 CLI 漂移。
+
+完成记录：
+
+- 新增 `examples/minimal-legacy-takeover/`，覆盖 `bootstrap discover -> bootstrap draft -> adopt -> policy migrate -> verify -> ci:verify` 的最小 legacy takeover。
+- 新增 `examples/minimal-greenfield/`，用 requirements 和 technical solution 输入演示 Greenfield `init -> verify -> ci:verify`。
+- 新增 `docs/first-takeover-walkthrough.md`，把首次接管拆成 discover、draft、adopt、policy、verify、ci:verify、handoff packet 七步。
+- 新增 GitHub Actions 模板 `.github/workflows/jispec-verify-template.yml` 与 GitLab 模板 `.gitlab-ci.jispec-template.yml`，模板都只调用本地 `npm run ci:verify`，保留 `.jispec-ci/` artifacts，不上传源码，不引入 LLM blocking path。
+- 新增 `docs/ci-templates.md`，明确 CI summary/comment 是展示产物，本地 verify report 才是机器 gate 结果。
+- 新增 `tools/jispec/tests/p4-sample-ci-templates.ts` 并纳入 regression runner，覆盖 legacy sample 可跑通、Greenfield sample 可初始化验证，以及模板/文档/包发布文件面不漂移。
 
 ### P4-T3 文档体验
 
-状态：暂缓
+状态：已实现
 
 范围：
 
@@ -532,6 +596,431 @@ node --import tsx ./tools/jispec/tests/doctor-v1-readiness.ts
 - Console governance guide
 - policy/waiver/spec debt cookbook
 
+预期文件：
+
+- `docs/quickstart.md`
+- `docs/takeover-guide.md`
+- `docs/execute-default-guide.md`
+- `docs/console-governance-guide.md`
+- `docs/policy-waiver-spec-debt-cookbook.md`
+
+验收：
+
+- Quickstart 回答“我现在该运行哪三个命令”。
+- Takeover guide 回答“哪些草稿应该 accept/edit/defer/reject”。
+- Execute guide 明确 JiSpec 只做 implementation mediation。
+- Console guide 明确 Console 不替代 `verify`、`ci:verify` 或本地 policy gate。
+- Cookbook 必须包含常见 waiver、spec debt、policy migrate 和 release compare 操作。
+
+完成记录：
+
+- 新增 `docs/quickstart.md`，直接回答首次用户应先运行 `npm install`、`doctor v1`、`bootstrap discover` 三条命令，并区分 legacy takeover 与 Greenfield 下一步。
+- 新增 `docs/takeover-guide.md`，明确 discovery、draft、adopt、verify 的语义，并给出 `accept`、`edit`、`defer`、`reject` 的判断标准。
+- 新增 `docs/execute-default-guide.md`，说明 execute-default 只做 implementation mediation、scope/test/verify/handoff/replay，不拥有业务代码实现。
+- 新增 `docs/console-governance-guide.md`，把 Console 定义为本地只读治理台，明确不替代 `verify`、`ci:verify` 或本地 policy gate。
+- 新增 `docs/policy-waiver-spec-debt-cookbook.md`，覆盖 policy migrate profile、waiver create/list/renew/revoke、spec debt owner-review/repay/cancel、release snapshot/compare 和 Console actions。
+- README、中文 README 与 install 文档已增加 P4-T3 文档入口。
+- 新增 `tools/jispec/tests/p4-docs-experience.ts` 并纳入 regression runner，覆盖文档关键承诺与命令面 help 不漂移。
+
+### P4-T4 Guided first-run flow
+
+状态：已实现
+
+范围：
+
+- 增加一个面向首次用户的 guided command，按仓库状态给出下一步动作。
+- 识别 project scaffold、bootstrap evidence、open draft、policy、verify result、active change session。
+- 输出短决策包，而不是暴露机器底账。
+
+预期文件：
+
+- `tools/jispec/onboarding/first-run.ts`
+- `tools/jispec/tests/onboarding-first-run.ts`
+- `docs/quickstart.md`
+
+验收：
+
+- 空目录、旧仓库、已有 `.spec` 仓库和 active change session 都能得到不同 next action。
+- guided flow 只推荐现有稳定 CLI，不引入新的绕行主线。
+- 输出必须说明哪些动作会写入本地 artifact。
+
+完成记录：
+
+- 新增 `npm run jispec -- first-run --root .`，基于本地状态输出只读 first-run decision packet。
+- 新增 `tools/jispec/onboarding/first-run.ts`，识别 empty directory、legacy repo source signals、bootstrap evidence、open draft session、adopted contracts、policy、latest CI verify report 和 active change session。
+- Guided flow 只推荐现有稳定 CLI：`init`、`bootstrap discover`、`bootstrap draft`、`adopt`、`policy migrate`、`verify`、`console dashboard`、`implement`。
+- 输出包含 `writesLocalArtifacts` 和 `writes`，说明推荐命令会写哪些本地 artifact；`first-run` 自身保持 read-only、不上传源码、不引入 LLM blocking gate。
+- Quickstart、README 和中文 README 已加入 guided first-run 入口。
+- 新增 `tools/jispec/tests/onboarding-first-run.ts` 并纳入 regression runner，覆盖空目录、旧仓库、open draft、缺 policy、verify blocked 和 active change session。
+
+## P5：Console 产品化与团队治理台
+
+目标：把 Console 从 read model、dashboard shell 和 action planner 推进到真正的团队治理工作台，但仍然不替代本地 CLI gate。
+
+### P5-T1 Local Console UI MVP
+
+状态：已实现
+
+范围：
+
+- 提供本地只读 Web UI 或 TUI，第一屏是治理状态。
+- 展示 mergeability、policy posture、waiver lifecycle、spec debt、contract drift、release drift、takeover quality、implementation mediation outcomes 和 audit events。
+- UI 只读取 Console read model artifacts，不扫描源码。
+
+预期文件：
+
+- `tools/jispec/console/ui/`
+- `docs/console-governance-guide.md`
+- `tools/jispec/tests/console-ui-smoke.ts`
+
+验收：
+
+- Console UI 可在无网络情况下运行。
+- 第一屏回答“当前能否合并、为什么、下一步谁处理”。
+- UI 不执行写入命令；所有写入仍通过本地 CLI 并留下 audit event。
+
+完成记录：
+
+- 新增 `npm run jispec -- console ui`，生成本地静态 HTML：`.spec/console/ui/index.html`。
+- 新增 `tools/jispec/console/ui/static-dashboard.ts`，复用 Console dashboard、read model snapshot 和 governance action planner，第一屏直接展示 governance status。
+- UI 覆盖 mergeability、policy posture、waiver lifecycle、spec debt、contract drift、release baseline/drift、takeover quality、implementation mediation outcomes 和 audit events。
+- UI 边界固定为 read-only、offline-capable、no source upload、does not override verify、does not scan source code、does not execute commands。
+- `docs/console-governance-guide.md` 增加 Local UI 使用说明。
+- 新增 `tools/jispec/tests/console-ui-smoke.ts` 并纳入 regression runner，覆盖 UI model 边界、HTML 第一屏、静态文件写出和 CLI JSON 输出。
+
+### P5-T2 Governance workflow decision packets
+
+状态：已实现
+
+范围：
+
+- 为 waiver renew/revoke、spec debt repay/cancel/owner-review、policy migrate、release compare 生成更完整的人类决策包。
+- 每个建议必须包含 owner、reason、risk、source artifact、affected contract 和推荐 CLI command。
+- 支持 reviewer 在 Console 中复制或跳转执行本地 CLI 命令，但 Console 本身不隐式写入。
+
+预期文件：
+
+- `tools/jispec/console/governance-actions.ts`
+- `tools/jispec/console/governance-dashboard.ts`
+- `docs/console-governance-guide.md`
+- `tools/jispec/tests/console-governance-actions.ts`
+
+验收：
+
+- 人类能从 Console 看出“这个 waiver 为什么要撤销或续期”。
+- spec debt action 能区分 repay、cancel、owner-review。
+- 所有动作建议都可追溯到本地 artifact。
+
+完成记录：
+
+- `ConsoleGovernanceActionPacket` 增加 `owner`、`risk`、`recommendedCommand`、`affectedContracts`、`commandWrites` 和嵌套 `decisionPacket`。
+- waiver renew/revoke、spec debt repay/cancel/owner-review、policy migrate 和 release compare 都输出 owner、reason、risk、source artifact、affected contract/reference 和推荐 CLI command。
+- 过期 spec debt 同时生成 repay ready packet 与 cancel needs-input packet，避免把“偿还”和“取消”混成同一类治理动作。
+- `console actions` 文本和 JSON 输出都保留 read-only planner 边界；执行写入仍必须走显式本地 CLI 并写入 audit event。
+- Local Console UI 的 Suggested Local Commands 卡片展示 decision packet 字段，并提供推荐命令复制控件；UI 仍不执行命令、不扫描源码、不替代 `verify`。
+- `tools/jispec/tests/console-governance-actions.ts` 和 `tools/jispec/tests/console-ui-smoke.ts` 覆盖 decision packet 字段、spec debt 三分支、source artifact traceability 和 UI 展示。
+
+### P5-T3 Multi-repo governance aggregator
+
+状态：已实现
+
+范围：
+
+- 消费多个 repo 导出的 `.spec/console/governance-snapshot.json`。
+- 聚合 policy posture、waiver/debt inventory、release drift trend、verify trend 和 audit activity。
+- 不要求云服务；先支持本地目录或显式 snapshot 列表。
+
+预期文件：
+
+- `tools/jispec/console/multi-repo.ts`
+- `docs/multi-repo-governance.md`
+- `tools/jispec/tests/console-multi-repo-governance.ts`
+
+验收：
+
+- 多仓汇总不得扫描各 repo 源码，只读取导出的 governance snapshot。
+- 输出能显示风险最高的 repo、即将过期的 waiver、未偿还 spec debt 和 drift 热点。
+- 单仓 `verify` 结论仍是权威 gate，多仓 Console 只做治理聚合。
+
+完成记录：
+
+- 新增 `tools/jispec/console/multi-repo.ts`，只消费导出的 `.spec/console/governance-snapshot.json`，支持显式 snapshot 列表和本地目录发现。
+- 新增 `npm run jispec -- console aggregate-governance --snapshot ...` 与 `--dir ...`，默认写出 `.spec/console/multi-repo-governance.json` 和 Markdown companion。
+- 聚合结果包含 repo risk score、verify verdict inventory、policy profile inventory、waiver hotspots、spec debt hotspots、release drift hotspots 和 latest audit actors。
+- 单仓 export 的 aggregate hints 增加 `expiringSoonWaivers` 与 `expiredWaivers`，多仓层可以直接回答哪些 waiver 即将过期或已经过期。
+- 聚合 boundary 固定为 local-only、read-only aggregate、consumes exported snapshots only、does not scan source、does not run verify、does not replace CLI gate。
+- 新增 `docs/multi-repo-governance.md` 和 `tools/jispec/tests/console-multi-repo-governance.ts`，覆盖显式 snapshot、目录发现、CLI JSON、风险热点和单仓 verify 权威边界。
+
+## P6：企业可信与合规边界
+
+目标：让 JiSpec 的本地优先、可审计、可回放能力具备团队和企业采用所需的信任边界。
+
+### P6-T1 Audit ledger hardening
+
+状态：已实现
+
+范围：
+
+- 为 `.spec/audit/events.jsonl` 增加 hash chain 或签名预留字段。
+- 检测 audit ledger 缺口、乱序、损坏或不可解析事件。
+- Console 显示 audit integrity 状态，但不把它作为唯一 merge gate。
+
+预期文件：
+
+- `tools/jispec/audit/event-ledger.ts`
+- `tools/jispec/console/read-model-snapshot.ts`
+- `tools/jispec/tests/audit-event-ledger.ts`
+- `docs/audit-ledger.md`
+
+验收：
+
+- audit event 可证明顺序和来源。
+- 损坏 ledger 进入治理 warning，不静默通过。
+- 仍保持 append-only 本地 artifact 语义。
+
+完成记录：
+
+- `AuditEvent` 增加 `sequence`、`previousHash`、`eventHash` 和 `signature` 预留字段；新事件以 canonical JSON 内容计算 SHA-256 hash chain。
+- 新增 `inspectAuditLedger`，检测 JSONL 不可解析、必填字段缺失、sequence gap、previous hash mismatch、event hash mismatch、timestamp out-of-order 和 legacy unchained event。
+- `appendAuditEvent` 在写入前读取当前 ledger integrity，继续保持本地 append-only JSONL 语义；invalid ledger 需要人工 review 后再追加。
+- Console read model 的 `audit_events` summary 增加 `integrityStatus`、verified/legacy/parse error counts、latest hash、issue count 和 issue 摘要。
+- Governance dashboard 在 audit integrity 为 warning/invalid 时显示 attention，不把损坏 ledger 静默当成可追溯 OK，也不替代 `verify` 或 `ci:verify`。
+- 新增 `docs/audit-ledger.md`，说明 hash chain、签名预留、integrity warning 与 append-only 边界。
+- `tools/jispec/tests/audit-event-ledger.ts` 覆盖 hash-chain 写入、损坏/乱序/不可解析 ledger 检测，以及 Console audit integrity summary。
+
+### P6-T2 Secret redaction and privacy report
+
+状态：已实现
+
+范围：
+
+- 在 discover、summary、handoff、Console export 中加入 secret redaction 检查。
+- 明确哪些 artifact 可能包含路径、摘要、diff、命令输出或错误信息。
+- 生成 privacy report，帮助团队判断哪些文件可以分享给外部工具或供应商。
+
+预期文件：
+
+- `tools/jispec/privacy/redaction.ts`
+- `tools/jispec/tests/privacy-redaction.ts`
+- `docs/privacy-and-local-first.md`
+
+验收：
+
+- 常见 token、key、credential、connection string 不应出现在人类分享包中。
+- redaction 不改变机器事实源，只生成可分享视图或 warning。
+- 文档明确 JiSpec 核心 CLI 不要求源码上传。
+
+完成记录：
+
+- 新增 `tools/jispec/privacy/redaction.ts`，提供 deterministic local secret scanner、`redactTextForSharing`、`redactJsonForSharing` 和 privacy report writer。
+- 新增 `npm run jispec -- privacy report`，扫描 `.spec`、`.jispec`、`.jispec-ci` 下的 JiSpec 产物，默认写出 `.spec/privacy/privacy-report.json`、Markdown companion 和 `.spec/privacy/redacted/**` 可分享视图。
+- Redaction 覆盖 private key block、AWS access key、OpenAI-style API key、GitHub token、JWT、credential-bearing connection string 和 credential assignment。
+- Privacy report 只记录 finding type、severity、line/column、secret hash 和 redacted preview，不把原始 secret 写入报告。
+- `console export-governance` 写出前会对 governance snapshot 做 redaction，并记录 privacy hint；底层 local snapshot、policy、waiver、audit、handoff 等机器事实源不被修改。
+- 新增 `docs/privacy-and-local-first.md`，明确 JiSpec 核心 CLI 不要求源码上传，privacy report 是本地 companion，不替代 `verify` 或 `ci:verify`。
+- 新增 `tools/jispec/tests/privacy-redaction.ts` 并纳入 regression runner，覆盖常见 secret redaction、报告无原文泄漏、redacted companion、Console export redaction 和 CLI JSON。
+
+### P6-T3 Policy approval workflow contract
+
+状态：已实现
+
+范围：
+
+- 定义 policy、waiver、release drift、execute-default 变更所需的 owner/reviewer approval contract。
+- `solo`、`small_team`、`regulated` profile 应有不同 approval 要求。
+- Console 能显示 approval missing、approval stale 或 approval satisfied。
+
+预期文件：
+
+- `schemas/approval.schema.json`
+- `tools/jispec/policy/approval.ts`
+- `tools/jispec/tests/policy-approval-workflow.ts`
+- `docs/policy-approval-workflow.md`
+
+验收：
+
+- regulated profile 至少能表达双 reviewer 或 owner approval。
+- approval contract 不让 LLM 成为 blocking judge。
+- 所有 approval 决策写入 audit event。
+
+完成记录：
+
+- 新增 `schemas/approval.schema.json`，固定 `.spec/approvals/*.json` 的本地 approval decision contract。
+- 新增 `tools/jispec/policy/approval.ts`，支持 `policy_change`、`waiver_change`、`release_drift`、`execute_default_change` subject，按 `solo`、`small_team`、`regulated` profile 计算 reviewer quorum 或 owner approval。
+- 新增 `npm run jispec -- policy approval status|record`，`record` 会写 approval JSON 并追加 `policy_approval_decision` audit event。
+- Console read model 新增 `policy-approvals` artifact 与 `approval_workflow` governance object，dashboard 展示 approval missing、approval stale、approval satisfied。
+- 新增 `docs/policy-approval-workflow.md` 和 `tools/jispec/tests/policy-approval-workflow.ts`，覆盖 regulated 双 reviewer/owner approval、stale hash/expiration、CLI audit、Console posture 和 no-LLM-boundary。
+
+## P7：生态集成与外部生产设备适配
+
+目标：让 JiSpec 更容易接入真实团队已经使用的 coding agents、CI、issue tracker 和 contract source，而不改变 JiSpec 的控制层定位。
+
+### P7-T1 External coding tool handoff adapters
+
+状态：已实现
+
+范围：
+
+- 为 Codex、Claude Code、Cursor、Copilot、Devin 等外部实现者定义 handoff adapter contract。
+- 输出更聚焦的 request packet：allowed paths、contract focus、test command、verify command、failed check、stop point。
+- 接收外部 patch 后仍走 `implement --external-patch` 的 scope/test/verify 路径。
+
+预期文件：
+
+- `tools/jispec/implement/adapters/`
+- `schemas/implementation-handoff.schema.json`
+- `docs/external-coding-tool-adapters.md`
+- `tools/jispec/tests/implement-handoff-adapters.ts`
+
+验收：
+
+- adapter 只改变交接格式，不改变 implementation mediation 权威边界。
+- 外部工具输出不能直接绕过 scope check、test 和 verify。
+- handoff packet 仍可 replay。
+
+完成记录：
+
+- 新增 `tools/jispec/implement/adapters/handoff-adapter.ts`，从 replayable handoff packet 生成 Codex、Claude Code、Cursor、Copilot、Devin 的 focused request packet。
+- 新增 `schemas/implementation-handoff.schema.json`，固定外部 coding tool handoff 的 JSON contract，包含 allowed paths、contract focus、test/verify command、failed check、stop point 和 replay commands。
+- 新增 `npm run jispec -- handoff adapter --from-handoff <path-or-session> --tool <tool>`，默认写出 `.jispec/handoff/adapters/<session>/<tool>-request.json` 和 Markdown companion。
+- 新增 `docs/external-coding-tool-adapters.md`，明确 adapter 只改变请求格式，外部 patch 必须回到 `implement --external-patch` 接受 scope/test/verify mediation。
+- 新增 `tools/jispec/tests/implement-handoff-adapters.ts`，覆盖工具枚举、request packet 内容、authority boundary、writer 不修改源 handoff、CLI 和 schema boundary 字段。
+
+### P7-T2 SCM and issue tracker integration contracts
+
+状态：已实现
+
+范围：
+
+- 定义 GitHub/GitLab PR comment、Jira/Linear issue link、change intent 回填的 contract。
+- 初期可以生成 Markdown 和 JSON payload，不要求云端 API 写入。
+- PR/MR 摘要应引用 verify verdict、blocking issues、waiver/spec debt、handoff next action。
+
+预期文件：
+
+- `tools/jispec/integrations/scm/`
+- `tools/jispec/integrations/issues/`
+- `docs/integrations.md`
+- `tools/jispec/tests/integration-payloads.ts`
+
+验收：
+
+- 集成 payload 不成为新的机器真相源；真相仍来自本地 artifacts。
+- CI comment 与 local verify summary 语言一致。
+- 不需要云 token 也能生成 payload preview。
+
+完成记录：
+
+- 新增 `tools/jispec/integrations/scm/payload.ts` 和 `tools/jispec/integrations/issues/payload.ts`，从本地 verify report、Console governance read model 和最新 handoff 生成 SCM/issue tracker payload preview。
+- 新增 `npm run jispec -- integrations payload --provider github|gitlab|jira|linear --kind scm_comment|issue_link`，默认写出 `.spec/integrations/**` JSON 和 Markdown companion。
+- GitHub/GitLab comment payload 引用 verify verdict、blocking/advisory counts、waiver/spec debt posture、handoff next action 和 change intent。
+- Jira/Linear issue-link payload 生成 suggested title、body Markdown、change intent backfill、labels 和本地 artifact refs，不要求云 token。
+- 新增 `docs/integrations.md` 和 `tools/jispec/tests/integration-payloads.ts`，覆盖 preview-only boundary、local artifacts source of truth、CI comment 与 local verify summary 的 next-action 语言一致性。
+
+### P7-T3 Contract source adapters
+
+状态：已实现
+
+范围：
+
+- 强化 OpenAPI、Protobuf、GraphQL、DB migration、test framework 和 monorepo manifest 的 source adapter。
+- 每个 adapter 必须输出 deterministic evidence，不引入 LLM blocking gate。
+- adapter evidence 应进入 adoption ranking、contract graph 和 verify facts。
+
+预期文件：
+
+- `tools/jispec/bootstrap/`
+- `tools/jispec/greenfield/`
+- `tools/jispec/verify/`
+- `docs/contract-source-adapters.md`
+- 新增 adapter 回归测试，按实现需要命名
+
+验收：
+
+- adapter 能提高 takeover signal precision，而不是增加噪声。
+- 弱证据仍进入 owner-review 或 spec debt，不伪装成 adopted contract。
+- 多语言 monorepo fixture 的 ranking 和 draft quality 不退化。
+
+完成记录：
+
+- 新增 `tools/jispec/bootstrap/contract-source-adapters.ts`，在 `bootstrap discover` 中写出 `.spec/facts/bootstrap/contract-source-adapters.json`，覆盖 OpenAPI、Protobuf、GraphQL、DB migration、test framework 和 monorepo manifest。
+- adapter report 明确标记 `deterministic: true`、`llm_blocking_gate: false`、adoption disposition，以及是否进入 adoption ranking、contract graph、verify facts。
+- 扩展 bootstrap schema/manifest 识别与 adoption ranking metadata，使 OpenAPI/Protobuf/GraphQL/database schema 作为强契约源优先于弱 route/module 噪声。
+- 扩展 Greenfield static collector，识别 `.proto`、OpenAPI、GraphQL schema 与 monorepo manifest；嵌入式/弱 GraphQL surface 进入 unresolved owner-review 路径，不作为 adopted contract。
+- 新增 `docs/contract-source-adapters.md` 和 `tools/jispec/tests/contract-source-adapters.ts`，覆盖 adapter report、ranking precision、contract graph 映射、verify unresolved facts 和多语言 monorepo fixture。
+
+## P8：商业价值证明与运营指标
+
+目标：把工程质量指标转成用户能理解、团队能复盘、商业化能展示的价值指标。
+
+### P8-T1 ROI and adoption metrics
+
+状态：已实现
+
+范围：
+
+- 在不上传源码的前提下统计首次 takeover 时间、adopt correction load、blocking issue caught、waiver/debt aging、execute mediation stop points。
+- 输出 repo-local value report。
+- Console 显示趋势，但不把商业指标作为 blocking gate。
+
+预期文件：
+
+- `tools/jispec/metrics/value-report.ts`
+- `docs/value-metrics.md`
+- `tools/jispec/tests/value-report.ts`
+
+验收：
+
+- 报告能回答“JiSpec 本周减少了多少人工整理、提前暴露了哪些风险”。
+- 指标来源必须可追溯到本地 artifacts。
+- 不采集个人敏感信息，不默认联网。
+
+完成记录：
+
+- 新增 `tools/jispec/metrics/value-report.ts` 和 `npm run jispec -- metrics value-report`，默认写出 `.spec/metrics/value-report.json` 与 Markdown companion。
+- Value report 汇总首次 takeover 时间、adopt correction load、blocking/advisory risk surfaced、waiver/debt aging 和 execute mediation stop points。
+- 报告只读取 `.spec/`、`.jispec/`、`.jispec-ci/` 下的本地 JiSpec artifacts，记录 source artifact paths，不扫描源码、不默认联网、不采集个人敏感信息。
+- Console read model 将 `.spec/metrics/value-report.json` 纳入 `takeover_quality_trend`，用于显示价值趋势，但不替代 `verify`、`ci:verify` 或任何 blocking gate。
+- 新增 `docs/value-metrics.md` 和 `tools/jispec/tests/value-report.ts`，覆盖本周人工整理节省、风险提前暴露、artifact traceability、隐私边界、Console trend 显示和 CLI 输出。
+
+### P8-T2 Commercial pilot readiness checklist
+
+状态：已实现
+
+范围：
+
+- 定义一个团队试点 JiSpec 前后的检查清单。
+- 覆盖安装、首次 takeover、CI 接入、policy profile、waiver/spec debt、Console governance、privacy report。
+- 输出 pilot readiness summary。
+
+预期文件：
+
+- `docs/pilot-readiness-checklist.md`
+- `tools/jispec/doctor.ts`
+- `tools/jispec/tests/pilot-readiness.ts`
+
+验收：
+
+- `doctor` 能区分 engineering readiness 和 commercial pilot readiness。
+- checklist 不承诺全自动理解旧仓库。
+- 每个 blocker 都给出 owner action 和下一步命令。
+
+完成记录：
+
+- 新增 `doctor pilot`，与 `doctor v1`/`doctor runtime` 分离：`v1` 继续检查工程主线 readiness，`pilot` 检查商业试点所需的 repo-local artifact 和治理准备度。
+- Pilot checklist 覆盖安装入口、首次 takeover/Greenfield baseline、CI verify、policy profile、waiver/spec debt、Console governance snapshot 和 privacy report。
+- `DoctorCheckResult` 增加 `ownerAction`、`nextCommand` 和 `sourceArtifacts`，pilot blocker 可直接告诉 owner 下一步本地命令。
+- 新增 `docs/pilot-readiness-checklist.md`，明确 checklist 不承诺自动理解旧仓库，legacy takeover 仍需 owner review/adopt/spec debt/verify。
+- 新增 `tools/jispec/tests/pilot-readiness.ts` 并纳入 regression runner，覆盖 pilot/v1 区分、blocker owner action、ready fixture、CLI JSON 和文档边界。
+
+### P8 文档状态同步
+
+状态：已同步
+
+- `README.md` 和 `README.zh-CN.md` 已补充 `metrics value-report`、`doctor pilot` 的一等入口说明。
+- 核心文档索引已纳入 `docs/value-metrics.md` 与 `docs/pilot-readiness-checklist.md`。
+- `docs/console-read-model-contract.md` 已记录 `.spec/metrics/value-report.json` 进入 `takeover_quality_trend`，且不替代本地 verify/CI gate。
+
 ## 当前不做
 
 - 不把安装体验放到 takeover 质量之前。
@@ -540,6 +1029,8 @@ node --import tsx ./tools/jispec/tests/doctor-v1-readiness.ts
 - 不把 JiSpec 做成自主业务代码实现 agent。
 - 不让 distributed/collaboration/presence 绕过 V1 主线和本地 gate。
 - 不为了表面功能数量牺牲 deterministic、audit、replay 和 blocking semantics。
+- 不为了商业化包装牺牲本地优先、隐私边界或可回放性。
+- 不把 Console、多仓聚合或集成 payload 变成新的事实权威；事实权威仍是本地 contract artifacts、facts、policy、verify 和 audit ledger。
 
 ## 阶段验收门禁
 

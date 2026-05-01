@@ -195,6 +195,9 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
     } else if (input.schemaFormat === "openapi") {
       score += 38;
       reasons.push("API contract truth source");
+    } else if (input.schemaFormat === "graphql") {
+      score += 34;
+      reasons.push("GraphQL contract source");
     } else if (input.schemaFormat === "database-schema") {
       score += 34;
       reasons.push("database schema truth source");
@@ -206,7 +209,7 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
       score += 10;
       reasons.push("schema directory");
     }
-    if (["protobuf", "openapi", "database-schema"].includes(input.schemaFormat ?? "")) {
+    if (["protobuf", "openapi", "graphql", "database-schema"].includes(input.schemaFormat ?? "")) {
       score += 18;
       reasons.push("schema truth source boundary");
     }
@@ -245,6 +248,10 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
     if (["package-json", "pyproject", "go-mod", "cargo", "pom"].includes(input.manifestKind ?? "")) {
       score += 10;
       reasons.push("runtime/toolchain signal");
+    }
+    if (["pnpm-workspace", "nx", "turbo", "lerna", "rush"].includes(input.manifestKind ?? "")) {
+      score += 14;
+      reasons.push("monorepo topology signal");
     }
   } else if (input.kind === "migration") {
     score += 18;
@@ -441,6 +448,9 @@ function schemaToEvidence(schema: EvidenceSchema, taxonomyPacks: DomainTaxonomyP
       schemaFormat: schema.format,
       signal: schema.signal,
       boundarySignal: classifySchemaBoundarySignal(schema),
+      contractSourceAdapter: schema.format === "openapi" || schema.format === "protobuf" || schema.format === "graphql" || schema.format === "database-schema"
+        ? schema.format
+        : undefined,
       provenanceNote: schema.provenanceNote,
     },
   };
@@ -494,7 +504,8 @@ function manifestToEvidence(manifest: EvidenceManifest, taxonomyPacks: DomainTax
     sourceFiles: [manifest.path],
     metadata: {
       manifestKind: manifest.kind,
-      boundarySignal: "runtime_manifest",
+      boundarySignal: ["pnpm-workspace", "nx", "turbo", "lerna", "rush"].includes(manifest.kind) ? "supporting_evidence" : "runtime_manifest",
+      contractSourceAdapter: ["pnpm-workspace", "nx", "turbo", "lerna", "rush"].includes(manifest.kind) ? "monorepo_manifest" : undefined,
       provenanceNote: manifest.provenanceNote,
     },
   };
@@ -658,7 +669,7 @@ function classifyDocumentBoundarySignal(documentPath: string): AdoptionBoundaryS
 }
 
 function classifySchemaBoundarySignal(schema: EvidenceSchema): AdoptionBoundarySignal {
-  if (["protobuf", "openapi", "database-schema", "json-schema"].includes(schema.format)) {
+  if (["protobuf", "openapi", "graphql", "database-schema", "json-schema"].includes(schema.format)) {
     return "schema_truth_source";
   }
   return "supporting_evidence";

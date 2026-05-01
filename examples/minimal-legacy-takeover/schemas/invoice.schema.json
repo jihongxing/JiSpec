@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["invoiceId", "status", "amountCents"],
+  "properties": {
+    "invoiceId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending_review", "posted", "waived"]
+    },
+    "amountCents": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

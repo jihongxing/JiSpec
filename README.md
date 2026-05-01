@@ -240,6 +240,8 @@ npm run jispec-cli -- release snapshot --version v1
 npm run jispec-cli -- release compare --from v1 --to current
 npm run jispec-cli -- doctor v1
 npm run jispec-cli -- doctor runtime
+npm run jispec-cli -- doctor pilot
+npm run jispec-cli -- metrics value-report
 npm run ci:verify
 ```
 
@@ -270,6 +272,10 @@ What they do:
   Runs the V1 mainline readiness checks without letting deferred distributed or collaboration surfaces block the result.
 - `doctor runtime`
   Runs broader runtime and compatibility health diagnostics outside the V1 mainline readiness gate.
+- `doctor pilot`
+  Checks commercial pilot readiness for a repository: installation path, first takeover baseline, CI verify, policy profile, waiver/spec debt hygiene, Console governance snapshot, and privacy report.
+- `metrics value-report`
+  Writes a repo-local ROI and adoption report under `.spec/metrics/`, with traceable local artifact sources and no default network access.
 - `ci:verify`
   Wraps the repository verification path for CI usage and writes `.jispec-ci/verify-report.json`, `.jispec-ci/ci-summary.md`, and `.jispec-ci/verify-summary.md`.
 
@@ -429,11 +435,33 @@ Replay the minimal legacy-repo takeover sample:
 node --import tsx ./scripts/run-v1-sample-repo.ts --workspace ./.tmp/v1-sample-run
 ```
 
+Run the P4 first-adoption samples directly:
+
+```bash
+npm run jispec -- bootstrap discover --root examples/minimal-legacy-takeover --init-project --json
+npm run jispec -- init --root .tmp/minimal-greenfield --requirements examples/minimal-greenfield/requirements.md --technical-solution examples/minimal-greenfield/technical-solution.md --force --json
+```
+
+For a step-by-step first takeover and CI setup, see [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md) and [docs/ci-templates.md](docs/ci-templates.md).
+
+When unsure where to start in a repository:
+
+```bash
+npm run jispec -- first-run --root .
+```
+
 Run health checks:
 
 ```bash
 npm run jispec-cli -- doctor v1
 npm run jispec-cli -- doctor runtime
+npm run jispec-cli -- doctor pilot
+```
+
+Generate a repo-local adoption value report:
+
+```bash
+npm run jispec-cli -- metrics value-report
 ```
 
 Run the broader runtime and compatibility health checks:
@@ -535,7 +563,9 @@ That is expected for now; the repository is in a controlled transition from the 
 Primary scripts:
 
 ```bash
+npm run jispec -- --version
 npm run jispec-cli -- <command>
+npm run jispec -- <command>
 npm run verify
 npm run ci:verify
 ```
@@ -543,10 +573,16 @@ npm run ci:verify
 Compatibility scripts:
 
 ```bash
-npm run jispec -- <command>
 npm run validate:repo
 npm run check:jispec
 ```
+
+Package/bin surface:
+
+- `package.json` exposes `jispec` and `jispec-cli` through `bin/jispec.js`.
+- Local development can smoke-test the package entry with `npm run jispec -- --version` and `npm run jispec -- doctor v1`.
+- P4 adoption assets include `examples/minimal-legacy-takeover/`, `examples/minimal-greenfield/`, `.github/workflows/jispec-verify-template.yml`, and `.gitlab-ci.jispec-template.yml`.
+- See [docs/install.md](docs/install.md).
 
 ## Current repo state
 
@@ -589,6 +625,24 @@ The `ordering` context includes one complete example slice:
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
 - Greenfield input contract:
   [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
+- First takeover walkthrough:
+  [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md)
+- Quickstart:
+  [docs/quickstart.md](docs/quickstart.md)
+- Takeover guide:
+  [docs/takeover-guide.md](docs/takeover-guide.md)
+- Execute-default guide:
+  [docs/execute-default-guide.md](docs/execute-default-guide.md)
+- Console governance guide:
+  [docs/console-governance-guide.md](docs/console-governance-guide.md)
+- Policy, waiver, and spec debt cookbook:
+  [docs/policy-waiver-spec-debt-cookbook.md](docs/policy-waiver-spec-debt-cookbook.md)
+- Value metrics:
+  [docs/value-metrics.md](docs/value-metrics.md)
+- Pilot readiness checklist:
+  [docs/pilot-readiness-checklist.md](docs/pilot-readiness-checklist.md)
+- CI templates:
+  [docs/ci-templates.md](docs/ci-templates.md)
 - V1 minimal sample repo:
   [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
 - Release notes:

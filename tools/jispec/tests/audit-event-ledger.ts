@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as yaml from "js-yaml";
-import { appendAuditEvent, readAuditEvents } from "../audit/event-ledger";
+import { appendAuditEvent, inspectAuditLedger, readAuditEvents } from "../audit/event-ledger";
 import { runBootstrapAdopt } from "../bootstrap/adopt";
 import { setChangeDefaultMode } from "../change/default-mode-command";
 import type { ChangeSession } from "../change/change-session";
@@ -42,10 +42,58 @@ async function main(): Promise<void> {
       const events = readAuditEvents(root);
       assert.equal(events.length, 1);
       assert.equal(events[0]?.version, 1);
+      assert.equal(events[0]?.sequence, 1);
       assert.equal(events[0]?.type, "policy_change");
       assert.equal(events[0]?.actor, "platform-lead");
       assert.equal(events[0]?.reason, "Tighten policy before execute default.");
       assert.deepEqual(events[0]?.affectedContracts, [".spec/contracts/domain.yaml", ".spec/policy.yaml"]);
+      assert.equal(events[0]?.previousHash, null);
+      assert.equal(typeof events[0]?.eventHash, "string");
+      assert.equal(events[0]?.eventHash.length, 64);
+      assert.equal(events[0]?.signature?.algorithm, "reserved-none");
+      const integrity = inspectAuditLedger(root);
+      assert.equal(integrity.status, "verified");
+      assert.equal(integrity.verifiedEventCount, 1);
+      assert.equal(integrity.latestHash, events[0]?.eventHash);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("audit integrity reports legacy, damaged, and out-of-order ledger warnings", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-audit-integrity-"));
+    try {
+      appendAuditEvent(root, {
+        type: "policy_change",
+        actor: "platform-lead",
+        reason: "Initial policy change.",
+        timestamp: "2026-05-02T00:00:00.000Z",
+        sourceArtifact: { kind: "verify-policy", path: ".spec/policy.yaml" },
+      });
+      appendAuditEvent(root, {
+        type: "policy_change",
+        actor: "platform-lead",
+        reason: "Second policy change.",
+        timestamp: "2026-05-01T00:00:00.000Z",
+        sourceArtifact: { kind: "verify-policy", path: ".spec/policy.yaml" },
+      });
+      const ledgerPath = path.join(root, ".spec", "audit", "events.jsonl");
+      const lines = fs.readFileSync(ledgerPath, "utf-8").trim().split(/\r?\n/);
+      const first = JSON.parse(lines[0] ?? "{}") as Record<string, unknown>;
+      first.reason = "Tampered after append.";
+      fs.writeFileSync(ledgerPath, `${JSON.stringify(first)}\n${lines[1]}\n{not-json}\n`, "utf-8");
+
+      const integrity = inspectAuditLedger(root);
+      assert.equal(integrity.status, "invalid");
+      assert.ok(integrity.issues.some((issue) => issue.code === "AUDIT_EVENT_HASH_MISMATCH"));
+      assert.ok(integrity.issues.some((issue) => issue.code === "AUDIT_EVENT_TIMESTAMP_OUT_OF_ORDER"));
+      assert.ok(integrity.issues.some((issue) => issue.code === "AUDIT_EVENT_UNPARSEABLE"));
+
+      const snapshot = collectConsoleLocalSnapshot(root);
+      const audit = snapshot.governance.objects.find((object) => object.id === "audit_events");
+      assert.equal(audit?.status, "invalid");
+      assert.equal(audit?.summary.integrityStatus, "invalid");
+      assert.ok((audit?.summary.integrityIssueCount as number) >= 3);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

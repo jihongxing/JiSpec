@@ -1,0 +1,16 @@
+stages:
+  - verify
+
+jispec_verify:
+  stage: verify
+  image: node:20
+  script:
+    - npm ci
+    - npm run ci:verify
+  artifacts:
+    when: always
+    paths:
+      - .jispec-ci/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

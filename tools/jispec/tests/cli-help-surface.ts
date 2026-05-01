@@ -39,18 +39,25 @@ function main(): void {
 
     assertIncludes(help, "jispec-cli verify [--json]", "primary surface");
     assertIncludes(help, "jispec-cli init --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli first-run [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change <summary> [--mode prompt|execute] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change default-mode show|set|reset [--json]", "primary surface");
     assertIncludes(help, "jispec-cli spec-debt repay|cancel|owner-review <id> [--json]", "primary surface");
     assertIncludes(help, "jispec-cli release snapshot --version <version> [--json]", "primary surface");
     assertIncludes(help, "jispec-cli console dashboard [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli console ui [--out <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli console actions [--json]", "primary surface");
     assertIncludes(help, "jispec-cli console export-governance [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli console aggregate-governance [--snapshot <paths...>] [--dir <paths...>] [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli privacy report [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli integrations payload --provider github|gitlab|jira|linear --kind scm_comment|issue_link [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli handoff adapter --from-handoff <path-or-session> --tool codex|claude_code|cursor|copilot|devin [--json]", "primary surface");
     assertIncludes(help, "jispec-cli implement [--fast] [--external-patch <path>] [--from-handoff <path-or-session>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap discover [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap draft [--json]", "primary surface");
     assertIncludes(help, "jispec-cli adopt --interactive [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli policy approval status|record [--json]", "primary surface");
     assertIncludes(help, "jispec-cli doctor v1", "primary surface");
     assertIncludes(help, "jispec-cli doctor runtime", "primary surface");
     assertIncludes(help, "npm run ci:verify", "primary surface");

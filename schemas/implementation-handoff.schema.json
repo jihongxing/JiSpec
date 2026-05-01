@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jispec.local/schemas/implementation-handoff.schema.json",
+  "title": "JiSpec External Coding Tool Handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "kind",
+    "createdAt",
+    "tool",
+    "sourceHandoff",
+    "request",
+    "constraints",
+    "authorityBoundary",
+    "replay",
+    "prompt"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "kind": { "const": "jispec-external-coding-tool-handoff" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "adapterVersion", "promptStyle"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": ["codex", "claude_code", "cursor", "copilot", "devin"]
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "adapterVersion": { "const": 1 },
+        "promptStyle": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sourceHandoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "path", "replayable", "outcome"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "replayable": { "const": true },
+        "outcome": { "type": "string", "minLength": 1 }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeIntent",
+        "summary",
+        "stopPoint",
+        "failedCheck",
+        "allowedPaths",
+        "filesNeedingAttention",
+        "contractFocus",
+        "testCommand",
+        "verifyCommand",
+        "returnPatchCommand"
+      ],
+      "properties": {
+        "changeIntent": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "stopPoint": {
+          "type": "string",
+          "enum": ["preflight", "scope_check", "patch_apply", "test", "post_verify", "budget", "stall"]
+        },
+        "failedCheck": {
+          "type": "string",
+          "enum": ["none", "scope_check", "patch_apply", "tests", "verify", "budget", "stall"]
+        },
+        "allowedPaths": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "filesNeedingAttention": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "contractFocus": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "testCommand": { "type": "string", "minLength": 1 },
+        "verifyCommand": { "type": "string", "minLength": 1 },
+        "returnPatchCommand": {
+          "type": "string",
+          "pattern": "implement .*--external-patch <path>"
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "patchFormat",
+        "allowedPathsOnly",
+        "doNotRunAsFinalAuthority",
+        "doNotUploadSourceRequiredByJiSpec",
+        "noSecretsInPrompt"
+      ],
+      "properties": {
+        "patchFormat": { "const": "unified_diff" },
+        "allowedPathsOnly": { "const": true },
+        "doNotRunAsFinalAuthority": { "const": true },
+        "doNotUploadSourceRequiredByJiSpec": { "const": true },
+        "noSecretsInPrompt": { "const": true }
+      }
+    },
+    "authorityBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapterOnlyChangesRequestFormat",
+        "patchMustReturnThroughImplementExternalPatch",
+        "scopeCheckRequired",
+        "testsRequired",
+        "verifyRequired",
+        "llmIsNotBlockingJudge"
+      ],
+      "properties": {
+        "adapterOnlyChangesRequestFormat": { "const": true },
+        "patchMustReturnThroughImplementExternalPatch": { "const": true },
+        "scopeCheckRequired": { "const": true },
+        "testsRequired": { "const": true },
+        "verifyRequired": { "const": true },
+        "llmIsNotBlockingJudge": { "const": true }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["replayable", "restoreCommand", "retryWithExternalPatchCommand", "rerunVerifyCommand"],
+      "properties": {
+        "replayable": { "const": true },
+        "restoreCommand": { "type": "string", "minLength": 1 },
+        "retryWithExternalPatchCommand": {
+          "type": "string",
+          "pattern": "implement .*--external-patch <path>"
+        },
+        "rerunVerifyCommand": { "type": "string", "minLength": 1 }
+      }
+    },
+    "prompt": { "type": "string", "minLength": 1 }
+  }
+}

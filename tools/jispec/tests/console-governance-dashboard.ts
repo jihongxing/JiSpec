@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { appendAuditEvent } from "../audit/event-ledger";
 import {
   buildConsoleGovernanceDashboard,
   renderConsoleGovernanceDashboardText,
@@ -112,16 +113,14 @@ async function main(): Promise<void> {
           replayable: true,
         },
       });
-      writeText(root, ".spec/audit/events.jsonl", `${JSON.stringify({
-        version: 1,
-        id: "audit-1",
+      appendAuditEvent(root, {
         type: "waiver_create",
         timestamp: "2026-05-01T00:00:00.000Z",
         actor: "reviewer",
         reason: "Approve temporary exception.",
         sourceArtifact: { kind: "verify-waiver", path: ".spec/waivers/waiver-soon.json" },
         affectedContracts: ["issue:API_CONTRACT_INVALID_JSON"],
-      })}\n`);
+      });
 
       const dashboard = buildConsoleGovernanceDashboard(root);
       assert.equal(question(dashboard, "mergeability").status, "attention");

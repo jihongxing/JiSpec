@@ -22,6 +22,10 @@ import {
 } from "./evidence-graph";
 import { EvidenceExclusionSummaryBuilder, getEvidenceExclusionMatch } from "./evidence-filter";
 import {
+  buildContractSourceAdapterReport,
+  renderContractSourceAdapterLines,
+} from "./contract-source-adapters";
+import {
   buildAdoptionRankedEvidence,
   buildBootstrapFullInventory,
   renderAdoptionRankedEvidenceLines,
@@ -32,6 +36,7 @@ const DEFAULT_EVIDENCE_SUMMARY = "evidence-summary.txt";
 const DEFAULT_BOOTSTRAP_SUMMARY = "bootstrap-summary.md";
 const DEFAULT_FULL_INVENTORY = "full-inventory.json";
 const DEFAULT_ADOPTION_RANKED_EVIDENCE = "adoption-ranked-evidence.json";
+const DEFAULT_CONTRACT_SOURCE_ADAPTERS = "contract-source-adapters.json";
 const ROUTE_FILE_HINT = /(route|routes|router|controller|controllers|api)/i;
 const CONTROLLER_FILE_HINT = /controller/i;
 const SERVICE_FILE_HINT = /service/i;
@@ -147,6 +152,13 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
     lines.push(...topRankedEvidence.map((entry) => `- ${entry}`));
   }
 
+  const adapterReport = buildContractSourceAdapterReport(result.graph);
+  const adapterLines = renderContractSourceAdapterLines(adapterReport, 8);
+  if (adapterLines.length > 0) {
+    lines.push("Contract source adapters:");
+    lines.push(...adapterLines.map((entry) => `- ${entry}`));
+  }
+
   const excludedRules = result.graph.excludedSummary?.rules ?? [];
   if (excludedRules.length > 0) {
     lines.push("Excluded by policy:");
@@ -178,7 +190,7 @@ export function renderBootstrapSummaryMarkdown(result: BootstrapDiscoverResult):
   return [
     "# Bootstrap Summary",
     "",
-    "This is the human-readable bootstrap discover summary. Machine consumers should use `evidence-graph.json`, `full-inventory.json`, and `adoption-ranked-evidence.json`.",
+    "This is the human-readable bootstrap discover summary. Machine consumers should use `evidence-graph.json`, `full-inventory.json`, `adoption-ranked-evidence.json`, and `contract-source-adapters.json`.",
     "",
     "```text",
     renderBootstrapDiscoverText(result),
@@ -256,6 +268,11 @@ function collectSchemaEvidence(root: string, files: string[]): EvidenceSchema[] 
       signal = "openapi_file";
       confidenceScore = 0.96;
       provenanceNote = "File name matched OpenAPI/Swagger naming convention.";
+    } else if ([".graphql", ".gql"].includes(extension)) {
+      format = "graphql";
+      signal = "graphql_schema_file";
+      confidenceScore = 0.93;
+      provenanceNote = "Detected GraphQL schema source.";
     } else if ((lowerPath.startsWith("schemas/") || fileName.endsWith(".schema.json")) && extension === ".json") {
       format = "json-schema";
       signal = fileName.endsWith(".schema.json") ? "json_schema_file" : "schema_directory";
@@ -465,10 +482,12 @@ function writeEvidenceGraph(root: string, outputPath: string, graph: EvidenceGra
   const resolvedBootstrapSummaryPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_BOOTSTRAP_SUMMARY);
   const resolvedFullInventoryPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_FULL_INVENTORY);
   const resolvedRankedEvidencePath = path.join(path.dirname(resolvedGraphPath), DEFAULT_ADOPTION_RANKED_EVIDENCE);
+  const resolvedContractSourceAdaptersPath = path.join(path.dirname(resolvedGraphPath), DEFAULT_CONTRACT_SOURCE_ADAPTERS);
   const writtenFiles = [
     normalizeEvidencePath(resolvedGraphPath),
     normalizeEvidencePath(resolvedFullInventoryPath),
     normalizeEvidencePath(resolvedRankedEvidencePath),
+    normalizeEvidencePath(resolvedContractSourceAdaptersPath),
     normalizeEvidencePath(resolvedBootstrapSummaryPath),
     normalizeEvidencePath(resolvedSummaryPath),
   ];
@@ -482,6 +501,7 @@ function writeEvidenceGraph(root: string, outputPath: string, graph: EvidenceGra
   storage.writeFileSync(resolvedGraphPath, `${JSON.stringify(graph, null, 2)}\n`);
   storage.writeFileSync(resolvedFullInventoryPath, `${JSON.stringify(buildBootstrapFullInventory(graph), null, 2)}\n`);
   storage.writeFileSync(resolvedRankedEvidencePath, `${JSON.stringify(buildAdoptionRankedEvidence(graph), null, 2)}\n`);
+  storage.writeFileSync(resolvedContractSourceAdaptersPath, `${JSON.stringify(buildContractSourceAdapterReport(graph), null, 2)}\n`);
   storage.writeFileSync(resolvedSummaryPath, `${renderBootstrapDiscoverText(result)}\n`);
   storage.writeFileSync(resolvedBootstrapSummaryPath, renderBootstrapSummaryMarkdown(result));
 
@@ -779,6 +799,10 @@ function classifySourceFile(repoPath: string, absolutePath?: string): EvidenceSo
     return "test";
   }
   if (
+    extension === ".proto" ||
+    extension === ".graphql" ||
+    extension === ".gql" ||
+    (/openapi|swagger/.test(fileName) && [".yaml", ".yml", ".json"].includes(extension)) ||
     fileName.endsWith(".schema.json") ||
     fileName.endsWith(".schema.yaml") ||
     fileName.endsWith(".schema.yml") ||
@@ -945,6 +969,36 @@ function detectManifestSignal(repoPath: string): Pick<EvidenceManifest, "kind" |
         kind: "composer",
         confidenceScore: 0.98,
         provenanceNote: "Detected PHP Composer manifest.",
+      };
+    case "pnpm-workspace.yaml":
+      return {
+        kind: "pnpm-workspace",
+        confidenceScore: 0.97,
+        provenanceNote: "Detected pnpm workspace manifest.",
+      };
+    case "nx.json":
+      return {
+        kind: "nx",
+        confidenceScore: 0.94,
+        provenanceNote: "Detected Nx monorepo manifest.",
+      };
+    case "turbo.json":
+      return {
+        kind: "turbo",
+        confidenceScore: 0.94,
+        provenanceNote: "Detected Turborepo manifest.",
+      };
+    case "lerna.json":
+      return {
+        kind: "lerna",
+        confidenceScore: 0.94,
+        provenanceNote: "Detected Lerna monorepo manifest.",
+      };
+    case "rush.json":
+      return {
+        kind: "rush",
+        confidenceScore: 0.94,
+        provenanceNote: "Detected Rush monorepo manifest.",
       };
     default:
       return undefined;

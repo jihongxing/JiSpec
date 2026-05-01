@@ -1,6 +1,7 @@
 import path from "node:path";
 import { Command } from "commander";
 import * as yaml from "js-yaml";
+import packageJson from "../../package.json";
 import { formatAgentResult, runAgent, type AgentRole } from "./agent-runner";
 import { deriveAll, deriveBehavior, deriveDesign, deriveTests, syncTrace } from "./artifact-ops";
 import { buildContextBoardReport } from "./context-board";
@@ -36,6 +37,15 @@ import {
 } from "./change/default-mode-command";
 import type { SpecDeltaChangeType } from "./change/spec-delta";
 import { migrateVerifyPolicy, renderPolicyMigrationText } from "./policy/migrate-policy";
+import {
+  evaluatePolicyApprovalWorkflow,
+  recordPolicyApproval,
+  renderPolicyApprovalWorkflowJSON,
+  renderPolicyApprovalWorkflowText,
+  type ApprovalActorRole,
+  type ApprovalDecisionStatus,
+  type ApprovalSubjectKind,
+} from "./policy/approval";
 import { renderGreenfieldInitText, runGreenfieldInit, type GreenfieldInitOptions, type GreenfieldInitResult } from "./greenfield/init";
 import {
   renderGreenfieldReviewBriefText,
@@ -72,6 +82,31 @@ import {
   renderConsoleGovernanceExportJSON,
   renderConsoleGovernanceExportText,
 } from "./console/governance-export";
+import {
+  aggregateMultiRepoGovernance,
+  renderMultiRepoGovernanceAggregateJSON,
+  renderMultiRepoGovernanceAggregateText,
+} from "./console/multi-repo";
+import {
+  renderFirstRunJSON,
+  renderFirstRunText,
+  runFirstRun,
+} from "./onboarding/first-run";
+import {
+  renderLocalConsoleUiResultJSON,
+  renderLocalConsoleUiResultText,
+  writeLocalConsoleUi,
+} from "./console/ui/static-dashboard";
+import {
+  buildPrivacyReport,
+  renderPrivacyReportJSON,
+  renderPrivacyReportText,
+} from "./privacy/redaction";
+import {
+  buildValueReport,
+  renderValueReportJSON,
+  renderValueReportText,
+} from "./metrics/value-report";
 import type { TeamPolicyProfileName } from "./policy/policy-schema";
 
 type LegacySurface =
@@ -88,6 +123,7 @@ function buildPrimarySurfaceHelpText(): string {
   return [
     "Current primary surface:",
     "  jispec-cli init --requirements <path> [--technical-solution <path>] [--json]",
+    "  jispec-cli first-run [--json]",
     "  jispec-cli verify [--json]",
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
     "  jispec-cli change default-mode show|set|reset [--json]",
@@ -95,8 +131,14 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli spec-debt repay|cancel|owner-review <id> [--json]",
     "  jispec-cli release snapshot --version <version> [--json]",
     "  jispec-cli console dashboard [--json]",
+    "  jispec-cli console ui [--out <path>] [--json]",
     "  jispec-cli console actions [--json]",
     "  jispec-cli console export-governance [--json]",
+    "  jispec-cli console aggregate-governance [--snapshot <paths...>] [--dir <paths...>] [--json]",
+    "  jispec-cli metrics value-report [--json]",
+    "  jispec-cli privacy report [--json]",
+    "  jispec-cli integrations payload --provider github|gitlab|jira|linear --kind scm_comment|issue_link [--json]",
+    "  jispec-cli handoff adapter --from-handoff <path-or-session> --tool codex|claude_code|cursor|copilot|devin [--json]",
     "  jispec-cli implement [--fast] [--external-patch <path>] [--from-handoff <path-or-session>] [--json]",
     "  jispec-cli bootstrap init-project [--force] [--json]",
     "  jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]",
@@ -104,8 +146,11 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli bootstrap draft [--json]",
     "  jispec-cli adopt --interactive [--json]",
     "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--json]",
+    "  jispec-cli policy approval status|record [--json]",
     "  jispec-cli doctor v1",
     "  jispec-cli doctor runtime",
+    "  jispec-cli doctor pilot",
+    "  jispec-cli --version",
     "",
     "Current CI wrapper:",
     "  npm run ci:verify",
@@ -247,6 +292,30 @@ function registerDoctorCommands(program: Command): void {
         process.exitCode = 1;
       }
     });
+
+  doctor
+    .command("pilot")
+    .description("Check commercial pilot readiness separately from engineering V1 readiness.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; json: boolean }) => {
+      try {
+        const doctorInstance = new Doctor(path.resolve(options.root));
+        const report = await doctorInstance.checkCommercialPilotReadiness();
+
+        if (options.json) {
+          console.log(Doctor.formatJSON(report));
+        } else {
+          console.log(Doctor.formatText(report));
+        }
+
+        process.exitCode = report.ready ? 0 : 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Doctor pilot check failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
 }
 
 function registerPolicyCommands(program: Command): void {
@@ -281,6 +350,81 @@ function registerPolicyCommands(program: Command): void {
         process.exitCode = 1;
       }
     });
+
+  const approval = policy
+    .command("approval")
+    .description("Record and inspect structured local approval decisions for policy governance.");
+
+  approval
+    .command("status")
+    .description("Show approval missing, stale, or satisfied posture without replacing verify.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const posture = evaluatePolicyApprovalWorkflow(path.resolve(options.root));
+        console.log(options.json ? renderPolicyApprovalWorkflowJSON(posture) : renderPolicyApprovalWorkflowText(posture));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Policy approval status failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  approval
+    .command("record")
+    .description("Write a local approval decision and append an audit event.")
+    .option("--root <path>", "Repository root.", ".")
+    .requiredOption("--subject-kind <kind>", "policy_change|waiver_change|release_drift|execute_default_change.")
+    .option("--subject-ref <path>", "Subject artifact path. Defaults to policy.yaml or latest release compare where possible.")
+    .option("--actor <actor>", "Actor recording the approval.")
+    .option("--role <role>", "Approval role: owner|reviewer.", "reviewer")
+    .option("--status <status>", "Decision status: approved|rejected.", "approved")
+    .requiredOption("--reason <reason>", "Human reason for the approval decision.")
+    .option("--expires-at <date>", "Optional ISO 8601 expiration time.")
+    .option("--id <id>", "Optional stable approval id for tests or scripted workflows.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: {
+      root: string;
+      subjectKind: string;
+      subjectRef?: string;
+      actor?: string;
+      role: string;
+      status: string;
+      reason: string;
+      expiresAt?: string;
+      id?: string;
+      json: boolean;
+    }) => {
+      try {
+        const result = recordPolicyApproval(path.resolve(options.root), {
+          subjectKind: parseApprovalSubjectKindOption(options.subjectKind),
+          subjectRef: options.subjectRef,
+          actor: options.actor,
+          role: parseApprovalActorRoleOption(options.role),
+          status: parseApprovalDecisionStatusOption(options.status),
+          reason: options.reason,
+          expiresAt: options.expiresAt,
+          id: options.id,
+        });
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+        } else {
+          console.log("Approval recorded:");
+          console.log(`  ID: ${result.approval.id}`);
+          console.log(`  Status: ${result.approval.status}`);
+          console.log(`  Subject: ${result.approval.subject.kind} ${result.approval.subject.ref}`);
+          console.log(`  Actor: ${result.approval.decision.actor} (${result.approval.decision.role})`);
+          console.log(`  Path: ${path.relative(path.resolve(options.root), result.recordPath).replace(/\\/g, "/")}`);
+        }
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Policy approval record failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
 }
 
 function parsePolicyProfileOption(profile?: string): TeamPolicyProfileName | undefined {
@@ -291,6 +435,27 @@ function parsePolicyProfileOption(profile?: string): TeamPolicyProfileName | und
     return profile;
   }
   throw new Error("--profile must be one of: solo, small_team, regulated");
+}
+
+function parseApprovalSubjectKindOption(kind: string): ApprovalSubjectKind {
+  if (kind === "policy_change" || kind === "waiver_change" || kind === "release_drift" || kind === "execute_default_change") {
+    return kind;
+  }
+  throw new Error("--subject-kind must be one of: policy_change, waiver_change, release_drift, execute_default_change");
+}
+
+function parseApprovalActorRoleOption(role: string): ApprovalActorRole {
+  if (role === "owner" || role === "reviewer") {
+    return role;
+  }
+  throw new Error("--role must be one of: owner, reviewer");
+}
+
+function parseApprovalDecisionStatusOption(status: string): ApprovalDecisionStatus {
+  if (status === "approved" || status === "rejected") {
+    return status;
+  }
+  throw new Error("--status must be one of: approved, rejected");
 }
 
 function registerWaiverCommands(program: Command): void {
@@ -543,6 +708,27 @@ function registerConsoleCommands(program: Command): void {
     });
 
   consoleCommand
+    .command("ui")
+    .description("Write a local read-only HTML governance console over declared JiSpec artifacts.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--out <path>", "Output HTML path relative to root.", ".spec/console/ui/index.html")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; out: string; json: boolean }) => {
+      try {
+        const result = writeLocalConsoleUi({
+          root: path.resolve(options.root),
+          outPath: options.out,
+        });
+        console.log(options.json ? renderLocalConsoleUiResultJSON(result) : renderLocalConsoleUiResultText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Console UI failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  consoleCommand
     .command("actions")
     .description("Generate audited local CLI action packets from the governance dashboard state.")
     .option("--root <path>", "Repository root.", ".")
@@ -580,6 +766,85 @@ function registerConsoleCommands(program: Command): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Console governance export failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  consoleCommand
+    .command("aggregate-governance")
+    .description("Aggregate exported repo governance snapshots without scanning source or replacing single-repo verify gates.")
+    .option("--root <path>", "Workspace root used for relative inputs and output.", ".")
+    .option("--snapshot <paths...>", "Explicit .spec/console/governance-snapshot.json file path(s).")
+    .option("--dir <paths...>", "Directory path(s) containing exported governance snapshots.")
+    .option("--out <path>", "Output JSON path.", ".spec/console/multi-repo-governance.json")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; snapshot?: string[]; dir?: string[]; out: string; json: boolean }) => {
+      try {
+        const result = aggregateMultiRepoGovernance({
+          root: path.resolve(options.root),
+          snapshotPaths: options.snapshot ?? [],
+          directoryPaths: options.dir ?? [],
+          outPath: options.out,
+        });
+        console.log(options.json ? renderMultiRepoGovernanceAggregateJSON(result) : renderMultiRepoGovernanceAggregateText(result.aggregate));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Console governance aggregation failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerPrivacyCommands(program: Command): void {
+  const privacy = program.command("privacy").description("Generate local privacy and redaction reports over JiSpec artifacts.");
+
+  privacy
+    .command("report")
+    .description("Scan local JiSpec artifacts for common secrets and write a privacy report plus redacted shareable companions.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--out <path>", "Output JSON path.", ".spec/privacy/privacy-report.json")
+    .option("--no-redacted-views", "Do not write redacted companion files.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; out: string; redactedViews: boolean; json: boolean }) => {
+      try {
+        const result = buildPrivacyReport({
+          root: path.resolve(options.root),
+          outPath: options.out,
+          writeRedactedViews: options.redactedViews,
+        });
+        console.log(options.json ? renderPrivacyReportJSON(result) : renderPrivacyReportText(result.report));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Privacy report failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerMetricsCommands(program: Command): void {
+  const metrics = program.command("metrics").description("Generate repo-local value and adoption metrics without uploading source.");
+
+  metrics
+    .command("value-report")
+    .description("Write a local ROI/adoption value report from JiSpec artifacts.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--out <path>", "Output JSON path.", ".spec/metrics/value-report.json")
+    .option("--window-days <days>", "Metric window in days.", "7")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; out: string; windowDays: string; json: boolean }) => {
+      try {
+        const result = buildValueReport({
+          root: path.resolve(options.root),
+          outPath: options.out,
+          windowDays: Number(options.windowDays),
+        });
+        console.log(options.json ? renderValueReportJSON(result) : renderValueReportText(result.report));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Value report failed: ${message}`);
         process.exitCode = 1;
       }
     });
@@ -894,6 +1159,77 @@ function registerImplementCommand(program: Command): void {
     });
 }
 
+function registerHandoffAdapterCommand(program: Command): void {
+  const handoff = program.command("handoff").description("Export replayable implementation handoffs for external coding tools.");
+
+  handoff
+    .command("adapter")
+    .description("Write a focused external coding tool request packet from a JiSpec handoff.")
+    .option("--root <path>", "Repository root.", ".")
+    .requiredOption("--from-handoff <path-or-session>", "Replayable handoff packet path or session id.")
+    .requiredOption("--tool <tool>", "External tool: codex|claude_code|cursor|copilot|devin.")
+    .option("--out <path>", "Output JSON path. Defaults under .jispec/handoff/adapters/<session>.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; fromHandoff: string; tool: string; out?: string; json: boolean }) => {
+      try {
+        const {
+          parseExternalCodingTool,
+          writeExternalToolHandoffRequest,
+          renderExternalToolHandoffJSON,
+          renderExternalToolHandoffText,
+        } = await import("./implement/adapters/handoff-adapter");
+        const result = writeExternalToolHandoffRequest({
+          root: path.resolve(options.root),
+          fromHandoff: options.fromHandoff,
+          tool: parseExternalCodingTool(options.tool),
+          outPath: options.out,
+        });
+        console.log(options.json ? renderExternalToolHandoffJSON(result) : renderExternalToolHandoffText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Handoff adapter failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerIntegrationCommands(program: Command): void {
+  const integrations = program.command("integrations").description("Generate local SCM and issue tracker integration payload previews.");
+
+  integrations
+    .command("payload")
+    .description("Write a GitHub/GitLab comment or Jira/Linear issue-link preview from local JiSpec artifacts.")
+    .option("--root <path>", "Repository root.", ".")
+    .requiredOption("--provider <provider>", "github|gitlab|jira|linear.")
+    .requiredOption("--kind <kind>", "scm_comment|issue_link.")
+    .option("--out <path>", "Output JSON path. Defaults under .spec/integrations.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; provider: string; kind: string; out?: string; json: boolean }) => {
+      try {
+        const {
+          parseIntegrationProvider,
+          parseIntegrationPayloadKind,
+          writeIntegrationPayload,
+          renderIntegrationPayloadJSON,
+          renderIntegrationPayloadText,
+        } = await import("./integrations/scm/payload");
+        const result = writeIntegrationPayload({
+          root: path.resolve(options.root),
+          provider: parseIntegrationProvider(options.provider),
+          kind: parseIntegrationPayloadKind(options.kind),
+          outPath: options.out,
+        });
+        console.log(options.json ? renderIntegrationPayloadJSON(result) : renderIntegrationPayloadText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Integration payload failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
 function renderBootstrapDiscoverResult(result: BootstrapDiscoverResult, json: boolean): void {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
@@ -1148,6 +1484,7 @@ export function buildProgram(): Command {
   program.addHelpText("after", buildCombinedHelpText());
 
   registerPrimaryVerifyCommand(program);
+  registerFirstRunCommand(program);
   registerGreenfieldInitCommand(program);
   registerBootstrapCommands(program);
   registerAdoptCommand(program);
@@ -1158,7 +1495,11 @@ export function buildProgram(): Command {
   registerReviewCommands(program);
   registerReleaseCommands(program);
   registerConsoleCommands(program);
+  registerMetricsCommands(program);
+  registerPrivacyCommands(program);
+  registerIntegrationCommands(program);
   registerSpecDebtCommands(program);
+  registerHandoffAdapterCommand(program);
   registerImplementCommand(program);
 
   const slice = program.command("slice").description("Legacy slice-based protocol commands (compatibility surface).");
@@ -2464,10 +2805,39 @@ export function buildProgram(): Command {
   return program;
 }
 
+function registerFirstRunCommand(program: Command): void {
+  program
+    .command("first-run")
+    .description("Guide a first-time user to the next stable JiSpec command based on local repo state.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; json: boolean }) => {
+      try {
+        const result = runFirstRun({ root: path.resolve(options.root) });
+        console.log(options.json ? renderFirstRunJSON(result) : renderFirstRunText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`First-run guide failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
 export async function main(argv: string[] = process.argv): Promise<number> {
+  if (isRootVersionRequest(argv)) {
+    console.log(packageJson.version);
+    return 0;
+  }
+
   const program = buildProgram();
   await program.parseAsync(argv);
   return typeof process.exitCode === "number" ? process.exitCode : 0;
+}
+
+function isRootVersionRequest(argv: string[]): boolean {
+  const args = argv.slice(2);
+  return args.length === 1 && (args[0] === "--version" || args[0] === "-v");
 }
 
 if (require.main === module) {

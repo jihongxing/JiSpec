@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     assert.equal(contract.boundary.replacesCliGate, false);
     assert.equal(contract.boundary.sourceUploadRequired, false);
     assert.equal(contract.boundary.localArtifactsAreSourceOfTruth, true);
-    assert.equal(contract.governanceObjects.length, 10);
+    assert.equal(contract.governanceObjects.length, 11);
   });
 
   record("contract includes required machine-readable read model artifacts and governance sources", () => {
@@ -69,6 +69,7 @@ async function main(): Promise<void> {
       ".spec/handoffs/retakeover-pool-metrics.json",
       ".jispec/handoff/*.json",
       ".jispec/implement/<session-id>/patch-mediation.json",
+      ".spec/approvals/*.json",
       ".spec/audit/events.jsonl",
     ]) {
       assert.ok(machinePaths.includes(expected), `Missing ${expected}`);
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
       "takeover_quality_trend",
       "implementation_mediation_outcomes",
       "audit_events",
+      "approval_workflow",
       "multi_repo_export",
     ]);
     for (const object of CONSOLE_GOVERNANCE_OBJECTS) {
@@ -161,6 +163,32 @@ async function main(): Promise<void> {
       writeText(fixtureRoot, ".spec/handoffs/retakeover-metrics.json", JSON.stringify({ qualityScorecard: { score: 82 } }, null, 2));
       writeText(fixtureRoot, ".jispec/handoff/change-1.json", JSON.stringify({ outcome: "budget_exhausted", decisionPacket: { stopPoint: "budget" }, replay: { replayable: true } }, null, 2));
       writeText(fixtureRoot, ".jispec/implement/change-1/patch-mediation.json", JSON.stringify({ status: "accepted", applied: true }, null, 2));
+      writeText(fixtureRoot, ".spec/approvals/approval-1.json", JSON.stringify({
+        version: 1,
+        id: "approval-1",
+        status: "approved",
+        subject: { kind: "policy_change", ref: ".spec/policy.yaml", hash: "abc123" },
+        requirement: {
+          profile: "small_team",
+          owner: "console-team",
+          reviewers: [],
+          requiredReviewers: 1,
+          ownerApprovalAllowed: true,
+          contract: "reviewer_quorum_or_owner_approval",
+        },
+        decision: {
+          actor: "alice",
+          role: "owner",
+          reason: "Reviewed policy change.",
+          decidedAt: "2026-05-01T00:00:00.000Z",
+        },
+        boundary: {
+          localOnly: true,
+          sourceUploadRequired: false,
+          llmBlockingJudge: false,
+          consoleOverridesVerify: false,
+        },
+      }, null, 2));
       writeText(fixtureRoot, ".spec/audit/events.jsonl", `${JSON.stringify({ type: "policy_migrate", actor: "tester" })}\n`);
 
       const snapshot = collectConsoleLocalSnapshot(fixtureRoot);
@@ -172,6 +200,7 @@ async function main(): Promise<void> {
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "release-compare-report")?.instances[0]?.relativePath, ".spec/releases/compare/v1-to-v2/compare-report.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "multi-repo-governance-snapshot")?.instances[0]?.relativePath, ".spec/console/governance-snapshot.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "implementation-handoff-packets")?.instances[0]?.relativePath, ".jispec/handoff/change-1.json");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "policy-approvals")?.instances[0]?.relativePath, ".spec/approvals/approval-1.json");
     } finally {
       fs.rmSync(fixtureRoot, { recursive: true, force: true });
     }
@@ -186,11 +215,18 @@ async function main(): Promise<void> {
         "requires:",
         "  facts_contract: '1.0'",
         "team:",
-        "  profile: platform",
+        "  profile: regulated",
         "  owner: console-team",
         "  reviewers: [alice, bob]",
         "rules:",
         "  - id: no-blocking",
+        "    enabled: true",
+        "    action: warn",
+        "    message: Console fixture rule",
+        "    when:",
+        "      fact: verify.issue_count",
+        "      op: '>'",
+        "      value: 0",
         "",
       ].join("\n"));
       writeText(fixtureRoot, ".spec/waivers/active.json", JSON.stringify({ id: "active", status: "active" }, null, 2));
@@ -256,6 +292,11 @@ async function main(): Promise<void> {
       assert.equal(audit.status, "available");
       assert.equal(audit.summary.eventCount, 1);
       assert.equal(audit.summary.latestActor, "codex");
+
+      const approvals = governanceObject(snapshot, "approval_workflow");
+      assert.equal(approvals.status, "partial");
+      assert.equal(approvals.summary.status, "approval_missing");
+      assert.equal(approvals.summary.profile, "regulated");
 
       assert.ok(!snapshot.artifacts.flatMap((artifact) => artifact.instances.map((instance) => instance.relativePath)).includes("src/ignored.ts"));
       assert.equal(snapshot.boundary.synthesizesGateResults, false);

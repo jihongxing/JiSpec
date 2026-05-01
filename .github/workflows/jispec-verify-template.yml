@@ -1,0 +1,37 @@
+name: JiSpec Verify
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  jispec-verify:
+    name: JiSpec local contract gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: JiSpec verify
+        run: npm run ci:verify
+
+      - name: Upload JiSpec CI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jispec-ci
+          path: .jispec-ci/

@@ -3,11 +3,32 @@
   "version": "0.1.0",
   "private": true,
   "description": "JiSpec-CLI: contract-driven AI delivery gate and protocol validators",
+  "bin": {
+    "jispec": "./bin/jispec.js",
+    "jispec-cli": "./bin/jispec.js"
+  },
+  "files": [
+    "bin/",
+    "tools/jispec/",
+    "!tools/jispec/tests/",
+    "schemas/",
+    "templates/",
+    "agents/",
+    "examples/",
+    ".github/workflows/jispec-verify-template.yml",
+    ".gitlab-ci.jispec-template.yml",
+    "docs/",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "npx tsc --noEmit",
     "typecheck": "npx tsc --noEmit",
     "jispec-cli": "node --import tsx ./tools/jispec/cli.ts",
-    "jispec": "node --import tsx ./tools/jispec/cli.ts",
+    "jispec": "node ./bin/jispec.js",
     "verify": "node --import tsx ./tools/jispec/cli.ts verify",
     "validate:repo": "node --import tsx ./tools/jispec/cli.ts verify",
     "post-release:gate": "node --import tsx ./scripts/post-release-gate.ts",
@@ -20,13 +41,13 @@
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.11.0",
     "commander": "^12.1.0",
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/blessed": "^0.1.27",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.19.17",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

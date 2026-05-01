@@ -24,7 +24,12 @@ export interface DoctorCheckResult {
   status: "pass" | "fail";
   summary: string;
   details: string[];
+  ownerAction?: string;
+  nextCommand?: string;
+  sourceArtifacts?: string[];
 }
+
+export type DoctorProfile = "runtime" | "v1" | "pilot";
 
 export interface DoctorReport {
   checks: DoctorCheckResult[];
@@ -32,7 +37,18 @@ export interface DoctorReport {
   passedChecks: number;
   failedChecks: number;
   ready: boolean;
-  profile?: "runtime" | "v1";
+  profile?: DoctorProfile;
+  readinessSummary?: {
+    profile: DoctorProfile;
+    ready: boolean;
+    blockerCount: number;
+    blockers: Array<{
+      check: string;
+      summary: string;
+      ownerAction?: string;
+      nextCommand?: string;
+    }>;
+  };
 }
 
 export class Doctor {
@@ -90,9 +106,36 @@ export class Doctor {
     return this.buildReport("v1", checks);
   }
 
-  private buildReport(profile: "runtime" | "v1", checks: DoctorCheckResult[]): DoctorReport {
+  /**
+   * Run commercial pilot readiness checks over local JiSpec artifacts. This is
+   * separate from V1 engineering readiness: a repo can be technically healthy
+   * and still not ready for an external team pilot.
+   */
+  async checkCommercialPilotReadiness(): Promise<DoctorReport> {
+    const checks: DoctorCheckResult[] = [];
+
+    checks.push(await this.checkPilotInstallationEntry());
+    checks.push(await this.checkPilotFirstTakeover());
+    checks.push(await this.checkPilotCiIntegration());
+    checks.push(await this.checkPilotPolicyProfile());
+    checks.push(await this.checkPilotWaiverAndSpecDebt());
+    checks.push(await this.checkPilotConsoleGovernance());
+    checks.push(await this.checkPilotPrivacyReport());
+
+    return this.buildReport("pilot", checks);
+  }
+
+  private buildReport(profile: DoctorProfile, checks: DoctorCheckResult[]): DoctorReport {
     const passedChecks = checks.filter((c) => c.status === "pass").length;
     const failedChecks = checks.filter((c) => c.status === "fail").length;
+    const blockers = checks
+      .filter((check) => check.status === "fail")
+      .map((check) => ({
+        check: check.name,
+        summary: check.summary,
+        ownerAction: check.ownerAction,
+        nextCommand: check.nextCommand,
+      }));
 
     return {
       checks,
@@ -101,6 +144,12 @@ export class Doctor {
       failedChecks,
       ready: failedChecks === 0,
       profile,
+      readinessSummary: {
+        profile,
+        ready: failedChecks === 0,
+        blockerCount: blockers.length,
+        blockers,
+      },
     };
   }
 
@@ -910,6 +959,306 @@ export class Doctor {
     }
   }
 
+  private async checkPilotInstallationEntry(): Promise<DoctorCheckResult> {
+    const packagePath = path.join(this.root, "package.json");
+    if (!fs.existsSync(packagePath)) {
+      return pilotFail(
+        "Pilot Installation Entry",
+        "package.json missing",
+        ["Commercial pilot needs a reproducible local CLI entry point; no package.json was found."],
+        "Add a package.json with JiSpec scripts or run the pilot from a repo that has the npm entry installed.",
+        "npm install",
+        ["package.json"],
+      );
+    }
+
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf-8")) as { scripts?: Record<string, string>; bin?: unknown };
+      const scripts = packageJson.scripts ?? {};
+      const hasJispecEntry = Boolean(scripts.jispec || scripts["jispec-cli"] || scripts.verify || scripts["ci:verify"] || packageJson.bin);
+      if (!hasJispecEntry) {
+        return pilotFail(
+          "Pilot Installation Entry",
+          "JiSpec script entry missing",
+          ["package.json exists but does not expose a JiSpec script, verify script, ci:verify script, or package bin."],
+          "Add stable JiSpec scripts so pilot users can run the same commands locally and in CI.",
+          "npm run jispec -- --version",
+          ["package.json"],
+        );
+      }
+
+      return pilotPass(
+        "Pilot Installation Entry",
+        "Installed entry available",
+        [
+          `Detected package scripts: ${Object.keys(scripts).sort().join(", ") || "none"}`,
+          "Commercial pilot installation is a local CLI entry; no cloud account or source upload is required.",
+        ],
+        ["package.json"],
+      );
+    } catch (error: any) {
+      return pilotFail(
+        "Pilot Installation Entry",
+        "package.json unreadable",
+        [error.message],
+        "Fix package.json before starting a commercial pilot.",
+        "npm install",
+        ["package.json"],
+      );
+    }
+  }
+
+  private async checkPilotFirstTakeover(): Promise<DoctorCheckResult> {
+    const takeoverPath = ".spec/handoffs/bootstrap-takeover.json";
+    const greenfieldBaselinePath = ".spec/baselines/current.yaml";
+    const takeover = readJsonFile(path.join(this.root, takeoverPath));
+    const greenfieldBaselineExists = fs.existsSync(path.join(this.root, greenfieldBaselinePath));
+
+    if (takeover && takeover.status === "committed") {
+      const adopted = Array.isArray(takeover.adoptedArtifactPaths) ? takeover.adoptedArtifactPaths.length : 0;
+      return pilotPass(
+        "Pilot First Takeover",
+        "First takeover committed",
+        [
+          `Bootstrap takeover report is committed with ${adopted} adopted artifact(s).`,
+          "This proves the pilot has a human-reviewed initial contract baseline; it does not claim full legacy understanding.",
+        ],
+        [takeoverPath],
+      );
+    }
+
+    if (greenfieldBaselineExists) {
+      return pilotPass(
+        "Pilot First Takeover",
+        "Greenfield baseline present",
+        [
+          "Current Greenfield baseline exists.",
+          "This proves the pilot has an initial declared contract baseline; legacy repository understanding still requires owner review.",
+        ],
+        [greenfieldBaselinePath],
+      );
+    }
+
+    return pilotFail(
+      "Pilot First Takeover",
+      "No adopted baseline",
+      [
+        "No committed bootstrap takeover or Greenfield current baseline was found.",
+        "Checklist boundary: JiSpec does not promise automatic full understanding of an existing repository; owners must review and adopt the first baseline.",
+      ],
+      "Run guided first-run and complete bootstrap adopt or Greenfield init before inviting a pilot team.",
+      "npm run jispec -- first-run --root .",
+      [takeoverPath, greenfieldBaselinePath],
+    );
+  }
+
+  private async checkPilotCiIntegration(): Promise<DoctorCheckResult> {
+    const packagePath = path.join(this.root, "package.json");
+    const reportPath = ".jispec-ci/verify-report.json";
+    const packageJson = readJsonFile(packagePath);
+    const scripts = isRecord(packageJson?.scripts) ? packageJson.scripts : {};
+    const verifyReport = readJsonFile(path.join(this.root, reportPath));
+    const details: string[] = [];
+    let status: "pass" | "fail" = "pass";
+
+    if (typeof scripts["ci:verify"] === "string") {
+      details.push(`ci:verify script present (${scripts["ci:verify"]})`);
+    } else {
+      status = "fail";
+      details.push("ci:verify script missing from package.json.");
+    }
+
+    if (verifyReport) {
+      details.push(`Latest CI verify verdict: ${String(verifyReport.verdict ?? "not_declared")}`);
+      const blocking = numberValue(verifyReport.blockingIssueCount) ?? (isRecord(verifyReport.counts) ? numberValue(verifyReport.counts.blocking) : undefined) ?? 0;
+      if (blocking > 0 || verifyReport.verdict === "FAIL_BLOCKING") {
+        status = "fail";
+        details.push(`${blocking} blocking issue(s) are still present in the latest CI verify report.`);
+      }
+    } else {
+      status = "fail";
+      details.push("No .jispec-ci/verify-report.json found.");
+    }
+
+    if (status === "pass") {
+      return pilotPass("Pilot CI Integration", "CI verify connected", details, ["package.json", reportPath]);
+    }
+    return pilotFail(
+      "Pilot CI Integration",
+      "CI verify not pilot-ready",
+      details,
+      "Wire CI to the local verify wrapper and produce a clean or advisory-only CI verify report.",
+      "npm run ci:verify",
+      ["package.json", reportPath],
+    );
+  }
+
+  private async checkPilotPolicyProfile(): Promise<DoctorCheckResult> {
+    const policyPath = ".spec/policy.yaml";
+    const absolutePolicyPath = path.join(this.root, policyPath);
+    if (!fs.existsSync(absolutePolicyPath)) {
+      return pilotFail(
+        "Pilot Policy Profile",
+        "Policy missing",
+        ["No .spec/policy.yaml was found."],
+        "Choose a pilot governance profile and declare owner/reviewer expectations.",
+        "npm run jispec -- policy migrate --profile small_team --root .",
+        [policyPath],
+      );
+    }
+
+    try {
+      const policy = yaml.load(fs.readFileSync(absolutePolicyPath, "utf-8"));
+      const team = isRecord(policy) && isRecord(policy.team) ? policy.team : {};
+      const profile = stringValue(team.profile);
+      const owner = stringValue(team.owner);
+      const reviewers = Array.isArray(team.reviewers) ? team.reviewers : [];
+      const details = [
+        `Profile: ${profile ?? "not_declared"}`,
+        `Owner: ${owner ?? "not_declared"}`,
+        `Reviewer count: ${reviewers.length}`,
+      ];
+      const validProfile = profile === "solo" || profile === "small_team" || profile === "regulated";
+      const ownerDeclared = Boolean(owner && owner !== "unassigned" && owner !== "not_declared");
+      if (!validProfile || !ownerDeclared) {
+        return pilotFail(
+          "Pilot Policy Profile",
+          "Policy profile incomplete",
+          details,
+          "Declare a pilot profile and accountable owner before inviting a team.",
+          "npm run jispec -- policy migrate --profile small_team --root .",
+          [policyPath],
+        );
+      }
+
+      return pilotPass("Pilot Policy Profile", "Policy profile declared", details, [policyPath]);
+    } catch (error: any) {
+      return pilotFail(
+        "Pilot Policy Profile",
+        "Policy unreadable",
+        [error.message],
+        "Fix .spec/policy.yaml before starting a pilot.",
+        "npm run jispec -- policy migrate --profile small_team --root .",
+        [policyPath],
+      );
+    }
+  }
+
+  private async checkPilotWaiverAndSpecDebt(): Promise<DoctorCheckResult> {
+    const now = new Date();
+    const waivers = listJsonRecords(path.join(this.root, ".spec", "waivers"));
+    const ledger = readYamlFile(path.join(this.root, ".spec", "spec-debt", "ledger.yaml"));
+    const greenfieldDebt = isRecord(ledger) && Array.isArray(ledger.debts) ? ledger.debts.filter(isRecord) : [];
+    const bootstrapDebt = listNestedJsonRecords(path.join(this.root, ".spec", "spec-debt"), 2)
+      .filter((record) => !("debts" in record));
+    const activeWaivers = waivers.filter((waiver) => stringValue(waiver.status) !== "revoked");
+    const expiredWaivers = activeWaivers.filter((waiver) => isPastDate(stringValue(waiver.expiresAt), now));
+    const openDebt = greenfieldDebt.filter((debt) => stringValue(debt.status) === "open");
+    const expiredDebt = openDebt.filter((debt) => isPastDate(stringValue(debt.expires_at), now));
+    const details = [
+      `Active waivers: ${activeWaivers.length}`,
+      `Expired waivers: ${expiredWaivers.length}`,
+      `Open Greenfield spec debt: ${openDebt.length}`,
+      `Expired Greenfield spec debt: ${expiredDebt.length}`,
+      `Bootstrap spec debt records: ${bootstrapDebt.length}`,
+    ];
+
+    if (expiredWaivers.length > 0 || expiredDebt.length > 0) {
+      return pilotFail(
+        "Pilot Waiver And Spec Debt",
+        "Expired governance debt found",
+        details,
+        "Repay/cancel expired spec debt and renew/revoke expired waivers before using the pilot as a team governance demo.",
+        "npm run jispec -- console actions --root .",
+        [".spec/waivers/*.json", ".spec/spec-debt/ledger.yaml", ".spec/spec-debt/<session-id>/*.json"],
+      );
+    }
+
+    return pilotPass(
+      "Pilot Waiver And Spec Debt",
+      "Governance debt visible",
+      details,
+      [".spec/waivers/*.json", ".spec/spec-debt/ledger.yaml", ".spec/spec-debt/<session-id>/*.json"],
+    );
+  }
+
+  private async checkPilotConsoleGovernance(): Promise<DoctorCheckResult> {
+    const snapshotPath = ".spec/console/governance-snapshot.json";
+    const snapshot = readJsonFile(path.join(this.root, snapshotPath));
+    if (!snapshot) {
+      return pilotFail(
+        "Pilot Console Governance",
+        "Governance snapshot missing",
+        ["No repo-local Console governance snapshot was found."],
+        "Export the local governance snapshot so pilot reviewers can inspect policy, waiver, debt, drift, and verify posture without scanning source.",
+        "npm run jispec -- console export-governance --root .",
+        [snapshotPath],
+      );
+    }
+
+    const boundary = isRecord(snapshot.boundary) ? snapshot.boundary : {};
+    const safeBoundary =
+      boundary.sourceUploadRequired === false &&
+      boundary.scansSourceCode === false &&
+      boundary.replacesCliGate === false;
+    if (!safeBoundary) {
+      return pilotFail(
+        "Pilot Console Governance",
+        "Console boundary invalid",
+        ["Governance snapshot exists but does not declare local-only/read-only/no-source-upload boundary fields."],
+        "Regenerate the governance snapshot with the current local Console exporter.",
+        "npm run jispec -- console export-governance --root .",
+        [snapshotPath],
+      );
+    }
+
+    return pilotPass(
+      "Pilot Console Governance",
+      "Governance snapshot exported",
+      [
+        "Console governance snapshot is local-only, read-only, does not scan source, and does not replace verify.",
+        `Exported at: ${String(snapshot.exportedAt ?? "not_declared")}`,
+      ],
+      [snapshotPath],
+    );
+  }
+
+  private async checkPilotPrivacyReport(): Promise<DoctorCheckResult> {
+    const reportPath = ".spec/privacy/privacy-report.json";
+    const report = readJsonFile(path.join(this.root, reportPath));
+    if (!report) {
+      return pilotFail(
+        "Pilot Privacy Report",
+        "Privacy report missing",
+        ["No local privacy report was found."],
+        "Generate a privacy report before sharing pilot artifacts with external reviewers or vendors.",
+        "npm run jispec -- privacy report --root .",
+        [reportPath],
+      );
+    }
+
+    const summary = isRecord(report.summary) ? report.summary : {};
+    const highSeverityFindingCount = numberValue(summary.highSeverityFindingCount) ?? 0;
+    const findingCount = numberValue(summary.findingCount) ?? 0;
+    const details = [
+      `Scanned artifacts: ${String(summary.scannedArtifactCount ?? "not_declared")}`,
+      `Findings: ${findingCount}`,
+      `High severity findings: ${highSeverityFindingCount}`,
+    ];
+    if (highSeverityFindingCount > 0) {
+      return pilotFail(
+        "Pilot Privacy Report",
+        "High-severity privacy findings",
+        details,
+        "Review or redact high-severity findings before external pilot sharing.",
+        "npm run jispec -- privacy report --root .",
+        [reportPath],
+      );
+    }
+
+    return pilotPass("Pilot Privacy Report", "Privacy report available", details, [reportPath]);
+  }
+
   /**
    * Check V1.4: V1 Regression Coverage
    */
@@ -1500,7 +1849,9 @@ export class Doctor {
 
     const title = report.profile === "v1"
       ? "=== JiSpec Doctor: V1 Mainline Readiness ===\n"
-      : "=== JiSpec Doctor: Extended Runtime Readiness ===\n";
+      : report.profile === "pilot"
+        ? "=== JiSpec Doctor: Commercial Pilot Readiness ===\n"
+        : "=== JiSpec Doctor: Extended Runtime Readiness ===\n";
     lines.push(title);
 
     for (const check of report.checks) {
@@ -1509,12 +1860,23 @@ export class Doctor {
       for (const detail of check.details) {
         lines.push(`  - ${detail}`);
       }
+      if (check.ownerAction) {
+        lines.push(`  Owner action: ${check.ownerAction}`);
+      }
+      if (check.nextCommand) {
+        lines.push(`  Next command: ${check.nextCommand}`);
+      }
       lines.push("");
     }
 
     lines.push("=== Summary ===");
     lines.push(`${report.passedChecks}/${report.totalChecks} checks passed`);
-    lines.push(`${report.profile === "v1" ? "V1 Mainline Ready" : "Extended Runtime Ready"}: ${report.ready ? "YES" : "NO"}`);
+    const readinessLabel = report.profile === "v1"
+      ? "V1 Mainline Ready"
+      : report.profile === "pilot"
+        ? "Commercial Pilot Ready"
+        : "Extended Runtime Ready";
+    lines.push(`${readinessLabel}: ${report.ready ? "YES" : "NO"}`);
 
     return lines.join("\n");
   }
@@ -1525,4 +1887,119 @@ export class Doctor {
   static formatJSON(report: DoctorReport): string {
     return JSON.stringify(report, null, 2);
   }
+}
+
+function pilotPass(
+  name: string,
+  summary: string,
+  details: string[],
+  sourceArtifacts: string[] = [],
+): DoctorCheckResult {
+  return {
+    name,
+    status: "pass",
+    summary,
+    details,
+    sourceArtifacts,
+  };
+}
+
+function pilotFail(
+  name: string,
+  summary: string,
+  details: string[],
+  ownerAction: string,
+  nextCommand: string,
+  sourceArtifacts: string[] = [],
+): DoctorCheckResult {
+  return {
+    name,
+    status: "fail",
+    summary,
+    details,
+    ownerAction,
+    nextCommand,
+    sourceArtifacts,
+  };
+}
+
+function readJsonFile(filePath: string): Record<string, unknown> | undefined {
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readYamlFile(filePath: string): Record<string, unknown> | undefined {
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+  try {
+    const parsed = yaml.load(fs.readFileSync(filePath, "utf-8"));
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function listJsonRecords(directory: string): Record<string, unknown>[] {
+  if (!fs.existsSync(directory)) {
+    return [];
+  }
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => readJsonFile(path.join(directory, entry.name)))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+}
+
+function listNestedJsonRecords(directory: string, maxDepth: number): Record<string, unknown>[] {
+  const records: Record<string, unknown>[] = [];
+  visitJsonRecords(directory, directory, maxDepth, records);
+  return records;
+}
+
+function visitJsonRecords(base: string, current: string, maxDepth: number, records: Record<string, unknown>[]): void {
+  if (!fs.existsSync(current)) {
+    return;
+  }
+  const depth = path.relative(base, current).split(path.sep).filter(Boolean).length;
+  if (depth > maxDepth) {
+    return;
+  }
+  for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+    const fullPath = path.join(current, entry.name);
+    if (entry.isDirectory()) {
+      visitJsonRecords(base, fullPath, maxDepth, records);
+    } else if (entry.isFile() && entry.name.endsWith(".json")) {
+      const record = readJsonFile(fullPath);
+      if (record) {
+        records.push(record);
+      }
+    }
+  }
+}
+
+function isPastDate(value: string | undefined, now: Date): boolean {
+  if (!value) {
+    return false;
+  }
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() < now.getTime();
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
