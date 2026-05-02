@@ -145,6 +145,7 @@ export const TEST_SUITES: TestSuite[] = [
   gates({ name: 'P4 Documentation Experience', file: 'p4-docs-experience.ts', expectedTests: 6, task: 'P4-T3' }),
   gates({ name: 'Integration Payloads', file: 'integration-payloads.ts', expectedTests: 6, task: 'P7-T2/M7-T2' }),
   gates({ name: 'Contract Source Adapters', file: 'contract-source-adapters.ts', expectedTests: 5, task: 'P7-T3' }),
+  gates({ name: 'P9 External Graph Import Only', file: 'p9-external-graph-import-only.ts', expectedTests: 6, task: 'P9-T6' }),
   changeImplement({ name: 'Change Dual Mode', file: 'change-dual-mode.ts', expectedTests: 5, task: 'P2-T3' }),
   changeImplement({ name: 'Change Default Mode Config', file: 'change-default-mode-config.ts', expectedTests: 7, task: 'N7/P1-T1' }),
   changeImplement({ name: 'Change Mainline Hints', file: 'change-mainline-hints.ts', expectedTests: 2 }),

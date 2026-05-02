@@ -39,6 +39,10 @@ import { collectGreenfieldRatchetIssues } from "./greenfield-ratchet-collector";
 import { collectGreenfieldSpecDebtIssues } from "./greenfield-spec-debt-collector";
 import { collectGreenfieldReviewPackIssues } from "./greenfield-review-pack-collector";
 import { collectGreenfieldDirtyIssues } from "./greenfield-dirty-collector";
+import {
+  importExternalGraphArtifact,
+  type ExternalGraphImportResult,
+} from "../integrations/external-graph-import";
 
 export interface VerifySupplementalCollector {
   source: string;
@@ -97,6 +101,7 @@ const DEFAULT_SUPPLEMENTAL_COLLECTORS: VerifySupplementalCollector[] = [
     },
   },
 ];
+const DEFAULT_EXTERNAL_GRAPH_PATH = ".spec/integrations/external-graph.json";
 
 export async function runVerify(options: VerifyRunOptions): Promise<VerifyRunResult> {
   const root = path.resolve(options.root);
@@ -140,14 +145,22 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   const sources: string[] = ["legacy-validator"];
   const legacyIssues = reconcileLegacyIssuesWithTakeover(await collectLegacyIssues(root), root);
   const supplementalResult = await collectSupplementalIssues(root, options.strict === true, options);
+  const externalGraphImport = importExternalGraphArtifact({
+    root,
+    mode: "import-only",
+    sourcePath: DEFAULT_EXTERNAL_GRAPH_PATH,
+  });
 
   for (const source of supplementalResult.sources) {
     sources.push(source);
   }
+  if (externalGraphImport.status !== "not_available_yet") {
+    sources.push("external-graph-import");
+  }
 
   let result = createVerifyRunResult(
     root,
-    mergeVerifyIssues(legacyIssues, supplementalResult.issues),
+    mergeVerifyIssues(legacyIssues, supplementalResult.issues, collectExternalGraphImportIssues(externalGraphImport)),
     {
       sources,
       generatedAt: options.generatedAt,
@@ -156,6 +169,7 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   result.metadata = {
     ...result.metadata,
     factsContractVersion: factsContract.version,
+    ...buildExternalGraphImportMetadata(externalGraphImport),
   };
 
   // Write baseline if requested
@@ -164,7 +178,7 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   }
 
   // Build facts and apply policy if requested
-  const rawFacts = await buildRawFactsSnapshot(result, options);
+  const rawFacts = await buildRawFactsSnapshot(result, options, externalGraphImport);
   const canonicalFacts = buildCanonicalFacts(rawFacts);
 
   // Write facts if requested
@@ -206,6 +220,34 @@ function buildImpactGraphMetadata(root: string): Record<string, unknown> {
   };
 }
 
+function collectExternalGraphImportIssues(result: ExternalGraphImportResult): VerifyIssue[] {
+  return result.warnings.map((warning) => ({
+    kind: "runtime_error",
+    severity: "advisory",
+    code: "INVALID_EXTERNAL_GRAPH_ARTIFACT",
+    path: result.sourcePath,
+    message: `External graph import skipped: ${warning.message}`,
+    details: {
+      kind: warning.kind,
+      blocking: false,
+      verifyInterruption: result.verifyInterruption,
+      advisoryOnly: true,
+    },
+  }));
+}
+
+function buildExternalGraphImportMetadata(result: ExternalGraphImportResult): Record<string, unknown> {
+  return {
+    externalGraphImportStatus: result.status,
+    externalGraphImportPath: result.sourcePath,
+    externalGraphEvidenceCount: result.evidence.length,
+    externalGraphWarningCount: result.warnings.length,
+    externalGraphAdvisoryOnly: true,
+    externalGraphImportOnly: true,
+    externalGraphExecution: result.execution,
+  };
+}
+
 function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): ReplayMetadata {
   const inputArtifacts = [
     ".spec/handoffs/bootstrap-takeover.json",
@@ -213,6 +255,7 @@ function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): 
     ".spec/contracts/api_spec.json",
     ".spec/contracts/behaviors.feature",
     ".spec/policy.yaml",
+    DEFAULT_EXTERNAL_GRAPH_PATH,
     options.policyPath,
     options.factsOutPath,
   ].filter((candidate): candidate is string => typeof candidate === "string");
@@ -410,6 +453,7 @@ function normalizeRuntimeError(error: unknown, source: string): VerifyIssue {
 async function buildRawFactsSnapshot(
   result: VerifyRunResult,
   options: VerifyRunOptions,
+  externalGraphImport?: ExternalGraphImportResult,
 ): Promise<RawFactsSnapshot> {
   const snapshot = createRawFactsSnapshot(options.root);
 
@@ -431,6 +475,9 @@ async function buildRawFactsSnapshot(
   addRawFact(snapshot, "greenfield.review_deferred_or_waived_count", result.issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_DEFERRED_OR_WAIVED").length, "greenfield-review-pack");
   addRawFact(snapshot, "greenfield.dirty_required_update_count", result.issues.filter((issue) => issue.code === "GREENFIELD_DIRTY_CHAIN_UNRECONCILED").length, "greenfield-dirty");
   addRawFact(snapshot, "greenfield.dirty_graph_warning_count", result.issues.filter((issue) => issue.code === "GREENFIELD_DIRTY_GRAPH_WARNING").length, "greenfield-dirty");
+  if (externalGraphImport && externalGraphImport.evidence.length > 0) {
+    addRawFact(snapshot, "externalGraph.normalizedEvidence", externalGraphImport.evidence, "external-graph-import");
+  }
 
   // Add contract presence facts
   const contractsDir = path.join(options.root, ".spec", "contracts");

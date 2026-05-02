@@ -47,6 +47,27 @@ Jira and Linear payloads include:
 
 They are meant to help a team copy or later automate an issue-link preview without making the tracker a machine-truth source.
 
+## External Graph Import-Only
+
+JiSpec can import a pre-generated external graph artifact from `.spec/integrations/external-graph.json`.
+This adapter is import-only:
+
+- no external command execution
+- no network access
+- no source upload
+- no automatic adoption of external findings as gate authority
+
+The artifact follows `schemas/external-graph-import.schema.json` and requires `provider`, `generatedAt`,
+`nodes`, and `edges`. Imported nodes are normalized into `externalGraph.normalizedEvidence` as advisory
+context only. Each normalized evidence row carries `provenance.label: external_import`, freshness, source
+path, provider, and an explicit `blockingEligible: false` posture.
+
+Invalid external graph artifacts produce an advisory `INVALID_EXTERNAL_GRAPH_ARTIFACT` verify warning.
+They do not interrupt verify and cannot create a blocking failure by themselves.
+
+External graph summaries and normalized evidence files are included in the privacy report and default to
+`review_before_sharing`, even when no common secret pattern is detected.
+
 ## Local Artifact Refs
 
 Payloads include both `sourceArtifacts` and structured `sourceArtifactRefs`. Refs classify local fact sources such as:

@@ -238,7 +238,9 @@ export function buildPrivacyReport(options: PrivacyReportOptions): PrivacyReport
     const artifact: PrivacyReportArtifact = {
       path: normalizePath(relativePath),
       category,
-      shareDecision: redacted.findings.length > 0 ? "review_before_sharing" : "shareable",
+      shareDecision: redacted.findings.length > 0 || requiresReviewBeforeSharing(relativePath)
+        ? "review_before_sharing"
+        : "shareable",
       findingCount: redacted.findings.length,
       findingTypes: stableUnique(redacted.findings.map((finding) => finding.type)) as SecretFindingType[],
       findings: redacted.findings,
@@ -400,6 +402,17 @@ function categorizeArtifact(relativePath: string): PrivacyReportArtifact["catego
     return "release";
   }
   return "other_jispec_artifact";
+}
+
+function requiresReviewBeforeSharing(relativePath: string): boolean {
+  const normalized = normalizePath(relativePath);
+  return (
+    normalized.startsWith(".spec/facts/external-graphs/") ||
+    normalized.endsWith("/normalized-evidence.json") ||
+    normalized.includes("external-graph-summary") ||
+    normalized === ".spec/integrations/external-graph.json" ||
+    normalized.startsWith(".spec/integrations/external-graph/")
+  );
 }
 
 function positionForOffset(text: string, offset: number): { line: number; column: number } {

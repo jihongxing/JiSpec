@@ -25,14 +25,14 @@ First-batch completion status:
 - `P9-T3 Change Impact Summary` - completed.
 - `P9-T4 Reviewer Companion Consolidation` - completed.
 - `P9-T5 Multi-Repo Contract Drift Hints` - completed.
-- Current repository regression matrix after P9-T5: `129` suites and `569` expected tests.
+- `P9-T6 External Graph Adapter Import-Only` - completed.
+- Current repository regression matrix after P9-T6: `130` suites and `575` expected tests.
 
 The first batch intentionally did not implement:
 
-- `P9-T6 External Graph Adapter Import-Only`
 - `P9-T7 External Tool Run Opt-In Boundary`
 
-Those later tasks should consume the labels and impact summary contracts created here. A second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4 and P9-T5 are now complete.
+That later task should consume the labels, impact summary contracts, and import-only external graph boundary created here. A second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4, P9-T5, and P9-T6 are now complete.
 
 ## File Structure
 
@@ -1546,7 +1546,7 @@ Suite placement:
 
 - `P9 Reviewer Companion Consolidation`: `runtime-extended`, `6` expected tests, task `P9-T4` - completed.
 - `P9 Multi-Repo Contract Drift Hints`: `runtime-extended`, `6` expected tests, task `P9-T5` - completed.
-- `P9 External Graph Import Only`: `verify-ci-gates`, `6` expected tests, task `P9-T6`.
+- `P9 External Graph Import Only`: `verify-ci-gates`, `6` expected tests, task `P9-T6` - completed.
 - `P9 External Tool Run Opt-In Boundary`: `runtime-extended`, `6` expected tests, task `P9-T7`.
 
 ---
@@ -2328,6 +2328,8 @@ Expected: commit succeeds and contains only P9-T5 multi-repo/docs/test/matrix ch
 
 ### Task 6: P9-T6 External Graph Adapter Import-Only
 
+状态：已完成
+
 **Files:**
 - Create: `tools/jispec/integrations/external-graph-import.ts`
 - Create: `schemas/external-graph-import.schema.json`
@@ -2339,7 +2341,7 @@ Expected: commit succeeds and contains only P9-T5 multi-repo/docs/test/matrix ch
 - Modify: `tools/jispec/tests/regression-runner.ts`
 - Modify: `tools/jispec/tests/regression-matrix-contract.ts`
 
-- [ ] **Step 1: Write the failing P9-T6 regression suite**
+- [x] **Step 1: Write the failing P9-T6 regression suite**
 
 Create `tools/jispec/tests/p9-external-graph-import-only.ts`:
 
@@ -2484,7 +2486,7 @@ function report(results: TestResult[]): void {
 main();
 ```
 
-- [ ] **Step 2: Run the P9-T6 test and verify it fails**
+- [x] **Step 2: Run the P9-T6 test and verify it fails**
 
 Run:
 
@@ -2494,7 +2496,7 @@ node --import tsx tools\jispec\tests\p9-external-graph-import-only.ts
 
 Expected: FAIL because `tools/jispec/integrations/external-graph-import.ts` and the import schema do not exist.
 
-- [ ] **Step 3: Add the import-only adapter and schema**
+- [x] **Step 3: Add the import-only adapter and schema**
 
 Create `tools/jispec/integrations/external-graph-import.ts`:
 
@@ -2686,7 +2688,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 Create `schemas/external-graph-import.schema.json` with required `provider`, `generatedAt`, `nodes`, and `edges` fields. Use `additionalProperties: false` for the top-level object, nodes, and edges.
 
-- [ ] **Step 4: Wire normalized external evidence into facts, verify, and privacy**
+- [x] **Step 4: Wire normalized external evidence into facts, verify, and privacy**
 
 Modify `tools/jispec/facts/canonical-facts.ts` to add an advisory fact definition:
 
@@ -2713,7 +2715,7 @@ Modify `tools/jispec/privacy/redaction.ts` so artifact kind classification treat
 
 Update `docs/integrations.md` with an `import-only` section that states: no external command, no network, no source upload, invalid artifact warning only, normalized evidence advisory only.
 
-- [ ] **Step 5: Register the P9-T6 suite and update matrix counts**
+- [x] **Step 5: Register the P9-T6 suite and update matrix counts**
 
 Modify `tools/jispec/tests/regression-runner.ts`:
 
@@ -2732,7 +2734,7 @@ assert.equal(areaMap.get("runtime-extended")?.suiteCount, 42);
 assert.equal(areaMap.get("runtime-extended")?.expectedTests, 181);
 ```
 
-- [ ] **Step 6: Run focused verification for P9-T6**
+- [x] **Step 6: Run focused verification for P9-T6**
 
 Run:
 
@@ -2746,7 +2748,7 @@ npm run gate:quick -- tools/jispec/tests/p9-external-graph-import-only.ts
 
 Expected: all commands PASS, invalid external graph artifacts remain warning-only, and no assertion permits imported graph evidence to create a blocking issue by itself.
 
-- [ ] **Step 7: Commit P9-T6**
+- [x] **Step 7: Commit P9-T6**
 
 Run:
 

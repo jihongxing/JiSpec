@@ -77,8 +77,8 @@ async function main(): Promise<void> {
   record("manifest freezes the matrix totals and source contract", () => {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
-    assert.equal(manifest.totalSuites, 129);
-    assert.equal(manifest.totalExpectedTests, 569);
+    assert.equal(manifest.totalSuites, 130);
+    assert.equal(manifest.totalExpectedTests, 575);
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
   });
 
@@ -88,8 +88,8 @@ async function main(): Promise<void> {
     assert.equal(areaMap.get("core-mainline")?.suiteCount, 37);
     assert.equal(areaMap.get("bootstrap-takeover-hardening")?.suiteCount, 28);
     assert.equal(areaMap.get("retakeover-regression-pool")?.suiteCount, 2);
-    assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 12);
-    assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 50);
+    assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 13);
+    assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
     assert.equal(areaMap.get("change-implement")?.suiteCount, 8);
     assert.equal(areaMap.get("change-implement")?.expectedTests, 33);
     assert.equal(areaMap.get("core-mainline")?.expectedTests, 172);

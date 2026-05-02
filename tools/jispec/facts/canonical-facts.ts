@@ -1,10 +1,11 @@
 import type { RawFactsSnapshot } from "./raw-facts";
 
-export type FactStability = "stable" | "beta" | "experimental";
+export type FactStability = "stable" | "beta" | "experimental" | "advisory";
 
 export interface CanonicalFactDefinition {
   key: string;
   stability: FactStability;
+  source?: string;
   description: string;
 }
 
@@ -219,6 +220,14 @@ export function getCanonicalFactDefinitions(): CanonicalFactDefinition[] {
       key: "git.changed_paths",
       stability: "beta",
       description: "Array of changed file paths",
+    },
+
+    // Advisory facts - useful context, never blocking by themselves
+    {
+      key: "externalGraph.normalizedEvidence",
+      stability: "advisory",
+      source: ".spec/integrations/external-graph.json",
+      description: "Normalized import-only external graph evidence. Advisory only; never blocking by itself.",
     },
   ];
 }
