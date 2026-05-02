@@ -6,6 +6,7 @@ import {
 import {
   HUMAN_SUMMARY_COMPANION_NOTE,
   renderHumanDecisionSnapshot,
+  renderHumanReviewerDecisionCompanion,
 } from "../human-decision-packet";
 
 export interface BootstrapAdoptSummary {
@@ -32,6 +33,32 @@ export function buildBootstrapAdoptSummary(report: BootstrapTakeoverReport): Boo
       owner: report.replay?.actor ? `reviewer \`${report.replay.actor}\`` : "reviewer",
       nextCommand: "`npm run jispec-cli -- verify`",
     }),
+    ...renderHumanReviewerDecisionCompanion({
+      subject: `bootstrap adoption ${report.sessionId}`,
+      truthSources: [
+        report.manifestPath,
+        report.sourceEvidenceGraphPath,
+        ".spec/handoffs/bootstrap-takeover.json",
+      ],
+      strongestEvidence: report.adoptedArtifactPaths.length > 0
+        ? report.adoptedArtifactPaths.slice(0, 5).map((artifactPath) => `adopted contract: ${artifactPath}`)
+        : ["No contracts were adopted in this takeover commit."],
+      inferredEvidence: report.decisions
+        .filter((decision) => decision.edited || decision.finalState !== "adopted")
+        .slice(0, 5)
+        .map((decision) => `${decision.artifactKind} requires reviewer attention after ${decision.finalState}`),
+      drift: [
+        `Correction load: ${renderCorrectionLoad(report.decisions)}`,
+        `Correction hotspots: ${renderCorrectionHotspots(report.decisions)}`,
+      ],
+      impact: [
+        ...report.adoptedArtifactPaths.slice(0, 8).map((artifactPath) => `contract: ${artifactPath}`),
+        ...report.specDebtPaths.slice(0, 4).map((artifactPath) => `spec debt: ${artifactPath}`),
+      ],
+      nextSteps: renderNextVerifyStep(report),
+      maxLines: 150,
+    }),
+    "",
     "## Source Of Truth",
     "",
     `- Machine report: \`${report.manifestPath}\` and \`.spec/handoffs/bootstrap-takeover.json\`.`,

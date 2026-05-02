@@ -18,14 +18,21 @@ This plan covers only the first batch from `docs/gitnexus-graphify-capability-up
 - `P9-T2 Evidence Provenance Labels`
 - `P9-T3 Change Impact Summary`
 
-This plan intentionally does not implement:
+First-batch completion status:
 
-- `P9-T4 Reviewer Companion Consolidation`
+- `P9-T1 当前图谱 / provenance 基线冻结` - completed.
+- `P9-T2 Evidence Provenance Labels` - completed.
+- `P9-T3 Change Impact Summary` - completed.
+- `P9-T4 Reviewer Companion Consolidation` - completed.
+- Current repository regression matrix after P9-T4: `128` suites and `563` expected tests.
+
+The first batch intentionally did not implement:
+
 - `P9-T5 Multi-Repo Contract Drift Hints`
 - `P9-T6 External Graph Adapter Import-Only`
 - `P9-T7 External Tool Run Opt-In Boundary`
 
-Those later tasks should consume the labels and impact summary contracts created here.
+Those later tasks should consume the labels and impact summary contracts created here. A second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4 is now complete.
 
 ## File Structure
 
@@ -64,10 +71,10 @@ Current baseline before P9 implementation:
 - `change-implement`: `7` suites, `27` expected tests
 - `runtime-extended`: `39` suites, `164` expected tests
 
-After this plan is complete:
+After the first P9 batch is complete:
 
 - Total suites: `127`
-- Total expected tests: `556`
+- Total expected tests: `556` at first-batch completion, then `557` after the later `gate:quick` package-script surface coverage landed.
 - `bootstrap-takeover-hardening`: `28` suites, `113` expected tests
 - `change-implement`: `8` suites, `33` expected tests
 - `runtime-extended`: `40` suites, `169` expected tests
@@ -1449,3 +1456,1682 @@ Expected:
 - No task introduces GitNexus or Graphify as runtime dependencies.
 - Markdown companions remain human-readable summaries; JSON/YAML artifacts remain the machine contracts.
 - Missing, invalid, or stale impact graphs stay advisory and cannot create blocking verify issues by themselves.
+
+---
+
+## P9 Second Batch Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Turn the remaining GitNexus / Graphify capability borrowings into JiSpec-native reviewer companions, multi-repo drift hints, import-only external graph evidence, and explicit opt-in boundaries for external tool execution.
+
+**Architecture:** Keep JiSpec's deterministic JSON/YAML artifacts as the source of truth and use Markdown only as reviewer-facing summaries. External GitNexus / Graphify data enters as advisory normalized evidence with provenance labels; JiSpec never treats imported or externally generated graph output as a blocking gate by itself. The second batch builds on P9-T1 source-of-truth baselines, P9-T2 provenance descriptors, and P9-T3 impact summaries.
+
+**Tech Stack:** TypeScript, Node.js `assert`, `tsx`, `js-yaml`, JiSpec regression runner, existing `tools/jispec` modules, JSON schema files under `schemas/`.
+
+---
+
+### Second-Batch Scope
+
+This section covers the remaining tasks from `docs/gitnexus-graphify-capability-upgrade-plan.md`:
+
+- `P9-T4 Reviewer Companion Consolidation`
+- `P9-T5 Multi-Repo Contract Drift Hints`
+- `P9-T6 External Graph Adapter Import-Only`
+- `P9-T7 External Tool Run Opt-In Boundary`
+
+The plan preserves these boundaries:
+
+- Markdown companions are reviewer aids, not machine contracts.
+- Console surfaces may display companion paths and summaries, but they do not parse Markdown to decide gate status.
+- Cross-repo drift hints create owner actions and suggested commands only.
+- External graph imports are advisory and non-blocking.
+- External tool execution requires explicit provider, command, privacy metadata, audit metadata, and replay metadata.
+
+## Second-Batch File Structure
+
+Create:
+
+- `tools/jispec/companion/decision-sections.ts` - shared fixed decision-section titles, section input model, rendering helpers, summary extraction, and line-budget enforcement.
+- `tools/jispec/console/repo-group.ts` - optional `.spec/console/repo-group.yaml` parser and validator for repo id, role, upstream refs, and downstream refs.
+- `tools/jispec/integrations/external-graph-import.ts` - import-only external graph parser, schema validation boundary, normalized evidence mapper, and advisory warning model.
+- `tools/jispec/integrations/external-tool-run-boundary.ts` - explicit run request model, artifact writer, approval subject resolver, and blocking-issue guard for external tool output.
+- `schemas/external-graph-import.schema.json` - schema for import-only external graph artifacts.
+- `schemas/external-tool-run-boundary.schema.json` - schema for explicit external tool run artifacts.
+- `tools/jispec/tests/p9-reviewer-companion-consolidation.ts` - P9-T4 companion consolidation regression suite.
+- `tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts` - P9-T5 repo group and drift hint regression suite.
+- `tools/jispec/tests/p9-external-graph-import-only.ts` - P9-T6 import-only adapter regression suite.
+- `tools/jispec/tests/p9-external-tool-run-opt-in-boundary.ts` - P9-T7 opt-in boundary regression suite.
+
+Modify:
+
+- `tools/jispec/human-decision-packet.ts` - use shared companion section renderer for human decision packets.
+- `tools/jispec/bootstrap/takeover-brief.ts` - render takeover companion with fixed decision sections and truth-source links.
+- `tools/jispec/bootstrap/adopt-summary.ts` - render adopt companion with fixed decision sections and truth-source links.
+- `tools/jispec/change/spec-delta.ts` - render change companion decision sections from `impact-summary.ts` and source artifact paths.
+- `tools/jispec/implement/handoff-packet.ts` - render implement companion decision sections from impact summary, verification hints, and replay command.
+- `tools/jispec/release/baseline-snapshot.ts` - expose companion metadata for baseline snapshot reviewers without changing snapshot truth semantics.
+- `tools/jispec/console/read-model-snapshot.ts` - expose companion path and summary only; never parse Markdown as a gate source.
+- `tools/jispec/console/multi-repo.ts` - load optional repo group config and emit cross-repo contract drift hints in `.spec/console/multi-repo-governance.json`.
+- `tools/jispec/console/governance-dashboard.ts` - display repo group drift hints and owner actions.
+- `tools/jispec/console/governance-actions.ts` - add suggested commands for cross-repo drift owners.
+- `tools/jispec/facts/canonical-facts.ts` - include normalized external graph evidence facts as advisory facts.
+- `tools/jispec/verify/verify-runner.ts` - include invalid external graph warnings and external evidence freshness without making them blocking.
+- `tools/jispec/privacy/redaction.ts` - scan external graph summaries, normalized evidence, and external run artifacts.
+- `tools/jispec/policy/approval.ts` - evaluate regulated-profile owner approval for sharing or adopting external graph summaries.
+- `tools/jispec/replay/replay-metadata.ts` - record external tool run metadata for deterministic replay review.
+- `docs/multi-repo-governance.md` - document repo group config and cross-repo drift hint semantics.
+- `docs/integrations.md` - document import-only and opt-in run modes.
+- `docs/privacy-and-local-first.md` - document privacy, redaction, and approval boundaries for external tools.
+- `tools/jispec/tests/regression-runner.ts` - register P9-T4 through P9-T7 suites.
+- `tools/jispec/tests/regression-matrix-contract.ts` - freeze the second-batch matrix counts.
+
+## Second-Batch Regression Matrix Accounting
+
+Historical baseline before P9-T4 implementation:
+
+- Total suites: `127`
+- Total expected tests: `557`
+- `verify-ci-gates`: `12` suites, `50` expected tests
+- `runtime-extended`: `40` suites, `169` expected tests
+
+Planned matrix after P9-T4 through P9-T7 are complete:
+
+- Total suites: `131`
+- Total expected tests: `581`
+- `verify-ci-gates`: `13` suites, `56` expected tests
+- `runtime-extended`: `43` suites, `187` expected tests
+
+Suite placement:
+
+- `P9 Reviewer Companion Consolidation`: `runtime-extended`, `6` expected tests, task `P9-T4` - completed.
+- `P9 Multi-Repo Contract Drift Hints`: `runtime-extended`, `6` expected tests, task `P9-T5`.
+- `P9 External Graph Import Only`: `verify-ci-gates`, `6` expected tests, task `P9-T6`.
+- `P9 External Tool Run Opt-In Boundary`: `runtime-extended`, `6` expected tests, task `P9-T7`.
+
+---
+
+### Task 4: P9-T4 Reviewer Companion Consolidation
+
+状态：已完成
+
+**Files:**
+- Create: `tools/jispec/companion/decision-sections.ts`
+- Create: `tools/jispec/tests/p9-reviewer-companion-consolidation.ts`
+- Modify: `tools/jispec/human-decision-packet.ts`
+- Modify: `tools/jispec/bootstrap/takeover-brief.ts`
+- Modify: `tools/jispec/bootstrap/adopt-summary.ts`
+- Modify: `tools/jispec/change/spec-delta.ts`
+- Modify: `tools/jispec/implement/handoff-packet.ts`
+- Modify: `tools/jispec/release/baseline-snapshot.ts`
+- Modify: `tools/jispec/console/read-model-snapshot.ts`
+- Modify: `tools/jispec/tests/regression-runner.ts`
+- Modify: `tools/jispec/tests/regression-matrix-contract.ts`
+
+- [x] **Step 1: Write the failing P9-T4 regression suite**
+
+Create `tools/jispec/tests/p9-reviewer-companion-consolidation.ts`:
+
+```ts
+import assert from "node:assert/strict";
+import {
+  DECISION_COMPANION_SECTION_TITLES,
+  renderDecisionCompanionSections,
+  summarizeDecisionCompanion,
+} from "../companion/decision-sections";
+
+interface TestResult {
+  name: string;
+  passed: boolean;
+  error?: string;
+}
+
+function main(): void {
+  console.log("=== P9 Reviewer Companion Consolidation Tests ===\n");
+  const results: TestResult[] = [];
+
+  results.push(record("shared renderer emits the fixed reviewer decision sections in order", () => {
+    const text = renderDecisionCompanionSections({
+      subject: "change CHG-123",
+      truthSources: [".spec/deltas/CHG-123/impact-graph.json", ".spec/deltas/CHG-123/verify-focus.yaml"],
+      strongestEvidence: ["impact graph touches contracts/payment.yaml"],
+      inferredEvidence: ["handoff packet infers payment tests from verify focus"],
+      drift: ["no conflict detected"],
+      impact: ["contract: contracts/payment.yaml", "test: tests/payment.spec.ts"],
+      nextSteps: ["run npm run gate:quick"],
+      maxLines: 150,
+    });
+
+    assertSectionOrder(text);
+    assert.match(text, /\.spec\/deltas\/CHG-123\/impact-graph\.json/);
+    assert.match(text, /\.spec\/deltas\/CHG-123\/verify-focus\.yaml/);
+    assert.ok(text.split(/\r?\n/).length <= 150);
+  }));
+
+  results.push(record("renderer marks empty inferred or drift sections as none without dropping headings", () => {
+    const text = renderDecisionCompanionSections({
+      subject: "takeover bootstrap",
+      truthSources: [".spec/bootstrap/evidence-inventory.json"],
+      strongestEvidence: ["ranked evidence has package.json"],
+      inferredEvidence: [],
+      drift: [],
+      impact: ["contract: docs/v1-mainline-stable-contract.md"],
+      nextSteps: ["review adoption summary"],
+      maxLines: 150,
+    });
+
+    assertSectionOrder(text);
+    assert.match(text, /推断证据\n- none/);
+    assert.match(text, /冲突\/drift\n- none/);
+  }));
+
+  results.push(record("takeover companion contract uses fixed headings and truth source references", () => {
+    const rendered = renderDecisionCompanionSections({
+      subject: "takeover legacy repository",
+      truthSources: [".spec/bootstrap/takeover-brief.json"],
+      strongestEvidence: ["legacy routes map to domain scenarios"],
+      inferredEvidence: ["feature vocabulary inferred from controller names"],
+      drift: ["missing source snapshot: not_available_yet"],
+      impact: ["contract: docs/v1-mainline-stable-contract.md"],
+      nextSteps: ["open .spec/bootstrap/adopt-summary.md"],
+      maxLines: 150,
+    });
+
+    assertSectionOrder(rendered);
+    assert.match(rendered, /\.spec\/bootstrap\/takeover-brief\.json/);
+  }));
+
+  results.push(record("change and implement companions can share the same decision section contract", () => {
+    const changeCompanion = renderDecisionCompanionSections({
+      subject: "change delta",
+      truthSources: [".spec/deltas/CHG-1/impact-graph.json"],
+      strongestEvidence: ["delta edits contracts/order.yaml"],
+      inferredEvidence: ["verify focus selects order regression"],
+      drift: ["impact graph freshness: fresh"],
+      impact: ["contract: contracts/order.yaml", "test: tools/jispec/tests/order.ts"],
+      nextSteps: ["run node --import tsx tools/jispec/cli.ts verify --change CHG-1"],
+      maxLines: 150,
+    });
+    const implementCompanion = renderDecisionCompanionSections({
+      subject: "implementation handoff",
+      truthSources: [".spec/deltas/CHG-1/implementation-handoff.json"],
+      strongestEvidence: ["handoff records replay command"],
+      inferredEvidence: ["missing verification hint maps to order regression"],
+      drift: ["no conflict detected"],
+      impact: ["contract: contracts/order.yaml", "test: tools/jispec/tests/order.ts"],
+      nextSteps: ["run npm run gate:quick"],
+      maxLines: 150,
+    });
+
+    assertSectionOrder(changeCompanion);
+    assertSectionOrder(implementCompanion);
+  }));
+
+  results.push(record("console summary exposes path and summary only", () => {
+    const summary = summarizeDecisionCompanion({
+      path: ".spec/deltas/CHG-1/impact-report.md",
+      text: renderDecisionCompanionSections({
+        subject: "change delta",
+        truthSources: [".spec/deltas/CHG-1/impact-graph.json"],
+        strongestEvidence: ["contract graph edge: A -> B"],
+        inferredEvidence: ["verify focus inferred from changed files"],
+        drift: ["no conflict detected"],
+        impact: ["contract: A", "test: B"],
+        nextSteps: ["review owner action"],
+        maxLines: 150,
+      }),
+    });
+
+    assert.deepEqual(Object.keys(summary).sort(), ["path", "summary"].sort());
+    assert.equal(summary.path, ".spec/deltas/CHG-1/impact-report.md");
+    assert.doesNotMatch(JSON.stringify(summary), /gateStatus|blocking|parsedMarkdown/);
+  }));
+
+  results.push(record("P9-T4 suite is registered in runtime-extended", () => {
+    const { TEST_SUITES } = require("./regression-runner") as typeof import("./regression-runner");
+    const suite = TEST_SUITES.find((candidate) => candidate.file === "p9-reviewer-companion-consolidation.ts");
+    assert.ok(suite);
+    assert.equal(suite.area, "runtime-extended");
+    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.task, "P9-T4");
+  }));
+
+  report(results);
+}
+
+function assertSectionOrder(text: string): void {
+  const positions = DECISION_COMPANION_SECTION_TITLES.map((title) => text.indexOf(title));
+  for (const position of positions) {
+    assert.ok(position >= 0, `missing section at position ${position}`);
+  }
+  for (let index = 1; index < positions.length; index += 1) {
+    assert.ok(positions[index] > positions[index - 1], `${DECISION_COMPANION_SECTION_TITLES[index]} is out of order`);
+  }
+}
+
+function record(name: string, fn: () => void): TestResult {
+  try {
+    fn();
+    console.log(`✓ ${name}`);
+    return { name, passed: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ ${name}: ${message}`);
+    return { name, passed: false, error: message };
+  }
+}
+
+function report(results: TestResult[]): void {
+  const passed = results.filter((result) => result.passed).length;
+  console.log(`\n${passed}/${results.length} tests passed`);
+  if (passed !== results.length) {
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+- [x] **Step 2: Run the P9-T4 test and verify it fails**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-reviewer-companion-consolidation.ts
+```
+
+Expected: FAIL because `tools/jispec/companion/decision-sections.ts` does not exist and the suite is not registered.
+
+- [x] **Step 3: Add the shared companion section helper**
+
+Create `tools/jispec/companion/decision-sections.ts`:
+
+```ts
+export const DECISION_COMPANION_SECTION_TITLES = [
+  "判断对象",
+  "最强证据",
+  "推断证据",
+  "冲突/drift",
+  "影响契约/测试",
+  "下一步",
+] as const;
+
+export interface DecisionCompanionSectionsInput {
+  subject: string;
+  truthSources: string[];
+  strongestEvidence: string[];
+  inferredEvidence: string[];
+  drift: string[];
+  impact: string[];
+  nextSteps: string[];
+  maxLines?: number;
+}
+
+export interface DecisionCompanionSummary {
+  path: string;
+  summary: string;
+}
+
+export function renderDecisionCompanionSections(input: DecisionCompanionSectionsInput): string {
+  const maxLines = input.maxLines ?? 150;
+  const lines = [
+    "## 判断对象",
+    `- ${normalizeText(input.subject, "unknown")}`,
+    "- Truth sources:",
+    ...renderList(input.truthSources),
+    "",
+    "## 最强证据",
+    ...renderList(input.strongestEvidence),
+    "",
+    "## 推断证据",
+    ...renderList(input.inferredEvidence),
+    "",
+    "## 冲突/drift",
+    ...renderList(input.drift),
+    "",
+    "## 影响契约/测试",
+    ...renderList(input.impact),
+    "",
+    "## 下一步",
+    ...renderList(input.nextSteps),
+  ];
+
+  return enforceLineBudget(lines, maxLines).join("\n");
+}
+
+export function summarizeDecisionCompanion(input: { path: string; text: string }): DecisionCompanionSummary {
+  const subject = firstBulletAfter(input.text, "## 判断对象") ?? "companion summary unavailable";
+  const strongest = firstBulletAfter(input.text, "## 最强证据") ?? "strongest evidence unavailable";
+  return {
+    path: input.path,
+    summary: `${subject}; ${strongest}`,
+  };
+}
+
+function renderList(values: string[]): string[] {
+  const normalized = values.map((value) => normalizeText(value, "")).filter((value) => value.length > 0);
+  return normalized.length > 0 ? normalized.map((value) => `- ${value}`) : ["- none"];
+}
+
+function normalizeText(value: string, fallback: string): string {
+  const trimmed = value.replace(/\r?\n/g, " ").trim();
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+function firstBulletAfter(text: string, heading: string): string | undefined {
+  const lines = text.split(/\r?\n/);
+  const headingIndex = lines.findIndex((line) => line.trim() === heading);
+  if (headingIndex < 0) {
+    return undefined;
+  }
+  const bullet = lines.slice(headingIndex + 1).find((line) => line.startsWith("- "));
+  return bullet?.slice(2).trim();
+}
+
+function enforceLineBudget(lines: string[], maxLines: number): string[] {
+  if (lines.length <= maxLines) {
+    return lines;
+  }
+  const trimmed = lines.slice(0, Math.max(0, maxLines - 2));
+  trimmed.push("", "- Companion truncated to preserve reviewer line budget.");
+  return trimmed;
+}
+```
+
+- [x] **Step 4: Wire the helper into existing companion renderers**
+
+Modify the existing companion renderers so each caller builds `DecisionCompanionSectionsInput` from its existing JSON/YAML truth source:
+
+```ts
+import { renderDecisionCompanionSections } from "./companion/decision-sections";
+
+const companionText = renderDecisionCompanionSections({
+  subject,
+  truthSources,
+  strongestEvidence,
+  inferredEvidence,
+  drift,
+  impact,
+  nextSteps,
+  maxLines: 150,
+});
+```
+
+Use these truth-source paths per surface:
+
+- `takeover-brief.ts`: `.spec/bootstrap/takeover-brief.json` and `.spec/bootstrap/evidence-inventory.json`.
+- `adopt-summary.ts`: `.spec/bootstrap/adopt-summary.json` and `.spec/bootstrap/adoption-plan.yaml`.
+- `spec-delta.ts`: `.spec/deltas/<changeId>/impact-graph.json` and `.spec/deltas/<changeId>/verify-focus.yaml`.
+- `handoff-packet.ts`: `.spec/deltas/<changeId>/implementation-handoff.json` and `.spec/deltas/<changeId>/verify-focus.yaml`.
+- `baseline-snapshot.ts`: `.spec/baseline/baseline-snapshot.json`.
+
+Modify `tools/jispec/console/read-model-snapshot.ts` to expose only:
+
+```ts
+export interface ConsoleCompanionSummary {
+  path: string;
+  summary: string;
+}
+```
+
+Do not add parsed headings, gate status, or blocking fields derived from Markdown text.
+
+- [x] **Step 5: Register the P9-T4 suite and update matrix counts**
+
+Modify `tools/jispec/tests/regression-runner.ts`:
+
+```ts
+runtime({ name: 'P9 Reviewer Companion Consolidation', file: 'p9-reviewer-companion-consolidation.ts', expectedTests: 6, task: 'P9-T4' }),
+```
+
+Modify `tools/jispec/tests/regression-matrix-contract.ts` from the current baseline:
+
+```ts
+assert.equal(manifest.totalSuites, 128);
+assert.equal(manifest.totalExpectedTests, 563);
+assert.equal(areaMap.get("runtime-extended")?.suiteCount, 41);
+assert.equal(areaMap.get("runtime-extended")?.expectedTests, 175);
+```
+
+- [x] **Step 6: Run focused verification for P9-T4**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-reviewer-companion-consolidation.ts
+node --import tsx tools\jispec\tests\regression-matrix-contract.ts
+npm run gate:quick -- tools/jispec/tests/p9-reviewer-companion-consolidation.ts
+```
+
+Expected: all commands PASS, and `gate:quick` reports the P9-T4 suite passing.
+
+- [x] **Step 7: Commit P9-T4**
+
+Run:
+
+```powershell
+git add tools/jispec/companion/decision-sections.ts tools/jispec/human-decision-packet.ts tools/jispec/bootstrap/takeover-brief.ts tools/jispec/bootstrap/adopt-summary.ts tools/jispec/change/spec-delta.ts tools/jispec/implement/handoff-packet.ts tools/jispec/release/baseline-snapshot.ts tools/jispec/console/read-model-snapshot.ts tools/jispec/tests/p9-reviewer-companion-consolidation.ts tools/jispec/tests/regression-runner.ts tools/jispec/tests/regression-matrix-contract.ts
+git commit -m "feat: consolidate p9 reviewer companions"
+```
+
+Expected: commit succeeds and contains only P9-T4 companion/test/matrix changes.
+
+---
+
+### Task 5: P9-T5 Multi-Repo Contract Drift Hints
+
+**Files:**
+- Create: `tools/jispec/console/repo-group.ts`
+- Create: `tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts`
+- Modify: `tools/jispec/console/multi-repo.ts`
+- Modify: `tools/jispec/console/governance-dashboard.ts`
+- Modify: `tools/jispec/console/governance-actions.ts`
+- Modify: `docs/multi-repo-governance.md`
+- Modify: `tools/jispec/tests/console-multi-repo-governance.ts`
+- Modify: `tools/jispec/tests/regression-runner.ts`
+- Modify: `tools/jispec/tests/regression-matrix-contract.ts`
+
+- [ ] **Step 1: Write the failing P9-T5 regression suite**
+
+Create `tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts`:
+
+```ts
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import yaml from "js-yaml";
+import { loadRepoGroupConfig } from "../console/repo-group";
+import { buildMultiRepoGovernanceSnapshot } from "../console/multi-repo";
+
+interface TestResult {
+  name: string;
+  passed: boolean;
+  error?: string;
+}
+
+function main(): void {
+  console.log("=== P9 Multi-Repo Contract Drift Hints Tests ===\n");
+  const results: TestResult[] = [];
+
+  results.push(record("repo group config declares repo id, role, upstream refs, and downstream refs", () => {
+    const root = createFixtureRoot();
+    writeRepoGroup(root, {
+      repos: [
+        {
+          id: "api",
+          role: "upstream",
+          path: "repos/api",
+          upstreamContractRefs: [],
+          downstreamContractRefs: ["web:contracts/payment.yaml"],
+        },
+        {
+          id: "web",
+          role: "downstream",
+          path: "repos/web",
+          upstreamContractRefs: ["api:contracts/payment.yaml"],
+          downstreamContractRefs: [],
+        },
+      ],
+    });
+
+    const config = loadRepoGroupConfig(root);
+    assert.equal(config.status, "available");
+    assert.equal(config.repos.length, 2);
+    assert.equal(config.repos[1].upstreamContractRefs[0], "api:contracts/payment.yaml");
+  }));
+
+  results.push(record("missing repo group config returns not_available_yet", () => {
+    const root = createFixtureRoot();
+    const config = loadRepoGroupConfig(root);
+    assert.equal(config.status, "not_available_yet");
+    assert.deepEqual(config.repos, []);
+  }));
+
+  results.push(record("missing repository snapshot is represented as not_available_yet", () => {
+    const root = createFixtureRoot();
+    writeRepoGroup(root, {
+      repos: [
+        {
+          id: "api",
+          role: "upstream",
+          path: "repos/api",
+          upstreamContractRefs: [],
+          downstreamContractRefs: ["web:contracts/payment.yaml"],
+        },
+      ],
+    });
+
+    const snapshot = buildMultiRepoGovernanceSnapshot({ root });
+    assert.equal(snapshot.repoGroup.status, "available");
+    assert.equal(snapshot.repositories[0].snapshotStatus, "not_available_yet");
+  }));
+
+  results.push(record("cross-repo drift produces owner action and suggested command only", () => {
+    const root = createFixtureRoot();
+    writeRepoGroup(root, {
+      repos: [
+        {
+          id: "api",
+          role: "upstream",
+          path: "repos/api",
+          upstreamContractRefs: [],
+          downstreamContractRefs: ["web:contracts/payment.yaml"],
+        },
+        {
+          id: "web",
+          role: "downstream",
+          path: "repos/web",
+          upstreamContractRefs: ["api:contracts/payment.yaml"],
+          downstreamContractRefs: [],
+        },
+      ],
+    });
+    writeRepoSnapshot(root, "api", { contracts: [{ ref: "contracts/payment.yaml", hash: "hash-api-v2" }] });
+    writeRepoSnapshot(root, "web", { contracts: [{ ref: "contracts/payment.yaml", hash: "hash-api-v1" }] });
+
+    const snapshot = buildMultiRepoGovernanceSnapshot({ root });
+    assert.equal(snapshot.contractDriftHints.length, 1);
+    assert.equal(snapshot.contractDriftHints[0].severity, "owner_action");
+    assert.match(snapshot.contractDriftHints[0].suggestedCommand, /jispec console multi-repo/);
+    assert.equal(snapshot.contractDriftHints[0].blockingGateReplacement, false);
+  }));
+
+  results.push(record("governance actions include drift owner action without changing single-repo gates", () => {
+    const root = createFixtureRoot();
+    writeRepoGroup(root, {
+      repos: [
+        {
+          id: "api",
+          role: "upstream",
+          path: "repos/api",
+          upstreamContractRefs: [],
+          downstreamContractRefs: ["web:contracts/payment.yaml"],
+        },
+        {
+          id: "web",
+          role: "downstream",
+          path: "repos/web",
+          upstreamContractRefs: ["api:contracts/payment.yaml"],
+          downstreamContractRefs: [],
+        },
+      ],
+    });
+    writeRepoSnapshot(root, "api", { contracts: [{ ref: "contracts/payment.yaml", hash: "hash-api-v2" }] });
+    writeRepoSnapshot(root, "web", { contracts: [{ ref: "contracts/payment.yaml", hash: "hash-api-v1" }] });
+
+    const snapshot = buildMultiRepoGovernanceSnapshot({ root });
+    assert.ok(snapshot.ownerActions.some((action) => action.kind === "cross_repo_contract_drift"));
+    assert.equal(snapshot.singleRepoGateReplacement, false);
+  }));
+
+  results.push(record("P9-T5 suite is registered in runtime-extended", () => {
+    const { TEST_SUITES } = require("./regression-runner") as typeof import("./regression-runner");
+    const suite = TEST_SUITES.find((candidate) => candidate.file === "p9-multi-repo-contract-drift-hints.ts");
+    assert.ok(suite);
+    assert.equal(suite.area, "runtime-extended");
+    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.task, "P9-T5");
+  }));
+
+  report(results);
+}
+
+function createFixtureRoot(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "jispec-p9-multi-repo-"));
+}
+
+function writeRepoGroup(root: string, value: unknown): void {
+  const dir = path.join(root, ".spec", "console");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "repo-group.yaml"), yaml.dump(value), "utf-8");
+}
+
+function writeRepoSnapshot(root: string, repoId: string, value: { contracts: Array<{ ref: string; hash: string }> }): void {
+  const dir = path.join(root, ".spec", "console", "repo-snapshots");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${repoId}.json`), JSON.stringify(value, null, 2), "utf-8");
+}
+
+function record(name: string, fn: () => void): TestResult {
+  try {
+    fn();
+    console.log(`✓ ${name}`);
+    return { name, passed: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ ${name}: ${message}`);
+    return { name, passed: false, error: message };
+  }
+}
+
+function report(results: TestResult[]): void {
+  const passed = results.filter((result) => result.passed).length;
+  console.log(`\n${passed}/${results.length} tests passed`);
+  if (passed !== results.length) {
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+- [ ] **Step 2: Run the P9-T5 test and verify it fails**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-multi-repo-contract-drift-hints.ts
+```
+
+Expected: FAIL because `tools/jispec/console/repo-group.ts` does not exist and multi-repo output does not include `repoGroup`, `contractDriftHints`, or `singleRepoGateReplacement`.
+
+- [ ] **Step 3: Add repo group config parsing**
+
+Create `tools/jispec/console/repo-group.ts`:
+
+```ts
+import fs from "node:fs";
+import path from "node:path";
+import yaml from "js-yaml";
+
+export type RepoGroupStatus = "available" | "not_available_yet" | "invalid";
+export type RepoRole = "upstream" | "downstream" | "peer";
+
+export interface RepoGroupRepo {
+  id: string;
+  role: RepoRole;
+  path: string;
+  upstreamContractRefs: string[];
+  downstreamContractRefs: string[];
+}
+
+export interface RepoGroupConfig {
+  status: RepoGroupStatus;
+  sourcePath: string;
+  repos: RepoGroupRepo[];
+  warnings: string[];
+}
+
+export function loadRepoGroupConfig(root: string): RepoGroupConfig {
+  const sourcePath = ".spec/console/repo-group.yaml";
+  const absolutePath = path.join(root, sourcePath);
+  if (!fs.existsSync(absolutePath)) {
+    return { status: "not_available_yet", sourcePath, repos: [], warnings: [] };
+  }
+
+  try {
+    const parsed = yaml.load(fs.readFileSync(absolutePath, "utf-8"));
+    const repos = parseRepos(parsed);
+    return { status: "available", sourcePath, repos, warnings: [] };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: "invalid", sourcePath, repos: [], warnings: [message] };
+  }
+}
+
+function parseRepos(value: unknown): RepoGroupRepo[] {
+  if (!isRecord(value) || !Array.isArray(value.repos)) {
+    throw new Error("repo-group.yaml must contain a repos array");
+  }
+  return value.repos.map((repo, index) => parseRepo(repo, index));
+}
+
+function parseRepo(value: unknown, index: number): RepoGroupRepo {
+  if (!isRecord(value)) {
+    throw new Error(`repos[${index}] must be an object`);
+  }
+  const role = stringValue(value.role);
+  if (role !== "upstream" && role !== "downstream" && role !== "peer") {
+    throw new Error(`repos[${index}].role must be upstream, downstream, or peer`);
+  }
+  return {
+    id: requiredString(value.id, `repos[${index}].id`),
+    role,
+    path: requiredString(value.path, `repos[${index}].path`),
+    upstreamContractRefs: stringArray(value.upstreamContractRefs),
+    downstreamContractRefs: stringArray(value.downstreamContractRefs),
+  };
+}
+
+function requiredString(value: unknown, label: string): string {
+  const text = stringValue(value);
+  if (text.length === 0) {
+    throw new Error(`${label} is required`);
+  }
+  return text;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean) : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+```
+
+- [ ] **Step 4: Extend multi-repo aggregate with drift hints**
+
+Modify `tools/jispec/console/multi-repo.ts` to add these output fields:
+
+```ts
+export interface CrossRepoContractDriftHint {
+  kind: "cross_repo_contract_drift";
+  upstreamRepoId: string;
+  downstreamRepoId: string;
+  contractRef: string;
+  severity: "owner_action";
+  suggestedCommand: string;
+  blockingGateReplacement: false;
+}
+
+export interface MultiRepoGovernanceSnapshot {
+  repoGroup: RepoGroupConfig;
+  repositories: Array<{
+    id: string;
+    path: string;
+    role: RepoRole;
+    snapshotStatus: "available" | "not_available_yet" | "invalid";
+  }>;
+  contractDriftHints: CrossRepoContractDriftHint[];
+  ownerActions: Array<{ kind: "cross_repo_contract_drift"; repoId: string; message: string; suggestedCommand: string }>;
+  singleRepoGateReplacement: false;
+}
+```
+
+Build drift hints only when both compared repo snapshots exist and their contract hashes differ. For a missing repo snapshot, set `snapshotStatus: "not_available_yet"` and do not synthesize a blocking issue.
+
+- [ ] **Step 5: Update Console dashboard/actions and docs**
+
+Modify `tools/jispec/console/governance-dashboard.ts` to render a `Cross-repo contract drift hints` section only from `contractDriftHints`.
+
+Modify `tools/jispec/console/governance-actions.ts` to create owner actions shaped like:
+
+```ts
+{
+  kind: "cross_repo_contract_drift",
+  repoId: hint.downstreamRepoId,
+  message: `${hint.downstreamRepoId} may need to reconcile ${hint.contractRef} from ${hint.upstreamRepoId}.`,
+  suggestedCommand: hint.suggestedCommand,
+}
+```
+
+Update `docs/multi-repo-governance.md` with this config example:
+
+```yaml
+repos:
+  - id: api
+    role: upstream
+    path: repos/api
+    upstreamContractRefs: []
+    downstreamContractRefs:
+      - web:contracts/payment.yaml
+  - id: web
+    role: downstream
+    path: repos/web
+    upstreamContractRefs:
+      - api:contracts/payment.yaml
+    downstreamContractRefs: []
+```
+
+Document that drift hints are owner actions and suggested commands only; single-repo verify remains the authoritative gate.
+
+- [ ] **Step 6: Register the P9-T5 suite and update matrix counts**
+
+Modify `tools/jispec/tests/regression-runner.ts`:
+
+```ts
+runtime({ name: 'P9 Multi-Repo Contract Drift Hints', file: 'p9-multi-repo-contract-drift-hints.ts', expectedTests: 6, task: 'P9-T5' }),
+```
+
+Modify `tools/jispec/tests/regression-matrix-contract.ts` after P9-T5:
+
+```ts
+assert.equal(manifest.totalSuites, 129);
+assert.equal(manifest.totalExpectedTests, 569);
+assert.equal(areaMap.get("runtime-extended")?.suiteCount, 42);
+assert.equal(areaMap.get("runtime-extended")?.expectedTests, 181);
+```
+
+- [ ] **Step 7: Run focused verification for P9-T5**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-multi-repo-contract-drift-hints.ts
+node --import tsx tools\jispec\tests\console-multi-repo-governance.ts
+node --import tsx tools\jispec\tests\regression-matrix-contract.ts
+npm run gate:quick -- tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts
+```
+
+Expected: all commands PASS, and no test expects cross-repo drift to replace a single-repo gate.
+
+- [ ] **Step 8: Commit P9-T5**
+
+Run:
+
+```powershell
+git add tools/jispec/console/repo-group.ts tools/jispec/console/multi-repo.ts tools/jispec/console/governance-dashboard.ts tools/jispec/console/governance-actions.ts docs/multi-repo-governance.md tools/jispec/tests/console-multi-repo-governance.ts tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts tools/jispec/tests/regression-runner.ts tools/jispec/tests/regression-matrix-contract.ts
+git commit -m "feat: add p9 multi-repo drift hints"
+```
+
+Expected: commit succeeds and contains only P9-T5 multi-repo/docs/test/matrix changes.
+
+---
+
+### Task 6: P9-T6 External Graph Adapter Import-Only
+
+**Files:**
+- Create: `tools/jispec/integrations/external-graph-import.ts`
+- Create: `schemas/external-graph-import.schema.json`
+- Create: `tools/jispec/tests/p9-external-graph-import-only.ts`
+- Modify: `tools/jispec/facts/canonical-facts.ts`
+- Modify: `tools/jispec/verify/verify-runner.ts`
+- Modify: `tools/jispec/privacy/redaction.ts`
+- Modify: `docs/integrations.md`
+- Modify: `tools/jispec/tests/regression-runner.ts`
+- Modify: `tools/jispec/tests/regression-matrix-contract.ts`
+
+- [ ] **Step 1: Write the failing P9-T6 regression suite**
+
+Create `tools/jispec/tests/p9-external-graph-import-only.ts`:
+
+```ts
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  importExternalGraphArtifact,
+  normalizeExternalGraphEvidence,
+} from "../integrations/external-graph-import";
+
+interface TestResult {
+  name: string;
+  passed: boolean;
+  error?: string;
+}
+
+function main(): void {
+  console.log("=== P9 External Graph Import Only Tests ===\n");
+  const results: TestResult[] = [];
+
+  results.push(record("import-only mode records no command execution, network, or source upload", () => {
+    const root = createFixtureRoot();
+    const artifactPath = writeExternalGraph(root, {
+      provider: "graphify",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+      nodes: [{ id: "contract:payment", kind: "contract", label: "payment" }],
+      edges: [],
+    });
+
+    const result = importExternalGraphArtifact({ root, mode: "import-only", sourcePath: artifactPath });
+    assert.equal(result.mode, "import-only");
+    assert.equal(result.execution.commandExecuted, false);
+    assert.equal(result.execution.networkUsed, false);
+    assert.equal(result.execution.sourceUploaded, false);
+  }));
+
+  results.push(record("normalized evidence includes provider, generatedAt, sourcePath, freshness, and provenance label", () => {
+    const evidence = normalizeExternalGraphEvidence({
+      provider: "gitnexus",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+      sourcePath: ".spec/integrations/gitnexus-graph.json",
+      nodes: [{ id: "file:src/payment.ts", kind: "file", label: "src/payment.ts" }],
+      edges: [],
+      now: new Date("2026-05-02T01:00:00.000Z"),
+    });
+
+    assert.equal(evidence[0].provider, "gitnexus");
+    assert.equal(evidence[0].generatedAt, "2026-05-02T00:00:00.000Z");
+    assert.equal(evidence[0].sourcePath, ".spec/integrations/gitnexus-graph.json");
+    assert.equal(evidence[0].freshness, "fresh");
+    assert.equal(evidence[0].provenance.label, "external_import");
+  }));
+
+  results.push(record("invalid external graph returns warning and does not interrupt verify", () => {
+    const root = createFixtureRoot();
+    const artifactPath = path.join(root, ".spec", "integrations", "invalid.json");
+    fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+    fs.writeFileSync(artifactPath, JSON.stringify({ provider: "graphify", nodes: "bad" }), "utf-8");
+
+    const result = importExternalGraphArtifact({ root, mode: "import-only", sourcePath: artifactPath });
+    assert.equal(result.status, "invalid");
+    assert.ok(result.warnings.some((warning) => warning.kind === "invalid_external_graph_artifact"));
+    assert.equal(result.verifyInterruption, false);
+  }));
+
+  results.push(record("canonical facts include external graph evidence as advisory only", () => {
+    const evidence = normalizeExternalGraphEvidence({
+      provider: "graphify",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+      sourcePath: ".spec/integrations/graphify.json",
+      nodes: [{ id: "contract:billing", kind: "contract", label: "billing" }],
+      edges: [],
+      now: new Date("2026-05-02T01:00:00.000Z"),
+    });
+
+    assert.equal(evidence[0].blockingEligible, false);
+    assert.equal(evidence[0].advisoryOnly, true);
+  }));
+
+  results.push(record("privacy classification covers external graph summaries and normalized evidence", () => {
+    const result = importExternalGraphArtifact({
+      root: createFixtureRoot(),
+      mode: "import-only",
+      sourcePath: writeExternalGraph(createFixtureRoot(), {
+        provider: "graphify",
+        generatedAt: "2026-05-02T00:00:00.000Z",
+        nodes: [{ id: "summary:payment", kind: "summary", label: "Payment flow" }],
+        edges: [],
+      }),
+    });
+
+    assert.ok(result.privacySubjects.some((subject) => subject.kind === "external_graph_summary"));
+    assert.ok(result.privacySubjects.some((subject) => subject.kind === "normalized_external_evidence"));
+  }));
+
+  results.push(record("P9-T6 suite is registered in verify-ci-gates", () => {
+    const { TEST_SUITES } = require("./regression-runner") as typeof import("./regression-runner");
+    const suite = TEST_SUITES.find((candidate) => candidate.file === "p9-external-graph-import-only.ts");
+    assert.ok(suite);
+    assert.equal(suite.area, "verify-ci-gates");
+    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.task, "P9-T6");
+  }));
+
+  report(results);
+}
+
+function createFixtureRoot(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "jispec-p9-external-graph-"));
+}
+
+function writeExternalGraph(root: string, value: unknown): string {
+  const artifactPath = path.join(root, ".spec", "integrations", "external-graph.json");
+  fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+  fs.writeFileSync(artifactPath, JSON.stringify(value, null, 2), "utf-8");
+  return artifactPath;
+}
+
+function record(name: string, fn: () => void): TestResult {
+  try {
+    fn();
+    console.log(`✓ ${name}`);
+    return { name, passed: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ ${name}: ${message}`);
+    return { name, passed: false, error: message };
+  }
+}
+
+function report(results: TestResult[]): void {
+  const passed = results.filter((result) => result.passed).length;
+  console.log(`\n${passed}/${results.length} tests passed`);
+  if (passed !== results.length) {
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+- [ ] **Step 2: Run the P9-T6 test and verify it fails**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-external-graph-import-only.ts
+```
+
+Expected: FAIL because `tools/jispec/integrations/external-graph-import.ts` and the import schema do not exist.
+
+- [ ] **Step 3: Add the import-only adapter and schema**
+
+Create `tools/jispec/integrations/external-graph-import.ts`:
+
+```ts
+import fs from "node:fs";
+import path from "node:path";
+import { describeEvidenceProvenance } from "../provenance/evidence-provenance";
+
+export type ExternalGraphImportMode = "import-only";
+export type ExternalGraphImportStatus = "available" | "invalid" | "not_available_yet";
+export type ExternalEvidenceFreshness = "fresh" | "stale" | "unknown";
+
+export interface ExternalGraphArtifact {
+  provider: string;
+  generatedAt: string;
+  nodes: Array<{ id: string; kind: string; label: string }>;
+  edges: Array<{ from: string; to: string; kind: string }>;
+}
+
+export interface NormalizedExternalGraphEvidence {
+  provider: string;
+  generatedAt: string;
+  sourcePath: string;
+  freshness: ExternalEvidenceFreshness;
+  nodeId: string;
+  nodeKind: string;
+  label: string;
+  provenance: ReturnType<typeof describeEvidenceProvenance>;
+  advisoryOnly: true;
+  blockingEligible: false;
+}
+
+export interface ExternalGraphImportResult {
+  mode: ExternalGraphImportMode;
+  status: ExternalGraphImportStatus;
+  sourcePath: string;
+  execution: {
+    commandExecuted: false;
+    networkUsed: false;
+    sourceUploaded: false;
+  };
+  evidence: NormalizedExternalGraphEvidence[];
+  warnings: Array<{ kind: "invalid_external_graph_artifact"; message: string }>;
+  verifyInterruption: false;
+  privacySubjects: Array<{ kind: "external_graph_summary" | "normalized_external_evidence"; sourcePath: string }>;
+}
+
+export function importExternalGraphArtifact(input: { root: string; mode: ExternalGraphImportMode; sourcePath: string }): ExternalGraphImportResult {
+  const sourcePath = normalizePath(path.isAbsolute(input.sourcePath) ? path.relative(input.root, input.sourcePath) : input.sourcePath);
+  const absolutePath = path.isAbsolute(input.sourcePath) ? input.sourcePath : path.join(input.root, input.sourcePath);
+  const base = baseResult(sourcePath);
+
+  if (!fs.existsSync(absolutePath)) {
+    return { ...base, status: "not_available_yet" };
+  }
+
+  try {
+    const artifact = parseArtifact(JSON.parse(fs.readFileSync(absolutePath, "utf-8")));
+    const evidence = normalizeExternalGraphEvidence({
+      provider: artifact.provider,
+      generatedAt: artifact.generatedAt,
+      sourcePath,
+      nodes: artifact.nodes,
+      edges: artifact.edges,
+      now: new Date(),
+    });
+    return {
+      ...base,
+      status: "available",
+      evidence,
+      privacySubjects: [
+        { kind: "external_graph_summary", sourcePath },
+        { kind: "normalized_external_evidence", sourcePath },
+      ],
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ...base,
+      status: "invalid",
+      warnings: [{ kind: "invalid_external_graph_artifact", message }],
+    };
+  }
+}
+
+export function normalizeExternalGraphEvidence(input: {
+  provider: string;
+  generatedAt: string;
+  sourcePath: string;
+  nodes: ExternalGraphArtifact["nodes"];
+  edges: ExternalGraphArtifact["edges"];
+  now: Date;
+}): NormalizedExternalGraphEvidence[] {
+  const freshness = classifyFreshness(input.generatedAt, input.now);
+  return input.nodes.map((node) => ({
+    provider: input.provider,
+    generatedAt: input.generatedAt,
+    sourcePath: normalizePath(input.sourcePath),
+    freshness,
+    nodeId: node.id,
+    nodeKind: node.kind,
+    label: node.label,
+    provenance: describeEvidenceProvenance({ source: "external_import", freshness }),
+    advisoryOnly: true,
+    blockingEligible: false,
+  }));
+}
+
+function baseResult(sourcePath: string): ExternalGraphImportResult {
+  return {
+    mode: "import-only",
+    status: "not_available_yet",
+    sourcePath,
+    execution: { commandExecuted: false, networkUsed: false, sourceUploaded: false },
+    evidence: [],
+    warnings: [],
+    verifyInterruption: false,
+    privacySubjects: [],
+  };
+}
+
+function parseArtifact(value: unknown): ExternalGraphArtifact {
+  if (!isRecord(value)) {
+    throw new Error("external graph artifact must be an object");
+  }
+  const provider = requiredString(value.provider, "provider");
+  const generatedAt = requiredString(value.generatedAt, "generatedAt");
+  const nodes = parseNodes(value.nodes);
+  const edges = parseEdges(value.edges);
+  return { provider, generatedAt, nodes, edges };
+}
+
+function parseNodes(value: unknown): ExternalGraphArtifact["nodes"] {
+  if (!Array.isArray(value)) {
+    throw new Error("nodes must be an array");
+  }
+  return value.map((node, index) => {
+    if (!isRecord(node)) {
+      throw new Error(`nodes[${index}] must be an object`);
+    }
+    return {
+      id: requiredString(node.id, `nodes[${index}].id`),
+      kind: requiredString(node.kind, `nodes[${index}].kind`),
+      label: requiredString(node.label, `nodes[${index}].label`),
+    };
+  });
+}
+
+function parseEdges(value: unknown): ExternalGraphArtifact["edges"] {
+  if (!Array.isArray(value)) {
+    throw new Error("edges must be an array");
+  }
+  return value.map((edge, index) => {
+    if (!isRecord(edge)) {
+      throw new Error(`edges[${index}] must be an object`);
+    }
+    return {
+      from: requiredString(edge.from, `edges[${index}].from`),
+      to: requiredString(edge.to, `edges[${index}].to`),
+      kind: requiredString(edge.kind, `edges[${index}].kind`),
+    };
+  });
+}
+
+function classifyFreshness(generatedAt: string, now: Date): ExternalEvidenceFreshness {
+  const timestamp = Date.parse(generatedAt);
+  if (!Number.isFinite(timestamp)) {
+    return "unknown";
+  }
+  const ageMs = now.getTime() - timestamp;
+  return ageMs <= 7 * 24 * 60 * 60 * 1000 ? "fresh" : "stale";
+}
+
+function requiredString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${label} is required`);
+  }
+  return value.trim();
+}
+
+function normalizePath(value: string): string {
+  return value.replace(/\\/g, "/");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+```
+
+Create `schemas/external-graph-import.schema.json` with required `provider`, `generatedAt`, `nodes`, and `edges` fields. Use `additionalProperties: false` for the top-level object, nodes, and edges.
+
+- [ ] **Step 4: Wire normalized external evidence into facts, verify, and privacy**
+
+Modify `tools/jispec/facts/canonical-facts.ts` to add an advisory fact definition:
+
+```ts
+{
+  key: "externalGraph.normalizedEvidence",
+  stability: "advisory",
+  source: ".spec/integrations/external-graph.json",
+  description: "Normalized import-only external graph evidence. Advisory only; never blocking by itself.",
+}
+```
+
+Modify `tools/jispec/verify/verify-runner.ts` so invalid external graph imports add a warning with:
+
+```ts
+{
+  severity: "warn",
+  kind: "invalid_external_graph_artifact",
+  blocking: false,
+}
+```
+
+Modify `tools/jispec/privacy/redaction.ts` so artifact kind classification treats external graph summaries and normalized evidence as review-before-sharing artifacts.
+
+Update `docs/integrations.md` with an `import-only` section that states: no external command, no network, no source upload, invalid artifact warning only, normalized evidence advisory only.
+
+- [ ] **Step 5: Register the P9-T6 suite and update matrix counts**
+
+Modify `tools/jispec/tests/regression-runner.ts`:
+
+```ts
+gates({ name: 'P9 External Graph Import Only', file: 'p9-external-graph-import-only.ts', expectedTests: 6, task: 'P9-T6' }),
+```
+
+Modify `tools/jispec/tests/regression-matrix-contract.ts` after P9-T6:
+
+```ts
+assert.equal(manifest.totalSuites, 130);
+assert.equal(manifest.totalExpectedTests, 575);
+assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 13);
+assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
+assert.equal(areaMap.get("runtime-extended")?.suiteCount, 42);
+assert.equal(areaMap.get("runtime-extended")?.expectedTests, 181);
+```
+
+- [ ] **Step 6: Run focused verification for P9-T6**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-external-graph-import-only.ts
+node --import tsx tools\jispec\tests\privacy-redaction.ts
+node --import tsx tools\jispec\tests\verify-runner-warn-advisory.ts
+node --import tsx tools\jispec\tests\regression-matrix-contract.ts
+npm run gate:quick -- tools/jispec/tests/p9-external-graph-import-only.ts
+```
+
+Expected: all commands PASS, invalid external graph artifacts remain warning-only, and no assertion permits imported graph evidence to create a blocking issue by itself.
+
+- [ ] **Step 7: Commit P9-T6**
+
+Run:
+
+```powershell
+git add tools/jispec/integrations/external-graph-import.ts schemas/external-graph-import.schema.json tools/jispec/facts/canonical-facts.ts tools/jispec/verify/verify-runner.ts tools/jispec/privacy/redaction.ts docs/integrations.md tools/jispec/tests/p9-external-graph-import-only.ts tools/jispec/tests/regression-runner.ts tools/jispec/tests/regression-matrix-contract.ts
+git commit -m "feat: add p9 external graph import boundary"
+```
+
+Expected: commit succeeds and contains only P9-T6 integration/privacy/verify/docs/test/matrix changes.
+
+---
+
+### Task 7: P9-T7 External Tool Run Opt-In Boundary
+
+**Files:**
+- Create: `tools/jispec/integrations/external-tool-run-boundary.ts`
+- Create: `schemas/external-tool-run-boundary.schema.json`
+- Create: `tools/jispec/tests/p9-external-tool-run-opt-in-boundary.ts`
+- Modify: `tools/jispec/privacy/redaction.ts`
+- Modify: `tools/jispec/policy/approval.ts`
+- Modify: `tools/jispec/replay/replay-metadata.ts`
+- Modify: `docs/privacy-and-local-first.md`
+- Modify: `docs/integrations.md`
+- Modify: `tools/jispec/tests/regression-runner.ts`
+- Modify: `tools/jispec/tests/regression-matrix-contract.ts`
+
+- [ ] **Step 1: Write the failing P9-T7 regression suite**
+
+Create `tools/jispec/tests/p9-external-tool-run-opt-in-boundary.ts`:
+
+```ts
+import assert from "node:assert/strict";
+import {
+  buildExternalToolRunArtifact,
+  evaluateExternalToolRunRequest,
+} from "../integrations/external-tool-run-boundary";
+
+interface TestResult {
+  name: string;
+  passed: boolean;
+  error?: string;
+}
+
+function main(): void {
+  console.log("=== P9 External Tool Run Opt-In Boundary Tests ===\n");
+  const results: TestResult[] = [];
+
+  results.push(record("run-external-tool requires explicit provider and command", () => {
+    const missingProvider = evaluateExternalToolRunRequest({
+      mode: "run-external-tool",
+      command: "graphify export --json",
+      provider: "",
+      sourceScope: ["contracts/payment.yaml"],
+      networkRequired: false,
+      sourceUploadRisk: "none",
+      modelOrServiceProvider: "local",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+    });
+    const missingCommand = evaluateExternalToolRunRequest({
+      mode: "run-external-tool",
+      command: "",
+      provider: "graphify",
+      sourceScope: ["contracts/payment.yaml"],
+      networkRequired: false,
+      sourceUploadRisk: "none",
+      modelOrServiceProvider: "local",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+    });
+
+    assert.equal(missingProvider.allowed, false);
+    assert.equal(missingCommand.allowed, false);
+  }));
+
+  results.push(record("artifact records command, network, source upload risk, provider, scope, and generatedAt", () => {
+    const artifact = buildExternalToolRunArtifact({
+      mode: "run-external-tool",
+      command: "graphify export --json .spec/integrations/graphify.json",
+      provider: "graphify",
+      sourceScope: ["contracts/payment.yaml", "src/payment.ts"],
+      networkRequired: true,
+      sourceUploadRisk: "summary_only",
+      modelOrServiceProvider: "Graphify Cloud",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+    });
+
+    assert.equal(artifact.command, "graphify export --json .spec/integrations/graphify.json");
+    assert.equal(artifact.networkRequired, true);
+    assert.equal(artifact.sourceUploadRisk, "summary_only");
+    assert.equal(artifact.modelOrServiceProvider, "Graphify Cloud");
+    assert.deepEqual(artifact.sourceScope, ["contracts/payment.yaml", "src/payment.ts"]);
+    assert.equal(artifact.generatedAt, "2026-05-02T00:00:00.000Z");
+  }));
+
+  results.push(record("regulated profile can require owner approval before sharing external graph summary", () => {
+    const evaluation = evaluateExternalToolRunRequest({
+      mode: "run-external-tool",
+      command: "gitnexus export --summary .spec/integrations/gitnexus.json",
+      provider: "gitnexus",
+      sourceScope: ["contracts/payment.yaml"],
+      networkRequired: true,
+      sourceUploadRisk: "summary_only",
+      modelOrServiceProvider: "GitNexus Cloud",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+      policyProfile: "regulated",
+      ownerApprovalPresent: false,
+    });
+
+    assert.equal(evaluation.allowed, false);
+    assert.equal(evaluation.requiredApproval?.role, "owner");
+    assert.equal(evaluation.requiredApproval?.subject.kind, "external_graph_summary_sharing");
+  }));
+
+  results.push(record("external tool output cannot alone create a blocking issue", () => {
+    const artifact = buildExternalToolRunArtifact({
+      mode: "run-external-tool",
+      command: "graphify export --json .spec/integrations/graphify.json",
+      provider: "graphify",
+      sourceScope: ["src/payment.ts"],
+      networkRequired: false,
+      sourceUploadRisk: "none",
+      modelOrServiceProvider: "local",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+    });
+
+    assert.equal(artifact.outputBlockingEligible, false);
+    assert.equal(artifact.advisoryOnly, true);
+  }));
+
+  results.push(record("external tool run artifact includes audit and replay metadata", () => {
+    const artifact = buildExternalToolRunArtifact({
+      mode: "run-external-tool",
+      command: "graphify export --json .spec/integrations/graphify.json",
+      provider: "graphify",
+      sourceScope: ["src/payment.ts"],
+      networkRequired: false,
+      sourceUploadRisk: "none",
+      modelOrServiceProvider: "local",
+      generatedAt: "2026-05-02T00:00:00.000Z",
+    });
+
+    assert.equal(artifact.audit.kind, "external_tool_run_requested");
+    assert.equal(artifact.replay.kind, "external_tool_run_metadata");
+    assert.equal(artifact.replay.command, artifact.command);
+  }));
+
+  results.push(record("P9-T7 suite is registered in runtime-extended", () => {
+    const { TEST_SUITES } = require("./regression-runner") as typeof import("./regression-runner");
+    const suite = TEST_SUITES.find((candidate) => candidate.file === "p9-external-tool-run-opt-in-boundary.ts");
+    assert.ok(suite);
+    assert.equal(suite.area, "runtime-extended");
+    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.task, "P9-T7");
+  }));
+
+  report(results);
+}
+
+function record(name: string, fn: () => void): TestResult {
+  try {
+    fn();
+    console.log(`✓ ${name}`);
+    return { name, passed: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ ${name}: ${message}`);
+    return { name, passed: false, error: message };
+  }
+}
+
+function report(results: TestResult[]): void {
+  const passed = results.filter((result) => result.passed).length;
+  console.log(`\n${passed}/${results.length} tests passed`);
+  if (passed !== results.length) {
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+- [ ] **Step 2: Run the P9-T7 test and verify it fails**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-external-tool-run-opt-in-boundary.ts
+```
+
+Expected: FAIL because `tools/jispec/integrations/external-tool-run-boundary.ts` and the run-boundary schema do not exist.
+
+- [ ] **Step 3: Add explicit external tool run boundary model**
+
+Create `tools/jispec/integrations/external-tool-run-boundary.ts`:
+
+```ts
+export type ExternalToolRunMode = "run-external-tool";
+export type SourceUploadRisk = "none" | "summary_only" | "source_snippets" | "full_source";
+
+export interface ExternalToolRunRequest {
+  mode: ExternalToolRunMode;
+  command: string;
+  provider: string;
+  sourceScope: string[];
+  networkRequired: boolean;
+  sourceUploadRisk: SourceUploadRisk;
+  modelOrServiceProvider: string;
+  generatedAt: string;
+  policyProfile?: "default" | "regulated";
+  ownerApprovalPresent?: boolean;
+}
+
+export interface ExternalToolRunEvaluation {
+  allowed: boolean;
+  reasons: string[];
+  requiredApproval?: {
+    role: "owner";
+    subject: { kind: "external_graph_summary_sharing"; ref: string };
+  };
+}
+
+export interface ExternalToolRunArtifact {
+  kind: "jispec-external-tool-run";
+  mode: ExternalToolRunMode;
+  command: string;
+  provider: string;
+  networkRequired: boolean;
+  sourceUploadRisk: SourceUploadRisk;
+  modelOrServiceProvider: string;
+  sourceScope: string[];
+  generatedAt: string;
+  advisoryOnly: true;
+  outputBlockingEligible: false;
+  audit: { kind: "external_tool_run_requested"; provider: string; generatedAt: string };
+  replay: { kind: "external_tool_run_metadata"; command: string; provider: string; generatedAt: string };
+}
+
+export function evaluateExternalToolRunRequest(input: ExternalToolRunRequest): ExternalToolRunEvaluation {
+  const reasons: string[] = [];
+  if (input.provider.trim().length === 0) {
+    reasons.push("provider is required");
+  }
+  if (input.command.trim().length === 0) {
+    reasons.push("command is required");
+  }
+  if (input.sourceScope.length === 0) {
+    reasons.push("source scope is required");
+  }
+  if (input.policyProfile === "regulated" && input.networkRequired && input.ownerApprovalPresent !== true) {
+    reasons.push("owner approval is required before sharing or adopting external graph summary");
+    return {
+      allowed: false,
+      reasons,
+      requiredApproval: {
+        role: "owner",
+        subject: { kind: "external_graph_summary_sharing", ref: input.provider },
+      },
+    };
+  }
+  return { allowed: reasons.length === 0, reasons };
+}
+
+export function buildExternalToolRunArtifact(input: ExternalToolRunRequest): ExternalToolRunArtifact {
+  const evaluation = evaluateExternalToolRunRequest(input);
+  if (!evaluation.allowed) {
+    throw new Error(`external tool run request is not allowed: ${evaluation.reasons.join("; ")}`);
+  }
+  return {
+    kind: "jispec-external-tool-run",
+    mode: input.mode,
+    command: input.command.trim(),
+    provider: input.provider.trim(),
+    networkRequired: input.networkRequired,
+    sourceUploadRisk: input.sourceUploadRisk,
+    modelOrServiceProvider: input.modelOrServiceProvider.trim(),
+    sourceScope: input.sourceScope.map((item) => item.trim()).filter(Boolean),
+    generatedAt: input.generatedAt,
+    advisoryOnly: true,
+    outputBlockingEligible: false,
+    audit: {
+      kind: "external_tool_run_requested",
+      provider: input.provider.trim(),
+      generatedAt: input.generatedAt,
+    },
+    replay: {
+      kind: "external_tool_run_metadata",
+      command: input.command.trim(),
+      provider: input.provider.trim(),
+      generatedAt: input.generatedAt,
+    },
+  };
+}
+```
+
+Create `schemas/external-tool-run-boundary.schema.json` with required fields: `kind`, `mode`, `command`, `provider`, `networkRequired`, `sourceUploadRisk`, `modelOrServiceProvider`, `sourceScope`, `generatedAt`, `advisoryOnly`, `outputBlockingEligible`, `audit`, and `replay`.
+
+- [ ] **Step 4: Wire privacy, approval, replay, and docs**
+
+Modify `tools/jispec/privacy/redaction.ts` so external tool run artifacts are classified as review-before-sharing when `networkRequired` is `true` or `sourceUploadRisk` is not `none`.
+
+Modify `tools/jispec/policy/approval.ts` so regulated profiles include `external_graph_summary_sharing` as an approval subject when an external graph summary is shared or adopted.
+
+Modify `tools/jispec/replay/replay-metadata.ts` so replay metadata can include:
+
+```ts
+{
+  kind: "external_tool_run_metadata",
+  command: string,
+  provider: string,
+  generatedAt: string,
+}
+```
+
+Update `docs/privacy-and-local-first.md` with the external tool boundary: explicit command, explicit provider, network disclosure, source upload risk disclosure, regulated owner approval, and advisory-only output.
+
+Update `docs/integrations.md` with `run-external-tool` usage and the rule that external tool output cannot alone create a blocking issue.
+
+- [ ] **Step 5: Register the P9-T7 suite and update final second-batch matrix counts**
+
+Modify `tools/jispec/tests/regression-runner.ts`:
+
+```ts
+runtime({ name: 'P9 External Tool Run Opt-In Boundary', file: 'p9-external-tool-run-opt-in-boundary.ts', expectedTests: 6, task: 'P9-T7' }),
+```
+
+Modify `tools/jispec/tests/regression-matrix-contract.ts` after P9-T7:
+
+```ts
+assert.equal(manifest.totalSuites, 131);
+assert.equal(manifest.totalExpectedTests, 581);
+assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 13);
+assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
+assert.equal(areaMap.get("runtime-extended")?.suiteCount, 43);
+assert.equal(areaMap.get("runtime-extended")?.expectedTests, 187);
+```
+
+- [ ] **Step 6: Run focused verification for P9-T7**
+
+Run:
+
+```powershell
+node --import tsx tools\jispec\tests\p9-external-tool-run-opt-in-boundary.ts
+node --import tsx tools\jispec\tests\privacy-redaction.ts
+node --import tsx tools\jispec\tests\policy-approval-workflow.ts
+node --import tsx tools\jispec\tests\regression-matrix-contract.ts
+npm run gate:quick -- tools/jispec/tests/p9-external-tool-run-opt-in-boundary.ts
+```
+
+Expected: all commands PASS, regulated profile requires owner approval for sharing/adopting external summaries, and external tool output remains advisory-only.
+
+- [ ] **Step 7: Run final second-batch verification**
+
+Run:
+
+```powershell
+npm run typecheck
+npm run gate:quick
+node --import tsx tools\jispec\cli.ts doctor v1 --root . --json
+node --import tsx tools\jispec\cli.ts doctor runtime --root . --json
+node --import tsx tools\jispec\cli.ts doctor pilot --root . --json
+```
+
+Expected:
+
+- TypeScript passes with no errors.
+- `gate:quick` reports registered quick suites passing.
+- `doctor v1`, `doctor runtime`, and `doctor pilot` return JSON with `ready: true`.
+- Matrix contract reports `131` suites and `581` expected tests.
+
+- [ ] **Step 8: Commit P9-T7**
+
+Run:
+
+```powershell
+git add tools/jispec/integrations/external-tool-run-boundary.ts schemas/external-tool-run-boundary.schema.json tools/jispec/privacy/redaction.ts tools/jispec/policy/approval.ts tools/jispec/replay/replay-metadata.ts docs/privacy-and-local-first.md docs/integrations.md tools/jispec/tests/p9-external-tool-run-opt-in-boundary.ts tools/jispec/tests/regression-runner.ts tools/jispec/tests/regression-matrix-contract.ts
+git commit -m "feat: add p9 external tool opt-in boundary"
+```
+
+Expected: commit succeeds after the focused and final second-batch verification commands pass.
+
+---
+
+## Second-Batch Self-Review Checklist
+
+- P9-T4 maps to Task 4 and consolidates reviewer companions around fixed decision sections while preserving JSON/YAML truth sources.
+- P9-T5 maps to Task 5 and adds repo group config plus cross-repo drift hints that produce owner actions and suggested commands only.
+- P9-T6 maps to Task 6 and supports import-only external graph artifacts without command execution, network access, source upload, or blocking verify semantics.
+- P9-T7 maps to Task 7 and defines explicit opt-in, privacy, approval, audit, and replay boundaries before JiSpec can run an external graph tool.
+- No second-batch task adds GitNexus or Graphify as required runtime dependencies.
+- External graph evidence uses provenance labels and stays advisory unless corroborated by JiSpec-owned deterministic contracts.
+- Console and reviewer companion surfaces display summaries, paths, owner actions, and suggested commands without parsing Markdown as a gate.

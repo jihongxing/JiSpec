@@ -1,3 +1,8 @@
+import {
+  splitDecisionCompanionSections,
+  type DecisionCompanionSectionsInput,
+} from "./companion/decision-sections";
+
 export interface HumanDecisionSnapshot {
   currentState: string;
   risk: string;
@@ -30,4 +35,8 @@ export function renderHumanDecisionSnapshotText(snapshot: HumanDecisionSnapshot)
     `Owner: ${snapshot.owner}`,
     `Next command: ${snapshot.nextCommand}`,
   ];
+}
+
+export function renderHumanReviewerDecisionCompanion(input: DecisionCompanionSectionsInput): string[] {
+  return splitDecisionCompanionSections(input);
 }

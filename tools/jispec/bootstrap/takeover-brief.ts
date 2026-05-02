@@ -17,6 +17,7 @@ import {
 import {
   HUMAN_SUMMARY_COMPANION_NOTE,
   renderHumanDecisionSnapshot,
+  renderHumanReviewerDecisionCompanion,
 } from "../human-decision-packet";
 
 const ADOPTION_RANKED_EVIDENCE_PATH = ".spec/facts/bootstrap/adoption-ranked-evidence.json";
@@ -159,6 +160,27 @@ function renderTakeoverBriefMarkdown(input: {
       owner: "reviewer",
       nextCommand: "`npm run jispec-cli -- verify`",
     }),
+    ...renderHumanReviewerDecisionCompanion({
+      subject: `bootstrap takeover ${input.report.sessionId}`,
+      truthSources: [
+        ".spec/handoffs/bootstrap-takeover.json",
+        ADOPTION_RANKED_EVIDENCE_PATH,
+      ],
+      strongestEvidence: input.strongestEvidence.length > 0
+        ? input.strongestEvidence.slice(0, 5).map((entry) => `${entry.path} (score ${Math.round(entry.score)}): ${entry.reason}`)
+        : ["No adoption-ranked evidence packet was found; inspect the evidence graph manually."],
+      inferredEvidence: input.topAdoptionCandidates.length > 0
+        ? input.topAdoptionCandidates.slice(0, 3).map((entry) => `Top adoption candidate inferred from ranked evidence: ${entry.path}`)
+        : [],
+      drift: input.riskSummary.length > 0 ? input.riskSummary.slice(0, 4) : ["no conflict detected"],
+      impact: [
+        ...input.report.adoptedArtifactPaths.slice(0, 8).map((artifactPath) => `contract: ${artifactPath}`),
+        ...input.report.specDebtPaths.slice(0, 4).map((artifactPath) => `spec debt: ${artifactPath}`),
+      ],
+      nextSteps: input.nextActions.slice(0, 5),
+      maxLines: 150,
+    }),
+    "",
     "## Top Adoption Candidates",
     "",
     ...renderTopAdoptionCandidates(input.topAdoptionCandidates, input.boundaries),

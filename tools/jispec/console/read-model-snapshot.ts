@@ -15,6 +15,7 @@ import {
   type ConsoleGovernanceObjectContract,
   type ConsoleGovernanceObjectId,
 } from "./read-model-contract";
+import { summarizeDecisionCompanion, type DecisionCompanionSummary } from "../companion/decision-sections";
 
 export type ConsoleSnapshotArtifactStatus = "available" | "not_available_yet" | "unreadable" | "invalid";
 export type ConsoleGovernanceObjectStatus = "available" | "partial" | "not_available_yet" | "invalid";
@@ -27,6 +28,7 @@ export interface ConsoleSnapshotArtifactInstance {
   contentHash?: string;
   data?: unknown;
   displayOnlyText?: string;
+  companion?: DecisionCompanionSummary;
   error?: string;
 }
 
@@ -258,6 +260,7 @@ function readArtifactInstance(
         ...base,
         status: "available",
         displayOnlyText: content,
+        companion: summarizeDecisionCompanion({ path: relativePath, text: content }),
       };
     }
 

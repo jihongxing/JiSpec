@@ -24,6 +24,7 @@ import {
   HUMAN_SUMMARY_COMPANION_NOTE,
   renderHumanDecisionSnapshot,
 } from "../human-decision-packet";
+import { splitDecisionCompanionSections } from "../companion/decision-sections";
 
 export interface ReleaseSnapshotOptions {
   root: string;
@@ -1464,6 +1465,38 @@ function renderReleaseSummary(root: string, baseline: BaselineDocument, summary 
       owner: replay?.actor ? `release owner \`${replay.actor}\`` : "release owner",
       nextCommand: `\`npm run jispec-cli -- release compare --from ${version} --to current\``,
     }),
+    ...splitDecisionCompanionSections({
+      subject: `release baseline ${version}`,
+      truthSources: [
+        stringValue(baseline.source_baseline) ?? ".spec/baselines/current.yaml",
+        `.spec/baselines/releases/${version}.yaml`,
+        stringValue(isRecord(baseline.contract_graph) ? baseline.contract_graph.graph_path : undefined) ?? ".spec/baselines/releases/<version>-contract-graph.json",
+      ],
+      strongestEvidence: [
+        `contract graph: ${summary.contractGraph.summary}`,
+        `static collector: ${summary.staticCollector.summary}`,
+        `policy: ${summary.policy.summary}`,
+      ],
+      inferredEvidence: [
+        `requirements: ${counts.requirementIds}`,
+        `contracts: ${counts.contracts}`,
+        `slices: ${counts.slices}`,
+      ],
+      drift: [
+        `open spec debt: ${specDebt.open}`,
+        `expired spec debt: ${specDebt.expired}`,
+      ],
+      impact: [
+        `contracts: ${counts.contracts}`,
+        `scenarios: ${counts.scenarios}`,
+        `assets: ${counts.assets}`,
+      ],
+      nextSteps: [
+        `run npm run jispec-cli -- release compare --from ${version} --to current`,
+      ],
+      maxLines: 150,
+    }),
+    "",
     "## Replay / Provenance",
     "",
     ...renderReplayMarkdown(replay),

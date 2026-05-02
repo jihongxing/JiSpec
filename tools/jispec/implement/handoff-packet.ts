@@ -11,6 +11,7 @@ import type { ImplementRunResult } from "./implement-runner";
 import type { EpisodeMemory } from "./episode-memory";
 import { getRecentHypotheses, getRejectedPaths, getEpisodesByOutcome } from "./episode-memory";
 import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
+import { splitDecisionCompanionSections } from "../companion/decision-sections";
 
 export interface ImplementContractContext {
   lane: "fast" | "strict";
@@ -948,6 +949,40 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
     ],
     owner: packet.decisionPacket.executionStatus.nextActionOwner,
     nextCommand: packet.decisionPacket.nextActionDetail.command ?? "no command recorded",
+  }).map((entry) => `  ${entry}`));
+  lines.push("");
+  lines.push("Reviewer decision companion:");
+  const sessionImpact = packet.replay.sourceSession.impactSummary;
+  const impactTruthSources = sessionImpact && !Array.isArray(sessionImpact)
+    ? [sessionImpact.artifacts.impactGraphPath, sessionImpact.artifacts.verifyFocusPath]
+    : [packet.replay.sourceSession.specDelta?.verifyFocusPath ?? ".spec/deltas/<changeId>/verify-focus.yaml"];
+  lines.push(...splitDecisionCompanionSections({
+    subject: `implementation handoff ${packet.sessionId}`,
+    truthSources: [
+      `.jispec/handoff/${packet.sessionId}.json`,
+      ...impactTruthSources,
+    ],
+    strongestEvidence: [
+      `outcome: ${packet.outcome}`,
+      `stop point: ${packet.decisionPacket.stopPoint}`,
+      `failed check: ${packet.decisionPacket.nextActionDetail.failedCheck}`,
+    ],
+    inferredEvidence: [
+      ...packet.nextSteps.filesNeedingAttention.slice(0, 6).map((file) => `file needing attention: ${file}`),
+      ...packet.episodeMemory.rejectedPaths.slice(0, 4).map((file) => `rejected path: ${file}`),
+    ],
+    drift: [
+      `scope=${packet.decisionPacket.executionStatus.scopeCheck}`,
+      `test=${packet.decisionPacket.executionStatus.tests}`,
+      `verify=${packet.decisionPacket.executionStatus.verify}`,
+    ],
+    impact: [
+      ...(packet.nextSteps.impact?.impactedContracts ?? []).slice(0, 8).map((contract) => `contract: ${contract}`),
+      ...(packet.nextSteps.impact?.impactedFiles ?? []).slice(0, 8).map((file) => `file: ${file}`),
+      ...(packet.nextSteps.impact?.missingVerificationHints ?? []).slice(0, 4).map((hint) => `verification hint: ${hint}`),
+    ],
+    nextSteps: packet.nextSteps.suggestedActions.slice(0, 6),
+    maxLines: 150,
   }).map((entry) => `  ${entry}`));
   lines.push(`State: ${packet.decisionPacket.state}`);
   lines.push(`Stop point: ${packet.decisionPacket.stopPoint}`);
