@@ -31,6 +31,7 @@
     "jispec": "node ./bin/jispec.js",
     "verify": "node --import tsx ./tools/jispec/cli.ts verify",
     "validate:repo": "node --import tsx ./tools/jispec/cli.ts verify",
+    "gate:quick": "node --import tsx ./scripts/quick-gate.ts",
     "pilot:ready": "node --import tsx ./scripts/pilot-ready-gate.ts",
     "post-release:gate": "node --import tsx ./scripts/post-release-gate.ts",
     "ci:verify": "node --import tsx ./scripts/check-jispec.ts",

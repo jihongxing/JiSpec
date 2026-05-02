@@ -140,7 +140,7 @@ export const TEST_SUITES: TestSuite[] = [
   gates({ name: 'Verify Mitigation Stacking', file: 'verify-mitigation-stacking.ts', expectedTests: 2 }),
   gates({ name: 'CI Verify Wrapper', file: 'ci-verify-wrapper.ts', expectedTests: 3 }),
   gates({ name: 'CI Summary Markdown', file: 'ci-summary-markdown.ts', expectedTests: 4, task: 'P1-T5' }),
-  gates({ name: 'Package Script Surface', file: 'package-script-surface.ts', expectedTests: 7, task: 'P4-T1/P4-T2' }),
+  gates({ name: 'Package Script Surface', file: 'package-script-surface.ts', expectedTests: 8, task: 'P4-T1/P4-T2' }),
   gates({ name: 'P4 Sample Repo And CI Templates', file: 'p4-sample-ci-templates.ts', expectedTests: 3, task: 'P4-T2' }),
   gates({ name: 'P4 Documentation Experience', file: 'p4-docs-experience.ts', expectedTests: 6, task: 'P4-T3' }),
   gates({ name: 'Integration Payloads', file: 'integration-payloads.ts', expectedTests: 6, task: 'P7-T2/M7-T2' }),

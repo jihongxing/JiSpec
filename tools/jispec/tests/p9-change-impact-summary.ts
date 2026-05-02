@@ -136,7 +136,7 @@ async function main(): Promise<void> {
 
     const manifest = buildRegressionMatrixManifest();
     assert.equal(manifest.totalSuites, 127);
-    assert.equal(manifest.totalExpectedTests, 556);
+    assert.equal(manifest.totalExpectedTests, 557);
   }));
 
   printResults(results);

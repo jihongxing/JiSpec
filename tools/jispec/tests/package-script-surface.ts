@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -94,6 +95,11 @@ function main(): void {
       "primary script `post-release:gate`",
     );
     assertEqual(
+      scripts["gate:quick"],
+      "node --import tsx ./scripts/quick-gate.ts",
+      "primary script `gate:quick`",
+    );
+    assertEqual(
       scripts["pilot:ready"],
       "node --import tsx ./scripts/pilot-ready-gate.ts",
       "primary script `pilot:ready`",
@@ -167,6 +173,23 @@ function main(): void {
       throw new Error("release snapshot help must keep its release --version option instead of being captured by root CLI version.");
     }
     console.log("✓ Test 7: root CLI version handling does not shadow subcommand --version options");
+    passed++;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`✗ Test ${passed + failed + 1} failed: ${message}`);
+    failed++;
+  }
+
+  try {
+    const quickGateEntry = path.join(repoRoot, "scripts", "quick-gate.ts");
+    const result = runNode(["--import", "tsx", quickGateEntry, "--list"], repoRoot);
+    if (result.status !== 0) {
+      throw new Error(`quick gate --list exited with ${result.status}. stderr: ${result.stderr}`);
+    }
+    assert.ok(result.stdout.includes("TypeScript typecheck"));
+    assert.ok(result.stdout.includes("Regression matrix contract"));
+    assert.ok(result.stdout.includes("Optional focused tests"));
+    console.log("✓ Test 8: quick gate exposes a lightweight developer verification plan");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
