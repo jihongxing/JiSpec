@@ -296,7 +296,7 @@ Expected: commit succeeds and contains only P9-T1 docs/tests/registry changes.
 - Modify: `tools/jispec/tests/regression-matrix-contract.ts`
 - Modify: `docs/gitnexus-graphify-capability-upgrade-plan.md`
 
-- [ ] **Step 1: Write the failing provenance label tests**
+- [x] **Step 1: Write the failing provenance label tests**
 
 Create `tools/jispec/tests/p9-evidence-provenance-labels.ts`:
 
@@ -479,7 +479,7 @@ function printResults(results: TestResult[]): void {
 main();
 ```
 
-- [ ] **Step 2: Run the P9-T2 test and verify it fails**
+- [x] **Step 2: Run the P9-T2 test and verify it fails**
 
 Run:
 
@@ -489,7 +489,7 @@ node --import tsx tools\jispec\tests\p9-evidence-provenance-labels.ts
 
 Expected: FAIL because `tools/jispec/provenance/evidence-provenance.ts` does not exist and evidence artifacts do not yet expose `provenanceLabel`.
 
-- [ ] **Step 3: Add the shared provenance helper**
+- [x] **Step 3: Add the shared provenance helper**
 
 Create `tools/jispec/provenance/evidence-provenance.ts`:
 
@@ -598,7 +598,7 @@ function inferLabel(
 }
 ```
 
-- [ ] **Step 4: Wire provenance descriptors into bootstrap ranked evidence**
+- [x] **Step 4: Wire provenance descriptors into bootstrap ranked evidence**
 
 Modify `tools/jispec/bootstrap/evidence-ranking.ts`.
 
@@ -645,7 +645,7 @@ Update the ranked map:
     });
 ```
 
-- [ ] **Step 5: Wire provenance descriptors into contract source adapters**
+- [x] **Step 5: Wire provenance descriptors into contract source adapters**
 
 Modify `tools/jispec/bootstrap/contract-source-adapters.ts`.
 
@@ -686,7 +686,7 @@ function withAdapterProvenance<T extends Omit<ContractSourceAdapterEvidence, "pr
 
 Wrap each collected adapter entry with `withAdapterProvenance(...)` before returning it.
 
-- [ ] **Step 6: Wire provenance descriptors into Greenfield evidence graph**
+- [x] **Step 6: Wire provenance descriptors into Greenfield evidence graph**
 
 Modify `tools/jispec/greenfield/evidence-graph.ts`.
 
@@ -745,7 +745,7 @@ function confidenceForGreenfieldNode(node: GreenfieldEvidenceNode): number | und
 }
 ```
 
-- [ ] **Step 7: Register the P9-T2 regression suite and update counts**
+- [x] **Step 7: Register the P9-T2 regression suite and update counts**
 
 Modify `tools/jispec/tests/regression-runner.ts` in the bootstrap suite block:
 
@@ -772,7 +772,7 @@ Update `docs/gitnexus-graphify-capability-upgrade-plan.md`:
 状态：开发中
 ```
 
-- [ ] **Step 8: Run focused verification for P9-T2**
+- [x] **Step 8: Run focused verification for P9-T2**
 
 Run:
 
@@ -786,7 +786,7 @@ npm run typecheck
 
 Expected: all commands PASS.
 
-- [ ] **Step 9: Commit P9-T2**
+- [x] **Step 9: Commit P9-T2**
 
 Run:
 

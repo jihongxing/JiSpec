@@ -131,6 +131,7 @@ export const TEST_SUITES: TestSuite[] = [
   bootstrap({ name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 7, task: 'Task 7/P1-T4' }),
   bootstrap({ name: 'Bootstrap Spec Debt', file: 'bootstrap-spec-debt.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Takeover Brief', file: 'bootstrap-takeover-brief.ts', expectedTests: 5, task: 'Task 7/17' }),
+  bootstrap({ name: 'P9 Evidence Provenance Labels', file: 'p9-evidence-provenance-labels.ts', expectedTests: 6, task: 'P9-T2' }),
   retakeover({ name: 'Bootstrap Synthetic Messy Legacy Takeover Stress', file: 'bootstrap-messy-legacy-takeover.ts', expectedTests: 5, task: 'N9' }),
   gates({ name: 'Verify Contract-Aware Core', file: 'verify-contract-aware-core.ts', expectedTests: 3 }),
   gates({ name: 'Verify Bootstrap Takeover', file: 'verify-bootstrap-takeover.ts', expectedTests: 3 }),
