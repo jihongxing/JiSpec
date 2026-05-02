@@ -11,7 +11,14 @@ npm run jispec -- integrations payload --provider jira --kind issue_link
 npm run jispec -- integrations payload --provider linear --kind issue_link
 ```
 
-The command writes JSON plus a Markdown companion under `.spec/integrations/`.
+The command writes JSON plus a Markdown companion under `.spec/integrations/`. The JSON payload follows `schemas/integration-payload.schema.json`.
+
+Each payload declares `contract.integrationContractVersion: 1` with one of these roles:
+
+- `scm_comment_preview`
+- `issue_link_preview`
+
+The contract is deliberately narrow: local artifacts remain the source of truth, the payload is preview-only, source upload is not required, and patches still return through `implement --external-patch` for `scope_check`, `tests`, and `verify`.
 
 ## SCM Comment Payloads
 
@@ -39,6 +46,19 @@ Jira and Linear payloads include:
 - local artifact references
 
 They are meant to help a team copy or later automate an issue-link preview without making the tracker a machine-truth source.
+
+## Local Artifact Refs
+
+Payloads include both `sourceArtifacts` and structured `sourceArtifactRefs`. Refs classify local fact sources such as:
+
+- `verify_report`
+- `verify_summary`
+- `waiver_record`
+- `spec_debt`
+- `implementation_handoff`
+- `console_governance`
+
+SCM and issue tracker payloads may quote or link these artifact paths, but they do not become gate authority.
 
 ## Boundary
 

@@ -135,6 +135,12 @@ async function main(): Promise<void> {
 
     const verifySummary = renderVerifySummaryMarkdown(report);
     assert.ok(verifySummary.startsWith("# JiSpec Verify Summary"));
+    assert.ok(verifySummary.includes("## Decision Snapshot"));
+    assert.ok(verifySummary.includes("Current state: FAIL_BLOCKING - Blocked until blocking issues are fixed or explicitly waived."));
+    assert.ok(verifySummary.includes("Risk: 2 blocking issue(s) must be fixed, waived, or explicitly deferred before merge."));
+    assert.ok(verifySummary.includes("Evidence: `.jispec-ci/verify-report.json` or `.spec/handoffs/verify-summary.md`, facts contract `1.0`, 2 matched policy rule(s), 1 matched waiver(s)"));
+    assert.ok(verifySummary.includes("Owner: repo owner / reviewer"));
+    assert.ok(verifySummary.includes("Next command: `npm run jispec-cli -- verify` after fixing blockers or recording explicit governance decisions"));
     assert.ok(verifySummary.includes("Merge status: Blocked until blocking issues are fixed or explicitly waived."));
     assert.ok(verifySummary.includes("1 waiver(s) matched and downgraded only matching issue(s); unmatched blocking issues remain blocking."));
     assert.ok(verifySummary.includes("Waiver lifecycle: 1 active, 1 expired, 1 revoked, 0 invalid."));

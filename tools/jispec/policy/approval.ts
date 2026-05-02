@@ -12,7 +12,8 @@ export type ApprovalSubjectKind =
   | "policy_change"
   | "waiver_change"
   | "release_drift"
-  | "execute_default_change";
+  | "execute_default_change"
+  | "pilot_risk_acceptance";
 
 export type ApprovalDecisionStatus = "approved" | "rejected";
 export type ApprovalActorRole = "owner" | "reviewer";
@@ -299,6 +300,9 @@ function discoverApprovalSubjects(root: string, policy: VerifyPolicy | null): Ap
   if (latestReleaseCompare) {
     subjects.push(resolveApprovalSubject(root, "release_drift", latestReleaseCompare));
   }
+  if (requiresPilotRiskAcceptance(root)) {
+    subjects.push(resolveApprovalSubject(root, "pilot_risk_acceptance", ".spec/privacy/privacy-report.json"));
+  }
 
   return dedupeSubjects(subjects);
 }
@@ -358,6 +362,9 @@ function resolveApprovalSubject(root: string, kind: ApprovalSubjectKind, ref?: s
 function defaultSubjectRef(root: string, kind: ApprovalSubjectKind): string {
   if (kind === "release_drift") {
     return latestReleaseCompareReport(root) ?? ".spec/releases/compare";
+  }
+  if (kind === "pilot_risk_acceptance") {
+    return ".spec/privacy/privacy-report.json";
   }
   if (kind === "waiver_change") {
     return ".spec/waivers";
@@ -431,6 +438,27 @@ function latestReleaseCompareReport(root: string): string | undefined {
     .at(-1);
 }
 
+function requiresPilotRiskAcceptance(root: string): boolean {
+  const privacyReportPath = path.join(root, ".spec", "privacy", "privacy-report.json");
+  if (!fs.existsSync(privacyReportPath)) {
+    return false;
+  }
+  try {
+    const report = JSON.parse(fs.readFileSync(privacyReportPath, "utf-8")) as unknown;
+    if (!isRecord(report) || !isRecord(report.summary)) {
+      return false;
+    }
+    return numericValue(report.summary.highSeverityFindingCount) > 0 ||
+      numericValue(report.summary.reviewBeforeSharingArtifactCount) > 0;
+  } catch {
+    return true;
+  }
+}
+
+function numericValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function listDirectFiles(root: string, relativeDir: string, extension: string): string[] {
   const absoluteDir = path.join(root, relativeDir);
   if (!fs.existsSync(absoluteDir)) {
@@ -455,8 +483,8 @@ function dedupeSubjects(subjects: ApprovalSubjectRef[]): ApprovalSubjectRef[] {
 }
 
 function validateSubjectKind(value: unknown): asserts value is ApprovalSubjectKind {
-  if (!["policy_change", "waiver_change", "release_drift", "execute_default_change"].includes(String(value))) {
-    throw new Error("Approval subject kind must be policy_change, waiver_change, release_drift, or execute_default_change.");
+  if (!["policy_change", "waiver_change", "release_drift", "execute_default_change", "pilot_risk_acceptance"].includes(String(value))) {
+    throw new Error("Approval subject kind must be policy_change, waiver_change, release_drift, execute_default_change, or pilot_risk_acceptance.");
   }
 }
 

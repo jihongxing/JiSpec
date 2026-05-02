@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import * as yaml from "js-yaml";
 import { runBootstrapDiscover } from "../bootstrap/discover";
 import { runBootstrapDraft } from "../bootstrap/draft";
 import { renderBootstrapAdoptText, runBootstrapAdopt } from "../bootstrap/adopt";
+import { createReleaseSnapshot } from "../release/baseline-snapshot";
 
 interface TestResult {
   name: string;
@@ -40,6 +42,8 @@ async function main(): Promise<void> {
     const reportPath = path.join(tempRoot, ".spec", "handoffs", "bootstrap-takeover.json");
     const briefPath = path.join(tempRoot, ".spec", "handoffs", "takeover-brief.md");
     const adoptSummaryPath = path.join(tempRoot, ".spec", "handoffs", "adopt-summary.md");
+    const currentBaselinePath = path.join(tempRoot, ".spec", "baselines", "current.yaml");
+    const contractGraphPath = path.join(tempRoot, ".spec", "evidence", "contract-graph.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
       takeoverReportPath?: string;
       takeoverBriefPath?: string;
@@ -118,6 +122,13 @@ async function main(): Promise<void> {
         manifest.adoptSummaryPath === ".spec/handoffs/adopt-summary.md" &&
         fs.existsSync(adoptSummaryPath) &&
         adoptSummary.includes("# Bootstrap Adopt Summary") &&
+        adoptSummary.includes("## Decision Snapshot") &&
+        adoptSummary.includes("Current state:") &&
+        adoptSummary.includes("Risk: Correction load") &&
+        adoptSummary.includes("Evidence:") &&
+        adoptSummary.includes("Owner: reviewer") &&
+        adoptSummary.includes("Next command: `npm run jispec-cli -- verify`") &&
+        adoptSummary.includes("This Markdown file is a human-readable companion summary, not a machine API.") &&
         adoptSummary.includes(".spec/contracts/domain.yaml") &&
         adoptSummary.includes("edited before adoption") &&
         adoptSummary.includes("domain re-anchored by reviewer") &&
@@ -128,6 +139,62 @@ async function main(): Promise<void> {
         adoptSummary.includes("npm run jispec-cli -- verify") &&
         adoptText.includes("Adopt summary: .spec/handoffs/adopt-summary.md"),
       error: "Expected adopt summary to capture human review decisions and the next verify step.",
+    });
+
+    const currentBaseline = yaml.load(fs.readFileSync(currentBaselinePath, "utf-8")) as {
+      entry_model?: string;
+      status?: string;
+      source_takeover?: { path?: string; session_id?: string };
+      contracts?: string[];
+      assets?: string[];
+      change_mainline_handoff?: { path?: string; status?: string; next_commands?: string[] };
+    };
+    const contractGraph = JSON.parse(fs.readFileSync(contractGraphPath, "utf-8")) as {
+      graph_kind?: string;
+      nodes?: Array<{ id?: string; kind?: string; path?: string }>;
+      edges?: Array<{ from?: string; to?: string; relation?: string }>;
+    };
+    results.push({
+      name: "legacy adopt writes the same current baseline and contract graph entry as Greenfield init",
+      passed:
+        fs.existsSync(currentBaselinePath) &&
+        fs.existsSync(contractGraphPath) &&
+        currentBaseline.entry_model === "legacy_takeover" &&
+        currentBaseline.status === "adopted" &&
+        currentBaseline.source_takeover?.path === ".spec/handoffs/bootstrap-takeover.json" &&
+        currentBaseline.source_takeover?.session_id === draftResult.sessionId &&
+        currentBaseline.contracts?.includes(".spec/contracts/domain.yaml") === true &&
+        currentBaseline.assets?.includes(".spec/handoffs/bootstrap-takeover.json") === true &&
+        currentBaseline.assets?.includes(".spec/evidence/contract-graph.json") === true &&
+        currentBaseline.change_mainline_handoff?.status === "ready" &&
+        currentBaseline.change_mainline_handoff?.next_commands?.includes("npm run jispec-cli -- change <summary> --mode execute") === true &&
+        contractGraph.graph_kind === "deterministic-contract-graph" &&
+        contractGraph.nodes?.some((node) => node.id === "@baseline:legacy-takeover" && node.kind === "baseline") === true &&
+        contractGraph.nodes?.some((node) => node.id === "@contract:.spec/contracts/domain.yaml" && node.path === ".spec/contracts/domain.yaml") === true &&
+        contractGraph.edges?.some((edge) => edge.from === "@baseline:legacy-takeover" && edge.to === "@contract:.spec/contracts/domain.yaml" && edge.relation === "defines") === true,
+      error: "Expected legacy adopt to materialize a Greenfield-compatible current baseline and deterministic contract graph.",
+    });
+
+    const releaseSnapshot = createReleaseSnapshot({
+      root: tempRoot,
+      version: "legacy-v1",
+      frozenAt: "2026-05-02T00:00:00.000Z",
+    });
+    const releaseBaseline = yaml.load(fs.readFileSync(releaseSnapshot.releaseBaselinePath, "utf-8")) as {
+      contract_graph?: { graph_kind?: string; graph_path?: string; root_hash?: string };
+      source_baseline?: string;
+      contracts?: string[];
+    };
+    results.push({
+      name: "release snapshot freezes legacy takeover through the same contract graph surface",
+      passed:
+        releaseSnapshot.version === "legacy-v1" &&
+        releaseBaseline.source_baseline === ".spec/baselines/current.yaml" &&
+        releaseBaseline.contract_graph?.graph_kind === "merkle-contract-dag" &&
+        releaseBaseline.contract_graph?.graph_path === ".spec/releases/legacy-v1/contract-graph.json" &&
+        typeof releaseBaseline.contract_graph?.root_hash === "string" &&
+        releaseBaseline.contracts?.includes(".spec/contracts/domain.yaml") === true,
+      error: "Expected release snapshot to cover a legacy takeover baseline with a Merkle contract graph.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

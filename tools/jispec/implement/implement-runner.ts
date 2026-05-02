@@ -31,6 +31,7 @@ import { runVerify } from "../verify/verify-runner";
 import type { VerifyRunResult } from "../verify/verdict";
 import {
   mediateExternalPatch,
+  recordPatchMediationCompletionAudit,
   writePatchMediationArtifact,
   type PatchMediationArtifact,
 } from "./patch-mediation";
@@ -263,6 +264,15 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
   }
 
   result.decisionPacket = buildImplementationDecisionPacket(result, session);
+  if (result.patchMediation && result.metadata.patchMediationPath) {
+    recordPatchMediationCompletionAudit(
+      root,
+      result.patchMediation,
+      result.metadata.patchMediationPath,
+      session,
+      result.decisionPacket,
+    );
+  }
 
   if (shouldWriteHandoffPacket(result)) {
     if (result.patchMediation?.touchedPaths.length && !episodeMemory) {

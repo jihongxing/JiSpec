@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Ajv from "ajv";
+import addFormats from "ajv-formats";
 import {
   buildIntegrationPayload,
   writeIntegrationPayload,
@@ -93,10 +95,45 @@ async function main(): Promise<void> {
       assert.equal(payload.boundary.previewOnly, true);
       assert.equal(payload.boundary.localArtifactsRemainSourceOfTruth, true);
       assert.equal(payload.boundary.doesNotReplaceVerify, true);
+      assert.equal(payload.contract.integrationContractVersion, 1);
+      assert.equal(payload.contract.payloadRole, "scm_comment_preview");
+      assert.equal(payload.contract.requiredReturnPath, "implement_external_patch");
+      assert.deepEqual(payload.contract.mediatedChecks, ["scope_check", "tests", "verify"]);
       assert.ok(payload.sourceArtifacts.includes(".jispec-ci/verify-report.json"));
       assert.ok(payload.sourceArtifacts.includes(".spec/waivers/waiver-1.json"));
       assert.ok(payload.sourceArtifacts.includes(".spec/spec-debt/ledger.yaml"));
       assert.ok(payload.sourceArtifacts.includes(".jispec/handoff/change-integration.json"));
+      assert.ok(payload.sourceArtifactRefs.some((ref) => ref.path === ".jispec-ci/verify-report.json" && ref.kind === "verify_report" && ref.sourceOfTruth === true));
+      assert.ok(payload.sourceArtifactRefs.some((ref) => ref.path === ".jispec/handoff/change-integration.json" && ref.kind === "implementation_handoff" && ref.sourceOfTruth === true));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("integration payload schema accepts previews and rejects gate-authority payloads", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-integration-schema-"));
+    try {
+      writeIntegrationFixture(root);
+      const payload = buildIntegrationPayload({
+        root,
+        provider: "github",
+        kind: "scm_comment",
+        createdAt: "2026-05-02T00:00:00.000Z",
+      });
+      const schema = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "schemas", "integration-payload.schema.json"), "utf-8"));
+      const ajv = new Ajv({ allErrors: true });
+      addFormats(ajv);
+      const validate = ajv.compile(schema);
+      assert.equal(validate(payload), true, JSON.stringify(validate.errors));
+
+      const bypass = {
+        ...payload,
+        boundary: {
+          ...payload.boundary,
+          previewOnly: false,
+        },
+      };
+      assert.equal(validate(bypass), false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

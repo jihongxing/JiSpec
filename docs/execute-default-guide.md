@@ -56,6 +56,13 @@ npm run jispec -- implement --external-patch .jispec/patches/refund.patch
 
 The patch is checked against scope, tests, and verify. A patch cannot bypass the local gate just because an external coding tool produced it.
 
+External patch intake writes append-only audit evidence:
+
+- an initial `external_patch_intake` event records scope/apply intake
+- a completion `external_patch_intake` event records final test, post-verify, decision, and replay summaries
+
+Reviewers can use the completion event to see the owner, stop point, failed check, next command, allowed paths, verify command, and replay command without treating the audit ledger as a blocking gate.
+
 ## Replay A Failed Attempt
 
 ```bash
@@ -64,12 +71,14 @@ npm run jispec -- implement --from-handoff .jispec/handoff/<change-session-id>.j
 
 The handoff packet records the stop point, failed check, test command, verify command, and retry commands.
 
+The formatted handoff includes a `Decision snapshot` with current state, risk, evidence, owner, and next command. That block is for humans deciding the next action; the JSON handoff packet remains the replayable machine artifact.
+
 ## Common Stop Points
 
-- `scope_rejected`: patch touched paths outside the allowed change scope
-- `test_failed`: configured test command failed
-- `verify_blocked`: deterministic verify gate returned blocking issues
-- `budget_exhausted`: mediation budget was reached
-- `stall_detected`: repeated attempts did not improve the outcome
+- `scope_check`: patch touched paths outside the allowed change scope
+- `test`: configured test command failed
+- `post_verify`: deterministic verify gate returned blocking issues, or verified the patch; the implementation outcome is `verify_blocked` when blockers remain
+- `budget`: mediation budget was reached
+- `stall`: repeated attempts did not improve the outcome
 
 The right next action is visible in the handoff packet. JiSpec should tell the reviewer whether to adopt, update policy, repay spec debt, revise the patch, or run verify again.

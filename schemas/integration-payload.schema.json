@@ -1,0 +1,176 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://jispec.local/schemas/integration-payload.schema.json",
+  "title": "JiSpec External Integration Payload Preview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "kind",
+    "provider",
+    "createdAt",
+    "boundary",
+    "contract",
+    "sourceArtifacts",
+    "sourceArtifactRefs",
+    "summary"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "kind": { "type": "string", "enum": ["scm_comment", "issue_link"] },
+    "provider": { "type": "string", "enum": ["github", "gitlab", "jira", "linear"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "localOnly",
+        "previewOnly",
+        "cloudApiWriteRequired",
+        "cloudTokenRequired",
+        "sourceUploadRequired",
+        "localArtifactsRemainSourceOfTruth",
+        "doesNotReplaceVerify"
+      ],
+      "properties": {
+        "localOnly": { "const": true },
+        "previewOnly": { "const": true },
+        "cloudApiWriteRequired": { "const": false },
+        "cloudTokenRequired": { "const": false },
+        "sourceUploadRequired": { "const": false },
+        "localArtifactsRemainSourceOfTruth": { "const": true },
+        "doesNotReplaceVerify": { "const": true }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "integrationContractVersion",
+        "payloadRole",
+        "localArtifactsRemainSourceOfTruth",
+        "previewOnly",
+        "sourceUploadRequired",
+        "requiredReturnPath",
+        "mediatedChecks"
+      ],
+      "properties": {
+        "integrationContractVersion": { "const": 1 },
+        "payloadRole": {
+          "type": "string",
+          "enum": ["external_coding_tool_request", "scm_comment_preview", "issue_link_preview"]
+        },
+        "localArtifactsRemainSourceOfTruth": { "const": true },
+        "previewOnly": { "const": true },
+        "sourceUploadRequired": { "const": false },
+        "requiredReturnPath": { "const": "implement_external_patch" },
+        "mediatedChecks": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": [
+            { "const": "scope_check" },
+            { "const": "tests" },
+            { "const": "verify" }
+          ]
+        }
+      }
+    },
+    "sourceArtifacts": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "sourceArtifactRefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind", "sourceOfTruth", "shareableAsReference"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "verify_report",
+              "verify_summary",
+              "waiver_record",
+              "spec_debt",
+              "implementation_handoff",
+              "console_governance",
+              "local_governance_artifact"
+            ]
+          },
+          "sourceOfTruth": { "const": true },
+          "shareableAsReference": { "const": true }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verifyVerdict",
+        "verifyOk",
+        "totalIssues",
+        "blockingIssues",
+        "advisoryIssues",
+        "nextAction",
+        "waiverSummary",
+        "specDebtSummary",
+        "handoffNextAction",
+        "changeIntent"
+      ],
+      "properties": {
+        "verifyVerdict": { "type": "string" },
+        "verifyOk": { "type": "boolean" },
+        "totalIssues": { "type": "number" },
+        "blockingIssues": { "type": "number" },
+        "advisoryIssues": { "type": "number" },
+        "nextAction": { "type": "string" },
+        "waiverSummary": { "type": "string" },
+        "specDebtSummary": { "type": "string" },
+        "handoffNextAction": { "type": "string" },
+        "changeIntent": { "type": "string" }
+      }
+    },
+    "scm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "markdown"],
+      "properties": {
+        "target": { "type": "string", "enum": ["pull_request_comment", "merge_request_note"] },
+        "markdown": { "type": "string", "minLength": 1 }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "title", "bodyMarkdown", "changeIntentBackfill", "labels", "localArtifactRefs"],
+      "properties": {
+        "target": { "const": "issue_link_preview" },
+        "title": { "type": "string", "minLength": 1 },
+        "bodyMarkdown": { "type": "string", "minLength": 1 },
+        "changeIntentBackfill": { "type": "string" },
+        "labels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "localArtifactRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "required": ["scm"],
+      "not": { "required": ["issue"] }
+    },
+    {
+      "required": ["issue"],
+      "not": { "required": ["scm"] }
+    }
+  ]
+}

@@ -16,9 +16,6 @@ import { loadVerifyPolicy, policyFileExists } from "./policy/policy-loader";
 import { validatePolicyAgainstFactsContract } from "./policy/policy-schema";
 import { evaluateChangeExecuteDefaultReadiness } from "./change/orchestration-config";
 
-const EXPECTED_REGRESSION_SUITE_COUNT = 65;
-const EXPECTED_REGRESSION_TEST_COUNT = 209;
-
 export interface DoctorCheckResult {
   name: string;
   status: "pass" | "fail";
@@ -48,6 +45,49 @@ export interface DoctorReport {
       ownerAction?: string;
       nextCommand?: string;
     }>;
+  };
+}
+
+interface RegressionMatrixManifest {
+  schemaVersion: number;
+  source: string;
+  totalSuites: number;
+  totalExpectedTests: number;
+  areas: Array<{
+    area: string;
+    suiteCount: number;
+    expectedTests: number;
+  }>;
+  suites: Array<{
+    name: string;
+    file: string;
+    expectedTests: number;
+    area: string;
+    task?: string;
+  }>;
+  boundaries?: {
+    v1MainlineAreas?: string[];
+    runtimeExtendedArea?: string;
+    pilotReadiness?: {
+      suiteFile: string;
+      regressionArea: string;
+      doctorProfile: string;
+      runtimeDiagnosticOnly: boolean;
+    };
+    deferredSurfaces?: {
+      contractVersion: number;
+      suiteCount: number;
+      expectedTests: number;
+      allowedRegressionArea: string;
+      allowedDoctorProfiles: string[];
+      forbiddenDoctorProfiles: string[];
+      diagnosticsOnly: boolean;
+      suites: string[];
+    };
+  };
+  consistency?: {
+    valid: boolean;
+    issues: string[];
   };
 }
 
@@ -521,44 +561,58 @@ export class Doctor {
         return { name: "Regression Environment", status, summary: "Missing", details };
       }
 
-      const content = fs.readFileSync(runnerPath, "utf-8");
+      const manifest = this.loadRegressionMatrixManifest();
+      details.push(`Regression manifest v${manifest.schemaVersion}: ${manifest.totalSuites} suite(s), ${manifest.totalExpectedTests} expected test(s)`);
+      details.push(`Source: ${manifest.source}`);
 
-      // Parse TEST_SUITES array to count suites and tests
-      // Look for the TEST_SUITES constant definition
-      const suitesMatch = content.match(/const\s+TEST_SUITES[^=]*=\s*\[([\s\S]*?)\];/);
-
-      if (!suitesMatch) {
+      if (manifest.consistency?.valid === false) {
         status = "fail";
-        details.push("Could not parse TEST_SUITES array");
-        return { name: "Regression Environment", status, summary: "Parse failed", details };
+        details.push("Regression manifest consistency failed:");
+        details.push(...manifest.consistency.issues.map((issue) => `  - ${issue}`));
       }
 
-      // Count suite objects by matching { name: ... } patterns
-      const suiteObjects = suitesMatch[1].match(/\{\s*name:/g);
-      const suiteCount = suiteObjects ? suiteObjects.length : 0;
-
-      details.push(`${suiteCount}/${EXPECTED_REGRESSION_SUITE_COUNT} test suites registered`);
-
-      if (suiteCount !== EXPECTED_REGRESSION_SUITE_COUNT) {
-        status = "fail";
-        details.push(`Expected ${EXPECTED_REGRESSION_SUITE_COUNT} test suites`);
+      for (const area of manifest.areas) {
+        details.push(`${area.area}: ${area.suiteCount} suite(s), ${area.expectedTests} expected test(s)`);
       }
 
-      // Count expected tests by summing expectedTests values
-      const expectedMatches = suitesMatch[1].match(/expectedTests:\s*(\d+)/g);
-      let totalExpected = 0;
-      if (expectedMatches) {
-        for (const match of expectedMatches) {
-          const num = match.match(/\d+/);
-          if (num) totalExpected += parseInt(num[0], 10);
+      const runtimeArea = manifest.areas.find((area) => area.area === "runtime-extended");
+      if (!runtimeArea) {
+        status = "fail";
+        details.push("runtime-extended area missing from regression manifest");
+      } else {
+        details.push(`Runtime extended diagnostics: ${runtimeArea.suiteCount} suite(s), ${runtimeArea.expectedTests} expected test(s)`);
+      }
+
+      const deferred = manifest.boundaries?.deferredSurfaces;
+      if (!deferred) {
+        status = "fail";
+        details.push("Deferred surface boundary missing from regression manifest");
+      } else {
+        details.push(`Deferred surface diagnostics: ${deferred.suiteCount} suite(s), ${deferred.expectedTests} expected test(s)`);
+        details.push(`Deferred surface gate boundary: diagnostics-only in ${deferred.allowedRegressionArea}; forbidden from ${deferred.forbiddenDoctorProfiles.join(" / ")} doctor gates`);
+      }
+
+      const pilotReadiness = manifest.boundaries?.pilotReadiness;
+      if (!pilotReadiness || pilotReadiness.regressionArea !== "runtime-extended") {
+        status = "fail";
+        details.push("Pilot readiness regression boundary missing or outside runtime-extended");
+      } else {
+        details.push(`Pilot readiness boundary: ${pilotReadiness.suiteFile} is regression coverage only; doctor ${pilotReadiness.doctorProfile} owns the commercial readiness gate`);
+      }
+
+      details.push("Profile boundary: doctor v1 gates the V1 mainline; doctor runtime diagnoses extended runtime surfaces; doctor pilot gates commercial pilot readiness.");
+
+      let allManifestFilesExist = true;
+      for (const suite of manifest.suites) {
+        const testPath = path.join(this.root, "tools", "jispec", "tests", suite.file);
+        if (!fs.existsSync(testPath)) {
+          allManifestFilesExist = false;
+          status = "fail";
+          details.push(`Test file missing: ${suite.file}`);
         }
       }
-
-      details.push(`${totalExpected}/${EXPECTED_REGRESSION_TEST_COUNT} tests expected`);
-
-      if (totalExpected !== EXPECTED_REGRESSION_TEST_COUNT) {
-        status = "fail";
-        details.push(`Expected ${EXPECTED_REGRESSION_TEST_COUNT} total tests`);
+      if (allManifestFilesExist) {
+        details.push("Manifest test files: OK");
       }
 
       // Check if build succeeds (via tsc --noEmit)
@@ -570,27 +624,6 @@ export class Doctor {
         status = "fail";
         details.push("Build: FAIL");
         details.push(`  ${buildError.message}`);
-      }
-
-      // Check if regression tests can be validated (check test file exists and is loadable)
-      const testFiles = [
-        "windows-safe-naming.ts",
-        "rollback-regression.ts",
-        "semantic-validation-negative.ts",
-      ];
-
-      let allTestsExist = true;
-      for (const testFile of testFiles) {
-        const testPath = path.join(this.root, "tools", "jispec", "tests", testFile);
-        if (!fs.existsSync(testPath)) {
-          allTestsExist = false;
-          status = "fail";
-          details.push(`Test file missing: ${testFile}`);
-        }
-      }
-
-      if (allTestsExist) {
-        details.push("Validate: OK");
       }
 
       return {
@@ -607,6 +640,20 @@ export class Doctor {
         details: [error.message],
       };
     }
+  }
+
+  private loadRegressionMatrixManifest(): RegressionMatrixManifest {
+    const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+    const output = execFileSync(
+      process.execPath,
+      ["--import", "tsx", "./tools/jispec/tests/regression-runner.ts", "--manifest-json"],
+      {
+        cwd: this.root,
+        encoding: "utf-8",
+        stdio: "pipe",
+      },
+    );
+    return JSON.parse(output) as RegressionMatrixManifest;
   }
 
   /**
@@ -1396,10 +1443,12 @@ export class Doctor {
 
     try {
       const { execSync } = await import("node:child_process");
+      const manifest = this.loadRegressionMatrixManifest();
 
-      // Run regression tests with transaction mode enabled
+      // Keep doctor runtime bounded: run a transaction smoke suite here and
+      // leave the full matrix to the dedicated regression runner gate.
       try {
-        execSync("npx tsx tools/jispec/tests/regression-runner.ts", {
+        execSync("npx tsx tools/jispec/tests/stable-snapshot-gates.ts", {
           cwd: this.root,
           stdio: "pipe",
           timeout: 120000,
@@ -1408,10 +1457,12 @@ export class Doctor {
             JISPEC_USE_TRANSACTION_MANAGER: "true",
           },
         });
-        details.push(`Transaction mode: regression matrix passed (${EXPECTED_REGRESSION_TEST_COUNT} expected tests)`);
+        details.push("Transaction mode smoke: stable-snapshot-gates.ts passed (1 expected test)");
+        details.push(`Full regression matrix contract: ${manifest.totalSuites} suite(s), ${manifest.totalExpectedTests} expected test(s) via regression-runner.ts`);
+        details.push("Full matrix execution remains a separate gate and does not pollute doctor runtime latency.");
       } catch (error: any) {
         status = "fail";
-        details.push("Transaction mode: regression tests failed");
+        details.push("Transaction mode smoke failed");
         const output = error.stdout?.toString() || error.stderr?.toString() || error.message;
         const lines = output.split("\n").slice(0, 5);
         details.push(...lines.map((l: string) => `  ${l}`));

@@ -20,6 +20,7 @@ npm run jispec -- verify
 npm run jispec -- change "Describe the intended change"
 npm run jispec -- implement
 npm run ci:verify
+npm run jispec -- pilot package
 ```
 
 The install surface does not change V1 semantics: `verify` and `ci:verify` remain deterministic local gates, Console surfaces remain read-only unless a human runs an explicit CLI write command, and JiSpec still mediates implementation rather than owning business-code generation.
@@ -30,6 +31,8 @@ The install surface does not change V1 semantics: `verify` and `ci:verify` remai
 - `examples/minimal-greenfield/` shows Greenfield initialization from input documents.
 - `docs/quickstart.md` answers which three commands to run first.
 - `docs/first-takeover-walkthrough.md` walks from `bootstrap discover` to `adopt`, `verify`, `ci:verify`, and handoff packets.
+- `docs/greenfield-walkthrough.md` walks from input documents to Greenfield baseline, verify, and pilot package.
+- `docs/pilot-product-package.md` explains the local adoption package and the line between gates and companions.
 - `docs/ci-templates.md` explains the GitHub Actions and GitLab CI templates.
 
 ## Runtime Boundary

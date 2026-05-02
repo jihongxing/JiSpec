@@ -5,6 +5,12 @@ import { renderPrCommentMarkdown } from "../../ci/pr-comment";
 import { collectConsoleLocalSnapshot, type ConsoleGovernanceObjectSnapshot } from "../../console/read-model-snapshot";
 import { readChangeSession } from "../../change/change-session";
 import { listHandoffPackets, readHandoffPacket, type HandoffPacket } from "../../implement/handoff-packet";
+import {
+  buildExternalIntegrationContract,
+  buildLocalArtifactRefs,
+  type ExternalIntegrationContract,
+  type LocalArtifactRef,
+} from "../contract";
 
 export type IntegrationProvider = "github" | "gitlab" | "jira" | "linear";
 export type IntegrationPayloadKind = "scm_comment" | "issue_link";
@@ -38,7 +44,9 @@ export interface IntegrationPayload {
     localArtifactsRemainSourceOfTruth: true;
     doesNotReplaceVerify: true;
   };
+  contract: ExternalIntegrationContract;
   sourceArtifacts: string[];
+  sourceArtifactRefs: LocalArtifactRef[];
   summary: {
     verifyVerdict: string;
     verifyOk: boolean;
@@ -72,6 +80,7 @@ export function buildIntegrationPayload(options: IntegrationPayloadOptions): Int
   const snapshot = collectConsoleLocalSnapshot(root);
   const handoff = readLatestHandoff(root);
   const sourceArtifacts = collectSourceArtifacts(root, snapshot, handoff);
+  const sourceArtifactRefs = buildLocalArtifactRefs(sourceArtifacts);
   const nextAction = report ? inferNextAction(report) : "Run npm run ci:verify to create local verify artifacts.";
   const waiverSummary = summarizeWaivers(snapshot.governance.objects);
   const specDebtSummary = summarizeSpecDebt(snapshot.governance.objects);
@@ -104,7 +113,9 @@ export function buildIntegrationPayload(options: IntegrationPayloadOptions): Int
       localArtifactsRemainSourceOfTruth: true as const,
       doesNotReplaceVerify: true as const,
     },
+    contract: buildExternalIntegrationContract(options.kind === "scm_comment" ? "scm_comment_preview" : "issue_link_preview"),
     sourceArtifacts,
+    sourceArtifactRefs,
     summary,
   };
 

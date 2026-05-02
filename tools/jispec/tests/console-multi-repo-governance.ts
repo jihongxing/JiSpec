@@ -57,16 +57,68 @@ async function main(): Promise<void> {
       assert.equal(result.aggregate.boundary.scansSourceCode, false);
       assert.equal(result.aggregate.boundary.runsVerify, false);
       assert.equal(result.aggregate.summary.repoCount, 2);
+      assert.equal(result.aggregate.summary.missingSnapshotCount, 0);
       assert.equal(result.aggregate.summary.totalExpiringSoonWaivers, 1);
       assert.equal(result.aggregate.summary.totalOpenSpecDebt, 3);
       assert.equal(result.aggregate.summary.releaseDriftHotspotCount, 1);
       assert.equal(result.aggregate.hotspots.highestRiskRepos[0]?.repoId, "beta");
       assert.equal(result.aggregate.hotspots.expiringSoonWaivers[0]?.waiverId, "waiver-alpha");
       assert.equal(result.aggregate.hotspots.specDebt[0]?.openSpecDebt, 3);
+      assert.deepEqual(result.aggregate.missingSnapshots, []);
       assert.match(renderMultiRepoGovernanceAggregateText(result.aggregate), /Consumes exported `\.spec\/console\/governance-snapshot\.json` files only/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  }));
+
+  results.push(record("aggregate preserves missing explicit snapshots as reviewable inputs", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-multi-repo-missing-"));
+    try {
+      const alphaPath = writeSnapshot(root, "alpha", snapshot({
+        id: "alpha",
+        name: "Alpha",
+        verifyVerdict: "PASS",
+        activeWaivers: 0,
+        openSpecDebt: 0,
+        releaseDriftStatus: "unchanged",
+      }));
+      const missingPath = path.join(root, "missing-repo", ".spec", "console", "governance-snapshot.json");
+
+      const result = aggregateMultiRepoGovernance({
+        root,
+        snapshotPaths: [alphaPath, missingPath],
+        generatedAt: "2026-05-01T00:00:00.000Z",
+      });
+      const text = renderMultiRepoGovernanceAggregateText(result.aggregate);
+
+      assert.equal(result.aggregate.inputs.loadedSnapshots, 1);
+      assert.equal(result.aggregate.summary.repoCount, 1);
+      assert.equal(result.aggregate.summary.missingSnapshotCount, 1);
+      assert.equal(result.aggregate.missingSnapshots[0]?.inputPath, missingPath.replace(/\\/g, "/"));
+      assert.equal(result.aggregate.missingSnapshots[0]?.reason, "snapshot_not_found");
+      assert.match(text, /Missing Snapshots/);
+      assert.match(text, /missing-repo/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("exported snapshot declares stable multi-repo contract compatibility", () => {
+    const value = snapshot({
+      id: "contracted",
+      name: "Contracted",
+      verifyVerdict: "PASS",
+      activeWaivers: 0,
+      openSpecDebt: 0,
+      releaseDriftStatus: "unchanged",
+    });
+
+    assert.equal(value.contract?.snapshotContractVersion, 1);
+    assert.equal(value.contract?.compatibleAggregateVersion, 1);
+    assert.deepEqual(value.contract?.missingSemantics, {
+      unavailableValue: "not_available_yet",
+      missingSnapshotReason: "snapshot_not_found",
+    });
   }));
 
   results.push(record("aggregate discovers snapshots from a local directory without source artifacts", () => {
@@ -196,6 +248,14 @@ function snapshot(input: {
       artifactSummary: { totalArtifacts: 5 },
       governanceSummary: { totalObjects: 10 },
       hash: `hash-${input.id}`,
+    },
+    contract: {
+      snapshotContractVersion: 1,
+      compatibleAggregateVersion: 1,
+      missingSemantics: {
+        unavailableValue: "not_available_yet",
+        missingSnapshotReason: "snapshot_not_found",
+      },
     },
     aggregateHints: {
       verifyVerdict: input.verifyVerdict,

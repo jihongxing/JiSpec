@@ -113,6 +113,31 @@ export function getCanonicalFactDefinitions(): CanonicalFactDefinition[] {
       stability: "stable",
       description: "Whether behavior contract exists",
     },
+    {
+      key: "contracts.behavior.deferred",
+      stability: "stable",
+      description: "Whether behavior contract is explicitly deferred into spec debt",
+    },
+    {
+      key: "contracts.adopted_count",
+      stability: "stable",
+      description: "Number of contract artifacts adopted into .spec/contracts",
+    },
+    {
+      key: "contracts.deferred_count",
+      stability: "stable",
+      description: "Number of contract artifacts explicitly deferred into spec debt",
+    },
+    {
+      key: "contracts.missing_count",
+      stability: "stable",
+      description: "Number of contract assets missing from the current verify scope",
+    },
+    {
+      key: "contracts.drifted_count",
+      stability: "stable",
+      description: "Number of contract assets detected as structurally drifted or invalid",
+    },
 
     // Beta facts - defined but may not always be available
     {
@@ -144,6 +169,41 @@ export function getCanonicalFactDefinitions(): CanonicalFactDefinition[] {
       key: "api.new_endpoints",
       stability: "beta",
       description: "Array of newly added API endpoints",
+    },
+    {
+      key: "release.baseline.present",
+      stability: "stable",
+      description: "Whether a current release baseline exists",
+    },
+    {
+      key: "release.contract_graph.present",
+      stability: "stable",
+      description: "Whether the current release baseline includes a contract graph",
+    },
+    {
+      key: "release.static_collector.present",
+      stability: "stable",
+      description: "Whether the current release baseline includes a static collector manifest",
+    },
+    {
+      key: "release.policy.present",
+      stability: "stable",
+      description: "Whether the current release baseline includes a policy snapshot",
+    },
+    {
+      key: "release.compare.present",
+      stability: "stable",
+      description: "Whether release compare reports exist locally",
+    },
+    {
+      key: "release.compare.count",
+      stability: "stable",
+      description: "Number of release compare reports available locally",
+    },
+    {
+      key: "release.compare.changed_count",
+      stability: "stable",
+      description: "Number of release compare reports that detected drift",
     },
     {
       key: "openapi.breaking_changes",
@@ -189,6 +249,8 @@ export function buildCanonicalFacts(raw: RawFactsSnapshot): CanonicalFactsSnapsh
     if (!(definition.key in facts)) {
       // Set sensible defaults
       if (definition.key.endsWith(".present")) {
+        facts[definition.key] = false;
+      } else if (definition.key.endsWith(".deferred")) {
         facts[definition.key] = false;
       } else if (definition.key.endsWith("_count")) {
         facts[definition.key] = 0;

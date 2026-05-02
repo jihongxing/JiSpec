@@ -117,6 +117,7 @@ export interface DraftSessionManifest {
   takeoverReportPath?: string;
   takeoverBriefPath?: string;
   adoptSummaryPath?: string;
+  replay?: import("../replay/replay-metadata").ReplayMetadata;
   baselineHandoff?: {
     expectedContractPaths: string[];
     deferredSpecDebtPaths: string[];

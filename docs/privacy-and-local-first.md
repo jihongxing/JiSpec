@@ -40,9 +40,14 @@ Original artifacts remain unchanged:
 - discover/session evidence
 - verify summaries
 - implementation handoff packets
+- external coding tool adapter request packets
 - Console governance exports
+- SCM and issue tracker integration payload previews
+- pilot package and share bundle artifacts
 - audit events
 - release compare reports
+
+Privacy report classifies `.spec/integrations/**` as `integration_payload`, `.spec/pilot/**` as `pilot_package`, and `.jispec/handoff/**` as `handoff`. A classified artifact is not automatically safe to publish; it receives either `shareable` or `review_before_sharing`, and findings produce a redacted companion view.
 
 ## Console Export
 

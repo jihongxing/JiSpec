@@ -30,6 +30,10 @@ import {
   buildBootstrapFullInventory,
   renderAdoptionRankedEvidenceLines,
 } from "./evidence-ranking";
+import {
+  HUMAN_SUMMARY_COMPANION_NOTE,
+  renderHumanDecisionSnapshot,
+} from "../human-decision-packet";
 
 const DEFAULT_EVIDENCE_OUTPUT = ".spec/facts/bootstrap/evidence-graph.json";
 const DEFAULT_EVIDENCE_SUMMARY = "evidence-summary.txt";
@@ -190,7 +194,21 @@ export function renderBootstrapSummaryMarkdown(result: BootstrapDiscoverResult):
   return [
     "# Bootstrap Summary",
     "",
-    "This is the human-readable bootstrap discover summary. Machine consumers should use `evidence-graph.json`, `full-inventory.json`, `adoption-ranked-evidence.json`, and `contract-source-adapters.json`.",
+    ...renderHumanDecisionSnapshot({
+      currentState: `bootstrap evidence inventory captured for \`${result.graph.repoRoot}\``,
+      risk: result.warningCount > 0
+        ? `${result.warningCount} warning(s) need owner review before draft adoption`
+        : "no bootstrap discover warnings recorded",
+      evidence: [
+        "`evidence-graph.json`",
+        "`full-inventory.json`",
+        "`adoption-ranked-evidence.json`",
+        "`contract-source-adapters.json`",
+      ],
+      owner: "repo owner",
+      nextCommand: "`npm run jispec-cli -- bootstrap draft --root .`",
+    }),
+    `${HUMAN_SUMMARY_COMPANION_NOTE} Machine consumers should use \`evidence-graph.json\`, \`full-inventory.json\`, \`adoption-ranked-evidence.json\`, and \`contract-source-adapters.json\`.`,
     "",
     "```text",
     renderBootstrapDiscoverText(result),

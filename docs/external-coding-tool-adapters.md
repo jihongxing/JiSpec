@@ -27,6 +27,8 @@ The command writes:
 
 The JSON packet follows `schemas/implementation-handoff.schema.json`.
 
+Each packet declares `contract.integrationContractVersion: 1` with `payloadRole: external_coding_tool_request`. The contract says the packet is a focused request only: local JiSpec artifacts remain the source of truth, source upload is not required, and returned patches must go back through `implement --external-patch`.
+
 ## Request Packet
 
 The adapter packet includes:
@@ -40,6 +42,7 @@ The adapter packet includes:
 - stop point
 - replay commands
 - the command for returning a patch through JiSpec
+- the external integration contract fields
 
 The external tool should produce a unified diff patch for the allowed paths only.
 

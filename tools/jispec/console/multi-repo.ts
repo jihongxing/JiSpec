@@ -36,6 +36,12 @@ export interface MultiRepoGovernanceRepoPosture {
   };
 }
 
+export interface MultiRepoGovernanceMissingSnapshot {
+  inputPath: string;
+  resolvedPath: string;
+  reason: "snapshot_not_found";
+}
+
 export interface MultiRepoGovernanceAggregate {
   schemaVersion: 1;
   kind: "jispec-multi-repo-governance-aggregate";
@@ -55,9 +61,11 @@ export interface MultiRepoGovernanceAggregate {
     snapshotPaths: string[];
     directoryPaths: string[];
     loadedSnapshots: number;
+    missingSnapshots: number;
   };
   summary: {
     repoCount: number;
+    missingSnapshotCount: number;
     verifyVerdicts: Record<string, number>;
     policyProfiles: Record<string, number>;
     totalActiveWaivers: number;
@@ -71,6 +79,7 @@ export interface MultiRepoGovernanceAggregate {
     latestAuditActors: string[];
   };
   repos: MultiRepoGovernanceRepoPosture[];
+  missingSnapshots: MultiRepoGovernanceMissingSnapshot[];
   hotspots: {
     highestRiskRepos: MultiRepoGovernanceRepoPosture[];
     expiringSoonWaivers: Array<{ repoId: string; repoName: string; waiverId: string }>;
@@ -96,16 +105,23 @@ export function aggregateMultiRepoGovernance(
 ): MultiRepoGovernanceAggregateResult {
   const root = path.resolve(options.root);
   const directoryPaths = (options.directoryPaths ?? []).map((entry) => normalizePath(path.resolve(root, entry)));
-  const snapshotPaths = resolveSnapshotPaths(root, options.snapshotPaths ?? [], directoryPaths);
-  if (snapshotPaths.length === 0) {
+  const snapshotInputs = resolveSnapshotInputs(root, options.snapshotPaths ?? [], directoryPaths);
+  if (snapshotInputs.snapshotPaths.length === 0 && snapshotInputs.missingSnapshots.length === 0) {
     throw new Error("No governance snapshots found. Provide --snapshot or --dir with exported .spec/console/governance-snapshot.json files.");
   }
 
-  const repos = snapshotPaths
+  const repos = snapshotInputs.snapshotPaths
     .map((snapshotPath) => loadSnapshot(snapshotPath))
     .map(({ snapshot, snapshotPath }) => buildRepoPosture(snapshot, snapshotPath))
     .sort((left, right) => left.repoId.localeCompare(right.repoId));
-  const aggregate = buildAggregate(root, snapshotPaths, directoryPaths, repos, options.generatedAt ?? new Date().toISOString());
+  const aggregate = buildAggregate(
+    root,
+    snapshotInputs.snapshotPaths,
+    directoryPaths,
+    repos,
+    snapshotInputs.missingSnapshots,
+    options.generatedAt ?? new Date().toISOString(),
+  );
   const aggregatePath = resolveOutPath(root, options.outPath);
   const summaryPath = aggregatePath.replace(/\.json$/i, ".md");
 
@@ -131,6 +147,7 @@ export function renderMultiRepoGovernanceAggregateText(aggregate: MultiRepoGover
     "",
     `Generated at: ${aggregate.generatedAt}`,
     `Repos: ${aggregate.summary.repoCount}`,
+    `Missing snapshots: ${aggregate.summary.missingSnapshotCount}`,
     `Verify verdicts: ${formatCounts(aggregate.summary.verifyVerdicts)}`,
     `Policy profiles: ${formatCounts(aggregate.summary.policyProfiles)}`,
     `Active waivers: ${aggregate.summary.totalActiveWaivers}`,
@@ -155,6 +172,10 @@ export function renderMultiRepoGovernanceAggregateText(aggregate: MultiRepoGover
     "",
     ...formatReleaseDriftHotspots(aggregate.hotspots.releaseDrift),
     "",
+    "## Missing Snapshots",
+    "",
+    ...formatMissingSnapshots(aggregate.missingSnapshots),
+    "",
     "## Boundary",
     "",
     "- Consumes exported `.spec/console/governance-snapshot.json` files only.",
@@ -171,6 +192,7 @@ function buildAggregate(
   snapshotPaths: string[],
   directoryPaths: string[],
   repos: MultiRepoGovernanceRepoPosture[],
+  missingSnapshots: MultiRepoGovernanceMissingSnapshot[],
   generatedAt: string,
 ): MultiRepoGovernanceAggregate {
   const releaseDrift = repos
@@ -201,9 +223,11 @@ function buildAggregate(
       snapshotPaths: snapshotPaths.map(normalizePath),
       directoryPaths,
       loadedSnapshots: repos.length,
+      missingSnapshots: missingSnapshots.length,
     },
     summary: {
       repoCount: repos.length,
+      missingSnapshotCount: missingSnapshots.length,
       verifyVerdicts: countBy(repos.map((repo) => repo.verifyVerdict)),
       policyProfiles: countBy(repos.map((repo) => repo.policyProfile)),
       totalActiveWaivers: sum(repos.map((repo) => repo.activeWaivers)),
@@ -217,6 +241,7 @@ function buildAggregate(
       latestAuditActors: stableUnique(repos.map((repo) => repo.latestAuditActor).filter((actor) => !isMissing(actor))),
     },
     repos,
+    missingSnapshots,
     hotspots: {
       highestRiskRepos: repos
         .filter((repo) => repo.risk.score > 0)
@@ -324,12 +349,33 @@ function scoreRepoRisk(repo: Omit<MultiRepoGovernanceRepoPosture, "risk">): Mult
   };
 }
 
-function resolveSnapshotPaths(root: string, snapshotInputs: string[], directoryInputs: string[]): string[] {
-  const explicit = snapshotInputs.map((entry) => path.resolve(root, entry));
+function resolveSnapshotInputs(
+  root: string,
+  snapshotInputs: string[],
+  directoryInputs: string[],
+): { snapshotPaths: string[]; missingSnapshots: MultiRepoGovernanceMissingSnapshot[] } {
+  const explicit = snapshotInputs.map((entry) => ({
+    inputPath: entry,
+    resolvedPath: path.resolve(root, entry),
+  }));
   const discovered = (directoryInputs.length > 0 ? directoryInputs : [root])
     .flatMap((directoryPath) => discoverSnapshotPaths(directoryPath));
-  return stableUnique([...explicit, ...discovered].filter((snapshotPath) => fs.existsSync(snapshotPath)))
-    .map((snapshotPath) => path.resolve(snapshotPath));
+  const existingExplicit = explicit
+    .filter((entry) => fs.existsSync(entry.resolvedPath))
+    .map((entry) => entry.resolvedPath);
+  const missingSnapshots = explicit
+    .filter((entry) => !fs.existsSync(entry.resolvedPath))
+    .map((entry) => ({
+      inputPath: normalizePath(path.isAbsolute(entry.inputPath) ? entry.inputPath : path.resolve(root, entry.inputPath)),
+      resolvedPath: normalizePath(entry.resolvedPath),
+      reason: "snapshot_not_found" as const,
+    }));
+
+  return {
+    snapshotPaths: stableUnique([...existingExplicit, ...discovered].filter((snapshotPath) => fs.existsSync(snapshotPath)))
+      .map((snapshotPath) => path.resolve(snapshotPath)),
+    missingSnapshots,
+  };
 }
 
 function discoverSnapshotPaths(directoryPath: string): string[] {
@@ -370,6 +416,9 @@ function validateSnapshot(snapshot: MultiRepoGovernanceSnapshot, snapshotPath: s
   }
   if (!snapshot.repo?.id || !snapshot.repo?.name || !snapshot.aggregateHints || !Array.isArray(snapshot.governanceObjects)) {
     throw new Error(`Invalid governance snapshot at ${snapshotPath}: missing repo, aggregate hints, or governance objects.`);
+  }
+  if (snapshot.contract && (snapshot.contract.snapshotContractVersion !== 1 || snapshot.contract.compatibleAggregateVersion !== 1)) {
+    throw new Error(`Invalid governance snapshot at ${snapshotPath}: unsupported multi-repo snapshot contract.`);
   }
 }
 
@@ -452,6 +501,13 @@ function formatReleaseDriftHotspots(hotspots: Array<{ repoId: string; repoName: 
     return ["- None"];
   }
   return hotspots.map((hotspot) => `- ${hotspot.repoName} (${hotspot.repoId}): ${hotspot.status}, comparisons=${hotspot.comparisons}`);
+}
+
+function formatMissingSnapshots(missingSnapshots: MultiRepoGovernanceMissingSnapshot[]): string[] {
+  if (missingSnapshots.length === 0) {
+    return ["- None"];
+  }
+  return missingSnapshots.map((entry) => `- ${entry.inputPath}: ${entry.reason}`);
 }
 
 function normalizePath(filePath: string): string {

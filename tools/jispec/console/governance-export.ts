@@ -36,6 +36,14 @@ export interface MultiRepoGovernanceSnapshot {
     governanceSummary: Record<string, unknown>;
     hash: string;
   };
+  contract?: {
+    snapshotContractVersion: 1;
+    compatibleAggregateVersion: 1;
+    missingSemantics: {
+      unavailableValue: "not_available_yet";
+      missingSnapshotReason: "snapshot_not_found";
+    };
+  };
   aggregateHints: {
     verifyVerdict: unknown;
     policyProfile: unknown;
@@ -117,6 +125,14 @@ export function exportConsoleGovernanceSnapshot(options: ConsoleGovernanceExport
         governanceObjects,
       }),
     },
+    contract: {
+      snapshotContractVersion: 1,
+      compatibleAggregateVersion: 1,
+      missingSemantics: {
+        unavailableValue: "not_available_yet",
+        missingSnapshotReason: "snapshot_not_found",
+      },
+    },
     aggregateHints: buildAggregateHints(governanceObjects),
     governanceObjects,
   };
@@ -153,6 +169,7 @@ export function renderConsoleGovernanceExportText(snapshot: MultiRepoGovernanceS
     `Available objects: ${snapshot.sourceSnapshot.governanceSummary.availableObjects ?? "unknown"}`,
     `Partial objects: ${snapshot.sourceSnapshot.governanceSummary.partialObjects ?? "unknown"}`,
     `Missing objects: ${snapshot.sourceSnapshot.governanceSummary.missingObjects ?? "unknown"}`,
+    `Snapshot contract: ${snapshot.contract?.snapshotContractVersion ?? "legacy"}`,
     "",
     "## Aggregate Hints",
     "",

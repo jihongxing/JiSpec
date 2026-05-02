@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { renderImplementJSON, renderImplementText, runImplement } from "../implement/implement-runner";
+import { readAuditEvents } from "../audit/event-ledger";
 import { readArchivedChangeSession, readChangeSession, writeChangeSession, type ChangeSession } from "../change/change-session";
 import { cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
 
@@ -78,6 +79,39 @@ async function main(): Promise<void> {
     assert.equal(result.metadata.sessionArchived, true);
     assert.equal(readChangeSession(docsFixture), null);
     assert.ok(readArchivedChangeSession(docsFixture, "change-docs-patch"));
+
+    const patchAuditEvents = readAuditEvents(docsFixture).filter((event) => event.type === "external_patch_intake");
+    assert.equal(patchAuditEvents.length, 2);
+    const finalAudit = patchAuditEvents.at(-1);
+    assert.equal(finalAudit?.details?.status, "accepted");
+    assert.equal(finalAudit?.details?.applied, true);
+    assert.deepEqual(finalAudit?.details?.test, {
+      command: result.metadata.testCommand,
+      passed: true,
+      exitCode: 0,
+    });
+    assert.deepEqual(finalAudit?.details?.postVerify, {
+      command: "npm run jispec-cli -- verify --fast",
+      verdict: "PASS",
+      ok: true,
+      exitCode: 0,
+    });
+    assert.deepEqual(finalAudit?.details?.decision, {
+      state: "ready_to_merge",
+      stopPoint: "post_verify",
+      owner: "reviewer",
+      failedCheck: "none",
+      nextCommand: "npm run ci:verify",
+      mergeable: true,
+      verifyCommand: "npm run jispec-cli -- verify --fast",
+      allowedPaths: ["docs/patch-mediated.md"],
+    });
+    assert.deepEqual(finalAudit?.details?.replay, {
+      replayable: true,
+      retryWithExternalPatch: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-docs-patch.json --external-patch <path>",
+      inspectHandoff: "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-docs-patch.json --tool codex",
+      previousOutcome: "accepted",
+    });
     console.log("✓ Test 1: docs-only external patch is scoped, applied, tested, verified, and archived");
     passed++;
   } catch (error) {

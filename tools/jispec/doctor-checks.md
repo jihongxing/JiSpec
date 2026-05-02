@@ -60,8 +60,9 @@
 - **Check**: Test suite health
 - **Validates**:
   - `regression-runner.ts` exists
-  - All 12 test suites are registered
-  - Expected test counts match actual
+  - The regression matrix manifest can be materialized without executing suites
+  - Suite and expected-test totals are read from the manifest, not hardcoded
+  - V1 mainline, runtime-extended, deferred surfaces, and pilot readiness stay in separate boundaries
   - `npm run build` passes
   - `npm run jispec -- validate` passes
 
@@ -96,8 +97,8 @@
   - FailureHandler ready
 
 ✓ Regression Environment
-  - 12/12 test suites registered
-  - 55/55 tests expected
+  - Regression manifest v1: 122 suite(s), 521 expected test(s)
+  - runtime-extended diagnostics stay separate from V1 and pilot boundaries
   - Build: OK
   - Validate: OK
 

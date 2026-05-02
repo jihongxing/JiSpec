@@ -59,6 +59,9 @@ function main(): void {
         discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/bootstrap-summary.md")) &&
         discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/evidence-summary.txt")) &&
         fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("# Bootstrap Summary") &&
+        fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("## Decision Snapshot") &&
+        fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("Current state:") &&
+        fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("Next command: `npm run jispec-cli -- bootstrap draft --root .`") &&
         fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("Machine consumers should use `evidence-graph.json`"),
       error: "Expected discover to write bootstrap-summary.md while preserving evidence-summary.txt compatibility.",
     });

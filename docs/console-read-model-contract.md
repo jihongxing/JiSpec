@@ -17,6 +17,7 @@ The local snapshot collector lives in `tools/jispec/console/read-model-snapshot.
 The governance dashboard shell lives in `tools/jispec/console/governance-dashboard.ts` and is exposed by `jispec-cli console dashboard`.
 The governance action planner lives in `tools/jispec/console/governance-actions.ts` and is exposed by `jispec-cli console actions`.
 The governance export command lives in `tools/jispec/console/governance-export.ts` and is exposed by `jispec-cli console export-governance`.
+The final North Star acceptance package lives in `tools/jispec/north-star/acceptance.ts` and is exposed by `jispec-cli north-star acceptance`.
 
 ## Stable Read Model
 
@@ -37,7 +38,7 @@ The governance export command lives in `tools/jispec/console/governance-export.t
 | Release compare summary | `.spec/releases/compare/<from>-to-<to>/compare-report.md` | `release compare` | Markdown | human companion | Render human release comparison summary |
 | Release drift trend | `.spec/releases/drift-trend.json` | `release compare` | JSON | local contract | Historical release drift trend across compare reports, split into contract graph, static collector, and policy drift |
 | Release drift trend summary | `.spec/releases/drift-trend.md` | `release compare` | Markdown | human companion | Render human release drift trend summary |
-| Multi-repo governance snapshot | `.spec/console/governance-snapshot.json` | `console export-governance` | JSON | local contract | Exported repo-level governance snapshot intended for future multi-repo aggregation |
+| Multi-repo governance snapshot | `.spec/console/governance-snapshot.json` | `console export-governance` | JSON | local contract | Exported repo-level governance snapshot intended for future multi-repo aggregation; declares snapshot contract version 1 and aggregate compatibility version 1 |
 | Multi-repo governance snapshot summary | `.spec/console/governance-snapshot.md` | `console export-governance` | Markdown | human companion | Render the exported repo-level governance snapshot summary |
 | Retakeover metrics | `.spec/handoffs/retakeover-metrics.json` | retakeover regression | JSON | local contract | Single-repository takeover quality scorecard, risk notes, feature overclaim risk, and next action |
 | Retakeover pool metrics | `.spec/handoffs/retakeover-pool-metrics.json` | retakeover regression pool | JSON | local contract | Pool-level takeover quality trend across real and synthetic retakeover fixtures |
@@ -46,6 +47,8 @@ The governance export command lives in `tools/jispec/console/governance-export.t
 | Implementation patch mediation | `.jispec/implement/<session-id>/patch-mediation.json` | `implement --external-patch` | JSON | local contract | External patch scope, apply, test, and verify intake records |
 | Policy approvals | `.spec/approvals/*.json` | `policy approval record` | JSON | local contract | Structured local approval decisions for policy, waiver, release drift, and execute-default changes |
 | Audit event ledger | `.spec/audit/events.jsonl` | governance commands | JSONL | local contract | Append-only local audit events for approvals, exceptions, boundary changes, release comparisons, and patch intake |
+| North Star acceptance | `.spec/north-star/acceptance.json` | `north-star acceptance` | JSON | final local acceptance contract | Cross-scenario acceptance status for legacy takeover, Greenfield, daily change, external patch mediation, policy waiver, release drift, Console governance, multi-repo aggregation, and privacy report |
+| North Star scenario packets | `.spec/north-star/scenarios/*.json`, `.spec/north-star/scenarios/*-decision.md` | `north-star acceptance` | JSON and Markdown | local contract plus human companion | Per-scenario machine artifact and human decision packet; Console may display them but must not treat Markdown as an API |
 
 ## Governance Domain Objects
 
@@ -53,10 +56,10 @@ Console snapshot groups declared artifacts into governance objects. These are di
 
 | Governance object | Source artifacts | Missing state | Use |
 | --- | --- | --- | --- |
-| Policy posture | `.spec/policy.yaml` | `not_available_yet` | Show local policy presence, facts contract, team owner/reviewers, required reviewers, waiver expiration posture, release compare posture, execute-default posture, and rule count |
+| Policy posture | `.spec/policy.yaml` | `not_available_yet` | Show local policy presence, facts contract, team owner/reviewers, required reviewers, waiver expiration posture, release compare posture, release behavior drift posture, execute-default posture, and rule count |
 | Waiver lifecycle | `.spec/waivers/*.json`, `.jispec-ci/verify-report.json` | `not_available_yet` | Show active/revoked/expired/invalid waivers and latest matched/unmatched waiver posture |
 | Spec debt ledger | `.spec/spec-debt/ledger.yaml`, `.spec/spec-debt/<session-id>/*.json` | `not_available_yet` | Show known Greenfield and bootstrap spec debt records |
-| Contract drift | `.spec/releases/compare/<from>-to-<to>/compare-report.json`, `.spec/releases/drift-trend.json` | `not_available_yet` | Show latest machine-readable release compare drift summary and historical drift trend |
+| Contract drift | `.spec/releases/compare/<from>-to-<to>/compare-report.json`, `.spec/releases/drift-trend.json` | `not_available_yet` | Show latest machine-readable release compare drift summary and historical drift trend, including contract graph, static collector, behavior, and policy drift |
 | Multi-repo export | `.spec/console/governance-snapshot.json` | `not_available_yet` | Show the exported repo-level governance snapshot for future multi-repo aggregation |
 | Release baseline | `.spec/baselines/releases/<version>.yaml` | `not_available_yet` | Show frozen release baselines available for governance review |
 | Verify trend | `.jispec-ci/verify-report.json`, `.spec/baselines/verify-baseline.json` | `not_available_yet` | Show current verify verdict and baseline availability without recomputing verify |
@@ -64,6 +67,7 @@ Console snapshot groups declared artifacts into governance objects. These are di
 | Implementation mediation outcomes | `.jispec/handoff/*.json`, `.jispec/implement/<session-id>/patch-mediation.json` | `not_available_yet` | Show execute/implement outcomes, stop points, replayability, and patch mediation posture |
 | Approval workflow | `.spec/policy.yaml`, `.spec/approvals/*.json`, `.spec/waivers/*.json`, `.spec/releases/compare/<from>-to-<to>/compare-report.json` | `not_available_yet` | Show approval missing, approval stale, or approval satisfied for policy, waiver, release drift, and execute-default changes |
 | Audit events | `.spec/audit/events.jsonl` | `not_available_yet` | Show who approved or changed policy, waivers, adoption decisions, release baselines, and patch intake, with source artifact and affected contract refs |
+| North Star acceptance | `.spec/north-star/acceptance.json`, `.spec/north-star/scenarios/*.json` | `not_available_yet` | Show final local acceptance posture without replacing `verify`, `ci:verify`, doctor profiles, or post-release gate |
 
 ## Audit Event Ledger
 
@@ -79,7 +83,14 @@ Current producers include policy migration, policy approval decisions, default-m
 
 ## Governance Dashboard Shell
 
-P2-T3 adds a local read-only dashboard shell over the Console snapshot. The first screen is governance status, not a marketing page or artifact browser. It answers:
+P2-T3 adds a local read-only dashboard shell over the Console snapshot. M6-T1 thickens that shell into a decision-oriented governance workbench. The first screen is governance status, not a marketing page or artifact browser. It directly answers:
+
+- Mergeability: can this repo merge right now?
+- Risk: what is the top governance risk and severity?
+- Owner action: who should act next and which local command should they run explicitly?
+- Evidence source: which declared local artifact backs the answer?
+
+The drill-down questions remain:
 
 - Can this repo merge right now?
 - Which waivers need attention?
@@ -104,6 +115,8 @@ P2-T4 adds a read-only action planner for the governance dashboard. It generates
 `jispec-cli console actions` does not execute commands and does not write artifacts. It only tells a human which local CLI command to run. The write path remains explicit and auditable through commands such as `waiver renew`, `waiver revoke`, `spec-debt repay`, `spec-debt cancel`, `spec-debt owner-review`, `policy migrate`, and `release compare`.
 
 `jispec-cli console export-governance` writes a local repo-level governance snapshot for future multi-repo aggregation. It does not upload source, does not run verify, and does not replace any CLI gate.
+
+`jispec-cli console aggregate-governance` consumes those exported snapshots only. The aggregate JSON includes loaded snapshot counts plus explicit `missingSnapshots` entries for requested snapshot paths that do not exist. Missing governance facts inside a loaded snapshot use `not_available_yet`; missing explicit snapshot files use `snapshot_not_found`.
 
 ## Non-Goals
 

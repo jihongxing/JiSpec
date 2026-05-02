@@ -6,6 +6,10 @@ import {
   type ImplementationFailedCheck,
   type ImplementationDecisionStopPoint,
 } from "../handoff-packet";
+import {
+  buildExternalIntegrationContract,
+  type ExternalIntegrationContract,
+} from "../../integrations/contract";
 
 export type ExternalCodingTool = "codex" | "claude_code" | "cursor" | "copilot" | "devin";
 
@@ -40,6 +44,7 @@ export interface ExternalToolHandoffRequest {
     replayable: boolean;
     outcome: HandoffPacket["outcome"];
   };
+  contract: ExternalIntegrationContract;
   request: {
     changeIntent: string;
     summary: string;
@@ -147,6 +152,7 @@ export function buildExternalToolHandoffRequest(
       replayable: packet.replay.replayable,
       outcome: packet.outcome,
     },
+    contract: buildExternalIntegrationContract("external_coding_tool_request"),
     request: {
       changeIntent: packet.changeIntent,
       summary: packet.decisionPacket.summary,

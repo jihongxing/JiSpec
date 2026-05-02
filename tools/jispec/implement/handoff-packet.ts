@@ -10,6 +10,7 @@ import type { ChangeSession } from "../change/change-session";
 import type { ImplementRunResult } from "./implement-runner";
 import type { EpisodeMemory } from "./episode-memory";
 import { getRecentHypotheses, getRejectedPaths, getEpisodesByOutcome } from "./episode-memory";
+import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
 
 export interface ImplementContractContext {
   lane: "fast" | "strict";
@@ -913,6 +914,18 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   lines.push("");
 
   lines.push("=== Decision Packet ===");
+  lines.push("Decision snapshot:");
+  lines.push(...renderHumanDecisionSnapshotText({
+    currentState: `${packet.decisionPacket.state} at ${packet.decisionPacket.stopPoint}`,
+    risk: packet.decisionPacket.summary,
+    evidence: [
+      `scope=${packet.decisionPacket.executionStatus.scopeCheck}`,
+      `test=${packet.decisionPacket.executionStatus.tests}`,
+      `verify=${packet.decisionPacket.executionStatus.verify}`,
+    ],
+    owner: packet.decisionPacket.executionStatus.nextActionOwner,
+    nextCommand: packet.decisionPacket.nextActionDetail.command ?? "no command recorded",
+  }).map((entry) => `  ${entry}`));
   lines.push(`State: ${packet.decisionPacket.state}`);
   lines.push(`Stop point: ${packet.decisionPacket.stopPoint}`);
   lines.push(`Mergeable: ${packet.decisionPacket.mergeable}`);

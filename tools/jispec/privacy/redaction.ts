@@ -34,7 +34,16 @@ export interface PrivacyReportOptions {
 
 export interface PrivacyReportArtifact {
   path: string;
-  category: "discover" | "summary" | "handoff" | "console_export" | "audit" | "release" | "other_jispec_artifact";
+  category:
+    | "discover"
+    | "summary"
+    | "handoff"
+    | "console_export"
+    | "integration_payload"
+    | "pilot_package"
+    | "audit"
+    | "release"
+    | "other_jispec_artifact";
   shareDecision: "shareable" | "review_before_sharing";
   findingCount: number;
   findingTypes: SecretFindingType[];
@@ -99,6 +108,14 @@ const ARTIFACT_CATEGORIES: PrivacyReport["artifactCategories"] = {
   console_export: {
     description: "Console governance snapshots and multi-repo aggregate exports.",
     mayContain: ["repo names", "governance summaries", "waiver reasons", "audit actors"],
+  },
+  integration_payload: {
+    description: "SCM comment previews and issue tracker payload previews.",
+    mayContain: ["SCM or issue markdown previews", "change intent", "verify summaries", "handoff next actions"],
+  },
+  pilot_package: {
+    description: "Pilot package, pilot checklist, and share bundle artifacts.",
+    mayContain: ["pilot reviewer notes", "package metadata", "share risk summaries", "local artifact references"],
   },
   audit: {
     description: "Append-only governance audit ledger.",
@@ -360,6 +377,12 @@ function listFiles(root: string, relativeDir: string): string[] {
 function categorizeArtifact(relativePath: string): PrivacyReportArtifact["category"] {
   if (relativePath.startsWith(".spec/sessions/") || relativePath.startsWith(".spec/facts/") || relativePath.includes("takeover")) {
     return "discover";
+  }
+  if (relativePath.startsWith(".spec/integrations/")) {
+    return "integration_payload";
+  }
+  if (relativePath.startsWith(".spec/pilot/")) {
+    return "pilot_package";
   }
   if (relativePath.endsWith(".md") || relativePath.includes("summary")) {
     return "summary";

@@ -17,6 +17,13 @@ This writes:
 
 The JSON snapshot is the only machine-readable input for aggregation.
 
+Each exported snapshot declares a small compatibility contract:
+
+- `snapshotContractVersion: 1`
+- `compatibleAggregateVersion: 1`
+- missing local governance facts use `not_available_yet`
+- missing explicit snapshot inputs are reported as `snapshot_not_found`
+
 ## Aggregate By Directory
 
 ```bash
@@ -37,6 +44,8 @@ This writes:
 - `.spec/console/multi-repo-governance.json`
 - `.spec/console/multi-repo-governance.md`
 
+If an explicit `--snapshot` path is missing, the aggregate keeps that input under `missingSnapshots` and increments `summary.missingSnapshotCount`. Missing snapshots are therefore visible governance inputs, not silently ignored repos.
+
 ## What It Shows
 
 - highest-risk repos
@@ -46,6 +55,7 @@ This writes:
 - open Greenfield and bootstrap spec debt
 - release drift hotspots
 - latest audit actors
+- missing snapshot inputs
 
 ## Boundaries
 

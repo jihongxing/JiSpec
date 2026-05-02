@@ -63,3 +63,4 @@ Use `.spec/greenfield/initialization-summary.md` and `.spec/greenfield/change-ma
 - Governance dashboard: `docs/console-governance-guide.md`
 - Policy, waiver, and spec debt operations: `docs/policy-waiver-spec-debt-cookbook.md`
 - CI templates: `docs/ci-templates.md`
+- Pilot package: `docs/pilot-product-package.md`

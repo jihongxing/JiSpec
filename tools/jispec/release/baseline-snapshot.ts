@@ -19,6 +19,11 @@ import {
   type MerkleContractDagDiff,
   type MerkleContractDagLock,
 } from "./merkle-contract-dag";
+import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
+import {
+  HUMAN_SUMMARY_COMPANION_NOTE,
+  renderHumanDecisionSnapshot,
+} from "../human-decision-packet";
 
 export interface ReleaseSnapshotOptions {
   root: string;
@@ -45,6 +50,7 @@ export interface ReleaseSnapshotResult {
   projectId?: string;
   counts: BaselineCounts;
   summary: ReleaseBaselineSummary;
+  replay: ReplayMetadata;
 }
 
 export interface BaselineCounts {
@@ -81,6 +87,7 @@ export interface ReleaseCompareResult {
   driftTrendJsonPath: string;
   driftTrendMarkdownPath: string;
   driftTrend: ReleaseDriftTrendSummary;
+  replay: ReplayMetadata;
 }
 
 export interface BaselineDiff {
@@ -110,11 +117,12 @@ export interface ReleaseDriftSummary {
   overallStatus: DriftStatus;
   contractGraph: DriftSurfaceSummary;
   staticCollector: DriftSurfaceSummary;
+  behavior: DriftSurfaceSummary;
   policy: DriftSurfaceSummary;
 }
 
 export interface DriftSurfaceSummary {
-  kind: "contract_graph_drift" | "static_collector_drift" | "policy_drift";
+  kind: "contract_graph_drift" | "static_collector_drift" | "behavior_drift" | "policy_drift";
   status: DriftStatus;
   summary: string;
   details: Record<string, unknown>;
@@ -131,6 +139,7 @@ export interface ReleaseDriftTrendSummary {
   surfaces: {
     contractGraph: ReleaseDriftSurfaceTrend;
     staticCollector: ReleaseDriftSurfaceTrend;
+    behavior: ReleaseDriftSurfaceTrend;
     policy: ReleaseDriftSurfaceTrend;
   };
   comparisons: ReleaseDriftTrendEntry[];
@@ -146,9 +155,11 @@ export interface ReleaseDriftTrendEntry {
   overallStatus: DriftStatus;
   contractGraphStatus: DriftStatus;
   staticCollectorStatus: DriftStatus;
+  behaviorStatus: DriftStatus;
   policyStatus: DriftStatus;
   contractGraphSummary: string;
   staticCollectorSummary: string;
+  behaviorSummary: string;
   policySummary: string;
 }
 
@@ -214,6 +225,17 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
       projectId: stringValue(currentBaseline.project_id),
       counts: countBaseline(currentBaseline),
       summary: summarizeReleaseBaseline(existingBaseline),
+      replay: buildReleaseSnapshotReplay({
+        root,
+        version,
+        currentBaselinePath,
+        releaseBaselinePath,
+        releaseSummaryPath,
+        created: false,
+        overwritten: false,
+        actor: options.actor,
+        reason: options.reason,
+      }),
     };
     appendAuditEvent(root, {
       type: "release_snapshot",
@@ -280,6 +302,20 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
       unresolved_surface_count: staticCollectorManifest.unresolved_surfaces.length,
     },
     policy_snapshot: snapshotPolicy(root, currentBaseline),
+    replay: buildReleaseSnapshotReplay({
+      root,
+      version,
+      currentBaselinePath,
+      releaseBaselinePath,
+      releaseSummaryPath,
+      staticCollectorManifestPath,
+      contractGraphPath: graphArtifacts?.graphPath,
+      contractGraphLockPath: graphArtifacts?.lockPath,
+      created: !exists,
+      overwritten: exists,
+      actor: options.actor,
+      reason: options.reason,
+    }),
   };
   const summary = summarizeReleaseBaseline(releaseBaseline);
 
@@ -304,6 +340,7 @@ export function createReleaseSnapshot(options: ReleaseSnapshotOptions): ReleaseS
     projectId: stringValue(currentBaseline.project_id),
     counts: countBaseline(currentBaseline),
     summary,
+    replay: releaseBaseline.replay,
   };
   appendAuditEvent(root, {
     type: "release_snapshot",
@@ -342,6 +379,9 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     toLock: toGraph.lock,
   });
   const driftSummary = summarizeReleaseDrift({
+    fromBaseline,
+    toBaseline,
+    diffs,
     graphDiff,
     fromStaticCollector: resolveComparableStaticCollector(root, options.from, fromBaseline),
     toStaticCollector: resolveComparableStaticCollector(root, options.to, toBaseline),
@@ -373,6 +413,19 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     driftTrendJsonPath: normalizePath(driftTrendJsonPath),
     driftTrendMarkdownPath: normalizePath(driftTrendMarkdownPath),
     driftTrend: createEmptyReleaseDriftTrend(comparedAt),
+    replay: buildReleaseCompareReplay({
+      root,
+      from: options.from,
+      to: options.to,
+      fromPath,
+      toPath,
+      compareReportJsonPath,
+      compareReportMarkdownPath,
+      driftTrendJsonPath,
+      driftTrendMarkdownPath,
+      actor: options.actor,
+      reason: options.reason,
+    }),
   };
 
   fs.mkdirSync(compareReportDir, { recursive: true });
@@ -474,6 +527,7 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   lines.push(`Overall: ${result.driftSummary.overallStatus}`);
   lines.push(`Contract graph drift: ${result.driftSummary.contractGraph.status} - ${result.driftSummary.contractGraph.summary}`);
   lines.push(`Static collector drift: ${result.driftSummary.staticCollector.status} - ${result.driftSummary.staticCollector.summary}`);
+  lines.push(`Behavior drift: ${result.driftSummary.behavior.status} - ${result.driftSummary.behavior.summary}`);
   lines.push(`Policy drift: ${result.driftSummary.policy.status} - ${result.driftSummary.policy.summary}`);
 
   lines.push("", "## Drift Trend");
@@ -481,7 +535,10 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   lines.push(`Changed comparisons: ${result.driftTrend.changedCompareCount}`);
   lines.push(`Latest trend status: ${result.driftTrend.latest?.overallStatus ?? "not_available_yet"}`);
   lines.push(`Contract graph changed: ${result.driftTrend.surfaces.contractGraph.changed}`);
+  lines.push("", "## Replay / Provenance");
+  lines.push(...renderReplayMarkdown(result.replay));
   lines.push(`Static collector changed: ${result.driftTrend.surfaces.staticCollector.changed}`);
+  lines.push(`Behavior changed: ${result.driftTrend.surfaces.behavior.changed}`);
   lines.push(`Policy changed: ${result.driftTrend.surfaces.policy.changed}`);
 
   if (result.graphDiff.changedNodeContent.length > 0) {
@@ -519,6 +576,90 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   return lines.join("\n");
 }
 
+function buildReleaseSnapshotReplay(input: {
+  root: string;
+  version: string;
+  currentBaselinePath: string;
+  releaseBaselinePath: string;
+  releaseSummaryPath: string;
+  staticCollectorManifestPath?: string;
+  contractGraphPath?: string;
+  contractGraphLockPath?: string;
+  created: boolean;
+  overwritten: boolean;
+  actor?: string;
+  reason?: string;
+}): ReplayMetadata {
+  return {
+    version: 1,
+    replayable: true,
+    source: "release_snapshot",
+    sourceArtifact: normalizePath(path.relative(input.root, input.currentBaselinePath)),
+    inputArtifacts: normalizeReplayPaths(input.root, [
+      input.currentBaselinePath,
+      path.join(input.root, ".spec", "policy.yaml"),
+      input.staticCollectorManifestPath,
+      input.contractGraphPath,
+      input.contractGraphLockPath,
+    ]),
+    commands: {
+      rerun: [
+        "npm run jispec-cli -- release snapshot",
+        `--version ${input.version}`,
+        "--force",
+        input.actor ? `--actor ${quoteShellValue(input.actor)}` : undefined,
+        input.reason ? `--reason ${quoteShellValue(input.reason)}` : undefined,
+      ].filter((entry): entry is string => Boolean(entry)).join(" "),
+      inspectSummary: `type ${normalizePath(path.relative(input.root, input.releaseSummaryPath)).replace(/\//g, "\\")}`,
+    },
+    actor: input.actor,
+    reason: input.reason,
+    previousOutcome: input.overwritten ? "overwritten" : input.created ? "created" : "already_exists",
+    nextHumanAction: "Review the release summary and compare this baseline against current before promoting release drift decisions.",
+  };
+}
+
+function buildReleaseCompareReplay(input: {
+  root: string;
+  from: string;
+  to: string;
+  fromPath: string;
+  toPath: string;
+  compareReportJsonPath: string;
+  compareReportMarkdownPath: string;
+  driftTrendJsonPath: string;
+  driftTrendMarkdownPath: string;
+  actor?: string;
+  reason?: string;
+}): ReplayMetadata {
+  return {
+    version: 1,
+    replayable: true,
+    source: "release_compare",
+    sourceArtifact: normalizePath(path.relative(input.root, input.compareReportJsonPath)),
+    inputArtifacts: normalizeReplayPaths(input.root, [
+      input.fromPath,
+      input.toPath,
+      input.driftTrendJsonPath,
+      input.driftTrendMarkdownPath,
+    ]),
+    commands: {
+      rerun: [
+        "npm run jispec-cli -- release compare",
+        `--from ${quoteShellValue(input.from)}`,
+        `--to ${quoteShellValue(input.to)}`,
+        input.actor ? `--actor ${quoteShellValue(input.actor)}` : undefined,
+        input.reason ? `--reason ${quoteShellValue(input.reason)}` : undefined,
+      ].filter((entry): entry is string => Boolean(entry)).join(" "),
+      inspectMarkdown: `type ${normalizePath(path.relative(input.root, input.compareReportMarkdownPath)).replace(/\//g, "\\")}`,
+    },
+    actor: input.actor,
+    reason: input.reason,
+    previousOutcome: `${input.from}->${input.to}`,
+    nextHumanAction: "Review drift summary, then fix changed surfaces or record an explicit release governance decision.",
+  };
+}
+
 export function refreshReleaseDriftTrend(rootInput: string, generatedAt = new Date().toISOString()): ReleaseDriftTrendSummary {
   const root = path.resolve(rootInput);
   const trend = buildReleaseDriftTrend(root, generatedAt);
@@ -550,13 +691,14 @@ export function renderReleaseDriftTrendText(trend: ReleaseDriftTrendSummary): st
     "",
     `- Contract graph: ${renderSurfaceTrendLine(trend.surfaces.contractGraph)}`,
     `- Static collector: ${renderSurfaceTrendLine(trend.surfaces.staticCollector)}`,
+    `- Behavior: ${renderSurfaceTrendLine(trend.surfaces.behavior)}`,
     `- Policy: ${renderSurfaceTrendLine(trend.surfaces.policy)}`,
     "",
     "## Comparisons",
     "",
     ...(trend.comparisons.length > 0
       ? trend.comparisons.map((entry) =>
-          `- ${entry.from} -> ${entry.to}: ${entry.overallStatus} (graph=${entry.contractGraphStatus}, static=${entry.staticCollectorStatus}, policy=${entry.policyStatus})`,
+          `- ${entry.from} -> ${entry.to}: ${entry.overallStatus} (graph=${entry.contractGraphStatus}, static=${entry.staticCollectorStatus}, behavior=${entry.behaviorStatus}, policy=${entry.policyStatus})`,
         )
       : ["- None recorded."]),
     "",
@@ -585,6 +727,7 @@ function buildReleaseDriftTrend(root: string, generatedAt: string): ReleaseDrift
     surfaces: {
       contractGraph: summarizeSurfaceTrend(comparisons, "contractGraphStatus", "contractGraphSummary"),
       staticCollector: summarizeSurfaceTrend(comparisons, "staticCollectorStatus", "staticCollectorSummary"),
+      behavior: summarizeSurfaceTrend(comparisons, "behaviorStatus", "behaviorSummary"),
       policy: summarizeSurfaceTrend(comparisons, "policyStatus", "policySummary"),
     },
     comparisons,
@@ -602,6 +745,7 @@ function createEmptyReleaseDriftTrend(generatedAt: string): ReleaseDriftTrendSum
     surfaces: {
       contractGraph: emptySurfaceTrend(),
       staticCollector: emptySurfaceTrend(),
+      behavior: emptySurfaceTrend(),
       policy: emptySurfaceTrend(),
     },
     comparisons: [],
@@ -625,6 +769,7 @@ function readReleaseDriftTrendEntry(root: string, reportPath: string): ReleaseDr
 
   const contractGraph = isRecord(driftSummary.contractGraph) ? driftSummary.contractGraph : {};
   const staticCollector = isRecord(driftSummary.staticCollector) ? driftSummary.staticCollector : {};
+  const behavior = isRecord(driftSummary.behavior) ? driftSummary.behavior : {};
   const policy = isRecord(driftSummary.policy) ? driftSummary.policy : {};
   const stat = fs.statSync(reportPath);
 
@@ -640,9 +785,11 @@ function readReleaseDriftTrendEntry(root: string, reportPath: string): ReleaseDr
     overallStatus: driftStatusValue(driftSummary.overallStatus ?? driftSummary.overall_status),
     contractGraphStatus: driftStatusValue(contractGraph.status),
     staticCollectorStatus: driftStatusValue(staticCollector.status),
+    behaviorStatus: driftStatusValue(behavior.status),
     policyStatus: driftStatusValue(policy.status),
     contractGraphSummary: stringValue(contractGraph.summary) ?? "not declared",
     staticCollectorSummary: stringValue(staticCollector.summary) ?? "not declared",
+    behaviorSummary: stringValue(behavior.summary) ?? "not declared",
     policySummary: stringValue(policy.summary) ?? "not declared",
   };
 }
@@ -662,8 +809,8 @@ function listReleaseCompareReportPaths(root: string): string[] {
 
 function summarizeSurfaceTrend(
   comparisons: ReleaseDriftTrendEntry[],
-  statusKey: "contractGraphStatus" | "staticCollectorStatus" | "policyStatus",
-  summaryKey: "contractGraphSummary" | "staticCollectorSummary" | "policySummary",
+  statusKey: "contractGraphStatus" | "staticCollectorStatus" | "behaviorStatus" | "policyStatus",
+  summaryKey: "contractGraphSummary" | "staticCollectorSummary" | "behaviorSummary" | "policySummary",
 ): ReleaseDriftSurfaceTrend {
   const latest = comparisons.at(-1);
   return {
@@ -1013,6 +1160,9 @@ function summarizeReleaseBaseline(baseline: BaselineDocument): ReleaseBaselineSu
 }
 
 function summarizeReleaseDrift(input: {
+  fromBaseline: BaselineDocument;
+  toBaseline: BaselineDocument;
+  diffs: BaselineDiff[];
   graphDiff: MerkleContractDagDiff;
   fromStaticCollector: ComparableStaticCollector;
   toStaticCollector: ComparableStaticCollector;
@@ -1021,8 +1171,9 @@ function summarizeReleaseDrift(input: {
 }): ReleaseDriftSummary {
   const contractGraph = summarizeContractGraphDrift(input.graphDiff);
   const staticCollector = summarizeStaticCollectorDrift(input.fromStaticCollector, input.toStaticCollector);
+  const behavior = summarizeBehaviorDrift(input.fromBaseline, input.toBaseline, input.diffs, input.graphDiff);
   const policy = summarizePolicyDrift(input.fromPolicy, input.toPolicy);
-  const statuses = [contractGraph.status, staticCollector.status, policy.status];
+  const statuses = [contractGraph.status, staticCollector.status, behavior.status, policy.status];
   const overallStatus: DriftStatus = statuses.includes("changed")
     ? "changed"
     : statuses.every((status) => status === "unchanged")
@@ -1034,6 +1185,7 @@ function summarizeReleaseDrift(input: {
     overallStatus,
     contractGraph,
     staticCollector,
+    behavior,
     policy,
   };
 }
@@ -1113,6 +1265,51 @@ function summarizeStaticCollectorDrift(
   };
 }
 
+function summarizeBehaviorDrift(
+  fromBaseline: BaselineDocument,
+  toBaseline: BaselineDocument,
+  diffs: BaselineDiff[],
+  graphDiff: MerkleContractDagDiff,
+): DriftSurfaceSummary {
+  const fromTracked = hasTrackedBehaviorSurface(fromBaseline);
+  const toTracked = hasTrackedBehaviorSurface(toBaseline);
+  if (!fromTracked && !toTracked) {
+    return {
+      kind: "behavior_drift",
+      status: "not_tracked",
+      summary: "Behavior scenarios are not tracked for either baseline.",
+      details: {},
+    };
+  }
+
+  const scenarioDiff = diffs.find((diff) => diff.field === "scenarios");
+  const fromScenarios = stringArray(fromBaseline.scenarios);
+  const toScenarios = stringArray(toBaseline.scenarios);
+  const behaviorNodeChanges = countBehaviorGraphNodeChanges(graphDiff);
+  const behaviorCoverageChanges = countBehaviorGraphCoverageChanges(graphDiff);
+  const changed =
+    (scenarioDiff?.added.length ?? 0) > 0 ||
+    (scenarioDiff?.removed.length ?? 0) > 0 ||
+    behaviorNodeChanges > 0 ||
+    behaviorCoverageChanges > 0;
+
+  return {
+    kind: "behavior_drift",
+    status: changed ? "changed" : "unchanged",
+    summary: changed
+      ? "Behavior scenarios, behavior graph nodes, or scenario coverage changed."
+      : "Behavior scenarios and scenario coverage are unchanged.",
+    details: {
+      from_scenarios: fromScenarios,
+      to_scenarios: toScenarios,
+      scenario_added: scenarioDiff?.added ?? [],
+      scenario_removed: scenarioDiff?.removed ?? [],
+      behavior_node_changes: behaviorNodeChanges,
+      behavior_coverage_changes: behaviorCoverageChanges,
+    },
+  };
+}
+
 function summarizePolicyDrift(fromPolicy: ComparablePolicy, toPolicy: ComparablePolicy): DriftSurfaceSummary {
   if (!fromPolicy.tracked && !toPolicy.tracked) {
     return {
@@ -1143,6 +1340,32 @@ function summarizePolicyDrift(fromPolicy: ComparablePolicy, toPolicy: Comparable
       to_content_hash: toPolicy.contentHash,
     },
   };
+}
+
+function hasTrackedBehaviorSurface(baseline: BaselineDocument): boolean {
+  return Object.prototype.hasOwnProperty.call(baseline, "scenarios");
+}
+
+function countBehaviorGraphNodeChanges(graphDiff: MerkleContractDagDiff): number {
+  return [
+    ...graphDiff.addedNodes,
+    ...graphDiff.removedNodes,
+    ...graphDiff.changedNodeContent,
+    ...graphDiff.affectedClosureNodes,
+  ].filter(isBehaviorGraphNodeId).length;
+}
+
+function countBehaviorGraphCoverageChanges(graphDiff: MerkleContractDagDiff): number {
+  return graphDiff.coverageChanges.filter((change) =>
+    change.from.scenarios.length > 0 ||
+    change.to.scenarios.length > 0 ||
+    change.from.tests.length > 0 ||
+    change.to.tests.length > 0,
+  ).length;
+}
+
+function isBehaviorGraphNodeId(nodeId: string): boolean {
+  return nodeId.startsWith("@bdd:");
 }
 
 function policySignature(policy: ComparablePolicy): string {
@@ -1222,12 +1445,28 @@ function renderReleaseSummary(root: string, baseline: BaselineDocument, summary 
   const version = stringValue(baseline.release_version) ?? "unknown";
   const counts = countBaseline(baseline);
   const specDebt = summarizeGreenfieldSpecDebt(root);
+  const replay = isRecord(baseline.replay) ? baseline.replay as unknown as ReplayMetadata : undefined;
   return [
     `# Release ${version} Baseline`,
     "",
     `Frozen at: ${stringValue(baseline.frozen_at) ?? "unknown"}`,
     `Project: ${stringValue(baseline.project_name) ?? stringValue(baseline.project_id) ?? "unknown"}`,
     `Source baseline: ${stringValue(baseline.source_baseline) ?? ".spec/baselines/current.yaml"}`,
+    "",
+    ...renderHumanDecisionSnapshot({
+      currentState: `release baseline \`${version}\` frozen from \`${stringValue(baseline.source_baseline) ?? ".spec/baselines/current.yaml"}\``,
+      risk: `${specDebt.open} open spec debt item(s), ${specDebt.expired} expired debt item(s)`,
+      evidence: [
+        `contract graph ${summary.contractGraph.status}`,
+        `static collector ${summary.staticCollector.status}`,
+        `policy ${summary.policy.status}`,
+      ],
+      owner: replay?.actor ? `release owner \`${replay.actor}\`` : "release owner",
+      nextCommand: `\`npm run jispec-cli -- release compare --from ${version} --to current\``,
+    }),
+    "## Replay / Provenance",
+    "",
+    ...renderReplayMarkdown(replay),
     "",
     "## Counts",
     "",
@@ -1280,7 +1519,32 @@ function renderReleaseSummary(root: string, baseline: BaselineDocument, summary 
         ]
       : ["- No static collector manifest recorded."]),
     "",
+    "## Source Of Truth",
+    "",
+    "- Machine release baseline YAML, contract graph, static collector manifest, and policy snapshot remain the source of truth.",
+    `- ${HUMAN_SUMMARY_COMPANION_NOTE}`,
+    "",
   ].join("\n");
+}
+
+function renderReplayMarkdown(replay: ReplayMetadata | undefined): string[] {
+  if (!replay) {
+    return ["- Replay metadata is not available."];
+  }
+
+  return [
+    `- Source artifact: \`${replay.sourceArtifact ?? "not recorded"}\``,
+    `- Input artifacts: ${replay.inputArtifacts.length > 0 ? replay.inputArtifacts.slice(0, 8).map((entry) => `\`${entry}\``).join(", ") : "none recorded"}`,
+    `- Actor: \`${replay.actor ?? "not recorded"}\``,
+    `- Reason: ${replay.reason ?? "not recorded"}`,
+    `- Previous outcome: \`${replay.previousOutcome ?? "not recorded"}\``,
+    `- Replay command: \`${replay.commands.rerun ?? "not recorded"}\``,
+    `- Next human action: ${replay.nextHumanAction}`,
+  ];
+}
+
+function quoteShellValue(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
 }
 
 function renderList(values: string[]): string[] {

@@ -90,11 +90,18 @@ function createStarterRules(): VerifyPolicy["rules"] {
       action: "warn",
       message: "Behavior contract is missing",
       when: {
-        not: {
-          fact: "contracts.behavior.present",
-          op: "==",
-          value: true,
-        },
+        all: [
+          {
+            fact: "contracts.behavior.present",
+            op: "==",
+            value: false,
+          },
+          {
+            fact: "contracts.behavior.deferred",
+            op: "==",
+            value: false,
+          },
+        ],
       },
     },
   ];

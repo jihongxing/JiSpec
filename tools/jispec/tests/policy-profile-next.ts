@@ -99,6 +99,7 @@ async function main(): Promise<void> {
         drift_requires_owner_review: true,
         policy_drift_severity: "blocking",
         static_collector_drift_severity: "advisory",
+        behavior_drift_severity: "advisory",
         contract_graph_drift_severity: "blocking",
       },
       execute_default: {
@@ -113,6 +114,7 @@ async function main(): Promise<void> {
     });
     assert.equal(policy.team?.profile, "regulated");
     assert.equal(policy.execute_default?.require_clean_verify, true);
+    assert.equal(policy.release?.behavior_drift_severity, "advisory");
 
     assert.throws(
       () => validateVerifyPolicy({
@@ -186,6 +188,7 @@ async function main(): Promise<void> {
         "release:",
         "  require_compare: true",
         "  drift_requires_owner_review: true",
+        "  behavior_drift_severity: advisory",
         "execute_default:",
         "  allowed: true",
         "  require_clean_verify: true",
@@ -201,6 +204,7 @@ async function main(): Promise<void> {
       assert.equal(policy?.summary.waiverMaxActiveDays, 30);
       assert.equal(policy?.summary.releaseRequireCompare, true);
       assert.equal(policy?.summary.releaseDriftRequiresOwnerReview, true);
+      assert.equal(policy?.summary.releaseBehaviorDriftSeverity, "advisory");
       assert.equal(policy?.summary.executeDefaultAllowed, true);
       assert.equal(policy?.summary.executeDefaultRequireCleanVerify, true);
     } finally {

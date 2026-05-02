@@ -83,6 +83,8 @@ Each action packet includes:
 - recommended local CLI command
 - local artifacts that would be written if the reviewer runs the command
 
+The text output also renders a short `Decision packet` block with the same five reviewer fields used by bootstrap, verify, release, and implementation handoffs: current state, risk, evidence, owner, and next command. JSON remains the machine-readable action contract; Markdown/text output is only the human companion.
+
 The Local UI shows the same decision packet fields and provides a copy control for the recommended command. Copying a command is still not execution. All writes still happen through explicit local CLI commands that record audit events.
 
 ## Export Governance Snapshot
@@ -93,6 +95,8 @@ npm run jispec -- console export-governance --repo-id my-repo --repo-name "My Re
 
 This writes `.spec/console/governance-snapshot.json` and a Markdown companion. Future multi-repo views should consume this exported snapshot rather than scanning repositories.
 
+The exported JSON includes `contract.snapshotContractVersion: 1` and `contract.compatibleAggregateVersion: 1`. Missing governance facts inside a repo remain `not_available_yet`; missing explicit snapshot inputs in an aggregate are represented as `snapshot_not_found`.
+
 ## Multi-Repo Aggregate
 
 ```bash
@@ -102,6 +106,8 @@ npm run jispec -- console aggregate-governance --snapshot repo-a/.spec/console/g
 
 This writes `.spec/console/multi-repo-governance.json` and a Markdown companion. It consumes exported governance snapshots only. It does not enter source trees, run verify for any repo, upload source, or replace the single-repo `verify` verdict.
 
+Explicit snapshot paths that do not exist remain visible in the aggregate under `missingSnapshots` and `summary.missingSnapshotCount`; this keeps missing repos reviewable instead of silently omitting them.
+
 The aggregate shows:
 
 - highest-risk repos
@@ -110,6 +116,7 @@ The aggregate shows:
 - release drift hotspots
 - non-pass verify verdicts
 - latest audit actors
+- missing snapshot inputs
 
 ## Audit Integrity
 
@@ -125,6 +132,8 @@ npm run jispec -- policy approval record --subject-kind policy_change --actor al
 ```
 
 Approval records live under `.spec/approvals/*.json`. Console shows whether the current local subjects are `approval_missing`, `approval_stale`, or `approval_satisfied`. A stale approval means the reviewed artifact hash changed or the approval expired.
+
+When approval is missing or stale, `console actions` emits a `record_policy_approval` decision packet with the subject kind/ref, owner, affected subject hash, recommended local command, and expected writes to `.spec/approvals/*.json` plus `.spec/audit/events.jsonl`. This includes release drift subjects after `release compare` writes a compare report.
 
 Approval decisions are explicit human records. They append audit events and do not make an LLM, Console, or exported snapshot a blocking judge.
 

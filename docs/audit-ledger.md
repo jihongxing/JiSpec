@@ -35,6 +35,8 @@ JiSpec can inspect the ledger for:
 
 Legacy unchained events are reported as warnings. Damaged or inconsistent rows are reported as invalid integrity.
 
+Approval decisions, including pilot risk acceptance, append `policy_approval_decision` events with actor, reason, source artifact, affected contract refs, and the approval boundary. Commands refuse to append on an invalid ledger so damaged history is reviewed instead of being silently extended.
+
 ## Console Behavior
 
 Console reads the audit ledger as a governance artifact. If integrity is `warning` or `invalid`, Console surfaces audit traceability attention instead of silently treating the ledger as clean.

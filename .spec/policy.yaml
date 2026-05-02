@@ -39,10 +39,13 @@ rules:
     action: warn
     message: Behavior contract is missing
     when:
-      not:
-        fact: contracts.behavior.present
-        op: '=='
-        value: true
+      all:
+        - fact: contracts.behavior.present
+          op: '=='
+          value: false
+        - fact: contracts.behavior.deferred
+          op: '=='
+          value: false
 waivers:
   require_owner: true
   require_reason: true
@@ -56,6 +59,7 @@ release:
   drift_requires_owner_review: true
   policy_drift_severity: advisory
   static_collector_drift_severity: advisory
+  behavior_drift_severity: advisory
   contract_graph_drift_severity: blocking
 execute_default:
   allowed: true

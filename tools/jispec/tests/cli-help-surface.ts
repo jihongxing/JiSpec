@@ -49,8 +49,10 @@ function main(): void {
     assertIncludes(help, "jispec-cli console actions [--json]", "primary surface");
     assertIncludes(help, "jispec-cli console export-governance [--json]", "primary surface");
     assertIncludes(help, "jispec-cli console aggregate-governance [--snapshot <paths...>] [--dir <paths...>] [--json]", "primary surface");
-    assertIncludes(help, "jispec-cli privacy report [--json]", "primary surface");
-    assertIncludes(help, "jispec-cli integrations payload --provider github|gitlab|jira|linear --kind scm_comment|issue_link [--json]", "primary surface");
+  assertIncludes(help, "jispec-cli privacy report [--json]", "primary surface");
+  assertIncludes(help, "jispec-cli pilot package [--json]", "primary surface");
+  assertIncludes(help, "jispec-cli north-star acceptance [--json]", "primary surface");
+  assertIncludes(help, "jispec-cli integrations payload --provider github|gitlab|jira|linear --kind scm_comment|issue_link [--json]", "primary surface");
     assertIncludes(help, "jispec-cli handoff adapter --from-handoff <path-or-session> --tool codex|claude_code|cursor|copilot|devin [--json]", "primary surface");
     assertIncludes(help, "jispec-cli implement [--fast] [--external-patch <path>] [--from-handoff <path-or-session>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli bootstrap new-project --requirements <path> [--technical-solution <path>] [--json]", "primary surface");

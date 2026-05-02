@@ -274,6 +274,10 @@ npm run ci:verify
   运行 V1 主线 readiness gate 之外的扩展 runtime 与兼容层健康诊断。
 - `doctor pilot`
   检查仓库的商业试点 readiness：安装入口、首次 takeover baseline、CI verify、policy profile、waiver/spec debt 治理、Console governance snapshot 和 privacy report。
+- `pilot package`
+  写出 `.spec/pilot/package.json` 和 Markdown companion，把安装、first-run、first baseline、CI verify、Console governance、privacy report 和 `doctor pilot` 汇成一个本地 adoption path。
+- `north-star acceptance`
+  写出 `.spec/north-star/acceptance.json`、`.spec/north-star/acceptance.md` 和逐场景 decision packet，作为最终本地验收套件。它覆盖 legacy takeover、Greenfield、daily change、external patch mediation、policy waiver、release drift、Console governance、multi-repo aggregation 和 privacy report，且不替代既有 gate。
 - `pilot:ready`
   运行可重复的试点 readiness gate，适合本地或 CI 收口；失败时输出 blocker owner action 和 next command，`--json` 返回底层 `doctor pilot` 报告。
 - `metrics value-report`
@@ -624,6 +628,8 @@ Package/bin 命令面：
   [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
 - 北极星下一阶段开发任务：
   [docs/north-star-next-development-plan.md](docs/north-star-next-development-plan.md)
+- 北极星最终验收套件：
+  [docs/north-star-acceptance.md](docs/north-star-acceptance.md)
 - V1 后发布门禁：
   [docs/post-release-gate.md](docs/post-release-gate.md)
 - Retakeover 回归池：
@@ -636,8 +642,12 @@ Package/bin 命令面：
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
 - Greenfield 输入契约：
   [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
+- Greenfield walkthrough：
+  [docs/greenfield-walkthrough.md](docs/greenfield-walkthrough.md)
 - 首次接管 walkthrough：
   [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md)
+- Pilot product package：
+  [docs/pilot-product-package.md](docs/pilot-product-package.md)
 - Quickstart：
   [docs/quickstart.md](docs/quickstart.md)
 - Takeover guide：

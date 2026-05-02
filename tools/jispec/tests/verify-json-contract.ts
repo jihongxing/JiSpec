@@ -34,6 +34,19 @@ async function main(): Promise<void> {
         issues: [],
         metadata: {
           factsContractVersion: "1.0",
+          replay: {
+            commands: {
+              inspectSummary: "type .spec\\handoffs\\verify-summary.md",
+              rerun: "npm run jispec-cli -- verify",
+            },
+            inputArtifacts: [],
+            nextHumanAction: "Review verify summary and continue with merge or advisory follow-up.",
+            previousOutcome: "PASS",
+            replayable: true,
+            source: "verify",
+            sourceArtifact: ".spec/contracts",
+            version: 1,
+          },
         },
       },
       null,
@@ -59,6 +72,7 @@ async function main(): Promise<void> {
       "issues",
       "metadata",
     ]);
+    assert.equal((parsed.metadata as { replay?: { source?: string } }).replay?.source, "verify");
     console.log("✓ Test 2: top-level JSON keys stay in the expected order");
     passed++;
 

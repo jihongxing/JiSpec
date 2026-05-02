@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as yaml from "js-yaml";
-import { buildConsoleGovernanceActionPlan } from "../console/governance-actions";
+import { buildConsoleGovernanceActionPlan, renderConsoleGovernanceActionPlanText } from "../console/governance-actions";
 import { readAuditEvents } from "../audit/event-ledger";
 
 interface TestResult {
@@ -71,8 +71,15 @@ async function main(): Promise<void> {
       });
 
       const plan = buildConsoleGovernanceActionPlan(root);
+      const text = renderConsoleGovernanceActionPlanText(plan);
       const renew = plan.actions.find((action) => action.kind === "renew_waiver");
       const revoke = plan.actions.find((action) => action.kind === "revoke_waiver");
+      assert.match(text, /Decision packet:/);
+      assert.match(text, /Current state:/);
+      assert.match(text, /Risk:/);
+      assert.match(text, /Evidence:/);
+      assert.match(text, /Owner:/);
+      assert.match(text, /Next command:/);
       assert.ok(renew?.command.includes("waiver renew waiver-soon"));
       assert.equal(renew?.status, "needs_input");
       assert.equal(renew?.decisionPacket.owner, "team");
@@ -138,6 +145,46 @@ async function main(): Promise<void> {
       assert.ok(cancel?.command.includes("spec-debt cancel debt-expired"));
       assert.equal(cancel?.status, "needs_input");
       assert.equal(cancel?.decisionPacket.risk.level, "medium");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("action plan generates approval packets for release drift owner review", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-console-actions-approval-"));
+    try {
+      writeYaml(root, ".spec/policy.yaml", {
+        version: 1,
+        team: {
+          profile: "regulated",
+          owner: "release-owner",
+          reviewers: ["alice", "bob"],
+          required_reviewers: 2,
+        },
+        rules: [],
+      });
+      writeJson(root, ".spec/releases/compare/v1-to-current/compare-report.json", {
+        driftSummary: {
+          overallStatus: "changed",
+        },
+      });
+
+      const plan = buildConsoleGovernanceActionPlan(root);
+      const releaseDriftApproval = plan.actions.find((action) =>
+        action.kind === "record_policy_approval" &&
+        action.targetRefs.includes("release_drift:.spec/releases/compare/v1-to-current/compare-report.json")
+      );
+      assert.ok(releaseDriftApproval);
+      assert.equal(releaseDriftApproval.status, "needs_input");
+      assert.equal(releaseDriftApproval.owner, "release-owner");
+      assert.equal(releaseDriftApproval.decisionPacket.risk.level, "high");
+      assert.ok(releaseDriftApproval.command.includes("policy approval record"));
+      assert.ok(releaseDriftApproval.command.includes("--subject-kind release_drift"));
+      assert.ok(releaseDriftApproval.command.includes("--subject-ref .spec/releases/compare/v1-to-current/compare-report.json"));
+      assert.ok(releaseDriftApproval.decisionPacket.affectedContracts.includes(".spec/releases/compare/v1-to-current/compare-report.json"));
+      assert.ok(releaseDriftApproval.decisionPacket.commandWrites.includes(".spec/approvals/*.json"));
+      assert.ok(releaseDriftApproval.decisionPacket.commandWrites.includes(".spec/audit/events.jsonl"));
+      assert.equal(readAuditEvents(root).length, 0);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -249,6 +249,57 @@ async function main(): Promise<void> {
     }
   }));
 
+  results.push(record("regulated pilot risk acceptance requires approval before posture is satisfied", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-approval-pilot-risk-"));
+    try {
+      writePolicy(root, {
+        profile: "regulated",
+        owner: "pilot-owner",
+        reviewers: ["alice", "bob"],
+        required_reviewers: 2,
+      });
+      writeJson(root, ".spec/privacy/privacy-report.json", {
+        kind: "jispec-privacy-report",
+        summary: {
+          scannedArtifactCount: 4,
+          findingCount: 1,
+          highSeverityFindingCount: 1,
+          reviewBeforeSharingArtifactCount: 1,
+        },
+      });
+
+      recordPolicyApproval(root, {
+        id: "approval-policy-owner",
+        subjectKind: "policy_change",
+        actor: "pilot-owner",
+        role: "owner",
+        reason: "Owner accepted the regulated policy baseline.",
+      });
+      let posture = evaluatePolicyApprovalWorkflow(root);
+      const pilotSubject = posture.subjects.find((subject) => subject.subject.kind === "pilot_risk_acceptance");
+      assert.ok(pilotSubject);
+      assert.equal(posture.status, "approval_missing");
+      assert.equal(pilotSubject?.status, "approval_missing");
+      assert.equal(pilotSubject?.missingReviewers, 2);
+
+      recordPolicyApproval(root, {
+        id: "approval-pilot-risk-owner",
+        subjectKind: "pilot_risk_acceptance",
+        actor: "pilot-owner",
+        role: "owner",
+        reason: "Owner accepts the high-severity privacy risk before pilot sharing.",
+      });
+      posture = evaluatePolicyApprovalWorkflow(root);
+      assert.equal(posture.status, "approval_satisfied");
+      assert.equal(
+        posture.subjects.find((subject) => subject.subject.kind === "pilot_risk_acceptance")?.ownerApprovedBy,
+        "pilot-owner",
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
   let passed = 0;
   let failed = 0;
   for (const result of results) {
@@ -324,6 +375,12 @@ function writeYaml(root: string, relativePath: string, value: unknown): void {
   const target = path.join(root, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, yaml.dump(value, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf-8");
+}
+
+function writeJson(root: string, relativePath: string, value: unknown): void {
+  const target = path.join(root, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
 }
 
 function runCli(args: string[]): { status: number | null; stdout: string; stderr: string } {

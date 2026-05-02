@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-  buildConsoleGovernanceActionPlan,
+  buildConsoleGovernanceActionPlanFromSnapshot,
   type ConsoleGovernanceActionPlan,
 } from "../governance-actions";
 import {
-  buildConsoleGovernanceDashboard,
+  buildConsoleGovernanceDashboardFromSnapshot,
   type ConsoleGovernanceDashboard,
   type ConsoleGovernanceStatus,
 } from "../governance-dashboard";
@@ -66,9 +66,9 @@ const GOVERNANCE_OBJECT_ORDER = [
 export function buildLocalConsoleUiModel(options: LocalConsoleUiOptions): LocalConsoleUiModel {
   const root = path.resolve(options.root);
   const outPath = path.resolve(root, options.outPath ?? DEFAULT_UI_OUT);
-  const dashboard = buildConsoleGovernanceDashboard(root);
   const snapshot = collectConsoleLocalSnapshot(root);
-  const actions = buildConsoleGovernanceActionPlan(root);
+  const actions = buildConsoleGovernanceActionPlanFromSnapshot(snapshot, root);
+  const dashboard = buildConsoleGovernanceDashboardFromSnapshot(snapshot, actions);
 
   return {
     version: 1,
@@ -246,6 +246,39 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
       max-width: 840px;
     }
 
+    .signal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .signal {
+      min-width: 0;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+
+    .signal-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .signal-value {
+      margin-top: 4px;
+      font-size: 15px;
+      font-weight: 720;
+      overflow-wrap: anywhere;
+    }
+
+    .signal-detail {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
     .meta-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -385,7 +418,7 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     }
 
     @media (max-width: 860px) {
-      .hero, .grid-2, .grid-3, .boundary, .action-meta {
+      .hero, .grid-2, .grid-3, .signal-grid, .boundary, .action-meta {
         grid-template-columns: 1fr;
       }
 
@@ -420,6 +453,12 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
         </div>
         <h2 id="governance-status" class="headline-title">${escapeHtml(model.dashboard.headline.title)}</h2>
         <p class="summary">${escapeHtml(model.dashboard.headline.summary)}</p>
+        <div class="signal-grid" aria-label="First screen governance answers">
+          ${headlineSignal("Mergeability", model.dashboard.headline.mergeability.status, model.dashboard.headline.mergeability.answer)}
+          ${headlineSignal("Risk", model.dashboard.headline.risk.level, model.dashboard.headline.risk.summary)}
+          ${headlineSignal("Owner action", model.dashboard.headline.ownerAction.owner, model.dashboard.headline.ownerAction.command)}
+          ${headlineSignal("Evidence source", model.dashboard.headline.evidence.primary, model.dashboard.headline.evidence.sources.slice(1, 3).join(", "))}
+        </div>
         <p class="source-note">Source: ${escapeHtml(model.dashboard.headline.source)}</p>
       </div>
       <div class="panel">
@@ -559,6 +598,14 @@ function renderAction(action: ConsoleGovernanceActionPlan["actions"][number]): s
   </div>
   <p class="small">Status: ${escapeHtml(action.status)} · Kind: ${escapeHtml(action.kind)} · Writes if run: ${escapeHtml(formatList(packet.commandWrites))}</p>
 </article>`;
+}
+
+function headlineSignal(label: string, value: string, detail?: string): string {
+  return `<div class="signal">
+  <div class="signal-label">${escapeHtml(label)}</div>
+  <div class="signal-value">${escapeHtml(value)}</div>
+  ${detail && detail.trim().length > 0 ? `<p class="signal-detail">${escapeHtml(detail)}</p>` : ""}
+</div>`;
 }
 
 function metric(label: string, value: string): string {

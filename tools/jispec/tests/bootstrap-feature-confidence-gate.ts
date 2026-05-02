@@ -77,7 +77,8 @@ async function main(): Promise<void> {
         thinFinanceDraft.feature.includes("# evidence_level: partial") &&
         thinFinanceBrief.includes("Recommendation: `defer_as_spec_debt`") &&
         thinFinanceBrief.includes("owner confirms the tagged behavior scenarios") &&
-        thinFinanceBrief.includes("human-review"),
+        thinFinanceBrief.includes("## Owner Review Candidates") &&
+        thinFinanceBrief.includes("owner-review required"),
       error: `Expected thin finance behavior to remain spec debt.\nFeature:\n${thinFinanceDraft.feature}\nBrief:\n${thinFinanceBrief}`,
     });
 

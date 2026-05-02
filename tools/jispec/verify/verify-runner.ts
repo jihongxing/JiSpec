@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
+import * as yaml from "js-yaml";
 import { loadBootstrapTakeoverReport } from "../bootstrap/takeover";
 import { runLegacyRepositoryValidation } from "./legacy-validator-adapter";
 import {
@@ -27,6 +28,7 @@ import { buildCanonicalFacts, stableSortCanonicalFacts, type CanonicalFactsSnaps
 import { createFactsContract } from "../facts/facts-contract";
 import { loadVerifyPolicy, policyFileExists, resolvePolicyPath } from "../policy/policy-loader";
 import { evaluateVerifyPolicy } from "../policy/policy-engine";
+import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
 import { isPolicySchemaError, validatePolicyAgainstFactsContract } from "../policy/policy-schema";
 import { classifyGitDiff } from "../change/git-diff-classifier";
 import { computeLaneDecision } from "../change/lane-decision";
@@ -174,8 +176,72 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
 
   // Apply post-processing in order: waivers -> baseline -> observe
   result = await applyPostProcessing(result, options);
+  result.metadata = {
+    ...result.metadata,
+    replay: buildVerifyReplay(result, options),
+  };
 
   return result;
+}
+
+function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): ReplayMetadata {
+  const inputArtifacts = [
+    ".spec/handoffs/bootstrap-takeover.json",
+    ".spec/contracts/domain.yaml",
+    ".spec/contracts/api_spec.json",
+    ".spec/contracts/behaviors.feature",
+    ".spec/policy.yaml",
+    options.policyPath,
+    options.factsOutPath,
+  ].filter((candidate): candidate is string => typeof candidate === "string");
+
+  const existingInputs = inputArtifacts.filter((candidate) => {
+    if (candidate === options.factsOutPath) {
+      return true;
+    }
+    return fs.existsSync(path.isAbsolute(candidate) ? candidate : path.join(options.root, candidate));
+  });
+
+  const commandParts = ["npm run jispec-cli -- verify"];
+  if (options.fast) {
+    commandParts.push("--fast");
+  }
+  if (options.strict) {
+    commandParts.push("--strict");
+  }
+  if (options.useBaseline) {
+    commandParts.push("--baseline");
+  }
+  if (options.writeBaseline) {
+    commandParts.push("--write-baseline");
+  }
+  if (options.observe) {
+    commandParts.push("--observe");
+  }
+  if (options.policyPath) {
+    commandParts.push(`--policy ${quoteShellValue(options.policyPath)}`);
+  }
+  if (options.factsOutPath) {
+    commandParts.push(`--facts-out ${quoteShellValue(options.factsOutPath)}`);
+  }
+
+  return {
+    version: 1,
+    replayable: true,
+    source: "verify",
+    sourceArtifact: fs.existsSync(path.join(options.root, ".spec", "handoffs", "bootstrap-takeover.json"))
+      ? ".spec/handoffs/bootstrap-takeover.json"
+      : ".spec/contracts",
+    inputArtifacts: normalizeReplayPaths(options.root, existingInputs),
+    commands: {
+      rerun: commandParts.join(" "),
+      inspectSummary: "type .spec\\handoffs\\verify-summary.md",
+    },
+    previousOutcome: result.verdict,
+    nextHumanAction: result.exitCode === 0
+      ? "Review verify summary and continue with merge or advisory follow-up."
+      : "Fix blocking verify issues or record an explicit waiver/spec-debt decision, then rerun verify.",
+  };
 }
 
 export function renderVerifyText(result: VerifyRunResult): string {
@@ -351,11 +417,35 @@ async function buildRawFactsSnapshot(
   addRawFact(snapshot, "contracts.behavior.present", fs.existsSync(path.join(contractsDir, "behaviors.feature")), "verify-runner");
 
   const takeoverReport = loadBootstrapTakeoverReport(options.root);
+  const behaviorDeferred = Boolean(
+    takeoverReport?.status === "committed" &&
+      takeoverReport.decisions.some(
+        (decision) =>
+          decision.artifactKind === "feature" &&
+          decision.finalState === "spec_debt" &&
+          typeof decision.targetPath === "string" &&
+          fs.existsSync(path.join(options.root, decision.targetPath)),
+      ),
+  );
+  addRawFact(snapshot, "contracts.behavior.deferred", behaviorDeferred, "verify-runner");
+  addRawFact(snapshot, "contracts.adopted_count", takeoverReport?.adoptedArtifactPaths.length ?? 0, "verify-runner");
+  addRawFact(snapshot, "contracts.deferred_count", takeoverReport?.specDebtPaths.length ?? 0, "verify-runner");
+  addRawFact(snapshot, "contracts.missing_count", countContractMissingIssues(result.issues), "verify-runner");
+  addRawFact(snapshot, "contracts.drifted_count", countContractDriftIssues(result.issues), "verify-runner");
   addRawFact(snapshot, "bootstrap.takeover.present", Boolean(takeoverReport && takeoverReport.status === "committed"), "verify-runner");
   addRawFact(snapshot, "bootstrap.adopted_contract_count", takeoverReport?.adoptedArtifactPaths.length ?? 0, "verify-runner");
   addRawFact(snapshot, "bootstrap.spec_debt_count", takeoverReport?.specDebtPaths.length ?? 0, "verify-runner");
   addRawFact(snapshot, "bootstrap.rejected_artifact_kinds", takeoverReport?.rejectedArtifactKinds ?? [], "verify-runner");
   addRawFact(snapshot, "bootstrap.historical_debt_issue_count", result.issues.filter((issue) => isHistoricalDebtIssue(issue)).length, "verify-runner");
+
+  const releaseFacts = collectReleaseBaselineFacts(options.root);
+  addRawFact(snapshot, "release.baseline.present", releaseFacts.baselinePresent, "verify-runner");
+  addRawFact(snapshot, "release.contract_graph.present", releaseFacts.contractGraphPresent, "verify-runner");
+  addRawFact(snapshot, "release.static_collector.present", releaseFacts.staticCollectorPresent, "verify-runner");
+  addRawFact(snapshot, "release.policy.present", releaseFacts.policyPresent, "verify-runner");
+  addRawFact(snapshot, "release.compare.present", releaseFacts.compareCount > 0, "verify-runner");
+  addRawFact(snapshot, "release.compare.count", releaseFacts.compareCount, "verify-runner");
+  addRawFact(snapshot, "release.compare.changed_count", releaseFacts.compareChangedCount, "verify-runner");
 
   return stableSortRawFacts(snapshot);
 }
@@ -587,12 +677,109 @@ function normalizeRepoPath(repoPath: string | undefined): string | undefined {
   return repoPath.replace(/\\/g, "/");
 }
 
+function quoteShellValue(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
 function isContractScopedIssue(issue: VerifyIssue): boolean {
   return Boolean(issue.path && isContractScopedPath(issue.path.replace(/\\/g, "/")));
 }
 
 function isHistoricalDebtIssue(issue: VerifyIssue): boolean {
   return issue.code.startsWith("HISTORICAL_");
+}
+
+function countContractMissingIssues(issues: VerifyIssue[]): number {
+  return issues.filter((issue) => isMissingContractIssue(issue)).length;
+}
+
+function countContractDriftIssues(issues: VerifyIssue[]): number {
+  return issues.filter((issue) => isDriftedContractIssue(issue)).length;
+}
+
+function isMissingContractIssue(issue: VerifyIssue): boolean {
+  return new Set([
+    "BOOTSTRAP_MANIFEST_MISSING",
+    "BOOTSTRAP_CONTRACT_MISSING",
+    "BOOTSTRAP_SPEC_DEBT_RECORD_MISSING",
+    "DOMAIN_CONTRACT_INVALID_YAML",
+    "DOMAIN_CONTRACT_INVALID_SHAPE",
+    "DOMAIN_CONTRACT_METADATA_MISSING",
+    "DOMAIN_CONTRACT_SECTION_MISSING",
+    "API_CONTRACT_INVALID_JSON",
+    "API_CONTRACT_SECTION_MISSING",
+    "API_CONTRACT_ENDPOINTS_MISSING",
+    "FEATURE_CONTRACT_SCENARIOS_MISSING",
+  ]).has(issue.code);
+}
+
+function isDriftedContractIssue(issue: VerifyIssue): boolean {
+  if (issue.path && issue.path.replace(/\\/g, "/").startsWith(".spec/contracts/")) {
+    return !isMissingContractIssue(issue);
+  }
+
+  return issue.code.startsWith("GREENFIELD_") && issue.code.includes("DRIFT");
+}
+
+function collectReleaseBaselineFacts(root: string): {
+  baselinePresent: boolean;
+  contractGraphPresent: boolean;
+  staticCollectorPresent: boolean;
+  policyPresent: boolean;
+  compareCount: number;
+  compareChangedCount: number;
+} {
+  const baselinePath = path.join(root, ".spec", "baselines", "current.yaml");
+  if (!fs.existsSync(baselinePath)) {
+    return {
+      baselinePresent: false,
+      contractGraphPresent: false,
+      staticCollectorPresent: false,
+      policyPresent: false,
+      compareCount: 0,
+      compareChangedCount: 0,
+    };
+  }
+
+  const parsed = yaml.load(fs.readFileSync(baselinePath, "utf-8"));
+  const baseline = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  const compareReports = listReleaseCompareReports(root);
+
+  return {
+    baselinePresent: true,
+    contractGraphPresent: isRecord(baseline.contract_graph),
+    staticCollectorPresent: isRecord(baseline.static_collector_manifest),
+    policyPresent: isRecord(baseline.policy_snapshot),
+    compareCount: compareReports.length,
+    compareChangedCount: compareReports.filter((report) => report.overallStatus === "changed").length,
+  };
+}
+
+function listReleaseCompareReports(root: string): Array<{ overallStatus: string }> {
+  const compareRoot = path.join(root, ".spec", "releases", "compare");
+  if (!fs.existsSync(compareRoot)) {
+    return [];
+  }
+
+  return fs.readdirSync(compareRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(compareRoot, entry.name, "compare-report.json"))
+    .filter((reportPath) => fs.existsSync(reportPath))
+    .map((reportPath) => {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(reportPath, "utf-8")) as Record<string, unknown>;
+        const driftSummary = parsed.driftSummary as Record<string, unknown> | undefined;
+        return {
+          overallStatus: typeof driftSummary?.overallStatus === "string" ? driftSummary.overallStatus : "not_tracked",
+        };
+      } catch {
+        return { overallStatus: "not_tracked" };
+      }
+    });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function appendVerifyIssues(

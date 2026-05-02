@@ -8,8 +8,13 @@
 
 import * as path from 'path';
 import { execSync } from 'child_process';
+import {
+  DEFERRED_SURFACE_CONTRACT_VERSION,
+  getDeferredRegressionSuites,
+  getDeferredSurfaceContracts,
+} from '../runtime/deferred-surface-contract';
 
-interface TestSuite {
+export interface TestSuite {
   name: string;
   file: string;
   expectedTests: number;
@@ -17,7 +22,7 @@ interface TestSuite {
   task?: string;
 }
 
-type RegressionArea =
+export type RegressionArea =
   | 'core-mainline'
   | 'bootstrap-takeover-hardening'
   | 'retakeover-regression-pool'
@@ -26,6 +31,15 @@ type RegressionArea =
   | 'runtime-extended';
 
 type TestSuiteInput = Omit<TestSuite, 'area'>;
+
+export const REGRESSION_AREA_ORDER: RegressionArea[] = [
+  'core-mainline',
+  'bootstrap-takeover-hardening',
+  'retakeover-regression-pool',
+  'verify-ci-gates',
+  'change-implement',
+  'runtime-extended',
+];
 
 function core(suite: TestSuiteInput): TestSuite {
   return { area: 'core-mainline', ...suite };
@@ -51,13 +65,13 @@ function runtime(suite: TestSuiteInput): TestSuite {
   return { area: 'runtime-extended', ...suite };
 }
 
-const TEST_SUITES: TestSuite[] = [
+export const TEST_SUITES: TestSuite[] = [
   core({ name: 'Rollback Regression', file: 'rollback-regression.ts', expectedTests: 5 }),
   core({ name: 'Semantic Validation', file: 'semantic-validation-negative.ts', expectedTests: 5 }),
   core({ name: 'CLI Help Surface', file: 'cli-help-surface.ts', expectedTests: 3 }),
   core({ name: 'CLI Legacy Surface Hint', file: 'cli-legacy-surface-hint.ts', expectedTests: 2 }),
   core({ name: 'Greenfield Command Surface', file: 'greenfield-command-surface.ts', expectedTests: 3 }),
-  core({ name: 'Onboarding First Run', file: 'onboarding-first-run.ts', expectedTests: 6, task: 'P4-T4' }),
+  core({ name: 'Onboarding First Run', file: 'onboarding-first-run.ts', expectedTests: 7, task: 'P4-T4/M7-T4' }),
   core({ name: 'Greenfield Source Document Loader', file: 'greenfield-source-document-loader.ts', expectedTests: 5 }),
   core({ name: 'Greenfield Project Asset Writer', file: 'greenfield-project-asset-writer.ts', expectedTests: 5 }),
   core({ name: 'Greenfield Domain And Context Draft', file: 'greenfield-domain-context-draft.ts', expectedTests: 5 }),
@@ -79,8 +93,8 @@ const TEST_SUITES: TestSuite[] = [
   core({ name: 'Verify Runner Warn Advisory', file: 'verify-runner-warn-advisory.ts', expectedTests: 3 }),
   core({ name: 'Verify Runner Runtime Soft Fail', file: 'verify-runner-runtime-soft-fail.ts', expectedTests: 3 }),
   core({ name: 'Verify JSON Contract', file: 'verify-json-contract.ts', expectedTests: 3, task: 'P1-T5' }),
-  core({ name: 'Facts Contract Roundtrip', file: 'facts-contract-roundtrip.ts', expectedTests: 3 }),
-  core({ name: 'Policy Engine Basic', file: 'policy-engine-basic.ts', expectedTests: 4, task: 'P2-T6' }),
+  core({ name: 'Facts Contract Roundtrip', file: 'facts-contract-roundtrip.ts', expectedTests: 4 }),
+  core({ name: 'Policy Engine Basic', file: 'policy-engine-basic.ts', expectedTests: 5, task: 'P2-T6/M5-T1' }),
   core({ name: 'Policy Unknown Fact', file: 'policy-unknown-fact.ts', expectedTests: 5, task: 'P2-T6' }),
   core({ name: 'Verify Policy Integration', file: 'verify-policy-integration.ts', expectedTests: 5, task: 'P2-T6' }),
   core({ name: 'Policy Profile Next', file: 'policy-profile-next.ts', expectedTests: 5, task: 'P3-T1' }),
@@ -114,9 +128,9 @@ const TEST_SUITES: TestSuite[] = [
   retakeover({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 15, task: 'P0-T1/P0-T2/N8' }),
   bootstrap({ name: 'Adopt CLI Surface', file: 'adopt-cli-surface.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Adopt Atomic', file: 'bootstrap-adopt-atomic.ts', expectedTests: 3 }),
-  bootstrap({ name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 5, task: 'Task 7/P1-T4' }),
+  bootstrap({ name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 7, task: 'Task 7/P1-T4' }),
   bootstrap({ name: 'Bootstrap Spec Debt', file: 'bootstrap-spec-debt.ts', expectedTests: 3 }),
-  bootstrap({ name: 'Bootstrap Takeover Brief', file: 'bootstrap-takeover-brief.ts', expectedTests: 4, task: 'Task 7/17' }),
+  bootstrap({ name: 'Bootstrap Takeover Brief', file: 'bootstrap-takeover-brief.ts', expectedTests: 5, task: 'Task 7/17' }),
   retakeover({ name: 'Bootstrap Synthetic Messy Legacy Takeover Stress', file: 'bootstrap-messy-legacy-takeover.ts', expectedTests: 5, task: 'N9' }),
   gates({ name: 'Verify Contract-Aware Core', file: 'verify-contract-aware-core.ts', expectedTests: 3 }),
   gates({ name: 'Verify Bootstrap Takeover', file: 'verify-bootstrap-takeover.ts', expectedTests: 3 }),
@@ -128,7 +142,7 @@ const TEST_SUITES: TestSuite[] = [
   gates({ name: 'Package Script Surface', file: 'package-script-surface.ts', expectedTests: 7, task: 'P4-T1/P4-T2' }),
   gates({ name: 'P4 Sample Repo And CI Templates', file: 'p4-sample-ci-templates.ts', expectedTests: 3, task: 'P4-T2' }),
   gates({ name: 'P4 Documentation Experience', file: 'p4-docs-experience.ts', expectedTests: 6, task: 'P4-T3' }),
-  gates({ name: 'Integration Payloads', file: 'integration-payloads.ts', expectedTests: 5, task: 'P7-T2' }),
+  gates({ name: 'Integration Payloads', file: 'integration-payloads.ts', expectedTests: 6, task: 'P7-T2/M7-T2' }),
   gates({ name: 'Contract Source Adapters', file: 'contract-source-adapters.ts', expectedTests: 5, task: 'P7-T3' }),
   changeImplement({ name: 'Change Dual Mode', file: 'change-dual-mode.ts', expectedTests: 5, task: 'P2-T3' }),
   changeImplement({ name: 'Change Default Mode Config', file: 'change-default-mode-config.ts', expectedTests: 7, task: 'N7/P1-T1' }),
@@ -165,15 +179,153 @@ const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Audit Event Ledger', file: 'audit-event-ledger.ts', expectedTests: 5, task: 'P2-T2/P6-T1' }),
   runtime({ name: 'Console Governance Dashboard', file: 'console-governance-dashboard.ts', expectedTests: 4, task: 'P2-T3' }),
   runtime({ name: 'Console UI Smoke', file: 'console-ui-smoke.ts', expectedTests: 4, task: 'P5-T1' }),
-  runtime({ name: 'Console Governance Actions', file: 'console-governance-actions.ts', expectedTests: 4, task: 'P2-T4' }),
+  runtime({ name: 'Console Governance Actions', file: 'console-governance-actions.ts', expectedTests: 5, task: 'P2-T4' }),
   runtime({ name: 'Console Governance Export', file: 'console-governance-export.ts', expectedTests: 2, task: 'P3-T3' }),
-  runtime({ name: 'Console Multi-Repo Governance', file: 'console-multi-repo-governance.ts', expectedTests: 3, task: 'P5-T3' }),
-  runtime({ name: 'Privacy Redaction', file: 'privacy-redaction.ts', expectedTests: 5, task: 'P6-T2' }),
-  runtime({ name: 'Policy Approval Workflow', file: 'policy-approval-workflow.ts', expectedTests: 5, task: 'P6-T3' }),
+  runtime({ name: 'Console Multi-Repo Governance', file: 'console-multi-repo-governance.ts', expectedTests: 5, task: 'P5-T3/M7-T1' }),
+  runtime({ name: 'Privacy Redaction', file: 'privacy-redaction.ts', expectedTests: 6, task: 'P6-T2/M7-T3' }),
+  runtime({ name: 'Policy Approval Workflow', file: 'policy-approval-workflow.ts', expectedTests: 6, task: 'P6-T3/M7-T3' }),
   runtime({ name: 'Value Report', file: 'value-report.ts', expectedTests: 5, task: 'P8-T1' }),
   runtime({ name: 'Commercial Pilot Readiness', file: 'pilot-readiness.ts', expectedTests: 6, task: 'P8-T2/T0-5' }),
+  runtime({ name: 'Pilot Product Package', file: 'pilot-product-package.ts', expectedTests: 4, task: 'M7-T4' }),
+  runtime({ name: 'North Star Acceptance', file: 'north-star-acceptance.ts', expectedTests: 4, task: 'M7-T5' }),
+  runtime({ name: 'Regression Matrix Contract', file: 'regression-matrix-contract.ts', expectedTests: 5, task: 'M5-T3' }),
   runtime({ name: 'Collaboration Surface Freeze', file: 'collaboration-surface-freeze.ts', expectedTests: 4, task: 'P4-T2' }),
 ];
+
+interface RegressionAreaSummary {
+  area: RegressionArea;
+  suiteCount: number;
+  expectedTests: number;
+}
+
+interface RegressionMatrixManifest {
+  schemaVersion: 1;
+  source: string;
+  totalSuites: number;
+  totalExpectedTests: number;
+  areas: RegressionAreaSummary[];
+  suites: TestSuite[];
+  boundaries: {
+    v1MainlineAreas: RegressionArea[];
+    runtimeExtendedArea: 'runtime-extended';
+    pilotReadiness: {
+      suiteFile: string;
+      regressionArea: RegressionArea | 'missing';
+      doctorProfile: 'pilot';
+      runtimeDiagnosticOnly: true;
+    };
+    deferredSurfaces: {
+      contractVersion: number;
+      suiteCount: number;
+      expectedTests: number;
+      allowedRegressionArea: 'runtime-extended';
+      allowedDoctorProfiles: ['runtime'];
+      forbiddenDoctorProfiles: ['v1', 'pilot'];
+      diagnosticsOnly: true;
+      suites: string[];
+    };
+  };
+  consistency: {
+    valid: boolean;
+    issues: string[];
+  };
+}
+
+export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
+  const areas = REGRESSION_AREA_ORDER.map((area) => {
+    const suites = TEST_SUITES.filter((suite) => suite.area === area);
+    return {
+      area,
+      suiteCount: suites.length,
+      expectedTests: suites.reduce((sum, suite) => sum + suite.expectedTests, 0),
+    };
+  });
+
+  const deferredSuites = getDeferredRegressionSuites();
+  const deferredSuiteSet = new Set(deferredSuites);
+  const deferredExpectedTests = TEST_SUITES
+    .filter((suite) => deferredSuiteSet.has(suite.file))
+    .reduce((sum, suite) => sum + suite.expectedTests, 0);
+  const pilotSuite = TEST_SUITES.find((suite) => suite.file === 'pilot-readiness.ts');
+
+  const issues: string[] = [];
+  const areaTotalSuites = areas.reduce((sum, area) => sum + area.suiteCount, 0);
+  const areaTotalExpectedTests = areas.reduce((sum, area) => sum + area.expectedTests, 0);
+  if (areaTotalSuites !== TEST_SUITES.length) {
+    issues.push(`Area suite total ${areaTotalSuites} does not match registered suite count ${TEST_SUITES.length}`);
+  }
+  if (areaTotalExpectedTests !== TEST_SUITES.reduce((sum, suite) => sum + suite.expectedTests, 0)) {
+    issues.push('Area expected test total does not match registered suite expected test total');
+  }
+
+  const seenFiles = new Set<string>();
+  for (const suite of TEST_SUITES) {
+    if (seenFiles.has(suite.file)) {
+      issues.push(`Duplicate regression suite file: ${suite.file}`);
+    }
+    seenFiles.add(suite.file);
+  }
+
+  for (const suite of deferredSuites) {
+    const registered = TEST_SUITES.find((candidate) => candidate.file === suite);
+    if (!registered) {
+      issues.push(`Deferred surface suite is not registered: ${suite}`);
+    } else if (registered.area !== 'runtime-extended') {
+      issues.push(`Deferred surface suite must stay in runtime-extended: ${suite}`);
+    }
+  }
+
+  if (!pilotSuite) {
+    issues.push('Pilot readiness regression suite is not registered: pilot-readiness.ts');
+  } else if (pilotSuite.area !== 'runtime-extended') {
+    issues.push('Pilot readiness regression suite must stay in runtime-extended and leave gating to doctor pilot');
+  }
+
+  for (const contract of getDeferredSurfaceContracts()) {
+    if (!contract.forbiddenDoctorProfiles.includes('pilot')) {
+      issues.push(`Deferred surface contract ${contract.id} does not forbid doctor pilot gating`);
+    }
+  }
+
+  return {
+    schemaVersion: 1,
+    source: 'tools/jispec/tests/regression-runner.ts',
+    totalSuites: TEST_SUITES.length,
+    totalExpectedTests: TEST_SUITES.reduce((sum, suite) => sum + suite.expectedTests, 0),
+    areas,
+    suites: TEST_SUITES.map((suite) => ({ ...suite })),
+    boundaries: {
+      v1MainlineAreas: [
+        'core-mainline',
+        'bootstrap-takeover-hardening',
+        'retakeover-regression-pool',
+        'verify-ci-gates',
+        'change-implement',
+      ],
+      runtimeExtendedArea: 'runtime-extended',
+      pilotReadiness: {
+        suiteFile: 'pilot-readiness.ts',
+        regressionArea: pilotSuite?.area ?? 'missing',
+        doctorProfile: 'pilot',
+        runtimeDiagnosticOnly: true,
+      },
+      deferredSurfaces: {
+        contractVersion: DEFERRED_SURFACE_CONTRACT_VERSION,
+        suiteCount: deferredSuites.length,
+        expectedTests: deferredExpectedTests,
+        allowedRegressionArea: 'runtime-extended',
+        allowedDoctorProfiles: ['runtime'],
+        forbiddenDoctorProfiles: ['v1', 'pilot'],
+        diagnosticsOnly: true,
+        suites: deferredSuites,
+      },
+    },
+    consistency: {
+      valid: issues.length === 0,
+      issues,
+    },
+  };
+}
 
 interface TestResult {
   suite: string;
@@ -292,12 +444,14 @@ async function runTestSuite(suite: TestSuite): Promise<TestResult> {
   }
 }
 
-async function main() {
-  console.log('=== JiSpec Unified Regression Test Matrix ===\n');
+async function main(options: { area?: RegressionArea } = {}) {
+  const suites = options.area ? TEST_SUITES.filter((suite) => suite.area === options.area) : TEST_SUITES;
+  const scopeSuffix = options.area ? ` (${options.area})` : '';
+  console.log(`=== JiSpec Unified Regression Test Matrix${scopeSuffix} ===\n`);
 
   const results: TestResult[] = [];
 
-  for (const suite of TEST_SUITES) {
+  for (const suite of suites) {
     const taskSuffix = suite.task ? ` ${suite.task}` : '';
     process.stdout.write(`Running [${suite.area}${taskSuffix}] ${suite.name}... `);
     const result = await runTestSuite(suite);
@@ -334,16 +488,7 @@ async function main() {
 
 function printAreaSummary(results: TestResult[]): void {
   console.log('\n=== Matrix By Area ===');
-  const areaOrder: RegressionArea[] = [
-    'core-mainline',
-    'bootstrap-takeover-hardening',
-    'retakeover-regression-pool',
-    'verify-ci-gates',
-    'change-implement',
-    'runtime-extended',
-  ];
-
-  for (const area of areaOrder) {
+  for (const area of REGRESSION_AREA_ORDER) {
     const areaResults = results.filter((result) => result.area === area);
     if (areaResults.length === 0) {
       continue;
@@ -356,7 +501,33 @@ function printAreaSummary(results: TestResult[]): void {
   }
 }
 
-main().catch(error => {
-  console.error('Regression runner failed:', error);
-  process.exit(1);
-});
+function isRegressionArea(value: string): value is RegressionArea {
+  return REGRESSION_AREA_ORDER.includes(value as RegressionArea);
+}
+
+function readOptionValue(optionName: string): string | undefined {
+  const index = process.argv.indexOf(optionName);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+function runCli(): void {
+  if (process.argv.includes('--manifest-json')) {
+    console.log(JSON.stringify(buildRegressionMatrixManifest(), null, 2));
+    return;
+  }
+
+  const areaOption = readOptionValue('--area');
+  if (areaOption && !isRegressionArea(areaOption)) {
+    console.error(`Unknown regression area: ${areaOption}`);
+    process.exit(1);
+  }
+
+  main({ area: areaOption ? (areaOption as RegressionArea) : undefined }).catch(error => {
+    console.error('Regression runner failed:', error);
+    process.exit(1);
+  });
+}
+
+if (require.main === module) {
+  runCli();
+}

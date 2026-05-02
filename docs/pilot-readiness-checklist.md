@@ -14,9 +14,9 @@
 
 ## 当前状态
 
-当前仓库已经完成 T0-1 到 T0-4：首次接管基线、带 owner 的 policy 配置、Console governance snapshot、privacy report 与可分享包都已落盘。
+当前仓库已经完成 T0-1 到 T0-5，并补齐 Pilot product package 与 North Star acceptance 的本地入口：首次接管基线、带 owner 的 policy 配置、Console governance snapshot、privacy report、试点门禁、adoption package 和最终验收套件均已落盘或具备可重复命令。
 
-最新 `npm run pilot:ready` 与 `doctor pilot --json` 结果为 `ready: true`、`blockerCount: 0`、7/7 检查通过。下面的清单继续作为试点模板和后续仓库接入时的执行顺序保留；当前 T0-5 gate 已可作为常规试点收口流程执行。
+最新 `npm run pilot:ready` 与 `doctor pilot --json` 结果为 `ready: true`、`blockerCount: 0`、7/7 检查通过。`post-release:gate`、`doctor v1`、`doctor runtime`、`doctor pilot` 和 `north-star acceptance` 共同构成当前收口验证面。下面的清单继续作为试点模板和后续仓库接入时的执行顺序保留。
 
 1. 首次接管基线
 
@@ -50,6 +50,18 @@
    - 完成标准：`ready: true` 且 `blockerCount: 0`。
    - 当前仓库状态：已通过，7/7 checks pass；失败时 gate 会直接列出 blocker、owner action、next command 和 source artifacts。
 
+6. Pilot product package
+
+   - 目标：把安装、first-run、first baseline、CI verify、Console governance、privacy report 和 `doctor pilot` 汇成一个可分享的本地 adoption path。
+   - 建议命令：`npm run jispec -- pilot package --root .`。
+   - 完成标准：`.spec/pilot/package.json` 和 `.spec/pilot/package.md` 存在；package 明确区分 mainline gates 与 governance companions。
+
+7. North Star acceptance
+
+   - 目标：在试点包之后生成最终本地验收套件，证明 legacy takeover、Greenfield、daily change、external patch mediation、policy waiver、release drift、Console governance、multi-repo aggregation 和 privacy report 已经形成同一条可验证交付主线。
+   - 建议命令：`npm run jispec -- north-star acceptance --root .`。
+   - 完成标准：`.spec/north-star/acceptance.json`、`.spec/north-star/acceptance.md` 和逐场景 decision packet 存在；套件明确不上传源码、不以 LLM 作为 blocking decision source，也不替代 `verify`、doctor profiles 或 `post-release:gate`。
+
 ## 边界
 
 这份清单不承诺自动理解旧仓库。Legacy takeover 仍然需要 owner review、adoption decision、明确 spec debt 和本地 verify 产物。
@@ -68,6 +80,8 @@ npm run pilot:ready
 npm run pilot:ready -- --json
 npm run jispec -- doctor pilot
 npm run jispec -- doctor pilot --json
+npm run jispec -- north-star acceptance
+npm run jispec -- north-star acceptance --json
 ```
 
 Pilot readiness 不能替代 `verify`、`ci:verify`、policy evaluation、privacy review、release compare 或 Console governance。它只是一个用于 adoption planning 的摘要。

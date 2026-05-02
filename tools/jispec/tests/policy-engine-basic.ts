@@ -17,6 +17,7 @@ function createFacts(overrides: Record<string, unknown> = {}): CanonicalFactsSna
       "contracts.domain.present": false,
       "contracts.api.present": true,
       "contracts.behavior.present": false,
+      "contracts.behavior.deferred": false,
       "bootstrap.takeover.present": true,
       ...overrides,
     },
@@ -113,6 +114,40 @@ async function main(): Promise<void> {
     console.log("✓ Test 2: nested all/any/not policy conditions evaluate deterministically against canonical facts");
     passed++;
 
+    const behaviorPolicy: VerifyPolicy = {
+      version: 1,
+      requires: { facts_contract: "1.0" },
+      rules: [
+        {
+          id: "require-behavior-contract",
+          enabled: true,
+          action: "warn",
+          message: "Behavior contract is missing",
+          when: {
+            all: [
+              {
+                fact: "contracts.behavior.present",
+                op: "==",
+                value: false,
+              },
+              {
+                fact: "contracts.behavior.deferred",
+                op: "==",
+                value: false,
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const missingBehaviorEvaluation = evaluateVerifyPolicy(behaviorPolicy, createFacts());
+    assert.deepEqual(missingBehaviorEvaluation.matchedRules.map((rule) => rule.ruleId), ["require-behavior-contract"]);
+    const deferredBehaviorEvaluation = evaluateVerifyPolicy(behaviorPolicy, createFacts({ "contracts.behavior.deferred": true }));
+    assert.deepEqual(deferredBehaviorEvaluation.matchedRules.map((rule) => rule.ruleId), []);
+    console.log("✓ Test 3: behavior contract policy treats explicit deferred behavior debt as not missing");
+    passed++;
+
     const invalidBlockingPolicy: VerifyPolicy = {
       version: 1,
       requires: { facts_contract: "1.0" },
@@ -134,7 +169,7 @@ async function main(): Promise<void> {
     const validation = validatePolicyAgainstFactsContract(invalidBlockingPolicy, createFactsContract());
     assert.equal(validation.valid, false);
     assert.equal(validation.issues[0]?.code, "POLICY_BLOCKING_RULE_USES_UNSTABLE_FACT");
-    console.log("✓ Test 3: blocking policy rules are restricted to stable facts from the facts contract");
+    console.log("✓ Test 4: blocking policy rules are restricted to stable facts from the facts contract");
     passed++;
 
     const teamPolicy = validateVerifyPolicy({
@@ -150,7 +185,7 @@ async function main(): Promise<void> {
     assert.equal(teamPolicy.team?.profile, "small_team");
     assert.equal(teamPolicy.team?.owner, "platform");
     assert.deepEqual(teamPolicy.team?.reviewers, ["contracts", "qa"]);
-    console.log("✓ Test 4: policy schema accepts the minimal team profile surface");
+    console.log("✓ Test 5: policy schema accepts the minimal team profile surface");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -46,6 +46,9 @@ function main(): void {
       assert.match(html, /JiSpec Console/);
       assert.match(html, /Governance Questions/);
       assert.match(html, /Can this repo merge right now/);
+      assert.match(html, /Mergeability/);
+      assert.match(html, /Owner action/);
+      assert.match(html, /Evidence source/);
       assert.match(html, /Policy posture/i);
       assert.match(html, /Waiver lifecycle/i);
       assert.match(html, /Spec debt ledger/i);
@@ -95,13 +98,21 @@ function main(): void {
       const payload = JSON.parse(cli.stdout) as {
         relativeOutPath?: string;
         boundary?: { readOnly?: boolean; executesCommands?: boolean; overridesVerify?: boolean };
-        headline?: { status?: string };
+        headline?: {
+          status?: string;
+          mergeability?: { status?: string };
+          ownerAction?: { owner?: string; command?: string };
+          evidence?: { primary?: string };
+        };
       };
       assert.equal(payload.relativeOutPath, ".spec/console/ui/index.html");
       assert.equal(payload.boundary?.readOnly, true);
       assert.equal(payload.boundary?.executesCommands, false);
       assert.equal(payload.boundary?.overridesVerify, false);
       assert.ok(payload.headline?.status);
+      assert.ok(payload.headline?.mergeability?.status);
+      assert.ok(payload.headline?.ownerAction?.command);
+      assert.ok(payload.headline?.evidence?.primary);
       assert.ok(fs.existsSync(path.join(root, ".spec", "console", "ui", "index.html")));
     });
   });

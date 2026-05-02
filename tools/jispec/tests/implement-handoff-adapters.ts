@@ -70,6 +70,12 @@ async function main(): Promise<void> {
     try {
       writeFixtureHandoff(root);
       const request = buildExternalToolHandoffRequest(root, "change-adapter", "devin", "2026-05-02T00:00:00.000Z");
+      assert.equal(request.contract.integrationContractVersion, 1);
+      assert.equal(request.contract.payloadRole, "external_coding_tool_request");
+      assert.equal(request.contract.localArtifactsRemainSourceOfTruth, true);
+      assert.equal(request.contract.previewOnly, true);
+      assert.equal(request.contract.requiredReturnPath, "implement_external_patch");
+      assert.deepEqual(request.contract.mediatedChecks, ["scope_check", "tests", "verify"]);
       assert.equal(request.constraints.patchFormat, "unified_diff");
       assert.equal(request.constraints.allowedPathsOnly, true);
       assert.equal(request.constraints.doNotRunAsFinalAuthority, true);
@@ -131,6 +137,8 @@ async function main(): Promise<void> {
       const schema = fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "schemas", "implementation-handoff.schema.json"), "utf-8");
       assert.match(schema, /codex/);
       assert.match(schema, /claude_code/);
+      assert.match(schema, /integrationContractVersion/);
+      assert.match(schema, /requiredReturnPath/);
       assert.match(schema, /patchMustReturnThroughImplementExternalPatch/);
       assert.match(schema, /scopeCheckRequired/);
       assert.match(schema, /verifyRequired/);
