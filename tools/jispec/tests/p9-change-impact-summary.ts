@@ -135,8 +135,8 @@ async function main(): Promise<void> {
     assert.equal(suite.task, "P9-T3");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 130);
-    assert.equal(manifest.totalExpectedTests, 575);
+    assert.equal(manifest.totalSuites, 131);
+    assert.equal(manifest.totalExpectedTests, 581);
   }));
 
   printResults(results);

@@ -238,7 +238,7 @@ export function buildPrivacyReport(options: PrivacyReportOptions): PrivacyReport
     const artifact: PrivacyReportArtifact = {
       path: normalizePath(relativePath),
       category,
-      shareDecision: redacted.findings.length > 0 || requiresReviewBeforeSharing(relativePath)
+      shareDecision: redacted.findings.length > 0 || requiresReviewBeforeSharing(relativePath, original)
         ? "review_before_sharing"
         : "shareable",
       findingCount: redacted.findings.length,
@@ -404,8 +404,11 @@ function categorizeArtifact(relativePath: string): PrivacyReportArtifact["catego
   return "other_jispec_artifact";
 }
 
-function requiresReviewBeforeSharing(relativePath: string): boolean {
+function requiresReviewBeforeSharing(relativePath: string, content?: string): boolean {
   const normalized = normalizePath(relativePath);
+  if (isRiskyExternalToolRunArtifact(normalized, content)) {
+    return true;
+  }
   return (
     normalized.startsWith(".spec/facts/external-graphs/") ||
     normalized.endsWith("/normalized-evidence.json") ||
@@ -413,6 +416,21 @@ function requiresReviewBeforeSharing(relativePath: string): boolean {
     normalized === ".spec/integrations/external-graph.json" ||
     normalized.startsWith(".spec/integrations/external-graph/")
   );
+}
+
+function isRiskyExternalToolRunArtifact(relativePath: string, content?: string): boolean {
+  if (!relativePath.startsWith(".spec/integrations/") || !relativePath.endsWith(".json") || !content) {
+    return false;
+  }
+  try {
+    const artifact = JSON.parse(content) as unknown;
+    if (!isRecord(artifact) || artifact.kind !== "jispec-external-tool-run") {
+      return false;
+    }
+    return artifact.networkRequired === true || artifact.sourceUploadRisk !== "none";
+  } catch {
+    return relativePath.includes("external-tool-run");
+  }
 }
 
 function positionForOffset(text: string, offset: number): { line: number; column: number } {
@@ -445,4 +463,8 @@ function stableUnique(values: string[]): string[] {
 
 function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, "/");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

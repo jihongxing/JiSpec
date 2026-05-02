@@ -25,6 +25,7 @@ export type AuditEventType =
   | "release_snapshot"
   | "release_compare"
   | "external_patch_intake"
+  | "external_tool_run_requested"
   | "spec_debt_repay"
   | "spec_debt_cancel"
   | "spec_debt_owner_review";

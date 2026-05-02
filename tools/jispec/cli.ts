@@ -392,7 +392,7 @@ function registerPolicyCommands(program: Command): void {
     .command("record")
     .description("Write a local approval decision and append an audit event.")
     .option("--root <path>", "Repository root.", ".")
-    .requiredOption("--subject-kind <kind>", "policy_change|waiver_change|release_drift|execute_default_change|pilot_risk_acceptance.")
+    .requiredOption("--subject-kind <kind>", "policy_change|waiver_change|release_drift|execute_default_change|pilot_risk_acceptance|external_graph_summary_sharing.")
     .option("--subject-ref <path>", "Subject artifact path. Defaults to policy.yaml or latest release compare where possible.")
     .option("--actor <actor>", "Actor recording the approval.")
     .option("--role <role>", "Approval role: owner|reviewer.", "reviewer")
@@ -454,10 +454,10 @@ function parsePolicyProfileOption(profile?: string): TeamPolicyProfileName | und
 }
 
 function parseApprovalSubjectKindOption(kind: string): ApprovalSubjectKind {
-  if (kind === "policy_change" || kind === "waiver_change" || kind === "release_drift" || kind === "execute_default_change" || kind === "pilot_risk_acceptance") {
+  if (kind === "policy_change" || kind === "waiver_change" || kind === "release_drift" || kind === "execute_default_change" || kind === "pilot_risk_acceptance" || kind === "external_graph_summary_sharing") {
     return kind;
   }
-  throw new Error("--subject-kind must be one of: policy_change, waiver_change, release_drift, execute_default_change, pilot_risk_acceptance");
+  throw new Error("--subject-kind must be one of: policy_change, waiver_change, release_drift, execute_default_change, pilot_risk_acceptance, external_graph_summary_sharing");
 }
 
 function parseApprovalActorRoleOption(role: string): ApprovalActorRole {

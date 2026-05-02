@@ -26,13 +26,10 @@ First-batch completion status:
 - `P9-T4 Reviewer Companion Consolidation` - completed.
 - `P9-T5 Multi-Repo Contract Drift Hints` - completed.
 - `P9-T6 External Graph Adapter Import-Only` - completed.
-- Current repository regression matrix after P9-T6: `130` suites and `575` expected tests.
+- `P9-T7 External Tool Run Opt-In Boundary` - completed.
+- Current repository regression matrix after P9-T7: `131` suites and `581` expected tests.
 
-The first batch intentionally did not implement:
-
-- `P9-T7 External Tool Run Opt-In Boundary`
-
-That later task should consume the labels, impact summary contracts, and import-only external graph boundary created here. A second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4, P9-T5, and P9-T6 are now complete.
+The second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4, P9-T5, P9-T6, and P9-T7 are now complete.
 
 ## File Structure
 
@@ -1547,7 +1544,7 @@ Suite placement:
 - `P9 Reviewer Companion Consolidation`: `runtime-extended`, `6` expected tests, task `P9-T4` - completed.
 - `P9 Multi-Repo Contract Drift Hints`: `runtime-extended`, `6` expected tests, task `P9-T5` - completed.
 - `P9 External Graph Import Only`: `verify-ci-gates`, `6` expected tests, task `P9-T6` - completed.
-- `P9 External Tool Run Opt-In Boundary`: `runtime-extended`, `6` expected tests, task `P9-T7`.
+- `P9 External Tool Run Opt-In Boundary`: `runtime-extended`, `6` expected tests, task `P9-T7` - completed.
 
 ---
 
@@ -2763,6 +2760,8 @@ Expected: commit succeeds and contains only P9-T6 integration/privacy/verify/doc
 
 ### Task 7: P9-T7 External Tool Run Opt-In Boundary
 
+状态：已完成
+
 **Files:**
 - Create: `tools/jispec/integrations/external-tool-run-boundary.ts`
 - Create: `schemas/external-tool-run-boundary.schema.json`
@@ -2775,7 +2774,7 @@ Expected: commit succeeds and contains only P9-T6 integration/privacy/verify/doc
 - Modify: `tools/jispec/tests/regression-runner.ts`
 - Modify: `tools/jispec/tests/regression-matrix-contract.ts`
 
-- [ ] **Step 1: Write the failing P9-T7 regression suite**
+- [x] **Step 1: Write the failing P9-T7 regression suite**
 
 Create `tools/jispec/tests/p9-external-tool-run-opt-in-boundary.ts`:
 
@@ -2929,7 +2928,7 @@ function report(results: TestResult[]): void {
 main();
 ```
 
-- [ ] **Step 2: Run the P9-T7 test and verify it fails**
+- [x] **Step 2: Run the P9-T7 test and verify it fails**
 
 Run:
 
@@ -2939,7 +2938,7 @@ node --import tsx tools\jispec\tests\p9-external-tool-run-opt-in-boundary.ts
 
 Expected: FAIL because `tools/jispec/integrations/external-tool-run-boundary.ts` and the run-boundary schema do not exist.
 
-- [ ] **Step 3: Add explicit external tool run boundary model**
+- [x] **Step 3: Add explicit external tool run boundary model**
 
 Create `tools/jispec/integrations/external-tool-run-boundary.ts`:
 
@@ -3044,7 +3043,7 @@ export function buildExternalToolRunArtifact(input: ExternalToolRunRequest): Ext
 
 Create `schemas/external-tool-run-boundary.schema.json` with required fields: `kind`, `mode`, `command`, `provider`, `networkRequired`, `sourceUploadRisk`, `modelOrServiceProvider`, `sourceScope`, `generatedAt`, `advisoryOnly`, `outputBlockingEligible`, `audit`, and `replay`.
 
-- [ ] **Step 4: Wire privacy, approval, replay, and docs**
+- [x] **Step 4: Wire privacy, approval, replay, and docs**
 
 Modify `tools/jispec/privacy/redaction.ts` so external tool run artifacts are classified as review-before-sharing when `networkRequired` is `true` or `sourceUploadRisk` is not `none`.
 
@@ -3065,7 +3064,7 @@ Update `docs/privacy-and-local-first.md` with the external tool boundary: explic
 
 Update `docs/integrations.md` with `run-external-tool` usage and the rule that external tool output cannot alone create a blocking issue.
 
-- [ ] **Step 5: Register the P9-T7 suite and update final second-batch matrix counts**
+- [x] **Step 5: Register the P9-T7 suite and update final second-batch matrix counts**
 
 Modify `tools/jispec/tests/regression-runner.ts`:
 
@@ -3084,7 +3083,7 @@ assert.equal(areaMap.get("runtime-extended")?.suiteCount, 43);
 assert.equal(areaMap.get("runtime-extended")?.expectedTests, 187);
 ```
 
-- [ ] **Step 6: Run focused verification for P9-T7**
+- [x] **Step 6: Run focused verification for P9-T7**
 
 Run:
 
@@ -3098,7 +3097,7 @@ npm run gate:quick -- tools/jispec/tests/p9-external-tool-run-opt-in-boundary.ts
 
 Expected: all commands PASS, regulated profile requires owner approval for sharing/adopting external summaries, and external tool output remains advisory-only.
 
-- [ ] **Step 7: Run final second-batch verification**
+- [x] **Step 7: Run final second-batch verification**
 
 Run:
 
@@ -3117,7 +3116,7 @@ Expected:
 - `doctor v1`, `doctor runtime`, and `doctor pilot` return JSON with `ready: true`.
 - Matrix contract reports `131` suites and `581` expected tests.
 
-- [ ] **Step 8: Commit P9-T7**
+- [x] **Step 8: Commit P9-T7**
 
 Run:
 

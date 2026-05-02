@@ -195,6 +195,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Regression Matrix Contract', file: 'regression-matrix-contract.ts', expectedTests: 5, task: 'M5-T3' }),
   runtime({ name: 'P9 Baseline Contract', file: 'p9-baseline-contract.ts', expectedTests: 5, task: 'P9-T1' }),
   runtime({ name: 'P9 Reviewer Companion Consolidation', file: 'p9-reviewer-companion-consolidation.ts', expectedTests: 6, task: 'P9-T4' }),
+  runtime({ name: 'P9 External Tool Run Opt-In Boundary', file: 'p9-external-tool-run-opt-in-boundary.ts', expectedTests: 6, task: 'P9-T7' }),
   runtime({ name: 'Collaboration Surface Freeze', file: 'collaboration-surface-freeze.ts', expectedTests: 4, task: 'P4-T2' }),
 ];
 

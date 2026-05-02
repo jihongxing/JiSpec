@@ -68,6 +68,33 @@ They do not interrupt verify and cannot create a blocking failure by themselves.
 External graph summaries and normalized evidence files are included in the privacy report and default to
 `review_before_sharing`, even when no common secret pattern is detected.
 
+## External Tool Run Opt-In Boundary
+
+`run-external-tool` is the explicit boundary required before JiSpec can trigger a provider such as
+GitNexus, Graphify, or another graph generator. JiSpec does not enable that execution implicitly from
+`verify`, `change`, `implement`, or Console surfaces.
+
+An external tool run artifact must record:
+
+- explicit `command`
+- explicit `provider`
+- `networkRequired`
+- `sourceUploadRisk`
+- `modelOrServiceProvider`
+- `sourceScope`
+- `generatedAt`
+- audit metadata
+- replay metadata
+
+The artifact follows `schemas/external-tool-run-boundary.schema.json` and uses
+`kind: jispec-external-tool-run`. External tool output remains advisory-only with
+`outputBlockingEligible: false`; it cannot create a blocking issue unless corroborated by JiSpec-owned
+deterministic contracts and normal verify policy.
+
+For regulated profiles, sharing or adopting an external graph summary can require owner approval for the
+`external_graph_summary_sharing` subject. Risky run artifacts, including networked runs or runs with
+`sourceUploadRisk` other than `none`, are classified by the privacy report as `review_before_sharing`.
+
 ## Local Artifact Refs
 
 Payloads include both `sourceArtifacts` and structured `sourceArtifactRefs`. Refs classify local fact sources such as:

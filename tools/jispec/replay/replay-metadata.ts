@@ -12,6 +12,27 @@ export interface ReplayMetadata {
   reason?: string;
   previousOutcome?: string;
   nextHumanAction: string;
+  externalToolRun?: ExternalToolRunReplayMetadata;
+}
+
+export interface ExternalToolRunReplayMetadata {
+  kind: "external_tool_run_metadata";
+  command: string;
+  provider: string;
+  generatedAt: string;
+}
+
+export function buildExternalToolRunReplayMetadata(input: {
+  command: string;
+  provider: string;
+  generatedAt: string;
+}): ExternalToolRunReplayMetadata {
+  return {
+    kind: "external_tool_run_metadata",
+    command: input.command.trim(),
+    provider: input.provider.trim(),
+    generatedAt: input.generatedAt,
+  };
 }
 
 export function normalizeReplayPath(root: string, candidate: string | undefined): string | undefined {

@@ -13,7 +13,8 @@ export type ApprovalSubjectKind =
   | "waiver_change"
   | "release_drift"
   | "execute_default_change"
-  | "pilot_risk_acceptance";
+  | "pilot_risk_acceptance"
+  | "external_graph_summary_sharing";
 
 export type ApprovalDecisionStatus = "approved" | "rejected";
 export type ApprovalActorRole = "owner" | "reviewer";
@@ -303,6 +304,9 @@ function discoverApprovalSubjects(root: string, policy: VerifyPolicy | null): Ap
   if (requiresPilotRiskAcceptance(root)) {
     subjects.push(resolveApprovalSubject(root, "pilot_risk_acceptance", ".spec/privacy/privacy-report.json"));
   }
+  if (requireExternalGraphSummaryApproval(root, policy.team?.profile ?? "small_team")) {
+    subjects.push(resolveApprovalSubject(root, "external_graph_summary_sharing", externalGraphSummarySubjectRef(root)));
+  }
 
   return dedupeSubjects(subjects);
 }
@@ -365,6 +369,9 @@ function defaultSubjectRef(root: string, kind: ApprovalSubjectKind): string {
   }
   if (kind === "pilot_risk_acceptance") {
     return ".spec/privacy/privacy-report.json";
+  }
+  if (kind === "external_graph_summary_sharing") {
+    return externalGraphSummarySubjectRef(root);
   }
   if (kind === "waiver_change") {
     return ".spec/waivers";
@@ -455,6 +462,46 @@ function requiresPilotRiskAcceptance(root: string): boolean {
   }
 }
 
+function requireExternalGraphSummaryApproval(root: string, profile: TeamPolicyProfileName): boolean {
+  if (profile !== "regulated") {
+    return false;
+  }
+
+  const summaryPath = path.join(root, ".spec", "handoffs", "external-graph-summary.md");
+  if (fs.existsSync(summaryPath)) {
+    return true;
+  }
+
+  return listDirectFiles(root, ".spec/integrations", ".json")
+    .some((relativePath) => {
+      const absolutePath = path.join(root, relativePath);
+      try {
+        const artifact = JSON.parse(fs.readFileSync(absolutePath, "utf-8")) as unknown;
+        return isExternalToolRunRequiringApproval(artifact);
+      } catch {
+        return relativePath.includes("external-tool") || relativePath.includes("external-graph");
+      }
+    });
+}
+
+function externalGraphSummarySubjectRef(root: string): string {
+  const summaryPath = ".spec/handoffs/external-graph-summary.md";
+  if (fs.existsSync(path.join(root, summaryPath))) {
+    return summaryPath;
+  }
+  return ".spec/integrations/external-tool-run.json";
+}
+
+function isExternalToolRunRequiringApproval(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.kind !== "jispec-external-tool-run") {
+    return false;
+  }
+  return value.networkRequired === true || value.sourceUploadRisk !== "none";
+}
+
 function numericValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -483,8 +530,8 @@ function dedupeSubjects(subjects: ApprovalSubjectRef[]): ApprovalSubjectRef[] {
 }
 
 function validateSubjectKind(value: unknown): asserts value is ApprovalSubjectKind {
-  if (!["policy_change", "waiver_change", "release_drift", "execute_default_change", "pilot_risk_acceptance"].includes(String(value))) {
-    throw new Error("Approval subject kind must be policy_change, waiver_change, release_drift, execute_default_change, or pilot_risk_acceptance.");
+  if (!["policy_change", "waiver_change", "release_drift", "execute_default_change", "pilot_risk_acceptance", "external_graph_summary_sharing"].includes(String(value))) {
+    throw new Error("Approval subject kind must be policy_change, waiver_change, release_drift, execute_default_change, pilot_risk_acceptance, or external_graph_summary_sharing.");
   }
 }
 
