@@ -142,6 +142,10 @@ function renderVerifyDecisionEvidence(report: VerifyReport): string[] {
   if (report.modes?.waiversApplied) {
     evidence.push(`${report.modes.waiversApplied} matched waiver(s)`);
   }
+  const agentDiscipline = report.modes?.agentDiscipline as { latestReportPath?: string; completionStatus?: string } | undefined;
+  if (agentDiscipline?.latestReportPath) {
+    evidence.push(`Agent discipline: \`${agentDiscipline.latestReportPath}\` (${agentDiscipline.completionStatus ?? "unknown"})`);
+  }
   return evidence;
 }
 

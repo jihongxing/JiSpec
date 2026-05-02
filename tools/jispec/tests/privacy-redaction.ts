@@ -182,6 +182,45 @@ async function main(): Promise<void> {
     }
   }));
 
+  results.push(record("privacy report treats agent discipline artifacts as review-gated handoff evidence", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-privacy-agent-run-"));
+    try {
+      const fakeSecret = "sk-test12345678901234567890";
+      writeText(root, ".jispec/agent-run/change-1/debug-packet.md", [
+        "# Debug Packet",
+        "",
+        `Failed command used token ${fakeSecret}`,
+        "",
+      ].join("\n"));
+      writeText(root, ".jispec/agent-run/change-1/discipline-report.json", JSON.stringify({
+        sessionId: "change-1",
+        status: "blocked",
+        note: `discipline evidence token ${fakeSecret}`,
+      }, null, 2));
+
+      const result = buildPrivacyReport({
+        root,
+        generatedAt: "2026-05-02T00:00:00.000Z",
+      });
+      const byPath = new Map(result.report.artifacts.map((artifact) => [artifact.path, artifact]));
+      const debugPacket = byPath.get(".jispec/agent-run/change-1/debug-packet.md");
+      const disciplineReport = byPath.get(".jispec/agent-run/change-1/discipline-report.json");
+
+      assert.equal(debugPacket?.category, "handoff");
+      assert.equal(disciplineReport?.category, "handoff");
+      assert.equal(debugPacket?.shareDecision, "review_before_sharing");
+      assert.equal(disciplineReport?.shareDecision, "review_before_sharing");
+      assert.ok(debugPacket?.redactedViewPath);
+      assert.ok(disciplineReport?.redactedViewPath);
+      const redactedDebug = fs.readFileSync(path.join(root, debugPacket?.redactedViewPath ?? ""), "utf-8");
+      const redactedReport = fs.readFileSync(path.join(root, disciplineReport?.redactedViewPath ?? ""), "utf-8");
+      assert.doesNotMatch(redactedDebug, /sk-test12345678901234567890/);
+      assert.doesNotMatch(redactedReport, /sk-test12345678901234567890/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
   let passed = 0;
   let failed = 0;
   for (const result of results) {

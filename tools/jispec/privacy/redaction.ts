@@ -386,6 +386,9 @@ function categorizeArtifact(relativePath: string): PrivacyReportArtifact["catego
   if (relativePath.startsWith(".spec/pilot/")) {
     return "pilot_package";
   }
+  if (relativePath.startsWith(".jispec/agent-run/")) {
+    return "handoff";
+  }
   if (relativePath.endsWith(".md") || relativePath.includes("summary")) {
     return "summary";
   }
@@ -407,6 +410,9 @@ function categorizeArtifact(relativePath: string): PrivacyReportArtifact["catego
 function requiresReviewBeforeSharing(relativePath: string, content?: string): boolean {
   const normalized = normalizePath(relativePath);
   if (isRiskyExternalToolRunArtifact(normalized, content)) {
+    return true;
+  }
+  if (normalized.startsWith(".jispec/agent-run/") && (normalized.includes("debug-packet") || normalized.includes("completion-evidence"))) {
     return true;
   }
   return (

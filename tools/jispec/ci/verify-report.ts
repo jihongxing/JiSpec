@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { findLatestDisciplineReport } from "../discipline/artifacts";
 import { computeIssueFingerprint } from "../verify/issue-fingerprint";
 import type { VerifyRunResult } from "../verify/verdict";
 
@@ -79,6 +80,17 @@ export function buildVerifyReport(
       : undefined,
     fingerprint: computeIssueFingerprint(issue),
   }));
+  const latestDiscipline = findLatestDisciplineReport(context.repoRoot);
+  const modes = {
+    ...(result.metadata ?? {}),
+    ...(latestDiscipline ? {
+      agentDiscipline: {
+        latestReportPath: latestDiscipline.path,
+        completionStatus: latestDiscipline.report.completion.status,
+        mode: latestDiscipline.report.mode,
+      },
+    } : {}),
+  };
 
   return {
     version: 1,
@@ -89,7 +101,7 @@ export function buildVerifyReport(
     issues,
     factsContractVersion: result.metadata?.factsContractVersion as string | undefined,
     matchedPolicyRules: result.metadata?.matchedPolicyRules as string[] | undefined,
-    modes: result.metadata,
+    modes,
     context,
     links: buildVerifyReportLinks(context, counts),
   };

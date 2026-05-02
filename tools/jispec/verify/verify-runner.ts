@@ -33,6 +33,7 @@ import { isPolicySchemaError, validatePolicyAgainstFactsContract } from "../poli
 import { classifyGitDiff } from "../change/git-diff-classifier";
 import { computeLaneDecision } from "../change/lane-decision";
 import { readChangeSession } from "../change/change-session";
+import { agentDisciplineCollector } from "./agent-discipline-collector";
 import { collectBootstrapTakeoverIssues } from "./bootstrap-takeover-collector";
 import { collectContractAssetIssues, isContractScopedPath } from "./contract-asset-collector";
 import { collectGreenfieldRatchetIssues } from "./greenfield-ratchet-collector";
@@ -53,6 +54,7 @@ export interface VerifyRunOptions {
   root: string;
   strict?: boolean;
   supplementalCollectors?: VerifySupplementalCollector[];
+  ignoreAgentDiscipline?: boolean;
   generatedAt?: string;
   useBaseline?: boolean;
   writeBaseline?: boolean;
@@ -64,6 +66,7 @@ export interface VerifyRunOptions {
 }
 
 const DEFAULT_SUPPLEMENTAL_COLLECTORS: VerifySupplementalCollector[] = [
+  agentDisciplineCollector,
   {
     source: "contract-assets",
     collect(root) {
@@ -386,7 +389,7 @@ async function collectSupplementalIssues(
   const collectors = [
     ...DEFAULT_SUPPLEMENTAL_COLLECTORS,
     ...(options.supplementalCollectors ?? []),
-  ];
+  ].filter((collector) => !(options.ignoreAgentDiscipline === true && collector.source === "agent-discipline"));
 
   const issues: VerifyIssue[] = [];
   const sources: string[] = [];

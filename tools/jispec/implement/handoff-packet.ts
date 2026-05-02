@@ -12,6 +12,7 @@ import type { EpisodeMemory } from "./episode-memory";
 import { getRecentHypotheses, getRejectedPaths, getEpisodesByOutcome } from "./episode-memory";
 import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
 import { splitDecisionCompanionSections } from "../companion/decision-sections";
+import type { ReviewDiscipline } from "../discipline/types";
 
 export interface ImplementContractContext {
   lane: "fast" | "strict";
@@ -136,6 +137,15 @@ export interface HandoffPacket {
   costUSD: number;
   contractContext: ImplementContractContext;
   decisionPacket: ImplementationDecisionPacket;
+  discipline?: {
+    sessionPath?: string;
+    completionEvidencePath?: string;
+    disciplineReportPath?: string;
+    disciplineSummaryPath?: string;
+    debugPacketPath?: string;
+    debugPacketMarkdownPath?: string;
+  };
+  reviewDiscipline?: ReviewDiscipline;
 
   summary: {
     whatWorked: string[];
@@ -1084,6 +1094,27 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   lines.push(`Verify Command: ${packet.nextSteps.verifyCommand}`);
   lines.push(`Verify Recommendation: ${packet.nextSteps.verifyRecommendation}`);
   lines.push("");
+
+  if (packet.discipline) {
+    lines.push("Agent discipline:");
+    lines.push(`  Report: ${packet.discipline.disciplineReportPath ?? "not_available_yet"}`);
+    lines.push(`  Summary: ${packet.discipline.disciplineSummaryPath ?? "not_available_yet"}`);
+    lines.push(`  Completion evidence: ${packet.discipline.completionEvidencePath ?? "not_available_yet"}`);
+    if (packet.discipline.debugPacketPath) {
+      lines.push(`  Debug packet: ${packet.discipline.debugPacketPath}`);
+    }
+    if (packet.discipline.debugPacketMarkdownPath) {
+      lines.push(`  Debug summary: ${packet.discipline.debugPacketMarkdownPath}`);
+    }
+    lines.push("");
+  }
+  if (packet.reviewDiscipline) {
+    lines.push("Review discipline:");
+    lines.push(`  Purpose: ${packet.reviewDiscipline.purpose}`);
+    lines.push(`  Verification: ${packet.reviewDiscipline.verificationCommands.join(", ") || "none"}`);
+    lines.push(`  Next reviewer action: ${packet.reviewDiscipline.nextReviewerAction}`);
+    lines.push("");
+  }
 
   // Episode Memory
   if (packet.episodeMemory.attemptedHypotheses.length > 0) {

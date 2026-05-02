@@ -138,6 +138,9 @@ async function main(): Promise<void> {
     assert.match(formatHandoffPacket(result.handoffPacket), /Current state: needs_external_patch at budget/);
     assert.match(formatHandoffPacket(result.handoffPacket), /Owner: human_or_external_tool/);
     assert.match(formatHandoffPacket(result.handoffPacket), /Next command: npm run jispec-cli -- implement --session-id change-handoff --external-patch <path>/);
+    assert.ok(result.handoffPacket?.discipline);
+    assert.match(formatHandoffPacket(result.handoffPacket), /Agent discipline:/);
+    assert.match(formatHandoffPacket(result.handoffPacket), /Review discipline:/);
     assert.equal(result.handoffPacket?.nextSteps.externalToolHandoff?.required, true);
     assert.ok(result.handoffPacket?.nextSteps.externalToolHandoff?.request.includes("focused handoff"));
     assert.deepEqual(result.handoffPacket?.contractContext.adoptedContractPaths, [

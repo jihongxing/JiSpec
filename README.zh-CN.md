@@ -260,6 +260,7 @@ npm run ci:verify
   记录 change intent，对当前 diff 做 fast/strict lane 分类，并写出 active change session。
 - `implement`
   针对当前 active change session 做有边界的 handoff 或外部 patch 中介，然后回到 verify。JiSpec 不生成业务代码。
+  JiSpec 还会为 AI 或外部编码工具的实现尝试记录 Agent Discipline 证据。`.jispec/agent-run/<session-id>/` 下的产物会说明这次工作是否遵守 phase、scope、test strategy、debug、completion 和 review discipline。它们让“完成”变成有证据的声明，而 `verify` 和 `ci:verify` 仍然是确定性的交付门禁。
 - `verify`
   运行当前确定性的仓库验证路径；若存在 `.spec/policy.yaml` 会自动加载，输出四态 verdict 面，并写出 `.spec/handoffs/verify-summary.md`。
 - `policy migrate`

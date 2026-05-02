@@ -260,6 +260,7 @@ What they do:
   Records change intent, classifies the active diff into fast or strict lane, and writes the active change session.
 - `implement`
   Mediates an active change session through bounded handoff or an external patch file, then returns to verify. JiSpec does not generate business code.
+  JiSpec also records Agent Discipline evidence for AI or external coding tool attempts. The artifacts under `.jispec/agent-run/<session-id>/` show whether the work followed phase, scope, test strategy, debug, completion, and review discipline. They make "done" evidence-based, while `verify` and `ci:verify` remain the deterministic delivery gate.
 - `verify`
   Runs the current deterministic repository verification path, auto-loads `.spec/policy.yaml` when present, emits the four-state verdict surface, and writes `.spec/handoffs/verify-summary.md`.
 - `policy migrate`
