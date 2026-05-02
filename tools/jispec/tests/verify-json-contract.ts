@@ -34,6 +34,8 @@ async function main(): Promise<void> {
         issues: [],
         metadata: {
           factsContractVersion: "1.0",
+          impactAdvisoryOnly: true,
+          impactGraphFreshness: "not_available_yet",
           replay: {
             commands: {
               inspectSummary: "type .spec\\handoffs\\verify-summary.md",

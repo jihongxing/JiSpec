@@ -152,6 +152,7 @@ export const TEST_SUITES: TestSuite[] = [
   changeImplement({ name: 'Implement Handoff Mainline', file: 'implement-handoff-mainline.ts', expectedTests: 1 }),
   changeImplement({ name: 'Implement Patch Mediation', file: 'implement-patch-mediation.ts', expectedTests: 4, task: 'P2-T1' }),
   changeImplement({ name: 'Implement Handoff Adapters', file: 'implement-handoff-adapters.ts', expectedTests: 5, task: 'P7-T1' }),
+  changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 6, task: 'P9-T3' }),
   runtime({ name: 'Stage Runner Identity', file: 'stage-runner-identity-apply.ts', expectedTests: 8 }),
   runtime({ name: 'Cache Key Spec', file: 'cache-key-spec.ts', expectedTests: 10 }),
   runtime({ name: 'Cache Manifest Spec', file: 'cache-manifest-spec.ts', expectedTests: 10 }),

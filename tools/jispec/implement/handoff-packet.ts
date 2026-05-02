@@ -147,6 +147,13 @@ export interface HandoffPacket {
     suggestedActions: string[];
     filesNeedingAttention: string[];
     externalToolHandoff?: NonNullable<ImplementationDecisionPacket["nextActionDetail"]["externalToolHandoff"]>;
+    impact?: {
+      impactedContracts: string[];
+      impactedFiles: string[];
+      missingVerificationHints: string[];
+      nextReplayCommand: string;
+      freshness: string;
+    };
     testCommand: string;
     verifyCommand: string;
     verifyRecommendation: string;
@@ -250,6 +257,7 @@ export function generateHandoffPacket(
       ],
       filesNeedingAttention,
       externalToolHandoff: decisionPacket.nextActionDetail.externalToolHandoff,
+      impact: buildImpactNextStep(session),
       testCommand: result.metadata.testCommand,
       verifyCommand,
       verifyRecommendation,
@@ -267,6 +275,21 @@ export function generateHandoffPacket(
       startedAt: result.metadata.startedAt,
       completedAt: result.metadata.completedAt,
     },
+  };
+}
+
+function buildImpactNextStep(session: ChangeSession): HandoffPacket["nextSteps"]["impact"] | undefined {
+  const impact = session.impactSummary;
+  if (!impact || Array.isArray(impact)) {
+    return undefined;
+  }
+
+  return {
+    impactedContracts: impact.impactedContracts,
+    impactedFiles: impact.impactedFiles,
+    missingVerificationHints: impact.missingVerificationHints,
+    nextReplayCommand: impact.nextReplayCommand,
+    freshness: impact.freshness.status,
   };
 }
 
@@ -1009,6 +1032,16 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
     lines.push(`  Request: ${packet.nextSteps.externalToolHandoff.request}`);
     lines.push(`  Allowed paths: ${packet.nextSteps.externalToolHandoff.allowedPaths.join(", ") || "none"}`);
     lines.push(`  Files needing attention: ${packet.nextSteps.externalToolHandoff.filesNeedingAttention.join(", ") || "none"}`);
+    lines.push("");
+  }
+
+  if (packet.nextSteps.impact) {
+    lines.push("Impact Scope:");
+    lines.push(`  Freshness: ${packet.nextSteps.impact.freshness}`);
+    lines.push(`  Impacted contracts: ${packet.nextSteps.impact.impactedContracts.join(", ") || "none"}`);
+    lines.push(`  Impacted files: ${packet.nextSteps.impact.impactedFiles.join(", ") || "none"}`);
+    lines.push(`  Missing verification hints: ${packet.nextSteps.impact.missingVerificationHints.join("; ") || "none"}`);
+    lines.push(`  Replay: ${packet.nextSteps.impact.nextReplayCommand}`);
     lines.push("");
   }
 

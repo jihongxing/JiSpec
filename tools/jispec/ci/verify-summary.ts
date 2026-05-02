@@ -62,6 +62,10 @@ export function renderVerifySummaryMarkdown(report: VerifyReport): string {
     "",
     ...renderIssueGroup(selectHighlightedIssues(report, 5), "No issues to review."),
     "",
+    "## Impact Graph",
+    "",
+    ...renderImpactGraphContext(report),
+    "",
     "## Source Of Truth",
     "",
     "- Machine-readable verify report remains the source of truth.",
@@ -197,6 +201,21 @@ function renderMitigationContext(report: VerifyReport): string[] {
   }
 
   return lines;
+}
+
+function renderImpactGraphContext(report: VerifyReport): string[] {
+  const modes = report.modes ?? {};
+  const freshness = typeof modes.impactGraphFreshness === "string"
+    ? modes.impactGraphFreshness
+    : "not_available_yet";
+  const graphPath = typeof modes.impactGraphPath === "string"
+    ? modes.impactGraphPath
+    : ".spec/deltas/<changeId>/impact-graph.json";
+  return [
+    `- Freshness: \`${freshness}\`.`,
+    `- Graph: \`${graphPath}\`.`,
+    "- Impact graph context is advisory and does not replace deterministic verify issues.",
+  ];
 }
 
 function numberValue(value: unknown): number {

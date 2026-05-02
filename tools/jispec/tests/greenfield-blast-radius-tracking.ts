@@ -127,8 +127,10 @@ async function main(): Promise<void> {
       assert.match(impactReport, /## Blast Radius/);
       assert.match(impactReport, /verify-focus\.yaml/);
       assert.match(impactReport, /CTR-ORDERING-002/);
-      assert.ok(change.session.impactSummary?.some((line) => line.includes("Impact graph:")));
-      assert.ok(change.session.impactSummary?.some((line) => line.includes("Verify focus:")));
+      const impactSummary = change.session.impactSummary;
+      assert.ok(impactSummary && !Array.isArray(impactSummary));
+      assert.match(impactSummary.artifacts.impactGraphPath, /impact-graph\.json$/);
+      assert.match(impactSummary.artifacts.verifyFocusPath, /verify-focus\.yaml$/);
       assert.ok(change.session.nextCommands.some((hint) => hint.command.includes("verify-focus.yaml")));
     }));
   } catch (error) {

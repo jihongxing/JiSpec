@@ -32,6 +32,7 @@ import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-meta
 import { isPolicySchemaError, validatePolicyAgainstFactsContract } from "../policy/policy-schema";
 import { classifyGitDiff } from "../change/git-diff-classifier";
 import { computeLaneDecision } from "../change/lane-decision";
+import { readChangeSession } from "../change/change-session";
 import { collectBootstrapTakeoverIssues } from "./bootstrap-takeover-collector";
 import { collectContractAssetIssues, isContractScopedPath } from "./contract-asset-collector";
 import { collectGreenfieldRatchetIssues } from "./greenfield-ratchet-collector";
@@ -180,8 +181,29 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
     ...result.metadata,
     replay: buildVerifyReplay(result, options),
   };
+  result.metadata = {
+    ...result.metadata,
+    ...buildImpactGraphMetadata(root),
+  };
 
   return result;
+}
+
+function buildImpactGraphMetadata(root: string): Record<string, unknown> {
+  const activeSession = readChangeSession(root);
+  const impactSummary = activeSession?.impactSummary;
+  if (impactSummary && !Array.isArray(impactSummary)) {
+    return {
+      impactGraphFreshness: impactSummary.freshness.status,
+      impactGraphPath: impactSummary.artifacts.impactGraphPath,
+      impactAdvisoryOnly: impactSummary.advisoryOnly,
+    };
+  }
+
+  return {
+    impactGraphFreshness: "not_available_yet",
+    impactAdvisoryOnly: true,
+  };
 }
 
 function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): ReplayMetadata {

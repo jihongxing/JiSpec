@@ -814,7 +814,7 @@ Expected: commit succeeds and older artifacts without provenance fields still re
 - Modify: `tools/jispec/tests/regression-matrix-contract.ts`
 - Modify: `docs/gitnexus-graphify-capability-upgrade-plan.md`
 
-- [ ] **Step 1: Write the failing change impact summary tests**
+- [x] **Step 1: Write the failing change impact summary tests**
 
 Create `tools/jispec/tests/p9-change-impact-summary.ts`:
 
@@ -1001,7 +1001,7 @@ void main().catch((error) => {
 });
 ```
 
-- [ ] **Step 2: Run the P9-T3 test and verify it fails**
+- [x] **Step 2: Run the P9-T3 test and verify it fails**
 
 Run:
 
@@ -1011,7 +1011,7 @@ node --import tsx tools\jispec\tests\p9-change-impact-summary.ts
 
 Expected: FAIL because `tools/jispec/change/impact-summary.ts` does not exist and `impactSummary` is still a string array.
 
-- [ ] **Step 3: Add the shared change impact summary helper**
+- [x] **Step 3: Add the shared change impact summary helper**
 
 Create `tools/jispec/change/impact-summary.ts`:
 
@@ -1148,7 +1148,7 @@ function stringArray(value: unknown): string[] {
 }
 ```
 
-- [ ] **Step 4: Convert change session impact summary to structured data**
+- [x] **Step 4: Convert change session impact summary to structured data**
 
 Modify `tools/jispec/change/change-session.ts`.
 
@@ -1220,7 +1220,7 @@ Update `renderChangeCommandText` impact block:
   }
 ```
 
-- [ ] **Step 5: Attach impact summary to spec delta result**
+- [x] **Step 5: Attach impact summary to spec delta result**
 
 Modify `tools/jispec/change/spec-delta.ts`.
 
@@ -1243,7 +1243,7 @@ Add the field in the return object after files are written:
     impactSummary: summarizeChangeImpact({ root, changeId, generatedAt: createdAt }),
 ```
 
-- [ ] **Step 6: Surface impact scope in implement handoff packets**
+- [x] **Step 6: Surface impact scope in implement handoff packets**
 
 Modify `tools/jispec/implement/handoff-packet.ts`.
 
@@ -1283,7 +1283,7 @@ Set the field in `nextSteps`:
       impact: buildImpactNextStep(session),
 ```
 
-- [ ] **Step 7: Add advisory impact freshness to verify and CI summaries**
+- [x] **Step 7: Add advisory impact freshness to verify and CI summaries**
 
 Modify `tools/jispec/verify/verify-runner.ts`.
 
@@ -1340,7 +1340,7 @@ function renderImpactGraphContext(report: VerifyReport): string[] {
 }
 ```
 
-- [ ] **Step 8: Register the P9-T3 regression suite and update final counts**
+- [x] **Step 8: Register the P9-T3 regression suite and update final counts**
 
 Modify `tools/jispec/tests/regression-runner.ts` in the change/implement suite block:
 
@@ -1369,7 +1369,7 @@ Update `docs/gitnexus-graphify-capability-upgrade-plan.md`:
 状态：开发中
 ```
 
-- [ ] **Step 9: Run focused verification for P9-T3**
+- [x] **Step 9: Run focused verification for P9-T3**
 
 Run:
 
@@ -1384,7 +1384,7 @@ npm run typecheck
 
 Expected: all commands PASS.
 
-- [ ] **Step 10: Run the full post-release gate**
+- [x] **Step 10: Run the full post-release gate**
 
 Run:
 
@@ -1394,7 +1394,7 @@ npm run post-release:gate
 
 Expected: PASS with `127/127` suites and `556/556` expected tests after the P9 suites are registered.
 
-- [ ] **Step 11: Mark first P9 batch completed and commit**
+- [x] **Step 11: Mark first P9 batch completed and commit**
 
 Update `docs/gitnexus-graphify-capability-upgrade-plan.md`:
 

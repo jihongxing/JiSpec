@@ -18,6 +18,7 @@ import {
   collectGreenfieldProvenanceAnchorDrift,
   renderGreenfieldProvenanceDriftWarnings,
 } from "../greenfield/provenance-drift";
+import { summarizeChangeImpact, type ChangeImpactSummary } from "./impact-summary";
 
 export type SpecDeltaChangeType = "add" | "modify" | "deprecate" | "fix" | "redesign";
 const SPEC_DELTA_CHANGE_TYPES = new Set<string>(["add", "modify", "deprecate", "fix", "redesign"]);
@@ -76,6 +77,7 @@ export interface SpecDeltaDraftResult {
   dirtyReportPath: string;
   handoffPath: string;
   adoptionRecordPath: string;
+  impactSummary: ChangeImpactSummary;
   references: SpecDeltaReferences;
   blastRadius?: BlastRadiusAnalysis;
   dirtyAnalysis?: DirtyAnalysis;
@@ -163,7 +165,7 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
 
   fs.writeFileSync(deltaPath, dumpYaml(delta), "utf-8");
   fs.writeFileSync(impactReportPath, renderImpactReport(delta, blastRadius, dirtyAnalysis), "utf-8");
-  fs.writeFileSync(impactGraphPath, `${JSON.stringify(buildBlastRadiusGraphPayload(changeId, blastRadius), null, 2)}\n`, "utf-8");
+  fs.writeFileSync(impactGraphPath, `${JSON.stringify(buildBlastRadiusGraphPayload(changeId, blastRadius, createdAt), null, 2)}\n`, "utf-8");
   fs.writeFileSync(dirtyGraphPath, `${JSON.stringify(dirtyAnalysis.dirtyGraph, null, 2)}\n`, "utf-8");
   fs.writeFileSync(dirtyReportPath, renderDirtyReport(dirtyAnalysis.dirtyGraph), "utf-8");
   fs.writeFileSync(verifyFocusPath, renderDirtyVerifyFocusYaml(changeId, dirtyAnalysis.dirtyGraph, loadYamlObject(renderVerifyFocusYaml(changeId, blastRadius))), "utf-8");
@@ -181,6 +183,15 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
     dirtyReportPath: normalizePath(dirtyReportPath),
     handoffPath: normalizePath(handoffPath),
     adoptionRecordPath: normalizePath(adoptionRecordPath),
+    impactSummary: summarizeChangeImpact({
+      root,
+      changeId,
+      generatedAt: createdAt,
+      summary: options.summary,
+      changeType,
+      contextId: options.contextId,
+      sliceId: options.sliceId,
+    }),
     references,
     blastRadius,
     dirtyAnalysis,
