@@ -189,6 +189,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Pilot Product Package', file: 'pilot-product-package.ts', expectedTests: 4, task: 'M7-T4' }),
   runtime({ name: 'North Star Acceptance', file: 'north-star-acceptance.ts', expectedTests: 4, task: 'M7-T5' }),
   runtime({ name: 'Regression Matrix Contract', file: 'regression-matrix-contract.ts', expectedTests: 5, task: 'M5-T3' }),
+  runtime({ name: 'P9 Baseline Contract', file: 'p9-baseline-contract.ts', expectedTests: 5, task: 'P9-T1' }),
   runtime({ name: 'Collaboration Surface Freeze', file: 'collaboration-surface-freeze.ts', expectedTests: 4, task: 'P4-T2' }),
 ];
 
