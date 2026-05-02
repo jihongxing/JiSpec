@@ -1,5 +1,7 @@
 # P9 Contract-Aware Evidence and Impact Implementation Plan
 
+状态：已完成
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first P9 slice by freezing JiSpec's current impact/provenance baselines, adding explicit evidence provenance labels, and exposing change impact summaries to change, implement, verify, and CI surfaces without changing deterministic blocking semantics.
@@ -28,6 +30,12 @@ First-batch completion status:
 - `P9-T6 External Graph Adapter Import-Only` - completed.
 - `P9-T7 External Tool Run Opt-In Boundary` - completed.
 - Current repository regression matrix after P9-T7: `131` suites and `581` expected tests.
+
+Final P9 closure:
+
+- All P9-T1 through P9-T7 development tasks are implemented and committed.
+- Imported or externally generated graph evidence remains advisory-only unless corroborated by JiSpec-owned deterministic contracts.
+- GitNexus / Graphify capabilities are represented as local-first contracts and boundaries; they are not required runtime dependencies.
 
 The second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4, P9-T5, P9-T6, and P9-T7 are now complete.
 
@@ -243,7 +251,7 @@ Update `docs/gitnexus-graphify-capability-upgrade-plan.md`:
 ```markdown
 ### P9-T1 当前图谱 / provenance 基线冻结
 
-状态：开发中
+状态：已完成
 ```
 
 - [x] **Step 4: Register the P9-T1 regression suite**
@@ -773,7 +781,7 @@ Update `docs/gitnexus-graphify-capability-upgrade-plan.md`:
 ```markdown
 ### P9-T2 Evidence Provenance Labels
 
-状态：开发中
+状态：已完成
 ```
 
 - [x] **Step 8: Run focused verification for P9-T2**
@@ -1370,7 +1378,7 @@ Update `docs/gitnexus-graphify-capability-upgrade-plan.md`:
 ```markdown
 ### P9-T3 Change Impact Summary
 
-状态：开发中
+状态：已完成
 ```
 
 - [x] **Step 9: Run focused verification for P9-T3**

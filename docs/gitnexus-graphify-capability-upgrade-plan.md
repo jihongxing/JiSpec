@@ -688,6 +688,6 @@ P9: Contract-Aware Evidence and Impact Graph
 - regulated profile 可要求 owner approval 后才允许分享或采用外部图谱摘要。
 - 外部工具输出不能单独生成 blocking issue。
 
-### 首批建议
+### P9 完成状态
 
-优先做 `P9-T1`、`P9-T2`、`P9-T3`。这三项可以在不改变 blocking gate 语义的前提下，先把现有 JiSpec 图谱基线、证据来源和 change impact 串起来，为 reviewer companion、multi-repo 和 external graph adapter 打基础。
+`P9-T1` 到 `P9-T7` 已全部完成。GitNexus / Graphify 的能力借鉴已落到 JiSpec 本地优先的 evidence、impact、reviewer companion、multi-repo drift hint、external graph import-only，以及 external tool opt-in boundary 中；外部图谱输出仍保持 advisory-only，不会绕过 JiSpec deterministic verify、privacy、approval、audit 或 replay 边界。
