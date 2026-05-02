@@ -58,6 +58,7 @@ export interface MultiRepoGovernanceSnapshot {
     releaseDriftTrendComparisons: unknown;
     approvalWorkflowStatus: unknown;
     latestAuditActor: unknown;
+    contractRefs?: unknown;
   };
   privacy?: {
     redactionApplied: true;

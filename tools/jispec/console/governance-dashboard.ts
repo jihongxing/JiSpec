@@ -12,6 +12,7 @@ import {
   type ConsoleGovernanceObjectSnapshot,
   type ConsoleLocalSnapshot,
 } from "./read-model-snapshot";
+import type { MultiRepoGovernanceAggregate } from "./multi-repo";
 
 export type ConsoleGovernanceQuestionId =
   | "mergeability"
@@ -169,6 +170,32 @@ export function renderConsoleGovernanceDashboardText(dashboard: ConsoleGovernanc
 
 export function renderConsoleGovernanceDashboardJSON(dashboard: ConsoleGovernanceDashboard): string {
   return JSON.stringify(dashboard, null, 2);
+}
+
+export function buildCrossRepoDriftDashboardSummary(
+  aggregate: MultiRepoGovernanceAggregate,
+): ConsoleGovernanceDashboardQuestion {
+  if (aggregate.contractDriftHints.length === 0) {
+    return question({
+      id: "contract_drift_review",
+      label: "Which cross-repo contract drift needs owner review?",
+      status: "ok",
+      answer: "No cross-repo contract drift hints were found in the multi-repo aggregate.",
+      evidence: [".spec/console/multi-repo-governance.json"],
+      nextActions: [],
+    });
+  }
+
+  return question({
+    id: "contract_drift_review",
+    label: "Which cross-repo contract drift needs owner review?",
+    status: "attention",
+    answer: `${aggregate.contractDriftHints.length} cross-repo contract drift hint(s) need owner review.`,
+    evidence: aggregate.contractDriftHints.slice(0, 5).map((hint) =>
+      `${hint.upstreamRepoId} -> ${hint.downstreamRepoId}: ${hint.contractRef}`,
+    ),
+    nextActions: aggregate.contractDriftHints.slice(0, 5).map((hint) => hint.suggestedCommand),
+  });
 }
 
 function buildHeadline(

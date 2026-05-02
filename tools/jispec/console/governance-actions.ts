@@ -1,6 +1,7 @@
 import path from "node:path";
 import { collectConsoleLocalSnapshot, type ConsoleLocalSnapshot } from "./read-model-snapshot";
 import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
+import type { MultiRepoGovernanceAggregate } from "./multi-repo";
 
 export type ConsoleGovernanceActionKind =
   | "migrate_policy"
@@ -10,7 +11,8 @@ export type ConsoleGovernanceActionKind =
   | "cancel_spec_debt"
   | "mark_spec_debt_owner_review"
   | "compare_release_drift"
-  | "record_policy_approval";
+  | "record_policy_approval"
+  | "review_cross_repo_contract_drift";
 
 export type ConsoleGovernanceActionStatus = "ready" | "needs_input" | "not_available";
 export type ConsoleGovernanceRiskLevel = "low" | "medium" | "high" | "unknown";
@@ -155,6 +157,28 @@ export function renderConsoleGovernanceActionPlanText(plan: ConsoleGovernanceAct
 
 export function renderConsoleGovernanceActionPlanJSON(plan: ConsoleGovernanceActionPlan): string {
   return JSON.stringify(plan, null, 2);
+}
+
+export function buildCrossRepoDriftActions(
+  aggregate: MultiRepoGovernanceAggregate,
+): ConsoleGovernanceActionPacket[] {
+  return aggregate.contractDriftHints.map((hint) => action({
+    kind: "review_cross_repo_contract_drift",
+    status: "needs_input",
+    title: `Review cross-repo drift for ${hint.contractRef}`,
+    reason: `${hint.downstreamRepoId} has ${hint.downstreamHash}, while upstream ${hint.upstreamRepoId} has ${hint.upstreamHash}.`,
+    command: hint.suggestedCommand,
+    owner: `${hint.downstreamRepoId} owner`,
+    risk: {
+      level: "medium",
+      summary: "Cross-repo contract drift is an owner-action hint and does not replace any single-repo verify gate.",
+    },
+    sourceObject: "multi_repo_export",
+    sourceArtifacts: [".spec/console/multi-repo-governance.json"],
+    affectedContracts: [`${hint.upstreamRepoId}:${hint.contractRef}`, `${hint.downstreamRepoId}:${hint.contractRef}`],
+    targetRefs: [`cross-repo-drift:${hint.upstreamRepoId}:${hint.contractRef}->${hint.downstreamRepoId}`],
+    commandWrites: [],
+  }));
 }
 
 function buildPolicyActions(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceActionPacket[] {
@@ -439,6 +463,9 @@ function buildReviewerInstructions(input: Pick<ConsoleGovernanceActionPacket, "k
   }
   if (input.kind === "record_policy_approval") {
     return ["Review the current governance subject.", "Run the recommended local CLI command explicitly.", "Confirm the resulting approval audit event."];
+  }
+  if (input.kind === "review_cross_repo_contract_drift") {
+    return ["Review upstream and downstream contract ownership.", "Run the suggested command explicitly if you want to refresh the aggregate.", "Do not treat this action as a replacement for either repo's verify gate."];
   }
   return ["Run the recommended local CLI command explicitly.", "Review the resulting audit event."];
 }

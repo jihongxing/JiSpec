@@ -184,6 +184,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Console Governance Actions', file: 'console-governance-actions.ts', expectedTests: 5, task: 'P2-T4' }),
   runtime({ name: 'Console Governance Export', file: 'console-governance-export.ts', expectedTests: 2, task: 'P3-T3' }),
   runtime({ name: 'Console Multi-Repo Governance', file: 'console-multi-repo-governance.ts', expectedTests: 5, task: 'P5-T3/M7-T1' }),
+  runtime({ name: 'P9 Multi-Repo Contract Drift Hints', file: 'p9-multi-repo-contract-drift-hints.ts', expectedTests: 6, task: 'P9-T5' }),
   runtime({ name: 'Privacy Redaction', file: 'privacy-redaction.ts', expectedTests: 6, task: 'P6-T2/M7-T3' }),
   runtime({ name: 'Policy Approval Workflow', file: 'policy-approval-workflow.ts', expectedTests: 6, task: 'P6-T3/M7-T3' }),
   runtime({ name: 'Value Report', file: 'value-report.ts', expectedTests: 5, task: 'P8-T1' }),

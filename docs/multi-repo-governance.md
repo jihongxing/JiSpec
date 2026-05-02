@@ -46,6 +46,34 @@ This writes:
 
 If an explicit `--snapshot` path is missing, the aggregate keeps that input under `missingSnapshots` and increments `summary.missingSnapshotCount`. Missing snapshots are therefore visible governance inputs, not silently ignored repos.
 
+## Optional Repo Group
+
+Add `.spec/console/repo-group.yaml` when a workspace wants to describe known upstream/downstream contract relationships even before every repo has exported a snapshot:
+
+```yaml
+repos:
+  - id: api
+    role: upstream
+    path: repos/api
+    upstreamContractRefs: []
+    downstreamContractRefs:
+      - web:contracts/payment.yaml
+  - id: web
+    role: downstream
+    path: repos/web
+    upstreamContractRefs:
+      - api:contracts/payment.yaml
+    downstreamContractRefs: []
+```
+
+Repo group entries are local metadata for the aggregate. If a configured repo has not exported `.spec/console/governance-snapshot.json`, the aggregate records that repo as `not_available_yet`.
+
+## Cross-Repo Contract Drift Hints
+
+When both upstream and downstream snapshots expose matching `aggregateHints.contractRefs` with different hashes, the aggregate writes `contractDriftHints` and `ownerActions` to `.spec/console/multi-repo-governance.json` and renders them in `.spec/console/multi-repo-governance.md`.
+
+These hints are owner-review prompts and suggested commands only. They do not replace any single-repo `verify` or `ci:verify` gate, and they cannot make a repo mergeable or non-mergeable by themselves.
+
 ## What It Shows
 
 - highest-risk repos
@@ -54,6 +82,7 @@ If an explicit `--snapshot` path is missing, the aggregate keeps that input unde
 - expiring soon, expired, and unmatched active waivers
 - open Greenfield and bootstrap spec debt
 - release drift hotspots
+- cross-repo contract drift hints
 - latest audit actors
 - missing snapshot inputs
 
@@ -64,4 +93,5 @@ If an explicit `--snapshot` path is missing, the aggregate keeps that input unde
 - It does not run verify.
 - It does not upload source.
 - It does not replace single-repo `verify` or `ci:verify`.
+- Cross-repo drift hints produce owner actions and suggested commands only.
 - Markdown is a human companion. JSON is the machine-readable aggregate.

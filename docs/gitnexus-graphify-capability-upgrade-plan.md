@@ -619,7 +619,7 @@ P9: Contract-Aware Evidence and Impact Graph
 
 ### P9-T5 Multi-Repo Contract Drift Hints
 
-状态：待开发
+状态：已完成
 
 目标：
 

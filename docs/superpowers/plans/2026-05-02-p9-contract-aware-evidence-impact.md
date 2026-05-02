@@ -24,15 +24,15 @@ First-batch completion status:
 - `P9-T2 Evidence Provenance Labels` - completed.
 - `P9-T3 Change Impact Summary` - completed.
 - `P9-T4 Reviewer Companion Consolidation` - completed.
-- Current repository regression matrix after P9-T4: `128` suites and `563` expected tests.
+- `P9-T5 Multi-Repo Contract Drift Hints` - completed.
+- Current repository regression matrix after P9-T5: `129` suites and `569` expected tests.
 
 The first batch intentionally did not implement:
 
-- `P9-T5 Multi-Repo Contract Drift Hints`
 - `P9-T6 External Graph Adapter Import-Only`
 - `P9-T7 External Tool Run Opt-In Boundary`
 
-Those later tasks should consume the labels and impact summary contracts created here. A second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4 is now complete.
+Those later tasks should consume the labels and impact summary contracts created here. A second-batch engineering implementation plan for `P9-T4` through `P9-T7` is appended after the first-batch self-review checklist; P9-T4 and P9-T5 are now complete.
 
 ## File Structure
 
@@ -1545,7 +1545,7 @@ Planned matrix after P9-T4 through P9-T7 are complete:
 Suite placement:
 
 - `P9 Reviewer Companion Consolidation`: `runtime-extended`, `6` expected tests, task `P9-T4` - completed.
-- `P9 Multi-Repo Contract Drift Hints`: `runtime-extended`, `6` expected tests, task `P9-T5`.
+- `P9 Multi-Repo Contract Drift Hints`: `runtime-extended`, `6` expected tests, task `P9-T5` - completed.
 - `P9 External Graph Import Only`: `verify-ci-gates`, `6` expected tests, task `P9-T6`.
 - `P9 External Tool Run Opt-In Boundary`: `runtime-extended`, `6` expected tests, task `P9-T7`.
 
@@ -1920,6 +1920,8 @@ Expected: commit succeeds and contains only P9-T4 companion/test/matrix changes.
 
 ### Task 5: P9-T5 Multi-Repo Contract Drift Hints
 
+状态：已完成
+
 **Files:**
 - Create: `tools/jispec/console/repo-group.ts`
 - Create: `tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts`
@@ -1931,7 +1933,7 @@ Expected: commit succeeds and contains only P9-T4 companion/test/matrix changes.
 - Modify: `tools/jispec/tests/regression-runner.ts`
 - Modify: `tools/jispec/tests/regression-matrix-contract.ts`
 
-- [ ] **Step 1: Write the failing P9-T5 regression suite**
+- [x] **Step 1: Write the failing P9-T5 regression suite**
 
 Create `tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts`:
 
@@ -2116,7 +2118,7 @@ function report(results: TestResult[]): void {
 main();
 ```
 
-- [ ] **Step 2: Run the P9-T5 test and verify it fails**
+- [x] **Step 2: Run the P9-T5 test and verify it fails**
 
 Run:
 
@@ -2126,7 +2128,7 @@ node --import tsx tools\jispec\tests\p9-multi-repo-contract-drift-hints.ts
 
 Expected: FAIL because `tools/jispec/console/repo-group.ts` does not exist and multi-repo output does not include `repoGroup`, `contractDriftHints`, or `singleRepoGateReplacement`.
 
-- [ ] **Step 3: Add repo group config parsing**
+- [x] **Step 3: Add repo group config parsing**
 
 Create `tools/jispec/console/repo-group.ts`:
 
@@ -2215,7 +2217,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-- [ ] **Step 4: Extend multi-repo aggregate with drift hints**
+- [x] **Step 4: Extend multi-repo aggregate with drift hints**
 
 Modify `tools/jispec/console/multi-repo.ts` to add these output fields:
 
@@ -2246,7 +2248,7 @@ export interface MultiRepoGovernanceSnapshot {
 
 Build drift hints only when both compared repo snapshots exist and their contract hashes differ. For a missing repo snapshot, set `snapshotStatus: "not_available_yet"` and do not synthesize a blocking issue.
 
-- [ ] **Step 5: Update Console dashboard/actions and docs**
+- [x] **Step 5: Update Console dashboard/actions and docs**
 
 Modify `tools/jispec/console/governance-dashboard.ts` to render a `Cross-repo contract drift hints` section only from `contractDriftHints`.
 
@@ -2281,7 +2283,7 @@ repos:
 
 Document that drift hints are owner actions and suggested commands only; single-repo verify remains the authoritative gate.
 
-- [ ] **Step 6: Register the P9-T5 suite and update matrix counts**
+- [x] **Step 6: Register the P9-T5 suite and update matrix counts**
 
 Modify `tools/jispec/tests/regression-runner.ts`:
 
@@ -2298,7 +2300,7 @@ assert.equal(areaMap.get("runtime-extended")?.suiteCount, 42);
 assert.equal(areaMap.get("runtime-extended")?.expectedTests, 181);
 ```
 
-- [ ] **Step 7: Run focused verification for P9-T5**
+- [x] **Step 7: Run focused verification for P9-T5**
 
 Run:
 
@@ -2311,7 +2313,7 @@ npm run gate:quick -- tools/jispec/tests/p9-multi-repo-contract-drift-hints.ts
 
 Expected: all commands PASS, and no test expects cross-repo drift to replace a single-repo gate.
 
-- [ ] **Step 8: Commit P9-T5**
+- [x] **Step 8: Commit P9-T5**
 
 Run:
 
