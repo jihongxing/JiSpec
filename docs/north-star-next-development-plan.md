@@ -28,6 +28,100 @@ governance productization -> adoption packaging -> ecosystem integration -> ente
 - 当前项目已经具备 AI 原生软件交付控制内核的雏形；下一阶段要把这个内核推进到可安装、可试用、可运营、可审计、可商业化的产品形态。
 - 商业化增强不能改变北极星边界：JiSpec 仍是 contract control layer，不是 autonomous code implementation agent，也不是 LLM-first blocking judge。
 
+## V1.1 / pilot-grade 周执行计划
+
+起始日期：2026-05-04
+状态：frozen，除非通过对应任务和回归门禁，否则不调整场景范围、任务顺序和矩阵口径。
+
+节拍：8 周滚动收口
+
+目标：
+
+- 把 `north-star acceptance` 从当前 `2/9` 推到 `9/9`。
+- 把 takeover quality、execute mediation、Console / governance、release / replay / regression 四个增强块加固到 pilot-grade。
+- 让每周交付都同时留下机器产物、人类 decision packet 和可回归的验收命令。
+
+执行原则：
+
+- 每周只保留一条主线、一个主负责人和一组验收命令。
+- 场景补齐优先于新增 surface，四个增强块优先于体验装饰。
+- 周末若没有稳定 artifact、decision packet 和 regression 测试，就不算完成。
+- 任何新 surface 都必须服务 `bootstrap discover -> bootstrap draft -> adopt -> verify -> change -> implement -> verify -> ci:verify` 这条主线。
+
+| 周次 | 日期 | 优先级 | 负责人 | 依赖 | 本周目标 | 验收命令 |
+| --- | --- | --- | --- | --- | --- | --- |
+| W1 | 2026-05-04 ~ 2026-05-10 | P0 | Test Owner + Docs / Release Owner | 当前 `doctor v1`、`doctor runtime`、`post-release:gate` 绿线；`north-star acceptance` 的 2/9 基线 | 冻结周计划口径，清点 7 个缺失场景和 4 个增强块，补齐回归矩阵与命名口径 | `node --import tsx ./tools/jispec/tests/regression-matrix-contract.ts`；`npm run typecheck` |
+| W2 | 2026-05-11 ~ 2026-05-17 | P0 | Change / Implement Owner + Greenfield Owner | W1 的计划口径与矩阵契约冻结 | 补齐 `greenfield` 和 `daily_change` 两个场景的机器产物、decision packet 和回归覆盖 | `node --import tsx ./tools/jispec/tests/greenfield-empty-directory-acceptance-demo.ts`；`node --import tsx ./tools/jispec/tests/greenfield-baseline-snapshot.ts` |
+| W3 | 2026-05-18 ~ 2026-05-24 | P0 | Implement Runtime Owner + Audit & Integration Owner | W2 的 greenfield / change-session 基线 | 补齐 `external_patch_mediation` 和 `policy_waiver`，把 approval、audit、waiver 语义写实 | `node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts`；`node --import tsx ./tools/jispec/tests/policy-approval-workflow.ts` |
+| W4 | 2026-05-25 ~ 2026-05-31 | P0 | Console Governance Owner + Release / QA Owner | W3 的 mediation / approval / audit 产物 | 补齐 `release_drift` 和 `multi_repo_aggregation`，把 Console 的只读治理面稳定下来 | `node --import tsx ./tools/jispec/tests/console-multi-repo-governance.ts`；`node --import tsx ./tools/jispec/tests/release-drift-trend.ts` |
+| W5 | 2026-06-01 ~ 2026-06-07 | P1 | Privacy Owner + Docs / Release Owner | W4 的 release / multi-repo 基线 | 补齐 `privacy_report` 和 `pilot_package`，把可分享边界和试点包收口 | `node --import tsx ./tools/jispec/tests/privacy-redaction.ts`；`node --import tsx ./tools/jispec/tests/pilot-product-package.ts` |
+| W6 | 2026-06-08 ~ 2026-06-14 | P0 | Bootstrap Ranking Owner + Test Owner | W1/W2 的 takeover 基线 | 加固 takeover quality，把 noise suppression、boundary ranking、adopt summary 和 feature confidence 再压稳 | `node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts`；`node --import tsx ./tools/jispec/tests/bootstrap-ranking-regression.ts` |
+| W7 | 2026-06-15 ~ 2026-06-21 | P0 | Implement Runtime Owner + Console Governance Owner | W3-W6 的 mediation / governance / takeover 基线 | 加固 execute-default、implement mediation、governance actionability 和 audit-readiness | `node --import tsx ./tools/jispec/tests/change-default-mode-config.ts`；`node --import tsx ./tools/jispec/tests/implement-mainline-lane.ts`；`node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts` |
+| W8 | 2026-06-22 ~ 2026-06-28 | P0 | Docs / Release Owner + Test Owner | W1-W7 的全部周产物 | 绑定 `north-star acceptance` 9/9、`post-release:gate`、`doctor pilot`，完成 pilot-grade 收口 | `npm run jispec -- north-star acceptance --json`；`npm run post-release:gate`；`npm run jispec-cli -- doctor pilot --json` |
+
+### 任务拆分（可直接执行）
+
+| 任务 ID | 周次 | 优先级 | 负责人 | 依赖 | 交付物 | 验收命令 |
+| --- | --- | --- | --- | --- | --- | --- |
+| W1-T1 | W1 | P0 | Test Owner + Docs / Release Owner | 当前 `doctor v1`、`doctor runtime`、`post-release:gate` 绿线 | 冻结周计划口径、场景范围和矩阵契约；更新本段周计划的状态口径 | `node --import tsx ./tools/jispec/tests/regression-matrix-contract.ts` |
+| W1-T2 | W1 | P0 | Test Owner | W1-T1 | 把 `north-star acceptance` 的 7 个缺失场景写成明确任务条目和验收路径 | `npm run jispec -- north-star acceptance --json` |
+| W2-T1 | W2 | P0 | Greenfield Owner | W1-T1、W1-T2 | 补齐 `greenfield` 场景的机器产物、decision packet、README / guide 口径 | `node --import tsx ./tools/jispec/tests/greenfield-empty-directory-acceptance-demo.ts` |
+| W2-T2 | W2 | P0 | Change / Implement Owner | W1-T1、W1-T2 | 补齐 `daily_change` 场景的 change session、verify 记录和回放命令 | `node --import tsx ./tools/jispec/tests/p9-change-impact-summary.ts` |
+| W3-T1 | W3 | P0 | Implement Runtime Owner | W2-T1、W2-T2 | 补齐 `external_patch_mediation` 的 patch mediation、scope check、post-verify 产物 | `node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts` |
+| W3-T2 | W3 | P0 | Audit & Integration Owner | W2-T1、W2-T2 | 补齐 `policy_waiver` 的 approval、audit、waiver lifecycle 语义 | `node --import tsx ./tools/jispec/tests/policy-approval-workflow.ts` |
+| W4-T1 | W4 | P0 | Release / QA Owner | W3-T1、W3-T2 | 补齐 `release_drift` 的 snapshot、compare 和 drift trend | `node --import tsx ./tools/jispec/tests/release-drift-trend.ts` |
+| W4-T2 | W4 | P0 | Console Governance Owner | W3-T1、W3-T2 | 补齐 `multi_repo_aggregation` 的 export / aggregate contract | `node --import tsx ./tools/jispec/tests/console-multi-repo-governance.ts` |
+| W5-T1 | W5 | P1 | Privacy Owner | W4-T1、W4-T2 | 补齐 `privacy_report` 和 redaction companion，确认可分享边界 | `node --import tsx ./tools/jispec/tests/privacy-redaction.ts` |
+| W5-T2 | W5 | P1 | Docs / Release Owner | W4-T1、W4-T2 | 补齐 `pilot_package`，把 install / first-run / verify / governance / privacy 绑成试点包 | `node --import tsx ./tools/jispec/tests/pilot-product-package.ts` |
+| W6-T1 | W6 | P0 | Bootstrap Ranking Owner | W1-T1、W1-T2 | 加固 takeover quality，继续降低 noise suppression 失败率和边界误判 | `node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts` |
+| W6-T2 | W6 | P0 | Test Owner | W6-T1 | 加固 boundary-first ranking、adopt summary、feature confidence gate | `node --import tsx ./tools/jispec/tests/bootstrap-ranking-regression.ts` |
+| W7-T1 | W7 | P0 | Implement Runtime Owner | W3-T1、W6-T1、W6-T2 | 加固 execute-default readiness、hand-off replay、implement stop point 语义 | `node --import tsx ./tools/jispec/tests/change-default-mode-config.ts` |
+| W7-T2 | W7 | P0 | Console Governance Owner | W4-T2、W6-T1、W6-T2 | 加固 governance actionability、audit readiness、owner action 输出 | `node --import tsx ./tools/jispec/tests/implement-mainline-lane.ts`；`node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts` |
+| W8-T1 | W8 | P0 | Test Owner + Docs / Release Owner | W2-T1 到 W7-T2 全部完成 | 让 `north-star acceptance` 到达 `9/9`，并补齐缺失场景的机器产物和 decision packet | `npm run jispec -- north-star acceptance --json` |
+| W8-T2 | W8 | P0 | Release / QA Owner | W8-T1 | 连续跑通收口门禁，确认没有文档 / 测试 / CLI help 口径漂移 | `npm run post-release:gate`；`npm run jispec-cli -- doctor pilot --json` |
+
+### 执行记录
+
+- `W6-T1` 已完成：`node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts` 通过，takeover quality / noise suppression / boundary misclassification 的回归门禁已固化。
+- `W6-T2` 已完成：`node --import tsx ./tools/jispec/tests/bootstrap-ranking-regression.ts`、`node --import tsx ./tools/jispec/tests/bootstrap-feature-confidence-gate.ts`、`node --import tsx ./tools/jispec/tests/bootstrap-adopt-handoff.ts`、`node --import tsx ./tools/jispec/tests/bootstrap-takeover-brief.ts` 通过，boundary-first ranking、adopt summary 和 feature confidence gate 已收口。
+- `W7-T1` 已完成：`node --import tsx ./tools/jispec/tests/change-default-mode-config.ts`、`node --import tsx ./tools/jispec/tests/doctor-v1-readiness.ts`、`node --import tsx ./tools/jispec/tests/change-dual-mode.ts`、`node --import tsx ./tools/jispec/tests/v1-mainline-golden-path.ts` 通过，execute-default readiness、hand-off replay 和 stop point 语义已收口。
+- `W7-T2` 已完成：`node --import tsx ./tools/jispec/tests/implement-mainline-lane.ts`、`node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts`、`node --import tsx ./tools/jispec/tests/console-governance-dashboard.ts`、`node --import tsx ./tools/jispec/tests/console-ui-smoke.ts` 通过，governance actionability、audit readiness 和 owner action 输出已收口。
+- `W8-T1` 已完成：`npm run jispec -- north-star acceptance --json` 达到 `9/9`，并已补齐 `policy_waiver`、`external_patch_mediation`、`pilot_package` 的本地证据与 decision packet。
+- `W8-T2` 已尝试：`npm run post-release:gate` 当前仍被 `verify --json` 的 blocking drift 阻断，`npm run jispec-cli -- doctor pilot --json` 已通过；在 `verify` 重新转绿前，`W8-T2` 只能保持阻塞态。
+- 可追溯性设计调整方案见 `docs/provenance-traceability-adjustment-plan.md`，后续先按语义块和快照层收敛，再回收这批 blocking drift。
+- 需求渐进演进工作流已完成 `Phase 0-4`，并补上“生命周期迁移解释”叙述层；对应设计与迁移语义见 `docs/requirement-evolution-workflow.md`。这意味着 `release compare`、release summary 和 `north-star acceptance` 已能把 source snapshot、lifecycle registry、adopted change 与 requirement transition 解释成可读证据链，而不再只输出原始 drift 字段。
+
+执行规则：
+
+- 任务必须按周次顺序推进，除非依赖已明确满足。
+- 每个任务完成后，必须同步更新对应的 decision packet、测试和文档口径。
+- 如果某个任务只改了文档但没有对应验收命令，那它不算完成。
+
+状态建议：
+
+- `W1-T1` 到 `W2-T2` 是收口地基。
+- `W3-T1` 到 `W5-T2` 是场景补齐。
+- `W6-T1` 到 `W7-T2` 是质量加固。
+- `W8-T1` 到 `W8-T2` 是终局验收。
+
+依赖链：
+
+1. `W2` 依赖 `W1` 的矩阵契约与计划口径冻结。
+2. `W3` 依赖 `W2` 的 greenfield / daily change 基线。
+3. `W4` 依赖 `W3` 的 mediation、approval 和 audit 语义。
+4. `W5` 依赖 `W4` 的 release / multi-repo 治理底座。
+5. `W6` 可以与 `W3` 到 `W5` 并行推进，但不能早于 takeover 基线完成。
+6. `W7` 依赖 `W3` 到 `W6` 的所有主线产物。
+7. `W8` 依赖 `W1` 到 `W7` 全部完成，并且 regression matrix contract 必须保持稳定。
+
+终局导向验收线：
+
+- `north-star acceptance` 必须达到 `9/9` passed，且每个场景都要同时具备机器产物和 human decision packet。
+- `post-release:gate` 必须连续通过，不能靠一次性手工修绿。
+- `doctor v1`、`doctor runtime`、`doctor pilot` 必须同时通过。
+- `verify --json` 仍然必须是可复现的权威 gate；如果存在 advisory，只能是明确 owner-accepted 的非主线阻断项。
+- 文档、测试、CLI help 和本地 artifact contract 不能再出现“口径漂移”。
+
 ## 三个月北极星收口执行版
 
 这个版本不是普通的下一阶段计划，而是把三个月工作明确为一次北极星收口。完成后，JiSpec 至少要达到“可对外声明已经非常接近北极星”的状态；如果所有终局验收场景都通过，可以视为北极星 V1.0 达成。

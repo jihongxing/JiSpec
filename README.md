@@ -419,6 +419,8 @@ This writes adopted contracts, deferred spec debt, the machine takeover report, 
 
 For Greenfield projects, initialization also writes `.spec/greenfield/change-mainline-handoff.json` and `.spec/greenfield/change-mainline-handoff.md`. These files turn the first generated slice into a traceable `change` intent for implementation mediation; JiSpec still only constrains, records, and verifies external implementation work. Greenfield verify and CI summaries use the shared verify-summary decision vocabulary rather than a separate explanation model.
 
+For the empty-directory acceptance smoke that exercises this path end-to-end, see [examples/greenfield-empty-directory/README.md](examples/greenfield-empty-directory/README.md).
+
 Run the CI wrapper:
 
 ```bash

@@ -801,6 +801,8 @@ function stringValue(value: unknown): string | undefined {
 
 function isApprovalAuditEvent(type: string): boolean {
   return [
+    "source_review_adopt",
+    "source_adopt",
     "adopt_accept",
     "adopt_edit",
     "review_adopt",
@@ -811,6 +813,10 @@ function isApprovalAuditEvent(type: string): boolean {
 
 function isBoundaryAuditEvent(type: string): boolean {
   return [
+    "source_refresh",
+    "source_review_adopt",
+    "source_review_reject",
+    "source_adopt",
     "adopt_accept",
     "adopt_edit",
     "adopt_reject",
@@ -827,6 +833,8 @@ function isBoundaryAuditEvent(type: string): boolean {
 
 function isExceptionAuditEvent(type: string): boolean {
   return [
+    "source_review_defer",
+    "source_review_waive",
     "adopt_defer",
     "review_defer",
     "review_waive",

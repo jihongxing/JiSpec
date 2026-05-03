@@ -678,24 +678,31 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execFileSync } = await import("node:child_process");
-        const output = execFileSync(
+        const { spawnSync } = await import("node:child_process");
+        const run = spawnSync(
           process.execPath,
           ["--import", "tsx", "./tools/jispec/cli.ts", "verify", "--json"],
           {
             cwd: this.root,
             encoding: "utf-8",
-            stdio: "pipe",
             timeout: 60000,
           },
         );
-
-        const parsed = JSON.parse(output) as Record<string, unknown>;
-        if (typeof parsed.verdict !== "string" || !Array.isArray(parsed.issues)) {
+        if (run.error) {
           status = "fail";
-          details.push("verify --json did not return the expected verdict contract");
+          details.push(`verify --json could not run: ${run.error.message}`);
         } else {
-          details.push(`verify --json contract OK (${parsed.verdict})`);
+          const output = run.stdout ?? "";
+          const parsed = JSON.parse(output) as Record<string, unknown>;
+          if (typeof parsed.verdict !== "string" || !Array.isArray(parsed.issues)) {
+            status = "fail";
+            details.push("verify --json did not return the expected verdict contract");
+          } else {
+            details.push(`verify --json contract OK (${parsed.verdict})`);
+            if (typeof run.status === "number") {
+              details.push(`verify exit status: ${run.status}`);
+            }
+          }
         }
       }
 

@@ -59,3 +59,5 @@ npm run jispec -- doctor pilot --root .tmp/minimal-greenfield
 ```
 
 The pilot package is local-only and does not upload source.
+
+If you want the empty-directory acceptance smoke that exercises the same path end-to-end, start from [`examples/greenfield-empty-directory/README.md`](../examples/greenfield-empty-directory/README.md) and `scripts/run-greenfield-empty-directory-demo.ts`.

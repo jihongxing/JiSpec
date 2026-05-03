@@ -47,6 +47,7 @@ async function main(): Promise<void> {
         strictContract.requirements.anchors?.some((anchor) =>
           anchor.id === "REQ-ORD-001" &&
           anchor.kind === "requirement" &&
+          anchor.contractLevel === "required" &&
           anchor.line > 0 &&
           anchor.paragraphId === "req-req-ord-001" &&
           anchor.excerpt.includes("REQ-ORD-001") &&
@@ -54,7 +55,8 @@ async function main(): Promise<void> {
         ) === true &&
         strictContract.technicalSolution.anchors?.some((anchor) =>
           anchor.kind === "heading" &&
-          anchor.paragraphId === "architecture-direction"
+          anchor.paragraphId === "architecture-direction" &&
+          anchor.contractLevel === "supporting"
         ) === true &&
         typeof strictContract.requirements.checksum === "string" &&
         strictContract.blockingIssues.length === 0,

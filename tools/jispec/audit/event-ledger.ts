@@ -5,6 +5,12 @@ import path from "node:path";
 export const AUDIT_EVENT_LEDGER_RELATIVE_PATH = ".spec/audit/events.jsonl";
 
 export type AuditEventType =
+  | "source_refresh"
+  | "source_review_adopt"
+  | "source_review_reject"
+  | "source_review_defer"
+  | "source_review_waive"
+  | "source_adopt"
   | "adopt_accept"
   | "adopt_edit"
   | "adopt_reject"

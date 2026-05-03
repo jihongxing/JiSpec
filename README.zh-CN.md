@@ -419,6 +419,8 @@ npm run jispec-cli -- adopt --interactive
 
 对于 Greenfield 项目，初始化还会写出 `.spec/greenfield/change-mainline-handoff.json` 和 `.spec/greenfield/change-mainline-handoff.md`。它们会把首个生成 slice 转成可追溯的 `change` intent，交给 implementation mediation；JiSpec 仍然只约束、记录和验证外部实现工作。
 
+如果要看同一条路径的空目录验收演示，请参见 [examples/greenfield-empty-directory/README.md](examples/greenfield-empty-directory/README.md)。
+
 运行 CI wrapper：
 
 ```bash

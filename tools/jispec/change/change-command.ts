@@ -131,6 +131,12 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     changedPaths: classification.changedPaths,
   });
   if (specDelta) {
+    if (specDelta.sourceEvolutionSummaryPath) {
+      nextCommands.unshift({
+        command: `Review .spec/deltas/${specDelta.changeId}/source-evolution.md`,
+        description: "Review the source evolution diff generated from the active source snapshot and current workspace docs.",
+      });
+    }
     nextCommands.unshift({
       command: `Review .spec/deltas/${specDelta.changeId}/delta.yaml`,
       description: "Review the proposed Spec Delta before adopting it into the active baseline.",

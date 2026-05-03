@@ -15,7 +15,16 @@ import {
   renderSliceYaml,
   type GreenfieldSliceQueueDraft,
 } from "./slice-queue";
-import type { GreenfieldInputContract } from "./source-documents";
+import {
+  buildGreenfieldSourceDocumentsManifest,
+  renderGreenfieldSourceDocumentsManifest,
+  type GreenfieldInputContract,
+} from "./source-documents";
+import {
+  buildInitialRequirementLifecycleRegistry,
+  GREENFIELD_REQUIREMENT_LIFECYCLE_PATH,
+  renderRequirementLifecycleRegistry,
+} from "./source-lifecycle";
 import { draftGreenfieldVerifyGate, renderGreenfieldVerifyPolicy, type GreenfieldVerifyGateDraft } from "./verify-gate";
 import {
   draftGreenfieldEvidenceGraph,
@@ -55,6 +64,8 @@ interface WriteAssetOptions {
 const REQUIREMENTS_TARGET = "docs/input/requirements.md";
 const TECHNICAL_SOLUTION_TARGET = "docs/input/technical-solution.md";
 const OPEN_QUESTIONS_TARGET = ".spec/greenfield/open-questions.yaml";
+const ACTIVE_SOURCE_DOCUMENTS_TARGET = ".spec/greenfield/source-documents.active.yaml";
+const COMPAT_SOURCE_DOCUMENTS_TARGET = ".spec/greenfield/source-documents.yaml";
 const BUNDLED_SCHEMA_FILES = [
   "agent-output.schema.json",
   "context.schema.json",
@@ -108,6 +119,7 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
     "jiproject",
     ".spec/greenfield",
     ".spec/greenfield/review-pack",
+    ".spec/requirements",
     ".spec/baselines/releases",
     ".spec/deltas",
     ".spec/spec-debt",
@@ -204,6 +216,29 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
     behaviorDraft,
     sliceQueueDraft,
   });
+  const sourceSnapshotGeneratedAt = new Date().toISOString();
+  const activeSourceDocumentsManifest = buildGreenfieldSourceDocumentsManifest(options.inputContract, {
+    root,
+    requirementsPath: path.join(root, REQUIREMENTS_TARGET),
+    technicalSolutionPath: path.join(root, TECHNICAL_SOLUTION_TARGET),
+    snapshotStatus: "active",
+    generatedAt: sourceSnapshotGeneratedAt,
+    openQuestions: {
+      path: openQuestionsArtifact.relativePath,
+      total: openQuestionsArtifact.summary.total,
+      blocking: openQuestionsArtifact.summary.blocking,
+      source_documents: openQuestionsArtifact.summary.sourceDocuments,
+      contracts: openQuestionsArtifact.summary.contracts,
+      behavior: openQuestionsArtifact.summary.behavior,
+      slices: openQuestionsArtifact.summary.slices,
+    },
+  });
+  const activeSnapshotId = readSnapshotId(activeSourceDocumentsManifest);
+  const requirementLifecycle = buildInitialRequirementLifecycleRegistry(activeSourceDocumentsManifest, {
+    generatedAt: sourceSnapshotGeneratedAt,
+    registryVersion: 1,
+    lastAdoptedChangeId: null,
+  });
   writeAsset({
     root,
     relativePath: "jiproject/project.yaml",
@@ -234,8 +269,31 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
   });
   writeAsset({
     root,
-    relativePath: ".spec/greenfield/source-documents.yaml",
-    content: renderSourceDocumentsManifest(options.inputContract, openQuestionsArtifact),
+    relativePath: ACTIVE_SOURCE_DOCUMENTS_TARGET,
+    content: dumpYaml(activeSourceDocumentsManifest),
+    force,
+    result,
+  });
+  writeAsset({
+    root,
+    relativePath: COMPAT_SOURCE_DOCUMENTS_TARGET,
+    content: renderGreenfieldSourceDocumentsManifest(options.inputContract, {
+      root,
+      requirementsPath: path.join(root, REQUIREMENTS_TARGET),
+      technicalSolutionPath: path.join(root, TECHNICAL_SOLUTION_TARGET),
+      snapshotStatus: "active",
+      generatedAt: sourceSnapshotGeneratedAt,
+      snapshotId: activeSnapshotId,
+      openQuestions: {
+        path: openQuestionsArtifact.relativePath,
+        total: openQuestionsArtifact.summary.total,
+        blocking: openQuestionsArtifact.summary.blocking,
+        source_documents: openQuestionsArtifact.summary.sourceDocuments,
+        contracts: openQuestionsArtifact.summary.contracts,
+        behavior: openQuestionsArtifact.summary.behavior,
+        slices: openQuestionsArtifact.summary.slices,
+      },
+    }),
     force,
     result,
   });
@@ -262,8 +320,15 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
   });
   writeAsset({
     root,
+    relativePath: GREENFIELD_REQUIREMENT_LIFECYCLE_PATH,
+    content: renderRequirementLifecycleRegistry(requirementLifecycle),
+    force,
+    result,
+  });
+  writeAsset({
+    root,
     relativePath: ".spec/baselines/current.yaml",
-    content: renderCurrentBaseline(identity, options.inputContract, domainDraft, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff, openQuestionsArtifact),
+    content: renderCurrentBaseline(identity, options.inputContract, domainDraft, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff, openQuestionsArtifact, activeSnapshotId),
     force,
     result,
   });
@@ -462,73 +527,6 @@ function renderConstraintsYaml(inputContract: GreenfieldInputContract): string {
   });
 }
 
-function renderSourceDocumentsManifest(
-  inputContract: GreenfieldInputContract,
-  openQuestionsArtifact: GreenfieldOpenQuestionsArtifact,
-): string {
-  return dumpYaml({
-    input_contract: {
-      version: inputContract.contractVersion,
-      supported_modes: inputContract.guidance.supportedModes,
-      requirements: inputContract.guidance.requirements,
-      technical_solution: inputContract.guidance.technicalSolution,
-      ji_spec_responsibilities: inputContract.guidance.jiSpecResponsibilities,
-      user_responsibilities: inputContract.guidance.userResponsibilities,
-    },
-    source_documents: {
-      requirements: {
-        path: REQUIREMENTS_TARGET,
-        original_path: inputContract.requirements.path,
-        role: "product_requirements",
-        status: inputContract.requirements.status,
-        checksum: inputContract.requirements.checksum,
-        requirement_ids: inputContract.requirements.requirementIds ?? [],
-        anchors: inputContract.requirements.anchors?.map((anchor) => ({
-          id: anchor.id,
-          kind: anchor.kind,
-          path: REQUIREMENTS_TARGET,
-          line: anchor.line,
-          paragraph_id: anchor.paragraphId,
-          excerpt: anchor.excerpt,
-          checksum: anchor.checksum,
-        })) ?? [],
-      },
-      technical_solution: {
-        path: TECHNICAL_SOLUTION_TARGET,
-        original_path: inputContract.technicalSolution.path,
-        role: "technical_solution",
-        status: inputContract.technicalSolution.status,
-        checksum: inputContract.technicalSolution.checksum,
-        anchors: inputContract.technicalSolution.anchors?.map((anchor) => ({
-          id: anchor.id,
-          kind: anchor.kind,
-          path: TECHNICAL_SOLUTION_TARGET,
-          line: anchor.line,
-          paragraph_id: anchor.paragraphId,
-          excerpt: anchor.excerpt,
-          checksum: anchor.checksum,
-        })) ?? [],
-      },
-    },
-    input_mode: inputContract.mode,
-    input_status: inputContract.status,
-    blocking_issues: inputContract.blockingIssues,
-    warnings: inputContract.warnings,
-    open_decisions: inputContract.openDecisions,
-    open_questions: {
-      path: openQuestionsArtifact.relativePath,
-      generated_at: new Date().toISOString(),
-      total: openQuestionsArtifact.summary.total,
-      blocking: openQuestionsArtifact.summary.blocking,
-      source_documents: openQuestionsArtifact.summary.sourceDocuments,
-      contracts: openQuestionsArtifact.summary.contracts,
-      behavior: openQuestionsArtifact.summary.behavior,
-      slices: openQuestionsArtifact.summary.slices,
-    },
-    generated_at: new Date().toISOString(),
-  });
-}
-
 function renderInitializationSummary(
   identity: { id: string; name: string },
   inputContract: GreenfieldInputContract,
@@ -577,6 +575,7 @@ function renderInitializationSummary(
     "- `.spec/greenfield/change-mainline-handoff.md`",
     `- \`${openQuestionsArtifact.relativePath}\``,
     "- `schemas/*.json`",
+    "- `.spec/greenfield/source-documents.active.yaml`",
     "- `.spec/greenfield/source-documents.yaml`",
     "- `.spec/baselines/current.yaml`",
     "",
@@ -838,6 +837,7 @@ function renderCurrentBaseline(
   aiImplementHandoff: GreenfieldAiImplementHandoff,
   changeMainlineHandoff: GreenfieldChangeMainlineHandoff,
   openQuestionsArtifact: GreenfieldOpenQuestionsArtifact,
+  activeSnapshotId: string,
 ): string {
   return dumpYaml({
     baseline_id: `${identity.id}-current`,
@@ -845,7 +845,30 @@ function renderCurrentBaseline(
     project_name: identity.name,
     status: "initialized",
     input_mode: inputContract.mode,
+    source_snapshot: {
+      active_manifest_path: ACTIVE_SOURCE_DOCUMENTS_TARGET,
+      compatibility_manifest_path: COMPAT_SOURCE_DOCUMENTS_TARGET,
+      active_snapshot_id: activeSnapshotId,
+      requirements_path: REQUIREMENTS_TARGET,
+      technical_solution_path: TECHNICAL_SOLUTION_TARGET,
+      lifecycle_registry_path: GREENFIELD_REQUIREMENT_LIFECYCLE_PATH,
+      lifecycle_registry_version: 1,
+      last_adopted_change_id: null,
+    },
+    requirement_lifecycle: {
+      path: GREENFIELD_REQUIREMENT_LIFECYCLE_PATH,
+      registry_version: 1,
+      active_snapshot_id: activeSnapshotId,
+      last_adopted_change_id: null,
+    },
+    source_evolution: {
+      source_evolution_path: null,
+      source_review_path: null,
+      proposed_snapshot_path: null,
+      last_adopted_change_id: null,
+    },
     requirement_ids: inputContract.requirements.requirementIds ?? [],
+    applied_deltas: [],
     contexts: domainDraft.contexts.map((context) => context.id),
     contracts: apiContractDraft.contextContracts.flatMap((contextContract) =>
       contextContract.contracts.map((contract) => contract.id),
@@ -905,6 +928,8 @@ function renderCurrentBaseline(
       ".spec/evidence/contract-graph.json",
       ".spec/evidence/ratchet-classifications.yaml",
       ".spec/spec-debt/ledger.yaml",
+      ACTIVE_SOURCE_DOCUMENTS_TARGET,
+      COMPAT_SOURCE_DOCUMENTS_TARGET,
       ".spec/greenfield/review-pack/executive-summary.md",
       ".spec/greenfield/review-pack/domain-review.md",
       ".spec/greenfield/review-pack/contract-review.md",
@@ -1349,6 +1374,17 @@ function dumpYaml(value: unknown): string {
     noRefs: true,
     sortKeys: false,
   });
+}
+
+function readSnapshotId(manifest: Record<string, unknown>): string {
+  const snapshot = manifest.snapshot;
+  if (typeof snapshot === "object" && snapshot !== null && !Array.isArray(snapshot)) {
+    const id = (snapshot as { id?: unknown }).id;
+    if (typeof id === "string" && id.length > 0) {
+      return id;
+    }
+  }
+  return "source-unknown";
 }
 
 function normalizePath(filePath: string): string {

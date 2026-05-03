@@ -57,6 +57,20 @@ export interface ChangeExecuteDefaultReadiness {
   details: string[];
 }
 
+interface VerifyReadinessPayload {
+  verdict?: string;
+  ok?: boolean;
+  issues?: Array<{
+    code?: string;
+    severity?: string;
+  }>;
+}
+
+const EXECUTE_DEFAULT_GOVERNANCE_ONLY_BLOCKERS = new Set([
+  "AGENT_DISCIPLINE_INCOMPLETE",
+  "POLICY_NO_BLOCKING_ISSUES",
+]);
+
 export function resolveChangeCommandMode(
   root: string,
   explicitMode?: ChangeSessionOrchestrationMode,
@@ -310,7 +324,22 @@ function evaluateVerifyStabilityPrecondition(
   const parsed = parseVerifyJson(run.stdout);
   const verdict = parsed?.verdict ?? "unknown";
   const ok = parsed?.ok === true || verdict === "PASS";
+  const blockingIssueCodes = (parsed?.issues ?? [])
+    .filter((issue) => issue?.severity === "blocking")
+    .map((issue) => issue.code)
+    .filter((code): code is string => typeof code === "string");
+  const governanceOnlyBlocking =
+    blockingIssueCodes.length > 0 &&
+    blockingIssueCodes.every((code) => EXECUTE_DEFAULT_GOVERNANCE_ONLY_BLOCKERS.has(code));
   if (run.status !== 0 || !ok) {
+    if (governanceOnlyBlocking) {
+      return {
+        id: "verify_stability",
+        status: "warning",
+        message: `verify --json is failing only on governance blockers excluded from execute-default readiness (${blockingIssueCodes.join(", ")}).`,
+        ownerAction: "Keep governance blockers visible in verify, but they do not block execute-default readiness for the mainline path.",
+      };
+    }
     if (openDraftSessionId) {
       return {
         id: "verify_stability",
@@ -396,9 +425,9 @@ function evaluateAdoptBoundaryPrecondition(boundary: ChangeExecuteDefaultBoundar
   };
 }
 
-function parseVerifyJson(stdout: string): { verdict?: string; ok?: boolean } | null {
+function parseVerifyJson(stdout: string): VerifyReadinessPayload | null {
   try {
-    const parsed = JSON.parse(stdout) as { verdict?: string; ok?: boolean };
+    const parsed = JSON.parse(stdout) as VerifyReadinessPayload;
     return parsed;
   } catch {
     return null;

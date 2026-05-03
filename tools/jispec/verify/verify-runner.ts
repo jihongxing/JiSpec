@@ -180,6 +180,9 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
     writeVerifyBaseline(root, result);
   }
 
+  // Apply governance mitigations that should influence effective blocking facts.
+  result = await applyGovernanceMitigations(result, options);
+
   // Build facts and apply policy if requested
   const rawFacts = await buildRawFactsSnapshot(result, options, externalGraphImport);
   const canonicalFacts = buildCanonicalFacts(rawFacts);
@@ -189,11 +192,11 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
     await writeFactsSnapshot(root, canonicalFacts, options.factsOutPath);
   }
 
-  // Apply policy hook if a policy is configured on disk or explicitly requested.
+  // Apply policy hook after waivers/baselines so policy sees the effective gate state.
   result = await applyPolicyHook(result, canonicalFacts, factsContract, options);
 
-  // Apply post-processing in order: waivers -> baseline -> observe
-  result = await applyPostProcessing(result, options);
+  // Observe mode remains a final presentation-layer downgrade over the policy-aware result.
+  result = await applyObservePostProcessing(result, options);
   result.metadata = {
     ...result.metadata,
     replay: buildVerifyReplay(result, options),
@@ -646,7 +649,7 @@ async function applyPolicyHook(
   return nextResult;
 }
 
-async function applyPostProcessing(
+async function applyGovernanceMitigations(
   result: VerifyRunResult,
   options: VerifyRunOptions,
 ): Promise<VerifyRunResult> {
@@ -677,6 +680,15 @@ async function applyPostProcessing(
       processedResult = baselineResult.result;
     }
   }
+
+  return processedResult;
+}
+
+async function applyObservePostProcessing(
+  result: VerifyRunResult,
+  options: VerifyRunOptions,
+): Promise<VerifyRunResult> {
+  let processedResult = result;
 
   // Step 3: Apply observe mode
   if (options.observe) {

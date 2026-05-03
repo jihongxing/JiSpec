@@ -48,6 +48,21 @@ import {
 } from "./policy/approval";
 import { renderGreenfieldInitText, runGreenfieldInit, type GreenfieldInitOptions, type GreenfieldInitResult } from "./greenfield/init";
 import {
+  renderGreenfieldSourceRefreshText,
+  runGreenfieldSourceRefresh,
+  type GreenfieldSourceRefreshOptions,
+  type GreenfieldSourceRefreshResult,
+} from "./greenfield/source-refresh";
+import {
+  renderGreenfieldSourceAdoptText,
+  renderGreenfieldSourceReviewListText,
+  renderGreenfieldSourceReviewTransitionText,
+  runGreenfieldSourceAdopt,
+  runGreenfieldSourceReviewList,
+  runGreenfieldSourceReviewTransition,
+  type GreenfieldSourceReviewAction,
+} from "./greenfield/source-governance";
+import {
   renderGreenfieldReviewBriefText,
   renderGreenfieldReviewListText,
   renderGreenfieldReviewTransitionText,
@@ -136,6 +151,9 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli first-run [--json]",
     "  jispec-cli verify [--json]",
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
+    "  jispec-cli source refresh [--change <id|latest>] [--json]",
+    "  jispec-cli source review list|adopt|reject|defer|waive [--change <id|latest>] [--json]",
+    "  jispec-cli source adopt [--change <id|latest>] [--json]",
     "  jispec-cli change default-mode show|set|reset [--json]",
     "  jispec-cli review list|adopt|reject|defer|waive|brief [--json]",
     "  jispec-cli spec-debt repay|cancel|owner-review <id> [--json]",
@@ -1353,6 +1371,15 @@ function renderGreenfieldInitResult(result: GreenfieldInitResult, json: boolean)
   console.log(renderGreenfieldInitText(result));
 }
 
+function renderGreenfieldSourceRefreshResult(result: GreenfieldSourceRefreshResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(renderGreenfieldSourceRefreshText(result));
+}
+
 function createGreenfieldInitAction(commandName: string) {
   return (options: {
     root: string;
@@ -1388,6 +1415,128 @@ function registerGreenfieldInitCommand(program: Command): void {
     .option("--force", "Overwrite existing Greenfield assets when supported.", false)
     .option("--json", "Emit machine-readable JSON output.", false)
     .action(createGreenfieldInitAction("init"));
+}
+
+function registerGreenfieldSourceCommand(program: Command): void {
+  const source = program
+    .command("source")
+    .description("Manage editable Greenfield source documents and their active/proposed snapshots.");
+
+  source
+    .command("refresh")
+    .description("Generate a proposed source snapshot for the current change without mutating the active source baseline.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--change <id>", "Target change id or `latest`.", "latest")
+    .option("--requirements <path>", "Override requirements source path.")
+    .option("--technical-solution <path>", "Override technical solution source path.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; change: string; requirements?: string; technicalSolution?: string; json: boolean }) => {
+      try {
+        const result = runGreenfieldSourceRefresh({
+          root: path.resolve(options.root),
+          change: options.change,
+          requirements: options.requirements,
+          technicalSolution: options.technicalSolution,
+        } satisfies GreenfieldSourceRefreshOptions);
+        renderGreenfieldSourceRefreshResult(result, options.json);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec source refresh failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  const sourceReview = source
+    .command("review")
+    .description("Review source evolution items before promoting a proposed snapshot.");
+
+  sourceReview
+    .command("list")
+    .description("List source evolution items with their current review state.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--change <id>", "Target change id or `latest`.", "latest")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; change: string; json: boolean }) => {
+      try {
+        const result = runGreenfieldSourceReviewList(path.resolve(options.root), options.change);
+        console.log(options.json ? JSON.stringify(result, null, 2) : renderGreenfieldSourceReviewListText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec source review list failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  registerGreenfieldSourceReviewTransitionCommand(sourceReview, "adopt", "Adopt a source evolution item.");
+  registerGreenfieldSourceReviewTransitionCommand(sourceReview, "reject", "Reject a source evolution item and keep it out of active truth.");
+  registerGreenfieldSourceReviewTransitionCommand(sourceReview, "defer", "Defer a source evolution item while downstream updates remain open.");
+  registerGreenfieldSourceReviewTransitionCommand(sourceReview, "waive", "Waive a source evolution item for a short-lived governance exception.");
+
+  source
+    .command("adopt")
+    .description("Promote the proposed source snapshot into active truth and update lifecycle + baseline metadata.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--change <id>", "Target change id or `latest`.", "latest")
+    .option("--actor <actor>", "Human reviewer or owner performing the adoption.")
+    .option("--reason <reason>", "Reason recorded in the audit ledger.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; change: string; actor?: string; reason?: string; json: boolean }) => {
+      try {
+        const result = runGreenfieldSourceAdopt({
+          root: path.resolve(options.root),
+          change: options.change,
+          actor: options.actor,
+          reason: options.reason,
+        });
+        console.log(options.json ? JSON.stringify(result, null, 2) : renderGreenfieldSourceAdoptText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec source adopt failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerGreenfieldSourceReviewTransitionCommand(sourceReview: Command, action: GreenfieldSourceReviewAction, description: string): void {
+  sourceReview
+    .command(action)
+    .description(description)
+    .argument("<itemId>", "Source evolution item ID, such as modified:abcd1234 or REQ-ORD-002.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--change <id>", "Target change id or `latest`.", "latest")
+    .option("--actor <actor>", "Human reviewer name.")
+    .option("--owner <owner>", "Owner for deferred or waived decisions.")
+    .option("--reason <reason>", "Reason for the source review decision.")
+    .option("--expires <date>", "Expiration date for deferred or waived items.")
+    .option("--expires-at <date>", "Expiration date for deferred or waived items.")
+    .option("--maps-to <ids>", "Comma-separated successor requirement ids for replace/split/merge transitions.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((itemId: string, options: { root: string; change: string; actor?: string; owner?: string; reason?: string; expires?: string; expiresAt?: string; mapsTo?: string; json: boolean }) => {
+      try {
+        const result = runGreenfieldSourceReviewTransition({
+          root: path.resolve(options.root),
+          change: options.change,
+          itemId,
+          action,
+          actor: options.actor,
+          owner: options.owner,
+          reason: options.reason,
+          expiresAt: options.expiresAt ?? options.expires,
+          mapsTo: options.mapsTo
+            ? options.mapsTo.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+            : undefined,
+        });
+        console.log(options.json ? JSON.stringify(result, null, 2) : renderGreenfieldSourceReviewTransitionText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec source review ${action} failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
 }
 
 function registerBootstrapCommands(program: Command): void {
@@ -1564,6 +1713,7 @@ export function buildProgram(): Command {
   registerPrimaryVerifyCommand(program);
   registerFirstRunCommand(program);
   registerGreenfieldInitCommand(program);
+  registerGreenfieldSourceCommand(program);
   registerBootstrapCommands(program);
   registerAdoptCommand(program);
   registerDoctorCommands(program);

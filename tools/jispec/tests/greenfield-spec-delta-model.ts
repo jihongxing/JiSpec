@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import * as yaml from "js-yaml";
 import { runGreenfieldInit } from "../greenfield/init";
 import { runChangeCommand } from "../change/change-command";
-import { readChangeSession } from "../change/change-session";
+import { clearChangeSession, readChangeSession } from "../change/change-session";
 import { runVerify } from "../verify/verify-runner";
 
 interface TestResult {
@@ -84,6 +84,16 @@ async function main(): Promise<void> {
     const adoption = yaml.load(fs.readFileSync(specDelta?.adoptionRecordPath ?? "", "utf-8")) as AdoptionRecordYaml;
     const impactReport = fs.readFileSync(specDelta?.impactReportPath ?? "", "utf-8");
     const handoff = fs.readFileSync(specDelta?.handoffPath ?? "", "utf-8");
+    const sourceEvolution = JSON.parse(fs.readFileSync(specDelta?.sourceEvolutionPath ?? "", "utf-8")) as {
+      summary?: {
+        modified?: number;
+      };
+      items?: Array<{
+        evolution_kind?: string;
+        anchor_id?: string;
+      }>;
+    };
+    const sourceEvolutionMarkdown = fs.readFileSync(specDelta?.sourceEvolutionSummaryPath ?? "", "utf-8");
     const activeSession = readChangeSession(root);
 
     results.push(record("change creates a proposed Spec Delta workspace for Greenfield projects", () => {
@@ -93,6 +103,8 @@ async function main(): Promise<void> {
       assert.ok(fs.existsSync(path.join(root, ".spec", "deltas", specDelta.changeId, "impact-report.md")));
       assert.ok(fs.existsSync(path.join(root, ".spec", "deltas", specDelta.changeId, "ai-implement-handoff.md")));
       assert.ok(fs.existsSync(path.join(root, ".spec", "deltas", specDelta.changeId, "adoption-record.yaml")));
+      assert.ok(fs.existsSync(path.join(root, ".spec", "deltas", specDelta.changeId, "source-evolution.json")));
+      assert.ok(fs.existsSync(path.join(root, ".spec", "deltas", specDelta.changeId, "source-evolution.md")));
       assert.equal(change.session.specDelta?.changeId, specDelta.changeId);
       assert.equal(activeSession?.specDelta?.changeId, specDelta.changeId);
     }));
@@ -128,8 +140,10 @@ async function main(): Promise<void> {
       assert.match(handoff, /# AI Implement Handoff:/);
       assert.match(handoff, /## Dirty Subgraph/);
       assert.match(handoff, /Do not mutate `.spec\/baselines\/current.yaml`/);
+      assert.match(sourceEvolutionMarkdown, /# Source Evolution/);
       assert.match(change.text, /Spec Delta:/);
       assert.match(change.text, /AI handoff:/);
+      assert.ok(change.session.nextCommands.some((hint) => hint.command.includes(`/source-evolution.md`) || hint.command.includes("\\source-evolution.md")));
       assert.ok(change.session.nextCommands.some((hint) => hint.command.includes(`/ai-implement-handoff.md`) || hint.command.includes("\\ai-implement-handoff.md")));
       assert.ok(change.session.nextCommands.some((hint) => hint.command.includes(`/delta.yaml`) || hint.command.includes("\\delta.yaml")));
       const impactSummary = change.session.impactSummary;
@@ -190,13 +204,140 @@ async function main(): Promise<void> {
       contextId: "ordering",
     });
     const driftVerify = await runVerify({ root: driftRoot, generatedAt: "2026-04-29T00:00:00.000Z" });
+    clearChangeSession(driftRoot);
+    const undeclaredVerify = await runVerify({ root: driftRoot, generatedAt: "2026-04-29T00:00:00.000Z" });
     const driftDirtyReport = fs.readFileSync(driftChange.session.specDelta?.dirtyReportPath ?? "", "utf-8");
-    results.push(record("source provenance drift is reported by verify and pulled into dirty handoff", () => {
+    const driftSourceEvolution = JSON.parse(fs.readFileSync(driftChange.session.specDelta?.sourceEvolutionPath ?? "", "utf-8")) as {
+      items?: Array<{ evolution_kind?: string; anchor_id?: string }>;
+    };
+    results.push(record("source evolution verify distinguishes declared review debt from undeclared workspace drift", () => {
       assert.ok(driftVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT"));
-      assert.match(driftDirtyReport, /Provenance anchor REQ-ORD-002/);
-      assert.match(driftDirtyReport, /provenance:REQ-ORD-002/);
+      assert.ok(driftVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNREVIEWED"));
+      assert.equal(driftVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNDECLARED"), false);
+      assert.ok(undeclaredVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNDECLARED"));
+      assert.equal(undeclaredVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNREVIEWED"), false);
+      assert.ok(driftSourceEvolution.items?.some((item) => item.evolution_kind === "modified" && item.anchor_id === "REQ-ORD-002"));
+      assert.match(driftDirtyReport, /Source evolution modified requires governance/);
+      assert.match(driftDirtyReport, /source-evolution:modified:REQ-ORD-002/);
     }));
     fs.rmSync(driftRoot, { recursive: true, force: true });
+
+    const aliasRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-greenfield-delta-alias-"));
+    runGreenfieldInit({
+      root: aliasRoot,
+      requirements: requirementsPath,
+      technicalSolution: technicalSolutionPath,
+    });
+    const aliasTechnicalPath = path.join(aliasRoot, "docs", "input", "technical-solution.md");
+    fs.writeFileSync(
+      aliasTechnicalPath,
+      fs.readFileSync(aliasTechnicalPath, "utf-8")
+        .replace("## Architecture Direction", "## Bounded Context Hypothesis")
+        .replace("## Integration Boundaries", "## Integration Rule")
+        .replace("## Operational Constraints", "## Constraints"),
+      "utf-8",
+    );
+    const aliasVerify = await runVerify({ root: aliasRoot, generatedAt: "2026-04-29T00:00:00.000Z" });
+    results.push(record("semantic heading aliases downgrade layout-only provenance drift to advisory", () => {
+      assert.equal(aliasVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_LAYOUT_DRIFT" && issue.severity === "blocking"), false);
+      assert.equal(aliasVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_LAYOUT_DRIFT" && issue.severity === "advisory"), true);
+      assert.equal(aliasVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT" && issue.severity === "blocking"), false);
+      assert.equal(aliasVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT" && issue.severity === "advisory"), true);
+    }));
+    fs.rmSync(aliasRoot, { recursive: true, force: true });
+
+    const policyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-greenfield-delta-policy-"));
+    runGreenfieldInit({
+      root: policyRoot,
+      requirements: requirementsPath,
+      technicalSolution: technicalSolutionPath,
+    });
+    fs.writeFileSync(
+      path.join(policyRoot, "docs", "input", "requirements.md"),
+      [
+        "# Commerce Platform Requirements",
+        "",
+        "## Objective",
+        "",
+        "Build a commerce platform that supports product browsing, cart validation, checkout, and order creation.",
+        "",
+        "## Core Requirements",
+        "",
+        "### REQ-CAT-001",
+        "",
+        "The system must expose products that are available for sale.",
+        "",
+        "### REQ-ORD-001",
+        "",
+        "A user must be able to submit an order from a valid cart.",
+        "",
+        "### REQ-ORD-002",
+        "",
+        "Checkout must reject carts with unavailable items.",
+        "",
+        "### REQ-ORD-003",
+        "",
+        "An order must not be created unless the cart total is calculable and stock validation passes.",
+        "",
+        "### REQ-ORD-004",
+        "",
+        "The system must emit a domain event when an order is created successfully.",
+        "",
+        "## Non-Functional Requirements",
+        "",
+        "- Checkout response time should be acceptable for synchronous user interaction.",
+        "- Validation logic must be testable in isolation.",
+        "- Context boundaries should avoid direct persistence coupling.",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(policyRoot, "docs", "input", "technical-solution.md"),
+      [
+        "# Commerce Platform Technical Solution",
+        "",
+        "## Architecture Direction",
+        "",
+        "Use bounded contexts for `catalog` and `ordering`.",
+        "",
+        "- `catalog` owns product availability and price read models",
+        "- `ordering` owns cart validation, checkout orchestration, and order persistence",
+        "",
+        "## Integration Rule",
+        "",
+        "`ordering` may consume published product availability information from `catalog`, but it may not write to catalog-owned models.",
+        "",
+        "## Checkout Flow",
+        "",
+        "1. Receive checkout request with cart identifier.",
+        "2. Load cart and cart items.",
+        "3. Validate product availability.",
+        "4. Calculate order total.",
+        "5. Persist order.",
+        "6. Emit `OrderCreated`.",
+        "",
+        "## Testing Strategy",
+        "",
+        "- Unit tests for validation and calculation logic",
+        "- Integration tests for checkout application service",
+        "- Contract tests for upstream availability data assumptions",
+        "",
+        "## Constraints",
+        "",
+        "- No direct table sharing between bounded contexts",
+        "- Domain invariants must be explicit in context artifacts",
+        "- All delivery must be traceable to requirements and tests",
+      ].join("\n"),
+      "utf-8",
+    );
+    const policyVerify = await runVerify({ root: policyRoot, generatedAt: "2026-04-29T00:00:00.000Z" });
+    results.push(record("supporting heading removal stays advisory under the provenance contract", () => {
+      assert.equal(policyVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_LAYOUT_DRIFT" && issue.severity === "blocking"), false);
+      assert.equal(policyVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_LAYOUT_DRIFT" && issue.severity === "advisory"), true);
+      assert.equal(policyVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT" && issue.severity === "blocking"), false);
+      assert.equal(policyVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT" && issue.severity === "advisory"), true);
+    }));
+    fs.rmSync(policyRoot, { recursive: true, force: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     results.push({

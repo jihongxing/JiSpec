@@ -1357,7 +1357,7 @@ function renderImpactGraphContext(report: VerifyReport): string[] {
 Modify `tools/jispec/tests/regression-runner.ts` in the change/implement suite block:
 
 ```ts
-changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 6, task: 'P9-T3' }),
+changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 7, task: 'P9-T3' }),
 ```
 
 Modify `tools/jispec/tests/regression-matrix-contract.ts` final counts:

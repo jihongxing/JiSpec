@@ -1,0 +1,28 @@
+tasks:
+  - id: TASK-CATALOG-PRODUCT-AVAILABILITY-V1-001
+    title: Implement Product Availability MVP application flow
+    owner: build-agent
+    status: pending
+    updated_at: '2026-05-03T09:17:21.732Z'
+  - id: TASK-CATALOG-PRODUCT-AVAILABILITY-V1-002
+    title: Implement Product Availability MVP domain rules
+    owner: build-agent
+    status: pending
+    depends_on:
+      - TASK-CATALOG-PRODUCT-AVAILABILITY-V1-001
+    updated_at: '2026-05-03T09:17:21.732Z'
+  - id: TASK-CATALOG-PRODUCT-AVAILABILITY-V1-003
+    title: Add tests for Product Availability MVP
+    owner: test-agent
+    status: pending
+    depends_on:
+      - TASK-CATALOG-PRODUCT-AVAILABILITY-V1-001
+      - TASK-CATALOG-PRODUCT-AVAILABILITY-V1-002
+    updated_at: '2026-05-03T09:17:21.732Z'
+  - id: TASK-CATALOG-PRODUCT-AVAILABILITY-V1-004
+    title: Review trace and acceptance evidence for Product Availability MVP
+    owner: review-agent
+    status: pending
+    depends_on:
+      - TASK-CATALOG-PRODUCT-AVAILABILITY-V1-003
+    updated_at: '2026-05-03T09:17:21.732Z'

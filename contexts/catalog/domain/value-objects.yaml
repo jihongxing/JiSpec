@@ -1,0 +1,6 @@
+value_objects:
+  - id: VO-PRICE
+    name: Price
+    description: Represents product price information exposed by Catalog.
+    source_requirement_ids:
+      - REQ-CAT-001

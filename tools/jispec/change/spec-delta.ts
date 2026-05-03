@@ -16,8 +16,10 @@ import {
   type DirtyAnalysis,
 } from "../greenfield/contract-graph";
 import {
-  collectGreenfieldProvenanceAnchorDrift,
-  renderGreenfieldProvenanceDriftWarnings,
+  collectGreenfieldSourceEvolutionDiff,
+  renderGreenfieldSourceEvolutionMarkdown,
+  renderGreenfieldSourceEvolutionWarnings,
+  type GreenfieldSourceEvolutionDiff,
 } from "../greenfield/provenance-drift";
 import { summarizeChangeImpact, type ChangeImpactSummary } from "./impact-summary";
 import { splitDecisionCompanionSections } from "../companion/decision-sections";
@@ -80,10 +82,13 @@ export interface SpecDeltaDraftResult {
   dirtyReportPath: string;
   handoffPath: string;
   adoptionRecordPath: string;
+  sourceEvolutionPath?: string;
+  sourceEvolutionSummaryPath?: string;
   impactSummary: ChangeImpactSummary;
   references: SpecDeltaReferences;
   blastRadius?: BlastRadiusAnalysis;
   dirtyAnalysis?: DirtyAnalysis;
+  sourceEvolution?: GreenfieldSourceEvolutionDiff;
 }
 
 interface CurrentBaseline {
@@ -122,21 +127,25 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
   const blastRadius = analyzeGreenfieldBlastRadius(root, options);
   const references = buildReferences(root, baseline, options, blastRadius);
   const changeId = generateChangeId(options.summary, createdAt);
+  const deltaDir = path.join(root, ".spec", "deltas", changeId);
+  fs.mkdirSync(deltaDir, { recursive: true });
   const changedPaths = options.changedPaths && options.changedPaths.length > 0
     ? options.changedPaths
     : blastRadius.affectedAssetPaths.map((assetPath) => ({
         path: assetPath,
         kind: "contract" as const,
       }));
-  const dirtyAnalysis = enrichDirtyAnalysisWithProvenanceDrift(analyzeDirtyPropagation(root, {
+  const sourceEvolution = collectGreenfieldSourceEvolutionDiff(root, {
+    changeId,
+    generatedAt: createdAt,
+  });
+  const dirtyAnalysis = enrichDirtyAnalysisWithSourceEvolution(analyzeDirtyPropagation(root, {
     changeId,
     summary: options.summary,
     contextId: options.contextId,
     sliceId: options.sliceId,
     generatedAt: createdAt,
-  }), root);
-  const deltaDir = path.join(root, ".spec", "deltas", changeId);
-  fs.mkdirSync(deltaDir, { recursive: true });
+  }), sourceEvolution);
 
   const delta: SpecDelta = {
     change_id: changeId,
@@ -171,6 +180,8 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
   const dirtyReportPath = path.join(deltaDir, "dirty-report.md");
   const handoffPath = path.join(deltaDir, "ai-implement-handoff.md");
   const adoptionRecordPath = path.join(deltaDir, "adoption-record.yaml");
+  const sourceEvolutionPath = path.join(deltaDir, "source-evolution.json");
+  const sourceEvolutionSummaryPath = path.join(deltaDir, "source-evolution.md");
 
   fs.writeFileSync(deltaPath, dumpYaml(delta), "utf-8");
   fs.writeFileSync(impactReportPath, renderImpactReport(delta, blastRadius, dirtyAnalysis), "utf-8");
@@ -180,6 +191,25 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
   fs.writeFileSync(verifyFocusPath, renderDirtyVerifyFocusYaml(changeId, dirtyAnalysis.dirtyGraph, loadYamlObject(renderVerifyFocusYaml(changeId, blastRadius))), "utf-8");
   fs.writeFileSync(handoffPath, renderChangeAiImplementHandoff(delta, dirtyAnalysis, blastRadius), "utf-8");
   fs.writeFileSync(adoptionRecordPath, dumpYaml(renderAdoptionRecord(delta)), "utf-8");
+  fs.writeFileSync(sourceEvolutionPath, `${JSON.stringify(sourceEvolution ?? {
+    version: 1,
+    active_manifest_path: ".spec/greenfield/source-documents.yaml",
+    target_origin: "workspace_docs",
+    generated_at: createdAt,
+    compatibility_mode: "legacy",
+    summary: {
+      changed: false,
+      total: 0,
+      added: 0,
+      modified: 0,
+      deprecated: 0,
+      split: 0,
+      merged: 0,
+      reanchored: 0,
+    },
+    items: [],
+  }, null, 2)}\n`, "utf-8");
+  fs.writeFileSync(sourceEvolutionSummaryPath, sourceEvolution ? renderGreenfieldSourceEvolutionMarkdown(sourceEvolution) : "# Source Evolution\n\n- None.\n", "utf-8");
 
   return {
     changeId,
@@ -192,6 +222,8 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
     dirtyReportPath: normalizePath(dirtyReportPath),
     handoffPath: normalizePath(handoffPath),
     adoptionRecordPath: normalizePath(adoptionRecordPath),
+    sourceEvolutionPath: normalizePath(sourceEvolutionPath),
+    sourceEvolutionSummaryPath: normalizePath(sourceEvolutionSummaryPath),
     impactSummary: summarizeChangeImpact({
       root,
       changeId,
@@ -208,21 +240,25 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
     references,
     blastRadius,
     dirtyAnalysis,
+    sourceEvolution,
   };
 }
 
-function enrichDirtyAnalysisWithProvenanceDrift(dirtyAnalysis: DirtyAnalysis, root: string): DirtyAnalysis {
-  const drifts = collectGreenfieldProvenanceAnchorDrift(root);
-  if (drifts.length === 0) {
+function enrichDirtyAnalysisWithSourceEvolution(
+  dirtyAnalysis: DirtyAnalysis,
+  sourceEvolution: GreenfieldSourceEvolutionDiff | undefined,
+): DirtyAnalysis {
+  const items = sourceEvolution?.items ?? [];
+  if (items.length === 0) {
     return dirtyAnalysis;
   }
 
-  const driftWarnings = renderGreenfieldProvenanceDriftWarnings(drifts);
-  const driftUpdates = drifts.map((drift) => ({
-    node_id: `provenance:${drift.anchorId}`,
+  const evolutionWarnings = renderGreenfieldSourceEvolutionWarnings(items);
+  const evolutionUpdates = items.map((item) => ({
+    node_id: `source-evolution:${item.evolution_kind}:${item.anchor_id ?? item.evolution_id}`,
     kind: "requirement" as const,
-    path: drift.path,
-    reason: `Source provenance anchor ${drift.anchorId} drifted (${drift.reason}) and must be re-anchored, adopted, deferred, or waived.`,
+    path: item.path,
+    reason: `Source evolution ${item.evolution_kind} requires governance: ${item.summary}`,
     status: "pending" as const,
   }));
 
@@ -232,15 +268,15 @@ function enrichDirtyAnalysisWithProvenanceDrift(dirtyAnalysis: DirtyAnalysis, ro
       ...dirtyAnalysis.dirtyGraph,
       dirty_asset_paths: unique([
         ...dirtyAnalysis.dirtyGraph.dirty_asset_paths,
-        ...drifts.map((drift) => drift.path),
+        ...items.map((item) => item.path),
       ]),
       required_updates: [
         ...dirtyAnalysis.dirtyGraph.required_updates,
-        ...driftUpdates,
+        ...evolutionUpdates,
       ],
       warnings: unique([
         ...dirtyAnalysis.dirtyGraph.warnings,
-        ...driftWarnings,
+        ...evolutionWarnings,
       ]),
     },
   };
@@ -392,6 +428,7 @@ function renderImpactReport(delta: SpecDelta, blastRadius: BlastRadiusAnalysis, 
         `.spec/deltas/${delta.change_id}/delta.yaml`,
         `.spec/deltas/${delta.change_id}/impact-graph.json`,
         `.spec/deltas/${delta.change_id}/verify-focus.yaml`,
+        `.spec/deltas/${delta.change_id}/source-evolution.json`,
       ],
       strongestEvidence: [
         `change type: ${delta.change_type}`,
@@ -410,6 +447,7 @@ function renderImpactReport(delta: SpecDelta, blastRadius: BlastRadiusAnalysis, 
         ...delta.references.tests.slice(0, 8).map((test) => `test: ${test}`),
       ],
       nextSteps: [
+        `review .spec/deltas/${delta.change_id}/source-evolution.md`,
         `review .spec/deltas/${delta.change_id}/verify-focus.yaml`,
         "run npm run jispec-cli -- verify",
       ],
@@ -472,6 +510,7 @@ function renderChangeAiImplementHandoff(
         `.spec/deltas/${delta.change_id}/delta.yaml`,
         `.spec/deltas/${delta.change_id}/dirty-graph.json`,
         `.spec/deltas/${delta.change_id}/verify-focus.yaml`,
+        `.spec/deltas/${delta.change_id}/source-evolution.json`,
       ],
       strongestEvidence: [
         `dirty nodes: ${dirty.dirty_nodes.length}`,
@@ -486,6 +525,7 @@ function renderChangeAiImplementHandoff(
       ],
       nextSteps: [
         "update, adopt, defer, or waive every pending dirty required update",
+        `review .spec/deltas/${delta.change_id}/source-evolution.md`,
         "run jispec-cli verify --root . --policy .spec/policy.yaml",
       ],
       maxLines: 150,

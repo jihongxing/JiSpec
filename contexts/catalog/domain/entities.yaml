@@ -1,0 +1,6 @@
+entities:
+  - id: ENT-PRODUCT
+    name: Product
+    description: Product entity inferred from REQ-CAT-001.
+    source_requirement_ids:
+      - REQ-CAT-001

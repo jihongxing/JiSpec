@@ -1,0 +1,4 @@
+invariants:
+  - id: INV-CATALOG-001
+    statement: The system must expose products that are available for sale.
+    source_requirement_id: REQ-CAT-001

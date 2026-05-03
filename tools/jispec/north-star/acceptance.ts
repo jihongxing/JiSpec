@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import * as yaml from "js-yaml";
 import {
   HUMAN_SUMMARY_COMPANION_NOTE,
   renderHumanDecisionSnapshot,
@@ -35,6 +36,7 @@ export interface NorthStarScenario {
   id: NorthStarScenarioId;
   title: string;
   status: "passed" | "blocking";
+  task?: NorthStarScenarioTask;
   requiredArtifacts: string[];
   presentArtifacts: string[];
   missingArtifacts: string[];
@@ -43,6 +45,18 @@ export interface NorthStarScenario {
   ownerAction: string;
   nextCommand: string;
   proofClaims: NorthStarProofClaim[];
+  evidence?: NorthStarScenarioEvidence;
+}
+
+export interface NorthStarScenarioEvidence {
+  summary: string;
+  lifecycleRegistryPath?: string;
+  lifecycleRegistryVersion?: number;
+  activeSnapshotId?: string;
+  lastAdoptedChangeId?: string | null;
+  sourceEvolutionPath?: string;
+  sourceReviewPath?: string;
+  governedRequirementEvolution: boolean;
 }
 
 export interface NorthStarAcceptance {
@@ -77,6 +91,7 @@ export interface NorthStarAcceptance {
   blockers: Array<{
     scenarioId: NorthStarScenarioId;
     title: string;
+    task?: NorthStarScenarioTask;
     missingArtifacts: string[];
     requiredArtifacts: string[];
     ownerAction: string;
@@ -101,10 +116,19 @@ export interface NorthStarAcceptanceResult {
 interface ScenarioDefinition {
   id: NorthStarScenarioId;
   title: string;
+  task?: NorthStarScenarioTask;
   requiredArtifacts: string[];
   ownerAction: string;
   nextCommand: string;
   proofClaims: NorthStarProofClaim[];
+}
+
+interface NorthStarScenarioTask {
+  id: string;
+  week: string;
+  priority: "P0" | "P1";
+  owner: string;
+  acceptanceCommand: string;
 }
 
 const DEFAULT_ACCEPTANCE_PATH = ".spec/north-star/acceptance.json";
@@ -121,6 +145,13 @@ const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "greenfield",
     title: "Greenfield",
+    task: {
+      id: "W2-T1",
+      week: "W2",
+      priority: "P0",
+      owner: "Greenfield Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/greenfield-empty-directory-acceptance-demo.ts",
+    },
     requiredArtifacts: [".spec/greenfield/initialization-summary.md", ".jispec-ci/verify-report.json"],
     ownerAction: "Initialize the Greenfield baseline and run deterministic verify.",
     nextCommand: "npm run jispec -- init --requirements <path> --json",
@@ -129,6 +160,13 @@ const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "daily_change",
     title: "Daily change",
+    task: {
+      id: "W2-T2",
+      week: "W2",
+      priority: "P0",
+      owner: "Change / Implement Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/p9-change-impact-summary.ts",
+    },
     requiredArtifacts: [".jispec/change-session.json", ".jispec-ci/verify-report.json"],
     ownerAction: "Record a daily change plan and refresh the verify report.",
     nextCommand: "npm run jispec -- change \"<summary>\" --mode execute --json",
@@ -137,6 +175,13 @@ const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "external_patch_mediation",
     title: "External patch mediation",
+    task: {
+      id: "W3-T1",
+      week: "W3",
+      priority: "P0",
+      owner: "Implement Runtime Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts",
+    },
     requiredArtifacts: [".jispec/implement/*/patch-mediation.json"],
     ownerAction: "Mediate the external patch through the local implement lane before accepting it.",
     nextCommand: "npm run jispec -- implement --external-patch <path> --json",
@@ -145,6 +190,13 @@ const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "policy_waiver",
     title: "Policy waiver",
+    task: {
+      id: "W3-T2",
+      week: "W3",
+      priority: "P0",
+      owner: "Audit & Integration Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/policy-approval-workflow.ts",
+    },
     requiredArtifacts: [".spec/waivers/*.json", ".spec/audit/events.jsonl"],
     ownerAction: "Refresh policy waiver posture and record the approval or expiry decision.",
     nextCommand: "npm run jispec -- policy approval status --json",
@@ -153,7 +205,14 @@ const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "release_drift",
     title: "Release drift",
-    requiredArtifacts: [".spec/releases/drift-trend.json"],
+    task: {
+      id: "W4-T1",
+      week: "W4",
+      priority: "P0",
+      owner: "Release / QA Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/release-drift-trend.ts",
+    },
+    requiredArtifacts: [".spec/releases/drift-trend.json", ".spec/baselines/current.yaml", ".spec/requirements/lifecycle.yaml"],
     ownerAction: "Create or compare release snapshots so drift is visible before promotion.",
     nextCommand: "npm run jispec -- release snapshot --version <version> --json",
     proofClaims: ["verifiable", "auditable"],
@@ -169,6 +228,13 @@ const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "multi_repo_aggregation",
     title: "Multi-repo aggregation",
+    task: {
+      id: "W4-T2",
+      week: "W4",
+      priority: "P0",
+      owner: "Console Governance Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/console-multi-repo-governance.ts",
+    },
     requiredArtifacts: [".spec/console/multi-repo-governance.json"],
     ownerAction: "Aggregate exported governance snapshots without scanning source repositories.",
     nextCommand: "npm run jispec -- console aggregate-governance --dir <path> --json",
@@ -177,6 +243,13 @@ const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "privacy_report",
     title: "Privacy report",
+    task: {
+      id: "W5-T1",
+      week: "W5",
+      priority: "P1",
+      owner: "Privacy Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/privacy-redaction.ts",
+    },
     requiredArtifacts: [".spec/privacy/privacy-report.json", ".spec/pilot/package.json"],
     ownerAction: "Run privacy report and rebuild the local pilot package before sharing.",
     nextCommand: "npm run jispec -- privacy report --json",
@@ -193,6 +266,7 @@ export function buildNorthStarAcceptance(options: NorthStarAcceptanceOptions): N
     .map((scenario) => ({
       scenarioId: scenario.id,
       title: scenario.title,
+      task: scenario.task ? { ...scenario.task } : undefined,
       missingArtifacts: scenario.missingArtifacts,
       requiredArtifacts: scenario.requiredArtifacts,
       ownerAction: scenario.ownerAction,
@@ -295,10 +369,12 @@ export function renderNorthStarAcceptanceText(acceptance: NorthStarAcceptance): 
     "",
     ...acceptance.scenarios.flatMap((scenario) => [
       `- ${scenario.id}: ${scenario.status}`,
+      scenario.task ? `  - Task: ${scenario.task.id} (${scenario.task.week}, ${scenario.task.priority})` : undefined,
       `  - Machine artifact: ${scenario.machineArtifactPath}`,
       `  - Human decision packet: ${scenario.humanDecisionPacketPath}`,
+      scenario.evidence ? `  - Evidence: ${scenario.evidence.summary}` : undefined,
       `  - Next command: ${scenario.nextCommand}`,
-    ]),
+    ].filter((line): line is string => line !== undefined)),
     "",
     "## Required Gates",
     "",
@@ -318,10 +394,12 @@ export function renderNorthStarAcceptanceText(acceptance: NorthStarAcceptance): 
 function buildScenario(root: string, definition: ScenarioDefinition): NorthStarScenario {
   const presentArtifacts = definition.requiredArtifacts.flatMap((artifactPath) => resolveArtifactMatches(root, artifactPath));
   const missingArtifacts = definition.requiredArtifacts.filter((artifactPath) => resolveArtifactMatches(root, artifactPath).length === 0);
+  const evidence = definition.id === "release_drift" ? buildReleaseDriftScenarioEvidence(root) : undefined;
   return {
     id: definition.id,
     title: definition.title,
     status: missingArtifacts.length === 0 ? "passed" : "blocking",
+    task: definition.task ? { ...definition.task } : undefined,
     requiredArtifacts: [...definition.requiredArtifacts],
     presentArtifacts,
     missingArtifacts,
@@ -330,6 +408,7 @@ function buildScenario(root: string, definition: ScenarioDefinition): NorthStarS
     ownerAction: definition.ownerAction,
     nextCommand: definition.nextCommand,
     proofClaims: [...definition.proofClaims],
+    evidence,
   };
 }
 
@@ -364,6 +443,8 @@ function buildScenarioArtifact(acceptance: NorthStarAcceptance, scenario: NorthS
     boundary: acceptance.boundary,
     ownerAction: scenario.ownerAction,
     nextCommand: scenario.nextCommand,
+    task: scenario.task ? { ...scenario.task } : undefined,
+    evidence: scenario.evidence ? { ...scenario.evidence } : undefined,
   };
 }
 
@@ -380,6 +461,16 @@ function renderScenarioDecisionPacket(acceptance: NorthStarAcceptance, scenario:
       owner: "repo owner",
       nextCommand: scenario.nextCommand,
     }),
+    ...(scenario.task ? [
+      "## Task",
+      "",
+      `- Task ID: ${scenario.task.id}`,
+      `- Week: ${scenario.task.week}`,
+      `- Priority: ${scenario.task.priority}`,
+      `- Owner: ${scenario.task.owner}`,
+      `- Acceptance command: ${scenario.task.acceptanceCommand}`,
+      "",
+    ] : []),
     "## Machine Artifact",
     "",
     `- ${scenario.machineArtifactPath}`,
@@ -387,6 +478,17 @@ function renderScenarioDecisionPacket(acceptance: NorthStarAcceptance, scenario:
     "## Required Artifacts",
     "",
     ...scenario.requiredArtifacts.map((artifactPath) => `- ${artifactPath}`),
+    ...(scenario.evidence ? [
+      "",
+      "## Lifecycle Migration Evidence",
+      "",
+      `- ${scenario.evidence.summary}`,
+      `- Lifecycle registry: ${scenario.evidence.lifecycleRegistryPath ?? "not recorded"}${scenario.evidence.lifecycleRegistryVersion !== undefined ? ` (v${scenario.evidence.lifecycleRegistryVersion})` : ""}`,
+      `- Active source snapshot: ${scenario.evidence.activeSnapshotId ?? "not recorded"}`,
+      `- Last adopted source change: ${scenario.evidence.lastAdoptedChangeId ?? "none"}`,
+      `- Source evolution artifact: ${scenario.evidence.sourceEvolutionPath ?? "not recorded"}`,
+      `- Source review artifact: ${scenario.evidence.sourceReviewPath ?? "not recorded"}`,
+    ] : []),
     "",
     "## Text Summary",
     "",
@@ -403,6 +505,48 @@ function renderScenarioDecisionPacket(acceptance: NorthStarAcceptance, scenario:
   ];
 
   return lines.join("\n");
+}
+
+function buildReleaseDriftScenarioEvidence(root: string): NorthStarScenarioEvidence | undefined {
+  const baselinePath = path.join(root, ".spec", "baselines", "current.yaml");
+  if (!fs.existsSync(baselinePath)) {
+    return undefined;
+  }
+
+  const baseline = readYamlObject(baselinePath);
+  const sourceSnapshot = isRecord(baseline.source_snapshot) ? baseline.source_snapshot : {};
+  const lifecycle = isRecord(baseline.requirement_lifecycle) ? baseline.requirement_lifecycle : {};
+  const sourceEvolution = isRecord(baseline.source_evolution) ? baseline.source_evolution : {};
+  const lifecycleRegistryPath = stringValue(sourceSnapshot.lifecycle_registry_path) ?? stringValue(lifecycle.path);
+  const lifecycleRegistryVersion = numberValue(sourceSnapshot.lifecycle_registry_version) ?? numberValue(lifecycle.registry_version);
+  const activeSnapshotId = stringValue(sourceSnapshot.active_snapshot_id) ?? stringValue(lifecycle.active_snapshot_id);
+  const lastAdoptedChangeId = stringValue(sourceSnapshot.last_adopted_change_id)
+    ?? stringValue(lifecycle.last_adopted_change_id)
+    ?? stringValue(sourceEvolution.last_adopted_change_id)
+    ?? null;
+  const sourceEvolutionPath = stringValue(sourceEvolution.source_evolution_path);
+  const sourceReviewPath = stringValue(sourceEvolution.source_review_path);
+  const governedRequirementEvolution = Boolean(
+    lifecycleRegistryPath ||
+    lifecycleRegistryVersion !== undefined ||
+    activeSnapshotId ||
+    lastAdoptedChangeId ||
+    sourceEvolutionPath ||
+    sourceReviewPath,
+  );
+
+  return {
+    summary: governedRequirementEvolution
+      ? `Release drift includes governed requirement evolution via ${lifecycleRegistryPath ?? ".spec/requirements/lifecycle.yaml"}${lifecycleRegistryVersion !== undefined ? ` v${lifecycleRegistryVersion}` : ""}, active snapshot ${activeSnapshotId ?? "unknown"}, last adopted change ${lastAdoptedChangeId ?? "none"}.`
+      : "Release drift baseline exists, but lifecycle migration evidence is not recorded yet.",
+    lifecycleRegistryPath,
+    lifecycleRegistryVersion,
+    activeSnapshotId,
+    lastAdoptedChangeId,
+    sourceEvolutionPath,
+    sourceReviewPath,
+    governedRequirementEvolution,
+  };
 }
 
 function resolveArtifactMatches(root: string, artifactPath: string): string[] {
@@ -444,4 +588,21 @@ function listFiles(root: string): string[] {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readYamlObject(filePath: string): Record<string, unknown> {
+  const parsed = yaml.load(fs.readFileSync(filePath, "utf-8"));
+  return isRecord(parsed) ? parsed : {};
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

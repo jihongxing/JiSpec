@@ -56,6 +56,8 @@ npm run ci:verify
 
 Use `.spec/greenfield/initialization-summary.md` and `.spec/greenfield/change-mainline-handoff.md` as the human review packet.
 
+For the empty-directory acceptance smoke that exercises the same Greenfield path end-to-end, see [`examples/greenfield-empty-directory/README.md`](../examples/greenfield-empty-directory/README.md) and `scripts/run-greenfield-empty-directory-demo.ts`.
+
 ## What To Read Next
 
 - Legacy takeover decisions: `docs/takeover-guide.md`

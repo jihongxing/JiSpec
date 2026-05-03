@@ -350,6 +350,7 @@ function isGreenfieldReviewIssue(issue: VerifyReportIssue): boolean {
 function isGreenfieldContractGraphOrSpecDeltaIssue(issue: VerifyReportIssue): boolean {
   return (
     issue.code.startsWith("GREENFIELD_DIRTY_") ||
+    issue.code.startsWith("GREENFIELD_SOURCE_") ||
     issue.code.startsWith("GREENFIELD_SPEC_DRIFT") ||
     issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT" ||
     issue.code === "SLICE_ARTIFACT_MISSING" ||

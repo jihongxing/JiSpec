@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { main as runCliMain } from "../cli";
+import { runChangeCommand } from "../change/change-command";
 import { runGreenfieldInit } from "../greenfield/init";
 
 interface TestResult {
@@ -89,6 +90,40 @@ async function main(): Promise<void> {
         aliasOutput.stdout.includes('"mode": "strict"') &&
         aliasOutput.stdout.includes('"nextTask": "greenfield-initialization-mvp-complete"'),
       error: `Expected bootstrap new-project to route to Greenfield initializer, got code=${aliasOutput.code}, stdout=${aliasOutput.stdout}, stderr=${aliasOutput.stderr}.`,
+    });
+
+    const change = await runChangeCommand({
+      root,
+      summary: "Refresh source contract after requirements edit",
+      mode: "prompt",
+      changeType: "modify",
+      contextId: "ordering",
+    });
+    fs.writeFileSync(
+      path.join(root, "docs", "input", "requirements.md"),
+      `${fs.readFileSync(path.join(root, "docs", "input", "requirements.md"), "utf-8")}\n\n### REQ-ORD-002\n\nCheckout must reject invalid carts.\n`,
+      "utf-8",
+    );
+    const refreshOutput = await runCliAndCapture([
+      "node",
+      "jispec-cli",
+      "source",
+      "refresh",
+      "--root",
+      root,
+      "--change",
+      change.session.specDelta?.changeId ?? "latest",
+      "--json",
+    ]);
+
+    results.push({
+      name: "CLI exposes jispec-cli source refresh command",
+      passed:
+        refreshOutput.code === 0 &&
+        refreshOutput.stdout.includes('"proposedSnapshotPath"') &&
+        refreshOutput.stdout.includes('"comparison"') &&
+        refreshOutput.stdout.includes('"changed": true'),
+      error: `Expected source refresh CLI to write a proposed snapshot, got code=${refreshOutput.code}, stdout=${refreshOutput.stdout}, stderr=${refreshOutput.stderr}.`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

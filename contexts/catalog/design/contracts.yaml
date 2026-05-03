@@ -1,0 +1,16 @@
+contracts:
+  - id: CTR-CATALOG-001
+    name: ProductAvailabilityView
+    direction: outbound-read-model
+    source_confidence: technical_solution
+    source_requirement_ids:
+      - REQ-CAT-001
+    open_questions:
+      - Confirm product identifier shape and whether price belongs in the same read model.
+    fields:
+      - name: productId
+        type: string
+        required: true
+      - name: sellable
+        type: boolean
+        required: true

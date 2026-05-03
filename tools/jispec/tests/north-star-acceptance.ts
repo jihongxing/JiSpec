@@ -56,6 +56,10 @@ async function main(): Promise<void> {
         "multi_repo_aggregation",
         "privacy_report",
       ]);
+      const releaseDrift = acceptance.scenarios.find((scenario) => scenario.id === "release_drift");
+      assert.equal(releaseDrift?.evidence?.governedRequirementEvolution, true);
+      assert.match(releaseDrift?.evidence?.summary ?? "", /lifecycle\.yaml/);
+      assert.match(releaseDrift?.evidence?.summary ?? "", /last adopted change change-1/);
       assert.ok(acceptance.proofClaims.verifiable);
       assert.ok(acceptance.proofClaims.auditable);
       assert.ok(acceptance.proofClaims.blockable);
@@ -82,6 +86,37 @@ async function main(): Promise<void> {
       assert.ok(acceptance.scenarios.every((scenario) => scenario.ownerAction.length > 0));
       assert.ok(acceptance.scenarios.every((scenario) => scenario.nextCommand.length > 0));
       assert.ok(acceptance.blockers.every((blocker) => blocker.requiredArtifacts.length > 0));
+      assert.deepEqual(
+        acceptance.blockers
+          .filter((blocker) =>
+            [
+              "greenfield",
+              "daily_change",
+              "external_patch_mediation",
+              "policy_waiver",
+              "release_drift",
+              "multi_repo_aggregation",
+              "privacy_report",
+            ].includes(blocker.scenarioId),
+          )
+          .map((blocker) => blocker.task?.id),
+        ["W2-T1", "W2-T2", "W3-T1", "W3-T2", "W4-T1", "W4-T2", "W5-T1"],
+      );
+      assert.ok(
+        acceptance.blockers
+          .filter((blocker) =>
+            [
+              "greenfield",
+              "daily_change",
+              "external_patch_mediation",
+              "policy_waiver",
+              "release_drift",
+              "multi_repo_aggregation",
+              "privacy_report",
+            ].includes(blocker.scenarioId),
+          )
+          .every((blocker) => Boolean(blocker.task?.acceptanceCommand)),
+      );
       assert.equal(acceptance.boundary.llmBlockingDecisionSource, false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -106,6 +141,17 @@ async function main(): Promise<void> {
         assert.equal(fs.existsSync(path.join(root, scenario.humanDecisionPacketPath)), true, scenario.id);
         assert.match(fs.readFileSync(path.join(root, scenario.humanDecisionPacketPath), "utf-8"), /Decision Snapshot/);
       }
+      const greenfieldScenario = saved.scenarios.find((scenario) => scenario.id === "greenfield");
+      const dailyChangeScenario = saved.scenarios.find((scenario) => scenario.id === "daily_change");
+      const releaseDriftScenario = saved.scenarios.find((scenario) => scenario.id === "release_drift");
+      assert.equal(greenfieldScenario?.task?.id, "W2-T1");
+      assert.equal(dailyChangeScenario?.task?.id, "W2-T2");
+      assert.equal(releaseDriftScenario?.evidence?.lifecycleRegistryPath, ".spec/requirements/lifecycle.yaml");
+      assert.equal(releaseDriftScenario?.evidence?.lifecycleRegistryVersion, 2);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/greenfield-decision.md"), "utf-8"), /Task ID: W2-T1/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/daily_change-decision.md"), "utf-8"), /Task ID: W2-T2/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_drift-decision.md"), "utf-8"), /Lifecycle Migration Evidence/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_drift-decision.md"), "utf-8"), /last adopted change change-1/i);
 
       const cli = runCli(["north-star", "acceptance", "--root", root, "--json"]);
       assert.equal(cli.status, 0, cli.stderr);
@@ -129,6 +175,10 @@ async function main(): Promise<void> {
     const help = runCli(["--help"]);
 
     assert.match(plan, /M7-T5[\s\S]*状态：已完成/);
+    assert.match(plan, /## V1\.1 \/ pilot-grade 周执行计划/);
+    assert.match(plan, /状态：frozen，除非通过对应任务和回归门禁，否则不调整场景范围、任务顺序和矩阵口径。/);
+    assert.match(plan, /\| W1-T1 \| W1 \| P0 \| Test Owner \+ Docs \/ Release Owner \|/);
+    assert.match(plan, /\| W8-T2 \| W8 \| P0 \| Release \/ QA Owner \|/);
     assert.match(plan, /north-star acceptance/i);
     assert.match(readme, /north-star acceptance/i);
     assert.match(stableContract, /north-star acceptance/i);
@@ -181,6 +231,39 @@ function writeNorthStarFixture(root: string): void {
   writeText(root, ".jispec/implement/change-1/patch-mediation.json", JSON.stringify({ externalPatchControlled: true }, null, 2));
   writeText(root, ".spec/waivers/W-1.json", JSON.stringify({ id: "W-1", status: "active" }, null, 2));
   writeText(root, ".spec/releases/drift-trend.json", JSON.stringify({ status: "stable", comparisons: 2 }, null, 2));
+  writeText(root, ".spec/baselines/current.yaml", [
+    "source_snapshot:",
+    "  active_snapshot_id: snapshot-ordering-v2",
+    "  lifecycle_registry_path: .spec/requirements/lifecycle.yaml",
+    "  lifecycle_registry_version: 2",
+    "  last_adopted_change_id: change-1",
+    "requirement_lifecycle:",
+    "  path: .spec/requirements/lifecycle.yaml",
+    "  registry_version: 2",
+    "  active_snapshot_id: snapshot-ordering-v2",
+    "  last_adopted_change_id: change-1",
+    "source_evolution:",
+    "  source_evolution_path: .spec/deltas/change-1/source-evolution.json",
+    "  source_review_path: .spec/deltas/change-1/source-review.yaml",
+    "  last_adopted_change_id: change-1",
+  ].join("\n"));
+  writeText(root, ".spec/requirements/lifecycle.yaml", [
+    "version: 1",
+    "registry_version: 2",
+    "generated_at: 2026-05-02T00:00:00.000Z",
+    "active_snapshot_id: snapshot-ordering-v2",
+    "last_adopted_change_id: change-1",
+    "requirements:",
+    "  - id: REQ-1",
+    "    status: active",
+    "    source_snapshot: snapshot-ordering-v2",
+    "    introduced_by_change: null",
+    "    modified_by_change: change-1",
+    "    deprecated_by_change: null",
+    "    supersedes: []",
+    "    replaced_by: []",
+    "    merged_from: []",
+  ].join("\n"));
   writeText(root, ".spec/console/governance-snapshot.json", JSON.stringify({ kind: "jispec-console-governance-snapshot" }, null, 2));
   writeText(root, ".spec/console/multi-repo-governance.json", JSON.stringify({ kind: "jispec-multi-repo-governance-aggregate" }, null, 2));
   writeText(root, ".spec/privacy/privacy-report.json", JSON.stringify({

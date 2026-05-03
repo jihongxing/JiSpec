@@ -68,11 +68,45 @@ async function main(): Promise<void> {
     });
     const projectPath = path.join(root, "jiproject", "project.yaml");
     const project = yaml.load(fs.readFileSync(projectPath, "utf-8")) as ProjectYaml;
+    const baseline = yaml.load(fs.readFileSync(path.join(root, ".spec", "baselines", "current.yaml"), "utf-8")) as {
+      source_snapshot?: {
+        active_manifest_path?: string;
+        compatibility_manifest_path?: string;
+        active_snapshot_id?: string;
+        lifecycle_registry_path?: string;
+        lifecycle_registry_version?: number;
+      };
+      requirement_lifecycle?: {
+        path?: string;
+        registry_version?: number;
+        active_snapshot_id?: string;
+      };
+      applied_deltas?: string[];
+    };
+    const lifecycle = yaml.load(fs.readFileSync(path.join(root, ".spec", "requirements", "lifecycle.yaml"), "utf-8")) as {
+      registry_version?: number;
+      active_snapshot_id?: string;
+      requirements?: Array<{ id?: string; status?: string }>;
+    };
     const manifestPath = path.join(root, ".spec", "greenfield", "source-documents.yaml");
+    const activeManifestPath = path.join(root, ".spec", "greenfield", "source-documents.active.yaml");
     const manifest = yaml.load(fs.readFileSync(manifestPath, "utf-8")) as {
+      snapshot?: {
+        id?: string;
+        status?: string;
+      };
       input_contract?: {
         version?: number;
         supported_modes?: string[];
+      };
+      source_documents?: {
+        requirements?: {
+          anchors?: Array<{
+            id?: string;
+            contract_level?: string;
+            aliases?: string[];
+          }>;
+        };
       };
       input_mode?: string;
       input_status?: string;
@@ -88,12 +122,16 @@ async function main(): Promise<void> {
       passed:
         initResult.status === "input_contract_ready" &&
         initResult.writtenFiles.some((filePath) => filePath.endsWith("jiproject/project.yaml")) &&
+        initResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/greenfield/source-documents.active.yaml")) &&
         initResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/greenfield/source-documents.yaml")) &&
         fs.existsSync(path.join(root, "jiproject", "glossary.yaml")) &&
         fs.existsSync(path.join(root, "jiproject", "context-map.yaml")) &&
         fs.existsSync(path.join(root, "jiproject", "constraints.yaml")) &&
         fs.existsSync(path.join(root, ".spec", "baselines", "current.yaml")) &&
+        fs.existsSync(path.join(root, ".spec", "requirements", "lifecycle.yaml")) &&
         fs.existsSync(manifestPath) &&
+        fs.existsSync(activeManifestPath) &&
+        fs.readFileSync(activeManifestPath, "utf-8") === fs.readFileSync(manifestPath, "utf-8") &&
         fs.existsSync(path.join(root, ".spec", "greenfield", "open-questions.yaml")) &&
         project.id === "commerce-platform" &&
         project.name === "Commerce Platform" &&
@@ -105,13 +143,34 @@ async function main(): Promise<void> {
         project.input_contract?.technical_solution?.optional === true &&
         manifest.input_contract?.version === 1 &&
         manifest.input_contract?.supported_modes?.includes("strict") === true &&
+        manifest.snapshot?.status === "active" &&
+        typeof manifest.snapshot?.id === "string" &&
         manifest.input_mode === "strict" &&
         manifest.input_status === "passed" &&
+        manifest.source_documents?.requirements?.anchors?.some((anchor) =>
+          anchor.id === "REQ-ORD-001" &&
+          anchor.contract_level === "required" &&
+          Array.isArray(anchor.aliases) &&
+          anchor.aliases.includes("req ord 001")
+        ) === true &&
         manifest.open_questions?.path === ".spec/greenfield/open-questions.yaml" &&
         manifest.open_questions?.total !== undefined &&
         manifest.open_questions?.total > 0 &&
         project.source_documents?.requirements === "docs/input/requirements.md" &&
         project.source_documents?.technical_solution === "docs/input/technical-solution.md" &&
+        baseline.source_snapshot?.active_manifest_path === ".spec/greenfield/source-documents.active.yaml" &&
+        baseline.source_snapshot?.compatibility_manifest_path === ".spec/greenfield/source-documents.yaml" &&
+        baseline.source_snapshot?.active_snapshot_id === manifest.snapshot?.id &&
+        baseline.source_snapshot?.lifecycle_registry_path === ".spec/requirements/lifecycle.yaml" &&
+        baseline.source_snapshot?.lifecycle_registry_version === 1 &&
+        baseline.requirement_lifecycle?.path === ".spec/requirements/lifecycle.yaml" &&
+        baseline.requirement_lifecycle?.registry_version === 1 &&
+        baseline.requirement_lifecycle?.active_snapshot_id === manifest.snapshot?.id &&
+        Array.isArray(baseline.applied_deltas) &&
+        baseline.applied_deltas.length === 0 &&
+        lifecycle.registry_version === 1 &&
+        lifecycle.active_snapshot_id === manifest.snapshot?.id &&
+        lifecycle.requirements?.some((entry) => entry.id === "REQ-ORD-001" && entry.status === "active") === true &&
         project.source_quality?.requirements === "strong" &&
         project.source_quality?.technical_solution === "strong" &&
         project.global_gates?.includes("source_documents_loaded") === true,
