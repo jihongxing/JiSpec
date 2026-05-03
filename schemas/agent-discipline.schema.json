@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jispec.dev/schemas/agent-discipline.schema.json",
+  "title": "JiSpec Agent Discipline Artifacts",
+  "oneOf": [
+    { "$ref": "#/$defs/AgentRunSession" },
+    { "$ref": "#/$defs/CompletionEvidence" },
+    { "$ref": "#/$defs/DebugPacket" },
+    { "$ref": "#/$defs/ReviewDiscipline" },
+    { "$ref": "#/$defs/DisciplineReport" }
+  ],
+  "$defs": {
+    "TruthSource": {
+      "type": "object",
+      "required": ["path", "provenance", "note"],
+      "properties": {
+        "path": { "type": "string" },
+        "provenance": { "enum": ["EXTRACTED", "INFERRED", "AMBIGUOUS", "OWNER_REVIEW", "UNKNOWN"] },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "CommandEvidence": {
+      "type": "object",
+      "required": ["command", "exitCode", "ranAt", "evidenceKind", "summary"],
+      "properties": {
+        "command": { "type": "string" },
+        "exitCode": { "type": ["integer", "null"] },
+        "ranAt": { "type": "string" },
+        "evidenceKind": { "enum": ["test", "typecheck", "verify", "scope_check", "patch_apply", "owner_review"] },
+        "summary": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "TestStrategy": {
+      "type": "object",
+      "required": ["command", "scope", "expectedSignal", "whySufficient", "deterministic", "ownerReviewRequired"],
+      "properties": {
+        "command": { "type": "string" },
+        "scope": { "enum": ["docs_only", "contract_critical", "mixed", "unknown"] },
+        "expectedSignal": { "type": "string" },
+        "whySufficient": { "type": "string" },
+        "deterministic": { "type": "boolean" },
+        "ownerReviewRequired": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "PhaseTransition": {
+      "type": "object",
+      "required": ["phase", "status", "actor", "timestamp", "sourceCommand", "truthSources"],
+      "properties": {
+        "phase": { "enum": ["intent", "design", "plan", "implement", "debug", "verify", "handoff"] },
+        "status": { "enum": ["passed", "failed", "not_run", "not_applicable"] },
+        "actor": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "sourceCommand": { "type": "string" },
+        "truthSources": { "type": "array", "items": { "$ref": "#/$defs/TruthSource" } }
+      },
+      "additionalProperties": true
+    },
+    "ReportPhaseGate": {
+      "type": "object",
+      "required": ["status", "issues"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "not_run", "not_applicable"] },
+        "issues": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "ReportTestStrategy": {
+      "type": "object",
+      "required": ["status", "ownerReviewRequired"],
+      "properties": {
+        "status": { "enum": ["passed", "failed", "not_run", "not_applicable"] },
+        "ownerReviewRequired": { "type": "boolean" },
+        "command": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "ReportCompletion": {
+      "type": "object",
+      "required": ["status", "missingEvidence"],
+      "properties": {
+        "status": { "enum": ["incomplete", "ready_for_verify", "verified", "verified_with_advisory", "blocked", "owner_review_required"] },
+        "missingEvidence": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "ReportIsolation": {
+      "type": "object",
+      "required": ["allowedPaths", "touchedPaths", "unexpectedPaths"],
+      "properties": {
+        "allowedPaths": { "type": "array", "items": { "type": "string" } },
+        "touchedPaths": { "type": "array", "items": { "type": "string" } },
+        "unexpectedPaths": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "ReportArtifacts": {
+      "type": "object",
+      "required": ["sessionPath"],
+      "properties": {
+        "sessionPath": { "type": "string" },
+        "completionEvidencePath": { "type": "string" },
+        "debugPacketPath": { "type": "string" },
+        "debugPacketMarkdownPath": { "type": "string" },
+        "summaryPath": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "AgentRunSession": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "sessionId", "generatedAt", "mode", "currentPhase", "transitions", "allowedPaths", "touchedPaths", "unexpectedPaths", "truthSources"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "const": "jispec-agent-discipline-session" },
+        "sessionId": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "mode": { "enum": ["strict_gate", "fast_advisory"] },
+        "currentPhase": { "enum": ["intent", "design", "plan", "implement", "debug", "verify", "handoff"] },
+        "transitions": { "type": "array", "items": { "$ref": "#/$defs/PhaseTransition" } },
+        "allowedPaths": { "type": "array", "items": { "type": "string" } },
+        "touchedPaths": { "type": "array", "items": { "type": "string" } },
+        "unexpectedPaths": { "type": "array", "items": { "type": "string" } },
+        "testStrategy": { "$ref": "#/$defs/TestStrategy" },
+        "truthSources": { "type": "array", "items": { "$ref": "#/$defs/TruthSource" } }
+      },
+      "additionalProperties": true
+    },
+    "CompletionEvidence": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "sessionId", "generatedAt", "status", "commands", "missingEvidence", "truthSources"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "const": "jispec-agent-completion-evidence" },
+        "sessionId": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "status": { "enum": ["incomplete", "ready_for_verify", "verified", "verified_with_advisory", "blocked", "owner_review_required"] },
+        "commands": { "type": "array", "items": { "$ref": "#/$defs/CommandEvidence" } },
+        "verifyCommand": { "type": "string" },
+        "verifyVerdict": { "type": "string" },
+        "missingEvidence": { "type": "array", "items": { "type": "string" } },
+        "truthSources": { "type": "array", "items": { "$ref": "#/$defs/TruthSource" } }
+      },
+      "additionalProperties": true
+    },
+    "DebugPacket": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "sessionId", "generatedAt", "stopPoint", "failingCheck", "minimalReproductionCommand", "observedEvidence", "currentHypothesis", "filesLikelyInvolved", "repeatedFailureCount", "nextAllowedAction", "retryCommand", "truthSources"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "const": "jispec-agent-debug-packet" },
+        "sessionId": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "stopPoint": { "type": "string" },
+        "failedCommand": { "type": "string" },
+        "exitCode": { "type": ["integer", "null"] },
+        "failingCheck": { "type": "string" },
+        "minimalReproductionCommand": { "type": "string" },
+        "observedEvidence": { "type": "array", "items": { "type": "string" } },
+        "currentHypothesis": { "type": "string" },
+        "filesLikelyInvolved": { "type": "array", "items": { "type": "string" } },
+        "repeatedFailureCount": { "type": "integer", "minimum": 0 },
+        "nextAllowedAction": { "type": "string" },
+        "retryCommand": { "type": "string" },
+        "truthSources": { "type": "array", "items": { "$ref": "#/$defs/TruthSource" } }
+      },
+      "additionalProperties": true
+    },
+    "ReviewDiscipline": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "sessionId", "purpose", "impactedContracts", "verificationCommands", "uncoveredRisks", "advisoryItems", "ownerDecisions", "nextReviewerAction", "truthSources"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "const": "jispec-agent-review-discipline" },
+        "sessionId": { "type": "string" },
+        "purpose": { "type": "string" },
+        "impactedContracts": { "type": "array", "items": { "type": "string" } },
+        "verificationCommands": { "type": "array", "items": { "type": "string" } },
+        "uncoveredRisks": { "type": "array", "items": { "type": "string" } },
+        "advisoryItems": { "type": "array", "items": { "type": "string" } },
+        "ownerDecisions": { "type": "array", "items": { "type": "string" } },
+        "nextReviewerAction": { "type": "string" },
+        "truthSources": { "type": "array", "items": { "$ref": "#/$defs/TruthSource" } }
+      },
+      "additionalProperties": true
+    },
+    "DisciplineReport": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "sessionId", "generatedAt", "mode", "phaseGate", "testStrategy", "completion", "isolation", "artifacts", "truthSources"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "kind": { "const": "jispec-agent-discipline-report" },
+        "sessionId": { "type": "string" },
+        "generatedAt": { "type": "string" },
+        "mode": { "enum": ["strict_gate", "fast_advisory"] },
+        "phaseGate": { "$ref": "#/$defs/ReportPhaseGate" },
+        "testStrategy": { "$ref": "#/$defs/ReportTestStrategy" },
+        "completion": { "$ref": "#/$defs/ReportCompletion" },
+        "isolation": { "$ref": "#/$defs/ReportIsolation" },
+        "artifacts": { "$ref": "#/$defs/ReportArtifacts" },
+        "truthSources": { "type": "array", "items": { "$ref": "#/$defs/TruthSource" } }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -52,10 +52,18 @@ async function main(): Promise<void> {
     });
 
     results.push({
-      name: "brief contains boundaries, adopted contracts, deferred debt, and strongest evidence",
+      name: "brief contains top adoption, owner review, deferred debt, and risk summary",
       passed:
-        brief.includes("## Boundary / Aggregate Candidates") &&
-        (brief.includes("`governance`") || brief.includes("`protocol`") || brief.includes("`gateway`")) &&
+        brief.includes("## Top Adoption Candidates") &&
+        brief.includes("## Decision Snapshot") &&
+        brief.includes("Current state:") &&
+        brief.includes("Risk: Feature gate: accept_candidate") &&
+        brief.includes("Evidence:") &&
+        brief.includes("Owner: reviewer") &&
+        brief.includes("Next command: `npm run jispec-cli -- verify`") &&
+        brief.includes("## Owner Review Candidates") &&
+        brief.includes("## Risk Summary") &&
+        (brief.includes("`docs/governance/README.md`") || brief.includes("`api/proto/gateway.proto`")) &&
         brief.includes("## Adopted Contracts") &&
         brief.includes("[.spec/contracts/domain.yaml](../contracts/domain.yaml)") &&
         brief.includes("[.spec/contracts/behaviors.feature](../contracts/behaviors.feature)") &&
@@ -68,6 +76,9 @@ async function main(): Promise<void> {
         brief.includes("[api/routes/alpha_routes.py](../../api/routes/alpha_routes.py)") &&
         !brief.includes("[/ledger/entries]") &&
         !brief.includes("../..//ledger/entries") &&
+        brief.includes("- No owner-review candidates were identified in the feature confidence gate.") &&
+        brief.includes("Feature gate: accept_candidate") &&
+        brief.includes("Owner-review candidates: 0") &&
         brief.includes("## Feature Confidence Gate") &&
         brief.includes("Recommendation: `accept_candidate`") &&
         brief.includes("Feature draft can be adopted as an initial behavior contract"),
@@ -91,10 +102,23 @@ async function main(): Promise<void> {
       passed:
         rendered.includes("Takeover brief: .spec/handoffs/takeover-brief.md") &&
         rendered.includes("Brief summary:") &&
-        rendered.includes("Boundaries:") &&
+        rendered.includes("Top adoption:") &&
+        rendered.includes("Owner review:") &&
+        rendered.includes("Deferred debt:") &&
+        rendered.includes("Risk:") &&
         rendered.includes("Feature gate: accept_candidate") &&
-        rendered.includes("Adopted: 2; Spec debt: 1"),
+        rendered.includes("Next:"),
       error: `Expected CLI output to include brief summary, got:\n${rendered}`,
+    });
+
+    results.push({
+      name: "brief declares Markdown as companion and keeps machine report as source of truth",
+      passed:
+        brief.includes("## Source Of Truth") &&
+        brief.includes("Machine report:") &&
+        brief.includes("bootstrap-takeover.json") &&
+        brief.includes("This Markdown file is a human-readable companion summary, not a machine API."),
+      error: `Expected brief to declare source-of-truth boundary, got:\n${brief}`,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

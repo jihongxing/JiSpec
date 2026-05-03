@@ -39,8 +39,23 @@ async function main(): Promise<void> {
         },
         affectedContracts: [".spec/policy.yaml", ".spec/contracts/domain.yaml"],
       });
+      appendAuditEvent(root, {
+        type: "agent_discipline_recorded",
+        actor: "jispec-implement",
+        reason: "Record agent discipline evidence.",
+        timestamp: "2026-05-01T00:01:00.000Z",
+        sourceArtifact: {
+          kind: "agent-discipline-report",
+          path: ".jispec/agent-run/change-1/discipline-report.json",
+        },
+        affectedContracts: ["CTR-AUDIT-001"],
+        details: {
+          sessionId: "change-1",
+          completionStatus: "verified",
+        },
+      });
       const events = readAuditEvents(root);
-      assert.equal(events.length, 1);
+      assert.equal(events.length, 2);
       assert.equal(events[0]?.version, 1);
       assert.equal(events[0]?.sequence, 1);
       assert.equal(events[0]?.type, "policy_change");
@@ -51,10 +66,16 @@ async function main(): Promise<void> {
       assert.equal(typeof events[0]?.eventHash, "string");
       assert.equal(events[0]?.eventHash.length, 64);
       assert.equal(events[0]?.signature?.algorithm, "reserved-none");
+      assert.equal(events[1]?.type, "agent_discipline_recorded");
+      assert.equal(events[1]?.sourceArtifact.path, ".jispec/agent-run/change-1/discipline-report.json");
+      assert.equal(events[1]?.details?.sessionId, "change-1");
       const integrity = inspectAuditLedger(root);
       assert.equal(integrity.status, "verified");
-      assert.equal(integrity.verifiedEventCount, 1);
-      assert.equal(integrity.latestHash, events[0]?.eventHash);
+      assert.equal(integrity.verifiedEventCount, 2);
+      assert.equal(integrity.events[1]?.type, "agent_discipline_recorded");
+      assert.equal(integrity.events[1]?.sourceArtifact.path, ".jispec/agent-run/change-1/discipline-report.json");
+      assert.equal(integrity.events[1]?.details?.sessionId, "change-1");
+      assert.equal(integrity.latestHash, events[1]?.eventHash);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

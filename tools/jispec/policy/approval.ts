@@ -12,7 +12,9 @@ export type ApprovalSubjectKind =
   | "policy_change"
   | "waiver_change"
   | "release_drift"
-  | "execute_default_change";
+  | "execute_default_change"
+  | "pilot_risk_acceptance"
+  | "external_graph_summary_sharing";
 
 export type ApprovalDecisionStatus = "approved" | "rejected";
 export type ApprovalActorRole = "owner" | "reviewer";
@@ -299,6 +301,12 @@ function discoverApprovalSubjects(root: string, policy: VerifyPolicy | null): Ap
   if (latestReleaseCompare) {
     subjects.push(resolveApprovalSubject(root, "release_drift", latestReleaseCompare));
   }
+  if (requiresPilotRiskAcceptance(root)) {
+    subjects.push(resolveApprovalSubject(root, "pilot_risk_acceptance", ".spec/privacy/privacy-report.json"));
+  }
+  if (requireExternalGraphSummaryApproval(root, policy.team?.profile ?? "small_team")) {
+    subjects.push(resolveApprovalSubject(root, "external_graph_summary_sharing", externalGraphSummarySubjectRef(root)));
+  }
 
   return dedupeSubjects(subjects);
 }
@@ -358,6 +366,12 @@ function resolveApprovalSubject(root: string, kind: ApprovalSubjectKind, ref?: s
 function defaultSubjectRef(root: string, kind: ApprovalSubjectKind): string {
   if (kind === "release_drift") {
     return latestReleaseCompareReport(root) ?? ".spec/releases/compare";
+  }
+  if (kind === "pilot_risk_acceptance") {
+    return ".spec/privacy/privacy-report.json";
+  }
+  if (kind === "external_graph_summary_sharing") {
+    return externalGraphSummarySubjectRef(root);
   }
   if (kind === "waiver_change") {
     return ".spec/waivers";
@@ -431,6 +445,67 @@ function latestReleaseCompareReport(root: string): string | undefined {
     .at(-1);
 }
 
+function requiresPilotRiskAcceptance(root: string): boolean {
+  const privacyReportPath = path.join(root, ".spec", "privacy", "privacy-report.json");
+  if (!fs.existsSync(privacyReportPath)) {
+    return false;
+  }
+  try {
+    const report = JSON.parse(fs.readFileSync(privacyReportPath, "utf-8")) as unknown;
+    if (!isRecord(report) || !isRecord(report.summary)) {
+      return false;
+    }
+    return numericValue(report.summary.highSeverityFindingCount) > 0 ||
+      numericValue(report.summary.reviewBeforeSharingArtifactCount) > 0;
+  } catch {
+    return true;
+  }
+}
+
+function requireExternalGraphSummaryApproval(root: string, profile: TeamPolicyProfileName): boolean {
+  if (profile !== "regulated") {
+    return false;
+  }
+
+  const summaryPath = path.join(root, ".spec", "handoffs", "external-graph-summary.md");
+  if (fs.existsSync(summaryPath)) {
+    return true;
+  }
+
+  return listDirectFiles(root, ".spec/integrations", ".json")
+    .some((relativePath) => {
+      const absolutePath = path.join(root, relativePath);
+      try {
+        const artifact = JSON.parse(fs.readFileSync(absolutePath, "utf-8")) as unknown;
+        return isExternalToolRunRequiringApproval(artifact);
+      } catch {
+        return relativePath.includes("external-tool") || relativePath.includes("external-graph");
+      }
+    });
+}
+
+function externalGraphSummarySubjectRef(root: string): string {
+  const summaryPath = ".spec/handoffs/external-graph-summary.md";
+  if (fs.existsSync(path.join(root, summaryPath))) {
+    return summaryPath;
+  }
+  return ".spec/integrations/external-tool-run.json";
+}
+
+function isExternalToolRunRequiringApproval(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.kind !== "jispec-external-tool-run") {
+    return false;
+  }
+  return value.networkRequired === true || value.sourceUploadRisk !== "none";
+}
+
+function numericValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function listDirectFiles(root: string, relativeDir: string, extension: string): string[] {
   const absoluteDir = path.join(root, relativeDir);
   if (!fs.existsSync(absoluteDir)) {
@@ -455,8 +530,8 @@ function dedupeSubjects(subjects: ApprovalSubjectRef[]): ApprovalSubjectRef[] {
 }
 
 function validateSubjectKind(value: unknown): asserts value is ApprovalSubjectKind {
-  if (!["policy_change", "waiver_change", "release_drift", "execute_default_change"].includes(String(value))) {
-    throw new Error("Approval subject kind must be policy_change, waiver_change, release_drift, or execute_default_change.");
+  if (!["policy_change", "waiver_change", "release_drift", "execute_default_change", "pilot_risk_acceptance", "external_graph_summary_sharing"].includes(String(value))) {
+    throw new Error("Approval subject kind must be policy_change, waiver_change, release_drift, execute_default_change, pilot_risk_acceptance, or external_graph_summary_sharing.");
   }
 }
 

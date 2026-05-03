@@ -68,6 +68,7 @@ async function main(): Promise<void> {
         facts.facts?.["bootstrap.takeover.present"] === true &&
         facts.facts?.["bootstrap.adopted_contract_count"] === 1 &&
         facts.facts?.["bootstrap.spec_debt_count"] === 1 &&
+        facts.facts?.["contracts.behavior.deferred"] === false &&
         typeof facts.facts?.["bootstrap.historical_debt_issue_count"] === "number" &&
         Number(facts.facts?.["bootstrap.historical_debt_issue_count"]) > 0 &&
         facts.facts?.["verify.contract_issue_count"] === 0,

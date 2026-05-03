@@ -28,6 +28,656 @@ governance productization -> adoption packaging -> ecosystem integration -> ente
 - 当前项目已经具备 AI 原生软件交付控制内核的雏形；下一阶段要把这个内核推进到可安装、可试用、可运营、可审计、可商业化的产品形态。
 - 商业化增强不能改变北极星边界：JiSpec 仍是 contract control layer，不是 autonomous code implementation agent，也不是 LLM-first blocking judge。
 
+## 三个月北极星收口执行版
+
+这个版本不是普通的下一阶段计划，而是把三个月工作明确为一次北极星收口。完成后，JiSpec 至少要达到“可对外声明已经非常接近北极星”的状态；如果所有终局验收场景都通过，可以视为北极星 V1.0 达成。
+
+收尾状态：已完成。M5-T1 到 M7-T5 均已实现并纳入回归矩阵；当前最终门禁为 `npm run post-release:gate`、`doctor v1`、`doctor runtime`、`doctor pilot` 和 `north-star acceptance`。
+
+北极星收口定义：
+
+- `可验证`：所有主线决策都有结构化契约、facts、policy、schema 或测试支撑；`verify` 和 `ci:verify` 是可复现的权威 gate。
+- `可审计`：所有采纳、延期、豁免、策略、release drift、外部 patch intake 和治理动作都有 actor、reason、timestamp、source artifact 和 affected contract。
+- `可阻断`：当前变更、契约漂移、policy 违规、未授权 waiver、关键 behavior 缺失、越界 patch 都能进入 deterministic blocking 或明确 debt。
+- `可回放`：bootstrap、adopt、change、implement、verify、release compare 和 external handoff 都能从本地 artifact 追溯或恢复上下文。
+- `现代交付流水线`：从旧仓库接管或 Greenfield 初始化开始，到 change、implement mediation、verify、CI、Console governance 和多仓治理，形成一条稳定主线，而不是零散工具集合。
+
+硬性完成条件：
+
+- `doctor v1`、`doctor pilot`、`doctor runtime` 全部通过。
+- `verify --json` 在仓库自身上达到 `PASS`，或只剩明确 owner-accepted、非主线阻断的 advisory，且没有 `POLICY_REQUIRE_BEHAVIOR_CONTRACT`。
+- `post-release:gate` 通过。
+- Console 能回答 mergeability、policy、waiver、spec debt、drift、audit、execute mediation、takeover quality、multi-repo risk。
+- 外部 coding tool / SCM / issue 集成只消费和输出本地 contract artifacts，不绕过 scope check、test、verify。
+- 文档、测试、CLI help 和本地 artifact contract 对齐，不存在“文档承诺大于代码能力”的主线表述。
+
+执行顺序固定为：
+
+1. 2026-05 收硬门槛
+2. 2026-06 补控制面
+3. 2026-07 做外部化和试点硬化
+
+任务卡约定：
+
+- `做什么` 定义产品行为或契约边界。
+- `怎么做` 定义建议修改区域和实现策略，但不预先绑定具体代码形态。
+- `验收标准` 是任务完成的最低门槛；没有通过验收标准时不得标记完成。
+- 每个任务完成时必须同步更新相关文档、回归测试和人类决策包语言。
+
+月度门禁：
+
+| 月份 | 阶段目标 | 必跑门禁 | 阶段完成定义 |
+| --- | --- | --- | --- |
+| 2026-05 | 收硬门槛 | `npm run typecheck`、`npm run jispec-cli -- verify --json`、`npm run jispec-cli -- doctor v1`、`npm run jispec-cli -- doctor runtime`、`node --import tsx ./tools/jispec/tests/regression-runner.ts` | 契约、runtime、回归和 takeover evidence 都不再漂移 |
+| 2026-06 | 补控制面 | `npm run typecheck`、`npm run jispec-cli -- console dashboard`、`npm run jispec-cli -- console actions`、`npm run jispec-cli -- console export-governance`、`npm run ci:verify` | Console 成为本地治理控制室，但仍不替代本地 gate |
+| 2026-07 | 外部化和试点硬化 | `npm run typecheck`、`npm run jispec-cli -- doctor pilot`、`npm run post-release:gate` | 试点包可安装、可验证、可审计、可解释、可集成，且不要求源码上传 |
+
+依赖顺序：
+
+1. `M5-T1` 到 `M5-T5` 必须先于 6 月 Console 深化完成。
+2. `M6-T1` 到 `M6-T5` 必须先于 7 月 multi-repo 与外部集成完成。
+3. `M7-T2` 外部集成不得绕过 `M6-T2` 的 execute / implement handoff 边界。
+4. `M7-T5` 北极星验收不得降低 `doctor v1`、`verify`、`ci:verify` 或 `post-release:gate` 的权威性。
+
+### 2026-05: 收硬门槛
+
+目标：让 JiSpec 的主线从“能跑”升级为“足够硬”。5 月结束时，仓库自身应不再靠宽松 advisory 解释核心契约缺口，runtime 和 regression 也不能再漂。
+
+#### M5-T1 行为契约补齐与阻断语义
+
+状态：已完成
+
+做什么：
+
+- 把当前 behavior contract advisory 收口成稳定契约面。
+- 让 behavior contract 贯穿 bootstrap draft、adopt、verify、ci:verify、Console read model 和 release snapshot。
+- 明确 behavior 缺失、弱证据、已延期 spec debt、当前变更破坏行为的不同处理方式。
+
+怎么做：
+
+- 在 `tools/jispec/bootstrap/` 中让 behavior draft 继续保留 evidence level、evidence kinds 和 provenance。
+- 在 `tools/jispec/verify/` 中区分 adopted behavior missing、deferred behavior debt、changed behavior drift 和 weak candidate。
+- 在 `.spec/contracts/`、`.spec/spec-debt/`、`.spec/handoffs/verify-summary.md` 和 `.jispec-ci/verify-report.json` 中保持同一套行为契约语言。
+- 增加 `tools/jispec/tests/verify-behavior-contract.ts` 或扩展现有 verify / bootstrap tests，覆盖 PASS、blocking、debt、weak evidence 四类场景。
+
+验收标准：
+
+- 仓库自身运行 `npm run jispec-cli -- verify --json` 不再出现 `POLICY_REQUIRE_BEHAVIOR_CONTRACT`。
+- 行为契约缺失不能静默通过；必须进入 blocking、spec debt 或 owner review 三者之一。
+- `ci:verify` 和 Console mergeability 能显示 behavior contract 对 merge 的影响。
+
+完成记录：
+
+- verify / policy / facts / Console 的行为契约语言已统一，`POLICY_REQUIRE_BEHAVIOR_CONTRACT` 不再作为当前仓库主线缺口出现。
+- 行为缺失、延期 debt、弱证据和 drift 通过 blocking、spec debt、owner review 或 advisory 明确落位。
+- 回归覆盖通过 verify JSON/report、policy engine、policy integration、facts roundtrip 和 Console governance 相关套件保持。
+
+#### M5-T2 Facts / policy / contract graph 硬化
+
+状态：已完成
+
+做什么：
+
+- 把需求、domain、api、behavior、policy、facts、spec debt、waiver 和 release graph 的关系收紧成可验证控制面。
+
+怎么做：
+
+- 扩展 facts contract，记录 adopted / deferred / missing / drifted contract assets。
+- 让 policy rule 能引用稳定 fact，避免 blocking rule 依赖 unstable fact。
+- 让 release snapshot / compare 能看到 behavior、policy 和 spec debt 的 graph impact。
+- 增加 facts roundtrip、policy integration、release compare 的交叉测试。
+
+验收标准：
+
+- `verify --facts-out <path>` 能输出覆盖主线契约状态的 canonical facts。
+- blocking policy 不引用 unstable fact。
+- release compare 能区分 contract graph drift、static collector drift、policy drift 和 behavior drift。
+
+完成记录：
+
+- canonical facts、policy schema、policy migration 和 release baseline / drift trend 已对齐同一事实契约。
+- `verify`、`ci:verify`、release snapshot/compare、Console read model 和 policy approval workflow 均读取结构化本地 artifact。
+- `facts-contract-roundtrip`、`policy-engine-basic`、`policy-profile-next`、`release-drift-trend`、`greenfield-baseline-snapshot` 等回归套件持续覆盖。
+
+#### M5-T3 Runtime 与回归契约收紧
+
+状态：已完成
+
+做什么：
+
+- 让 `doctor runtime` 和 regression matrix 回到稳定计数与稳定边界。
+- 把 V1 主线、runtime-extended、deferred surfaces、pilot readiness 分成互不污染的检查面。
+
+怎么做：
+
+- 对齐 `tools/jispec/tests/regression-runner.ts` 中 suite / test 计数和实际注册情况。
+- 修正 `tools/jispec/doctor.ts` 里 runtime expected count 的漂移，或改成从 regression runner 的结构化 manifest 读取。
+- 为 deferred surface 保留 runtime diagnostics，但不得进入 V1 / pilot gate。
+
+验收标准：
+
+- `npm run jispec-cli -- doctor runtime` 通过。
+- regression runner 的 suite / test 计数与文档、代码一致。
+- `doctor v1`、`doctor pilot`、`doctor runtime` 能清楚解释彼此差异。
+
+#### M5-T4 Takeover intelligence 提纯到 owner-review 级别
+
+状态：已完成
+
+做什么：
+
+- 让 discover / draft / adopt 更像接管优先级引擎，而不是广义扫描器。
+- 让复杂仓库第一次 takeover 的输出足够短、准、可决策。
+
+怎么做：
+
+- 继续优化 evidence ranking、noise suppression、feature confidence gate 和 retakeover scorecard。
+- takeover brief 默认只展示 top adoption candidates、owner-review candidates、deferred debt 和风险摘要。
+- 把 human correction load 回流到 scorecard，作为后续质量提升的量化指标。
+
+验收标准：
+
+- noisy repo 中 top ranked evidence 不再被 vendor、cache、generated assets 主导。
+- weak behavior evidence 不会被伪装成 adopted-looking scenario。
+- retakeover scorecard 能量化 correction load、overclaim risk、owner decision count。
+
+#### M5-T5 本地 replay / provenance 基线
+
+状态：已完成
+
+做什么：
+
+- 让每条主线动作都能回答“从哪里来、谁决定、用了什么证据、怎么回放”。
+
+怎么做：
+
+- 检查 bootstrap session、adopt summary、change session、handoff packet、patch mediation、verify report、release snapshot 的 replay 字段。
+- 缺 replay metadata 的主线 artifact 要补齐 source session、input artifacts、commands、actor/reason、previous outcome。
+- 增加 replay smoke test，证明从 handoff 或 session artifact 能恢复下一步命令。
+
+验收标准：
+
+- `implement --from-handoff <path-or-session>` 的 replay 信息能解释上一轮 stop point。
+- bootstrap/adopt/verify/release artifacts 均能追溯到输入证据。
+- 任何自动化失败都必须写出 next human action 或 handoff。
+
+### 2026-06: 补控制面
+
+目标：让 JiSpec 从 CLI 主线升级为团队治理控制室。6 月结束时，Console 不再只是展示状态，而是能指导 owner 做治理动作，同时仍坚持本地 gate 权威。
+
+#### M6-T1 Console 治理工作台补厚
+
+状态：已完成
+
+做什么：
+
+- 把 Console 从 read-only dashboard 继续推进到可决策的治理工作台。
+- 第一屏直接回答 mergeability、risk、owner action 和证据来源。
+
+怎么做：
+
+- 扩展 `tools/jispec/console/` 的 read model、dashboard、static UI 和 action planner。
+- 让 dashboard、actions、export、multi-repo prelude 使用同一套治理对象。
+- 缺失 artifact 必须显示 `not_available_yet`，不能扫描源码补洞。
+
+验收标准：
+
+- Console 第一屏能稳定回答“能不能合并、为什么、下一步谁处理”。
+- Console 对 verify / policy / release / waiver / audit 的展示都能链接到本地 artifact。
+- `console dashboard`、`console actions`、`console ui`、`console export-governance` 边界一致。
+
+完成记录：
+
+- Console dashboard、actions、static UI、export-governance 和 multi-repo aggregate 已统一使用本地治理 read model。
+- 第一屏围绕 mergeability、risk、owner action、evidence 和 next command 展开；缺失输入显示为 `not_available_yet`。
+- Console 明确保持只读治理工作台边界，不上传源码、不运行或替代 `verify`、`ci:verify`、policy evaluation 或 release compare。
+
+#### M6-T2 Execute-default 与 external patch mediation 产品化
+
+状态：已完成
+
+做什么：
+
+- 让 `change -> implement -> verify` 成为稳定默认工作流，而不是相邻命令。
+- 让外部 patch intake 有清晰 scope、test、verify、replay 和 audit 语义。
+
+怎么做：
+
+- 收紧 `change/default-mode-command.ts`、`implement/implement-runner.ts`、`implement/handoff-packet.ts` 和 `doctor.ts`。
+- 让每个 outcome 都有 owner、stop point、failed check、next command、allowed paths、verify command。
+- 对越界 patch、测试失败、verify blocked、budget exhausted、stall detected 写出不同决策包。
+
+验收标准：
+
+- `doctor v1` 能解释 execute-default 是否可用。
+- `change` 默认进入 execute mediation 时不会绕过 adopt boundary。
+- `implement --external-patch` 不能绕过 scope check、test 和 verify。
+
+完成记录：
+
+- `implement --external-patch` 保留初始 intake 审计事件，并在最终 decision packet 生成后追加 completion 审计事件。
+- completion audit 稳定记录 scope/apply/test/post-verify/decision/replay 摘要，包括 owner、stop point、failed check、next command、allowed paths 和 verify command。
+- `implement-patch-mediation` 回归测试覆盖外部 patch 从 scope、test、verify 到 audit/provenance 的完整成功路径。
+- `execute-default-guide` 明确 external patch audit 是 append-only evidence，不替代本地 blocking gate。
+
+#### M6-T3 审计、债务、漂移、审批闭环
+
+状态：已完成
+
+做什么：
+
+- 把 policy、waiver、spec debt、release drift、approval 和 audit event 串成治理闭环。
+
+怎么做：
+
+- 让 policy approval、waiver lifecycle、spec debt owner review、release drift review 都写入 audit ledger。
+- Console actions 只生成建议命令和 decision packet，不直接写入。
+- regulated profile 下强化 reviewer quorum、waiver expiration、release drift owner review。
+
+验收标准：
+
+- 每个关键治理动作都能追溯 actor、reason、timestamp、source artifact、affected contract。
+- Console 能回答“哪些例外即将过期、哪些 debt 需要 owner、哪些 drift 需要 review”。
+- 审计事件不参与 blocking gate，但能支撑治理决策。
+
+完成记录：
+
+- Console action planner 新增 `record_policy_approval` 决策包，针对 missing/stale approval subject 输出显式 `policy approval record` 命令。
+- release drift compare report 会进入 approval workflow；regulated profile 下 release drift approval action 标记为 high risk，并指向 `.spec/approvals/*.json` 与 `.spec/audit/events.jsonl`。
+- policy approval record、waiver lifecycle、spec debt owner-review/repay/cancel、release compare 均通过本地 CLI 写入 audit event，Console 本身保持 read-only planner。
+- `console-governance-actions` 回归扩展到 approval/release drift owner-review 闭环，并同步 regression runner 计数。
+
+#### M6-T4 Greenfield 与 legacy 合流
+
+状态：已完成
+
+做什么：
+
+- 让旧仓库接管和从零创建最终汇入同一条 contract-aware delivery line。
+
+怎么做：
+
+- 对齐 Greenfield init 输出、bootstrap takeover 输出和 change-mainline handoff。
+- 让 Greenfield baseline、slice queue、behavior scenario、api contract、policy、ci gate 都能进入同一 verify / Console / release read model。
+- 增加 legacy takeover 和 Greenfield 的并行 golden path 测试。
+
+验收标准：
+
+- legacy repo 和 empty-directory Greenfield 都能走到 `change -> implement -> verify -> ci:verify`。
+- Console 对两种入口展示同一套治理对象，而不是两套产品。
+- release snapshot 能覆盖两种入口的 contract graph。
+
+完成记录：
+
+- `bootstrap adopt` 现在会把 legacy takeover 原子提交到 `.spec/baselines/current.yaml` 和 `.spec/evidence/contract-graph.json`，与 Greenfield init 的 current baseline 保持同一读取面。
+- legacy takeover 的 current baseline 记录 `entry_model: legacy_takeover`、bootstrap takeover 来源、change-mainline handoff 和 adopted contract 集合，release snapshot 可以直接冻结成带 contract graph 的 release baseline。
+- Greenfield empty-directory demo、v1 legacy mainline golden path、Greenfield baseline snapshot 和 bootstrap adopt handoff 都保持回归通过，证明两条入口已经汇入同一条 verify / Console / release 读模型。
+
+#### M6-T5 Human decision packet 质量收口
+
+状态：已完成
+
+做什么：
+
+- 让每个主线阶段都给人类短、准、可执行的决策包。
+
+怎么做：
+
+- 统一 bootstrap summary、takeover brief、adopt summary、verify summary、handoff packet、release summary、Console action packet 的语言结构。
+- 每份 summary 都必须回答：当前状态、风险、证据、owner、下一步命令。
+- 减少机器底账直出，保留 JSON 作为事实源，Markdown 作为 companion artifact。
+
+验收标准：
+
+- reviewer 不读大 JSON，也能完成 adopt、waiver、release drift、external patch intake 决策。
+- Markdown 不作为机器 API。
+- 文档示例与实际 CLI 输出一致。
+
+完成记录：
+
+- 新增共享 `Decision Snapshot` 首屏语言，bootstrap summary、takeover brief、adopt summary、verify summary、release summary、Console action text 和 formatted implementation handoff 都回答 current state、risk、evidence、owner、next command。
+- adopt/takeover/verify/release/console/implement 回归测试覆盖人类可决策字段，waiver、release drift 和 external patch handoff 都可不读大 JSON 先完成 owner review triage。
+- 文档同步说明 Markdown/text 只是 human companion，JSON/YAML/JSONL/lock artifact 仍是机器事实源和 gate 输入。
+
+### 2026-07: 外部化和试点硬化
+
+目标：把 JiSpec 推到可对外试点、可安装、可集成、可审计运营的产品形态。7 月结束时，应能用真实或真实形态仓库证明 JiSpec 已经形成 AI 原生交付控制层。
+
+#### M7-T1 Multi-repo governance 固化
+
+状态：已完成
+
+做什么：
+
+- 把多仓治理从概念推进到稳定只读聚合 contract。
+- 让导出 snapshot 成为多仓治理的共同输入。
+
+怎么做：
+
+- 固化 governance snapshot 的导出字段、版本、缺失语义和兼容策略。
+- 多仓聚合只消费本地导出的 snapshot，不扫描源码、不运行 verify。
+- 聚合层展示 repo risk score、verify inventory、policy profile inventory、waiver hotspot、spec debt hotspot、release drift hotspot、latest audit actors。
+
+验收标准：
+
+- 多仓聚合结果能稳定读取多个 repo 的本地治理快照。
+- 聚合层不替代单仓 `verify` 结论。
+- 缺 snapshot 的 repo 明确显示为缺失，而不是静默忽略。
+
+完成记录：
+
+- `console export-governance` 的 repo snapshot 增加 `contract.snapshotContractVersion: 1`、`compatibleAggregateVersion: 1` 和固定 missing semantics：repo 内缺失事实为 `not_available_yet`。
+- `console aggregate-governance` 只消费 exported snapshots，显式缺失的 `--snapshot` 输入会进入 `missingSnapshots[]`，并在 `summary.missingSnapshotCount` 与 Markdown companion 中展示为 `snapshot_not_found`。
+- Multi-repo aggregate 继续展示 repo risk score、verify inventory、policy profile inventory、waiver/spec debt/release drift hotspots 和 latest audit actors，同时保持 `runsVerify=false`、`scansSourceCode=false`、`replacesCliGate=false`。
+- `console-multi-repo-governance` 回归扩展到 snapshot contract compatibility 与 missing snapshot reviewability，并同步 regression matrix 计数。
+
+#### M7-T2 外部 coding tool、SCM、issue 集成 contract
+
+状态：已完成
+
+做什么：
+
+- 定义外部 coding tool、SCM 和 issue tracker 的只读集成 contract。
+- 让外部工具成为生产设备，而不是事实权威。
+
+怎么做：
+
+- 定义 handoff adapter、payload preview、PR/MR comment、issue link、change intent backfill 的字段边界。
+- 外部工具只接收 focused request packet：allowed paths、contract focus、test command、verify command、failed check、stop point。
+- 所有 patch 必须回到 `implement --external-patch`，经过 scope check、test、verify 和 audit。
+
+验收标准：
+
+- 外部工具集成只产生 preview / payload，不绕过 scope check、test 和 verify。
+- SCM / issue payload 引用的都是本地事实源。
+- 相关测试能证明 payload 只是请求格式，不是 gate 权威。
+
+完成记录：
+
+- 外部 coding tool handoff request 与 SCM/issue payload 共享 `integrationContractVersion: 1`，固定 `requiredReturnPath: implement_external_patch` 和 mediated checks：`scope_check`、`tests`、`verify`。
+- `schemas/implementation-handoff.schema.json` 增加 `contract` 字段；新增 `schemas/integration-payload.schema.json`，用于校验 SCM/issue payload preview，schema 会拒绝把 payload 提升为 gate authority 的字段漂移。
+- SCM/issue payload 增加 `sourceArtifactRefs[]`，把 verify report、verify summary、waiver、spec debt、implementation handoff、Console governance 等本地事实源结构化引用出来。
+- `integration-payloads` 回归扩展到 contract/schema/bypass rejection，`implement-handoff-adapters` 回归覆盖 handoff request 的统一 integration contract。
+
+#### M7-T3 隐私、redaction、approval、audit hardening
+
+状态：已完成
+
+做什么：
+
+- 把本地优先、隐私、审批和审计从“原则”做成可验证产品边界。
+
+怎么做：
+
+- privacy report 覆盖 Console export、pilot package、SCM/issue payload、handoff packet 的可分享内容。
+- audit ledger 增加 hash chain / integrity check / damaged ledger attention。
+- approval workflow 覆盖 policy、waiver、release drift、execute-default 和 pilot risk acceptance。
+
+验收标准：
+
+- 试点包可分享内容经过 redaction 或明确风险标记。
+- audit ledger 损坏时 Console 显示 attention，不静默视为干净。
+- regulated profile 下 approval quorum 能影响 governance posture。
+
+完成记录：
+
+- Privacy report 新增 share artifact 分类覆盖：`.spec/integrations/**` 为 `integration_payload`，`.spec/pilot/**` 为 `pilot_package`，`.jispec/handoff/**` 继续归入 handoff；这些 artifact 会得到 `shareable` 或 `review_before_sharing` 决策，并在发现 secret 时写出 redacted companion。
+- Approval workflow 新增 `pilot_risk_acceptance` subject；当 `.spec/privacy/privacy-report.json` 存在高严重级别发现或 review-before-sharing artifact 时，regulated profile 会要求 reviewer quorum 或 owner approval 后 posture 才能 satisfied。
+- `schemas/approval.schema.json`、CLI `policy approval record --subject-kind`、Console approval posture 共享新的 subject kind，approval decision 仍写入 audit ledger，不替代 `verify` / `ci:verify`。
+- Audit ledger hash-chain / Console attention 语义保持：invalid ledger 不能静默追加，Console read model 暴露 integrity issue count 和 issue 摘要。
+
+#### M7-T4 Pilot product package 与 adoption path
+
+状态：已完成
+
+做什么：
+
+- 把安装、首次接管、Greenfield、CI、Console、privacy、pilot readiness 打包成外部团队能走完的试点路径。
+
+怎么做：
+
+- 固化 install、quickstart、first takeover walkthrough、Greenfield walkthrough、CI templates、pilot checklist。
+- `first-run` 按 empty repo、legacy repo、open draft、adopted repo、active change session 给出不同 next action。
+- sample repo 和 retained-output demo 证明 15-30 分钟内跑完第一轮 takeover 或 Greenfield baseline。
+
+验收标准：
+
+- 外部试点用户能在不上传源码的前提下完成安装、首次 baseline、CI verify、Console governance review。
+- `doctor pilot` 能持续作为试点门禁。
+- 试点文档明确说明哪些是主线能力，哪些只是治理辅助能力。
+
+完成记录：
+
+- 新增 `pilot package` 本地命令，写出 `.spec/pilot/package.json` 与 `.spec/pilot/package.md`，把 install、first-run、first baseline、CI verify、Console governance、privacy report 和 `doctor pilot` 固化为一个 adoption path。
+- 新增 `tools/jispec/pilot/product-package.ts` 与 `tools/jispec/tests/pilot-product-package.ts`，package contract 明确 `localOnly=true`、`sourceUploadRequired=false`、`replacesVerify=false`、`replacesDoctorPilot=false`，并为缺失步骤输出 owner action、next command 和 source artifacts。
+- `first-run` 回归补齐 adopted repo + policy 场景，确认已 adopted 且具备 policy 的仓库下一步进入 deterministic `verify`。
+- 新增 `docs/pilot-product-package.md` 和 `docs/greenfield-walkthrough.md`，并同步 quickstart、install、pilot checklist、README / README.zh-CN，明确 mainline gates 与 governance companions 的边界。
+
+#### M7-T5 北极星最终验收场景
+
+状态：已完成
+
+做什么：
+
+- 用端到端场景证明 JiSpec 已经接近或达到北极星，而不是只完成任务列表。
+
+怎么做：
+
+- 建立 `north-star-acceptance` 验收套件，覆盖 legacy takeover、Greenfield、daily change、external patch mediation、policy waiver、release drift、Console governance、multi-repo aggregation、privacy report。
+- 每个场景必须写出机器 artifact 和人类 decision packet。
+- 验收套件不能依赖 LLM 作为 blocking 判定源。
+
+验收标准：
+
+- `npm run post-release:gate` 通过。
+- `npm run jispec-cli -- doctor v1`、`doctor runtime`、`doctor pilot` 全部通过。
+- `north-star-acceptance` 场景全部通过，并能证明：可验证、可审计、可阻断、可回放、本地优先、外部工具受控。
+- README、V1 stable contract、Console contract、pilot checklist 与实际 CLI 行为一致。
+
+完成记录：
+
+- 新增 `north-star acceptance` 本地命令，写出 `.spec/north-star/acceptance.json`、`.spec/north-star/acceptance.md`，以及每个场景自己的 machine artifact 和 human decision packet。
+- 新增 `tools/jispec/north-star/acceptance.ts` 与 `tools/jispec/tests/north-star-acceptance.ts`，覆盖 legacy takeover、Greenfield、daily change、external patch mediation、policy waiver、release drift、Console governance、multi-repo aggregation、privacy report。
+- 验收契约明确 `localOnly=true`、`sourceUploadRequired=false`、`llmBlockingDecisionSource=false`，且不替代 `verify`、`doctor v1`、`doctor runtime`、`doctor pilot` 或 `post-release:gate`。
+- README、V1 stable contract、Console read model contract、pilot checklist 新增最终验收入口说明，确保文档承诺与 CLI 行为一致。
+
+## 当前仓库的试点闭环状态
+
+`doctor v1`、`doctor runtime`、`doctor pilot` 和 `post-release:gate` 当前均已通过。下面 T0-1 到 T0-5 是已完成的试点闭环记录，继续作为后续仓库接入时的执行模板保留。
+
+### T0-1 首个 takeover baseline 落盘
+
+状态：已完成
+
+目标：
+
+- 让当前仓库至少拥有一份可复查、可回放的 bootstrap takeover 或 Greenfield baseline。
+- 让首次接管从“能演示”变成“有归档、有 owner、有后续动作”。
+
+需要补齐的产物：
+
+- `.spec/handoffs/bootstrap-takeover.json`
+- `.spec/handoffs/takeover-brief.md`
+- `.spec/handoffs/adopt-summary.md`
+- 或者 `.spec/baselines/current.yaml` / Greenfield baseline
+
+建议执行顺序：
+
+```bash
+npm run jispec -- first-run --root .
+npm run jispec -- bootstrap discover --root .
+npm run jispec -- bootstrap draft --root .
+npm run jispec -- adopt --interactive --root .
+```
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot First Takeover` 通过。
+- 试点 reviewer 能看到明确的 owner review、adopt decision 和 baseline 来源。
+
+完成记录：
+
+- 当前仓库已写出首个 committed bootstrap takeover baseline，session 为 `bootstrap-20260501T200659806Z`。
+- 关键落盘产物：
+  - `.spec/handoffs/bootstrap-takeover.json`
+  - `.spec/handoffs/takeover-brief.md`
+  - `.spec/handoffs/adopt-summary.md`
+  - `.spec/contracts/domain.yaml`
+  - `.spec/contracts/api_spec.json`
+  - `.spec/spec-debt/bootstrap-20260501T200659806Z/feature.json`
+- baseline 选择保守边界：`domain` 与 `api` 接管，`feature` 进入 spec debt，避免把薄弱行为证据误写成 blocking contract。
+
+### T0-2 Policy profile 与 accountable owner 补全
+
+状态：已完成
+
+目标：
+
+- 让 `.spec/policy.yaml` 不只声明 profile，还明确 team owner 和 reviewer posture。
+- 把 `unassigned` 变成可追踪的责任人，而不是默认占位。
+
+需要补齐的产物：
+
+- `.spec/policy.yaml`
+- `team.profile`
+- `team.owner`
+- `team.reviewers`
+- `team.required_reviewers`
+
+建议执行顺序：
+
+```bash
+npm run jispec -- policy migrate --profile small_team --owner <owner> --reviewer <reviewer> --root .
+```
+
+然后记录必要的 approval / audit 轨迹。
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot Policy Profile` 通过。
+- `doctor v1` 和 `policy approval` 看到的治理姿态与实际负责人一致。
+
+完成记录：
+
+- `policy migrate` 已支持 `--owner <owner>` 与 `--reviewer <reviewer...>`，让 pilot policy owner/reviewer posture 可以通过稳定 CLI 重放。
+- 当前仓库已通过以下命令把 `.spec/policy.yaml` 更新为 `small_team` 试点姿态：
+
+```bash
+npm run jispec -- policy migrate --root . --profile small_team --owner jispec-maintainers --reviewer pilot-reviewer --actor codex --reason "T0-2 declare accountable policy owner for pilot readiness"
+```
+
+- 当前 policy owner 为 `jispec-maintainers`，reviewer 为 `pilot-reviewer`，`required_reviewers` 为 `1`。
+- 已写入 policy owner approval 记录：`.spec/approvals/approval-ee8c45b8-c7cc-4706-86f6-b436fb48d4c7.json`。
+- 已写入 execute-default owner approval 记录：`.spec/approvals/approval-51758cb0-a23d-4081-bfe4-10c07c24675e.json`。
+- `policy approval status` 当前为 `approval_satisfied`。
+
+### T0-3 Console governance snapshot 导出
+
+状态：已完成
+
+目标：
+
+- 把当前仓库的治理状态导出成只读快照，供试点 review 直接读取。
+- 不扫描源码，不替代 `verify`，只做本地治理读模型。
+
+需要补齐的产物：
+
+- `.spec/console/governance-snapshot.json`
+- `.spec/console/governance-snapshot.md`
+
+建议执行顺序：
+
+```bash
+npm run jispec -- console export-governance --root .
+```
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot Console Governance` 通过。
+- Console snapshot 能回答 policy、waiver、spec debt、drift、verify posture 和 takeover quality。
+
+完成记录：
+
+- 当前仓库已通过以下命令导出本地只读治理快照：
+
+```bash
+npm run jispec -- console export-governance --root . --repo-id jispec-main --repo-name JiSpec
+```
+
+- 关键落盘产物：
+  - `.spec/console/governance-snapshot.json`
+  - `.spec/console/governance-snapshot.md`
+- Snapshot 当前显示 `policyProfile=small_team`、`policyOwner=jispec-maintainers`、`verifyVerdict=WARN_ADVISORY`、`approvalWorkflowStatus=approval_satisfied`、`bootstrapSpecDebt=1`。
+- Snapshot boundary 固定为 local-only、read-only、does not scan source、does not run verify、does not replace CLI gate。
+
+### T0-4 Privacy report 与可分享包
+
+状态：已完成。
+
+目标：
+
+- 在外部试点前，先把本地 JiSpec 产物里的敏感信息识别和脱敏做成固定动作。
+- 让共享包、审阅包和 Console 导出保持可控边界。
+
+需要补齐的产物：
+
+- `.spec/privacy/privacy-report.json`
+- `.spec/privacy/redacted/**`
+
+建议执行顺序：
+
+```bash
+npm run jispec -- privacy report --root .
+```
+
+完成判定：
+
+- `doctor pilot` 的 `Pilot Privacy Report` 通过。
+- 外部共享包只保留 redacted companion，不泄漏原文 secret。
+
+本仓库完成记录：
+
+- 已执行：
+
+```bash
+npm run jispec -- privacy report --root . --json
+```
+
+- 关键落盘产物：
+  - `.spec/privacy/privacy-report.json`
+  - `.spec/privacy/privacy-report.md`
+- Privacy report 当前扫描 834 个 JiSpec 本地产物，`findingCount=0`，`highSeverityFindingCount=0`，没有需要额外 redacted companion 的发现。
+- 已执行 `npm run jispec -- doctor pilot --json`，当前 `ready=true`、`blockerCount=0`、7/7 检查通过。
+
+### T0-5 Pilot ready gate 收口
+
+状态：已完成。
+
+目标：
+
+- 把上面 4 个缺口收敛成一个可重复执行的试点门禁。
+- 让接下来的开发默认围绕 `doctor pilot --json` 的失败项推进，而不是自由扩散 surface。
+
+建议完成定义：
+
+```bash
+npm run pilot:ready
+npm run jispec -- doctor pilot --json
+```
+
+判定标准：
+
+- `ready: true`
+- `blockerCount: 0`
+- 所有 blocker 都有明确 owner action 和 next command
+
+完成记录：
+
+- 新增 `npm run pilot:ready`，由 `scripts/pilot-ready-gate.ts` 执行 `Doctor.checkCommercialPilotReadiness()`，以 `doctor pilot` 的 ready 结果作为唯一 gate 判定。
+- `pilot:ready` 默认输出人工可读摘要；失败时列出 blocker、owner action、next command 和 source artifacts；`--json` 输出底层 `doctor pilot` 机器报告。
+- 当前仓库执行 `npm run pilot:ready` 通过，`doctor pilot --json` 仍为 `ready=true`、`blockerCount=0`、7/7 检查通过。
+- `tools/jispec/tests/pilot-readiness.ts` 已覆盖 gate 脚本成功、JSON 输出和失败 blocker action；regression matrix 的 Commercial Pilot Readiness 期望测试数更新为 6。
+
 ## 排序原则
 
 1. Takeover 质量优先于新增命令面。

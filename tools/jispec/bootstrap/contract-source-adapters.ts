@@ -8,6 +8,11 @@ import {
   type EvidenceSchema,
   type EvidenceTest,
 } from "./evidence-graph";
+import {
+  inferEvidenceProvenanceDescriptor,
+  type EvidenceOwnerReviewPosture,
+  type EvidenceProvenanceLabel,
+} from "../provenance/evidence-provenance";
 
 export type ContractSourceAdapterId =
   | "openapi"
@@ -35,6 +40,11 @@ export interface ContractSourceAdapterEvidence {
   source_kind: string;
   path: string;
   confidence_score: number;
+  provenanceLabel: EvidenceProvenanceLabel;
+  evidenceKind: string;
+  sourcePath: string;
+  confidence: number | null;
+  ownerReviewPosture: EvidenceOwnerReviewPosture;
   strength: ContractSourceEvidenceStrength;
   adoption_disposition: ContractSourceAdoptionDisposition;
   deterministic: true;
@@ -87,6 +97,11 @@ const MONOREPO_MANIFEST_KINDS = new Set<EvidenceManifest["kind"]>([
   "rush",
 ]);
 
+type ContractSourceAdapterEvidenceCore = Omit<
+  ContractSourceAdapterEvidence,
+  "provenanceLabel" | "evidenceKind" | "sourcePath" | "confidence" | "ownerReviewPosture"
+>;
+
 export function buildContractSourceAdapterReport(graph: EvidenceGraph): ContractSourceAdapterReport {
   const evidence = [
     ...collectSchemaAdapterEvidence(graph),
@@ -127,7 +142,7 @@ function collectSchemaAdapterEvidence(graph: EvidenceGraph): ContractSourceAdapt
       continue;
     }
     const confidence = getEvidenceConfidenceScore(schema);
-    entries.push({
+    entries.push(withAdapterProvenance({
       adapter_id: adapterId,
       source_kind: schema.format,
       path: schema.path,
@@ -145,13 +160,13 @@ function collectSchemaAdapterEvidence(graph: EvidenceGraph): ContractSourceAdapt
         signal: schema.signal,
         provenance_note: schema.provenanceNote,
       },
-    });
+    }));
   }
   return entries;
 }
 
 function collectMigrationAdapterEvidence(graph: EvidenceGraph): ContractSourceAdapterEvidence[] {
-  return (graph.migrations ?? []).map((migration) => ({
+  return (graph.migrations ?? []).map((migration) => withAdapterProvenance({
     adapter_id: "db_migration" as const,
     source_kind: "migration",
     path: migration.path,
@@ -174,7 +189,7 @@ function collectMigrationAdapterEvidence(graph: EvidenceGraph): ContractSourceAd
 }
 
 function collectTestAdapterEvidence(graph: EvidenceGraph): ContractSourceAdapterEvidence[] {
-  return (graph.tests ?? []).map((test) => ({
+  return (graph.tests ?? []).map((test) => withAdapterProvenance({
     adapter_id: "test_framework" as const,
     source_kind: test.frameworkHint ?? "unknown",
     path: test.path,
@@ -203,7 +218,7 @@ function collectMonorepoManifestEvidence(graph: EvidenceGraph): ContractSourceAd
     if (!monorepoSignal) {
       continue;
     }
-    entries.push({
+    entries.push(withAdapterProvenance({
       adapter_id: "monorepo_manifest",
       source_kind: monorepoSignal.kind,
       path: manifest.path,
@@ -222,9 +237,22 @@ function collectMonorepoManifestEvidence(graph: EvidenceGraph): ContractSourceAd
         signal: monorepoSignal.signal,
         provenance_note: manifest.provenanceNote,
       },
-    });
+    }));
   }
   return entries;
+}
+
+function withAdapterProvenance(entry: ContractSourceAdapterEvidenceCore): ContractSourceAdapterEvidence {
+  return {
+    ...entry,
+    ...inferEvidenceProvenanceDescriptor({
+      confidence: entry.confidence_score,
+      evidenceKind: entry.source_kind,
+      sourcePath: entry.path,
+      ownerReviewRequired: entry.adoption_disposition === "owner_review",
+      ambiguous: entry.strength === "owner_review" && entry.confidence_score < 0.8,
+    }),
+  };
 }
 
 function adapterIdForSchema(schema: EvidenceSchema): ContractSourceAdapterId | undefined {

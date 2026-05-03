@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { inferNextAction, selectHighlightedIssues, type VerifyReport, type VerifyReportIssue } from "./verify-report";
+import { renderHumanDecisionSnapshot } from "../human-decision-packet";
 
 const LOCAL_VERIFY_SUMMARY_PATH = ".spec/handoffs/verify-summary.md";
 const CI_VERIFY_SUMMARY_FILENAME = "verify-summary.md";
@@ -25,6 +26,13 @@ export function renderVerifySummaryMarkdown(report: VerifyReport): string {
     `Merge status: ${renderMergeStatus(report)}`,
     `Generated at: \`${report.generatedAt}\``,
     "",
+    ...renderHumanDecisionSnapshot({
+      currentState: `${report.verdict} - ${renderMergeStatus(report)}`,
+      risk: renderVerifyDecisionRisk(report),
+      evidence: renderVerifyDecisionEvidence(report),
+      owner: "repo owner / reviewer",
+      nextCommand: renderVerifyDecisionCommand(report),
+    }),
     "## Decision",
     "",
     `- ${inferNextAction(report)}`,
@@ -53,6 +61,10 @@ export function renderVerifySummaryMarkdown(report: VerifyReport): string {
     "## Top Review Items",
     "",
     ...renderIssueGroup(selectHighlightedIssues(report, 5), "No issues to review."),
+    "",
+    "## Impact Graph",
+    "",
+    ...renderImpactGraphContext(report),
     "",
     "## Source Of Truth",
     "",
@@ -109,6 +121,41 @@ function renderMergeStatus(report: VerifyReport): string {
   return "Review required before merge.";
 }
 
+function renderVerifyDecisionRisk(report: VerifyReport): string {
+  if (report.counts.blocking > 0) {
+    return `${report.counts.blocking} blocking issue(s) must be fixed, waived, or explicitly deferred before merge.`;
+  }
+  if (report.counts.advisory > 0 || report.counts.nonblockingError > 0) {
+    return `${report.counts.advisory} advisory item(s) and ${report.counts.nonblockingError} non-blocking runtime error(s) need follow-up.`;
+  }
+  return "no verify risk recorded";
+}
+
+function renderVerifyDecisionEvidence(report: VerifyReport): string[] {
+  const evidence: string[] = ["`.jispec-ci/verify-report.json` or `.spec/handoffs/verify-summary.md`"];
+  if (report.factsContractVersion) {
+    evidence.push(`facts contract \`${report.factsContractVersion}\``);
+  }
+  if (Array.isArray(report.matchedPolicyRules) && report.matchedPolicyRules.length > 0) {
+    evidence.push(`${report.matchedPolicyRules.length} matched policy rule(s)`);
+  }
+  if (report.modes?.waiversApplied) {
+    evidence.push(`${report.modes.waiversApplied} matched waiver(s)`);
+  }
+  const agentDiscipline = report.modes?.agentDiscipline as { latestReportPath?: string; completionStatus?: string } | undefined;
+  if (agentDiscipline?.latestReportPath) {
+    evidence.push(`Agent discipline: \`${agentDiscipline.latestReportPath}\` (${agentDiscipline.completionStatus ?? "unknown"})`);
+  }
+  return evidence;
+}
+
+function renderVerifyDecisionCommand(report: VerifyReport): string {
+  if (report.counts.blocking > 0) {
+    return "`npm run jispec-cli -- verify` after fixing blockers or recording explicit governance decisions";
+  }
+  return "`npm run ci:verify` before merge or release";
+}
+
 function renderGreenfieldControlContextSection(report: VerifyReport): string[] {
   const context = renderGreenfieldControlContext(report);
   if (context.length === 0) {
@@ -158,6 +205,21 @@ function renderMitigationContext(report: VerifyReport): string[] {
   }
 
   return lines;
+}
+
+function renderImpactGraphContext(report: VerifyReport): string[] {
+  const modes = report.modes ?? {};
+  const freshness = typeof modes.impactGraphFreshness === "string"
+    ? modes.impactGraphFreshness
+    : "not_available_yet";
+  const graphPath = typeof modes.impactGraphPath === "string"
+    ? modes.impactGraphPath
+    : ".spec/deltas/<changeId>/impact-graph.json";
+  return [
+    `- Freshness: \`${freshness}\`.`,
+    `- Graph: \`${graphPath}\`.`,
+    "- Impact graph context is advisory and does not replace deterministic verify issues.",
+  ];
 }
 
 function numberValue(value: unknown): number {

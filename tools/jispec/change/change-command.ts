@@ -12,6 +12,7 @@ import {
 import { computeImplementExitCode, runImplement, type ImplementRunResult } from "../implement/implement-runner";
 import { draftSpecDelta, isSpecDeltaChangeType, type SpecDeltaChangeType } from "./spec-delta";
 import { resolveChangeCommandMode, type ChangeDefaultModeResolution } from "./orchestration-config";
+import type { ChangeImpactSummary } from "./impact-summary";
 
 export type ChangeCommandMode = ChangeSessionOrchestrationMode;
 
@@ -240,28 +241,9 @@ function buildImpactSummary(
   root: string,
   sliceId?: string,
   specDelta?: ReturnType<typeof draftSpecDelta>,
-): string[] | undefined {
+): ChangeImpactSummary | string[] | undefined {
   if (specDelta) {
-    return [
-      `Spec Delta: ${specDelta.changeId}`,
-      `Delta path: ${relativePath(root, specDelta.deltaPath)}`,
-      `Impact report: ${relativePath(root, specDelta.impactReportPath)}`,
-      `Impact graph: ${relativePath(root, specDelta.impactGraphPath)}`,
-      `Dirty report: ${relativePath(root, specDelta.dirtyReportPath)}`,
-      `Dirty graph: ${relativePath(root, specDelta.dirtyGraphPath)}`,
-      `AI handoff: ${relativePath(root, specDelta.handoffPath)}`,
-      `Verify focus: ${relativePath(root, specDelta.verifyFocusPath)}`,
-      `Affected requirements: ${specDelta.references.requirement_ids.length}`,
-      `Affected contexts: ${specDelta.references.contexts.length}`,
-      `Affected contracts: ${specDelta.references.contracts.length}`,
-      `Affected scenarios: ${specDelta.references.scenarios.length}`,
-      `Affected slices: ${specDelta.references.slices.length}`,
-      `Affected tests: ${specDelta.references.tests.length}`,
-      `Affected assets: ${specDelta.blastRadius?.affectedAssetPaths.length ?? 0}`,
-      `Dirty nodes: ${specDelta.dirtyAnalysis?.dirtyGraph.dirty_nodes.length ?? 0}`,
-      `Required dirty updates: ${specDelta.dirtyAnalysis?.dirtyGraph.required_updates.length ?? 0}`,
-      "Active baseline remains unchanged until explicit adoption.",
-    ];
+    return specDelta.impactSummary;
   }
 
   if (!sliceId) {
@@ -443,11 +425,25 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
     lines.push("");
   }
 
-  if (session.impactSummary && session.impactSummary.length > 0) {
-    lines.push("Impact:");
-    for (const impact of session.impactSummary) {
-      lines.push(`- ${impact}`);
+  const impactSummary = session.impactSummary;
+  if (Array.isArray(impactSummary)) {
+    if (impactSummary.length > 0) {
+      lines.push("Impact:");
+      for (const impact of impactSummary) {
+        lines.push(`- ${impact}`);
+      }
+      lines.push("");
     }
+  } else if (impactSummary) {
+    lines.push("Impact:");
+    lines.push(`- Impact graph: ${impactSummary.artifacts.impactGraphPath}`);
+    lines.push(`- Impact report: ${impactSummary.artifacts.impactReportPath}`);
+    lines.push(`- Verify focus: ${impactSummary.artifacts.verifyFocusPath}`);
+    lines.push(`- Impact graph freshness: ${impactSummary.freshness.status}`);
+    lines.push(`- Impacted contracts: ${impactSummary.impactedContracts.length}`);
+    lines.push(`- Impacted files: ${impactSummary.impactedFiles.length}`);
+    lines.push(`- Advisory only: ${impactSummary.advisoryOnly}`);
+    lines.push(`- Next replay command: ${impactSummary.nextReplayCommand}`);
     lines.push("");
   }
 

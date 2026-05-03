@@ -32,6 +32,7 @@ async function main(): Promise<void> {
     assert.equal(canonical.contractVersion, "1.0");
     assert.equal(canonical.facts["verify.issue_count"], 3);
     assert.equal(canonical.facts["contracts.domain.present"], true);
+    assert.equal(canonical.facts["contracts.behavior.deferred"], false);
     assert.equal(canonical.facts["verify.blocking_issue_count"], 0);
     assert.deepEqual(canonical.facts["verify.issue_codes"], []);
     assert.ok(
@@ -46,6 +47,10 @@ async function main(): Promise<void> {
     assert.equal(incompatible.compatible, false);
     assert.match(incompatible.reason ?? "", /required 2\.0, actual 1\.0/);
     console.log("✓ Test 3: facts contract compatibility stays explicit and rejects mismatched versions");
+    passed++;
+
+    assert.ok(contract.facts.some((fact) => fact.key === "contracts.behavior.deferred" && fact.stability === "stable"));
+    console.log("✓ Test 4: facts contract exposes deferred behavior debt as a stable policy fact");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

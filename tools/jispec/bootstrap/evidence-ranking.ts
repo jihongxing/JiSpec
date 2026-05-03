@@ -20,6 +20,11 @@ import {
   scoreDomainTaxonomyEvidence,
   type DomainTaxonomyPack,
 } from "./domain-taxonomy";
+import {
+  inferEvidenceProvenanceDescriptor,
+  type EvidenceOwnerReviewPosture,
+  type EvidenceProvenanceLabel,
+} from "../provenance/evidence-provenance";
 
 export type AdoptionEvidenceKind =
   | "route"
@@ -47,6 +52,11 @@ export interface AdoptionRankedEvidenceEntry {
   reason: string;
   source: string;
   confidenceScore?: number;
+  provenanceLabel: EvidenceProvenanceLabel;
+  evidenceKind: AdoptionEvidenceKind;
+  sourcePath: string;
+  confidence: number | null;
+  ownerReviewPosture: EvidenceOwnerReviewPosture;
   sourceFiles: string[];
   metadata?: Record<string, unknown>;
 }
@@ -75,7 +85,10 @@ export type AdoptionBoundarySignal =
   | "runtime_manifest"
   | "supporting_evidence";
 
-interface UnrankedAdoptionEvidenceEntry extends Omit<AdoptionRankedEvidenceEntry, "rank"> {
+interface UnrankedAdoptionEvidenceEntry extends Omit<
+  AdoptionRankedEvidenceEntry,
+  "rank" | "provenanceLabel" | "evidenceKind" | "sourcePath" | "confidence" | "ownerReviewPosture"
+> {
   stableKey: string;
 }
 
@@ -126,17 +139,32 @@ export function buildAdoptionRankedEvidence(
       return left.stableKey.localeCompare(right.stableKey);
     })
     .slice(0, limit)
-    .map((entry, index) => ({
-      rank: index + 1,
-      kind: entry.kind,
-      path: entry.path,
-      score: entry.score,
-      reason: entry.reason,
-      source: entry.source,
-      confidenceScore: entry.confidenceScore,
-      sourceFiles: [...entry.sourceFiles].sort((left, right) => left.localeCompare(right)),
-      metadata: entry.metadata,
-    }));
+    .map((entry, index) => {
+      const boundarySignal = typeof entry.metadata?.boundarySignal === "string"
+        ? entry.metadata.boundarySignal
+        : undefined;
+      const descriptor = inferEvidenceProvenanceDescriptor({
+        confidence: entry.confidenceScore,
+        evidenceKind: entry.kind,
+        sourcePath: entry.path,
+        ownerReviewRequired: boundarySignal === "weak_candidate",
+        ambiguous: boundarySignal === "weak_candidate",
+      });
+
+      return {
+        rank: index + 1,
+        kind: entry.kind,
+        path: entry.path,
+        score: entry.score,
+        reason: entry.reason,
+        source: entry.source,
+        confidenceScore: entry.confidenceScore,
+        ...descriptor,
+        evidenceKind: entry.kind,
+        sourceFiles: [...entry.sourceFiles].sort((left, right) => left.localeCompare(right)),
+        metadata: entry.metadata,
+      };
+    });
 
   return {
     version: 1,
@@ -584,6 +612,7 @@ function sourceFileToEvidence(
     score: scored.score,
     reason: scored.reasons.join(", "),
     source: "bootstrap.sourceFiles",
+    confidenceScore: 0.68,
     sourceFiles: [sourceFile.path],
     metadata: {
       sourceCategory: sourceFile.category,

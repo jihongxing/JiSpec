@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://jispec.local/schemas/external-tool-run-boundary.schema.json",
+  "title": "JiSpec External Tool Run Boundary Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "mode",
+    "command",
+    "provider",
+    "networkRequired",
+    "sourceUploadRisk",
+    "modelOrServiceProvider",
+    "sourceScope",
+    "generatedAt",
+    "advisoryOnly",
+    "outputBlockingEligible",
+    "audit",
+    "replay"
+  ],
+  "properties": {
+    "kind": {
+      "const": "jispec-external-tool-run"
+    },
+    "mode": {
+      "const": "run-external-tool"
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "networkRequired": {
+      "type": "boolean"
+    },
+    "sourceUploadRisk": {
+      "enum": ["none", "summary_only", "source_snippets", "full_source"]
+    },
+    "modelOrServiceProvider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceScope": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "advisoryOnly": {
+      "const": true
+    },
+    "outputBlockingEligible": {
+      "const": false
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "provider", "generatedAt"],
+      "properties": {
+        "kind": {
+          "const": "external_tool_run_requested"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "command", "provider", "generatedAt"],
+      "properties": {
+        "kind": {
+          "const": "external_tool_run_metadata"
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

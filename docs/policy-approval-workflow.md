@@ -1,6 +1,6 @@
 # Policy Approval Workflow
 
-JiSpec approval workflow is a local structured contract for governance decisions. It records who approved a policy, waiver, release drift, or execute-default change, but it does not replace `verify`, `ci:verify`, release compare, or the local policy gate.
+JiSpec approval workflow is a local structured contract for governance decisions. It records who approved a policy, waiver, release drift, execute-default change, or pilot risk acceptance, but it does not replace `verify`, `ci:verify`, release compare, privacy review, or the local policy gate.
 
 ## Contract
 
@@ -8,7 +8,7 @@ Approval records live at `.spec/approvals/*.json` and follow `schemas/approval.s
 
 Each record includes:
 
-- `subject.kind`: `policy_change`, `waiver_change`, `release_drift`, or `execute_default_change`
+- `subject.kind`: `policy_change`, `waiver_change`, `release_drift`, `execute_default_change`, or `pilot_risk_acceptance`
 - `subject.ref` and `subject.hash`: the local artifact and the content hash that was reviewed
 - `requirement`: the team profile, owner, reviewers, and reviewer count at decision time
 - `decision`: actor, role, reason, decision time, and optional expiration
@@ -44,6 +44,16 @@ npm run jispec -- policy approval record \
   --actor owner-a \
   --role owner \
   --reason "Approved temporary waiver"
+```
+
+When `.spec/privacy/privacy-report.json` contains high-severity findings or artifacts marked for review before sharing, `policy approval status` also discovers a `pilot_risk_acceptance` subject. Recording owner approval for that subject keeps the pilot risk decision explicit and writes the same audit event as other approval decisions:
+
+```bash
+npm run jispec -- policy approval record \
+  --subject-kind pilot_risk_acceptance \
+  --actor owner-a \
+  --role owner \
+  --reason "Accepted privacy risk before pilot sharing"
 ```
 
 Every approval decision appends a `policy_approval_decision` event to `.spec/audit/events.jsonl`.

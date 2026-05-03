@@ -171,9 +171,14 @@ async function main(): Promise<void> {
         fact.contract_ids?.includes("CTR-ORDERING-001")
       ));
       assert.match(releaseSummary, /# Release v1 Baseline/);
+      assert.match(releaseSummary, /## Decision Snapshot/);
+      assert.match(releaseSummary, /Current state: release baseline `v1` frozen from `.spec\/baselines\/current.yaml`/);
+      assert.match(releaseSummary, /Owner: release owner/);
+      assert.match(releaseSummary, /Next command: `npm run jispec-cli -- release compare --from v1 --to current`/);
       assert.match(releaseSummary, /## Baseline Summary/);
       assert.match(releaseSummary, /## Contract Graph/);
       assert.match(releaseSummary, /## Static Collector/);
+      assert.match(releaseSummary, /This Markdown file is a human-readable companion summary, not a machine API/);
       assert.match(releaseSummary, /ordering-checkout-v1/);
     }));
 
@@ -195,6 +200,7 @@ async function main(): Promise<void> {
       assert.equal(identicalCompare.driftSummary.overallStatus, "unchanged");
       assert.equal(identicalCompare.driftSummary.contractGraph.status, "unchanged");
       assert.equal(identicalCompare.driftSummary.staticCollector.status, "unchanged");
+      assert.equal(identicalCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(identicalCompare.driftSummary.policy.status, "unchanged");
       assert.ok(fs.existsSync(identicalCompare.compareReportJsonPath));
       assert.ok(fs.existsSync(identicalCompare.compareReportMarkdownPath));
@@ -222,6 +228,7 @@ async function main(): Promise<void> {
       assert.equal(merkleCompare.driftSummary.contractGraph.kind, "contract_graph_drift");
       assert.equal(merkleCompare.driftSummary.contractGraph.status, "changed");
       assert.equal(merkleCompare.driftSummary.staticCollector.status, "unchanged");
+      assert.equal(merkleCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(merkleCompare.driftSummary.policy.status, "unchanged");
       assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /## Drift Summary/);
       assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /Contract graph drift: changed/);
@@ -244,6 +251,7 @@ async function main(): Promise<void> {
       assert.equal(policyOnlyCompare.identical, false);
       assert.equal(policyOnlyCompare.driftSummary.contractGraph.status, "unchanged");
       assert.equal(policyOnlyCompare.driftSummary.staticCollector.status, "unchanged");
+      assert.equal(policyOnlyCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(policyOnlyCompare.driftSummary.policy.status, "changed");
     }));
 
@@ -270,6 +278,7 @@ async function main(): Promise<void> {
       assert.equal(governanceCompare.driftSummary.overallStatus, "changed");
       assert.equal(governanceCompare.driftSummary.staticCollector.kind, "static_collector_drift");
       assert.equal(governanceCompare.driftSummary.staticCollector.status, "changed");
+      assert.equal(governanceCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(governanceCompare.driftSummary.policy.kind, "policy_drift");
       assert.equal(governanceCompare.driftSummary.policy.status, "changed");
       assert.notDeepEqual(

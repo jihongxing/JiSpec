@@ -8,6 +8,7 @@ import {
   type DraftSessionManifest,
 } from "./draft";
 import { normalizeEvidencePath } from "./evidence-graph";
+import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
 
 const BOOTSTRAP_TAKEOVER_REPORT_PATH = ".spec/handoffs/bootstrap-takeover.json";
 const BOOTSTRAP_TAKEOVER_BRIEF_PATH = ".spec/handoffs/takeover-brief.md";
@@ -48,6 +49,7 @@ export interface BootstrapTakeoverReport {
   rejectedArtifactKinds: DraftArtifactKind[];
   decisions: BootstrapTakeoverDecisionRecord[];
   baselineHandoff: BootstrapBaselineHandoff;
+  replay?: ReplayMetadata;
 }
 
 export interface BootstrapTakeoverReportInput {
@@ -64,6 +66,8 @@ export interface BootstrapTakeoverReportInput {
   adoptedArtifactPaths: string[];
   specDebtPaths: string[];
   rejectedArtifactKinds: DraftArtifactKind[];
+  actor?: string;
+  reason?: string;
 }
 
 export function getBootstrapTakeoverReportPath(rootInput: string): string {
@@ -151,7 +155,66 @@ export function buildBootstrapTakeoverReport(input: BootstrapTakeoverReportInput
       deferredSpecDebtPaths: specDebtPaths,
       rejectedArtifactKinds,
     },
+    replay: buildBootstrapTakeoverReplay({
+      root,
+      manifest: input.manifest,
+      artifacts: input.artifacts,
+      status: input.status,
+      actor: input.actor,
+      reason: input.reason,
+    }),
   };
+}
+
+function buildBootstrapTakeoverReplay(input: {
+  root: string;
+  manifest: DraftSessionManifest;
+  artifacts: DraftArtifact[];
+  status: DraftSessionManifest["status"];
+  actor?: string;
+  reason?: string;
+}): ReplayMetadata {
+  const manifestPath = normalizeEvidencePath(path.join(".spec", "sessions", input.manifest.sessionId, "manifest.json"));
+  const commandParts = [
+    "npm run jispec-cli -- adopt",
+    `--session ${input.manifest.sessionId}`,
+    "--interactive",
+  ];
+  if (input.actor) {
+    commandParts.push(`--actor ${quoteShellValue(input.actor)}`);
+  }
+  if (input.reason) {
+    commandParts.push(`--reason ${quoteShellValue(input.reason)}`);
+  }
+
+  return {
+    version: 1,
+    replayable: true,
+    source: "bootstrap_adopt",
+    sourceSession: input.manifest.sessionId,
+    sourceArtifact: manifestPath,
+    inputArtifacts: normalizeReplayPaths(input.root, [
+      input.manifest.sourceEvidenceGraphPath,
+      manifestPath,
+      ...input.manifest.artifactPaths,
+      ...input.artifacts.flatMap((artifact) => artifact.sourceFiles),
+    ]),
+    commands: {
+      rerun: commandParts.join(" "),
+      inspect: `npm run jispec-cli -- adopt --session ${input.manifest.sessionId} --interactive`,
+      verify: "npm run jispec-cli -- verify",
+    },
+    actor: input.actor,
+    reason: input.reason,
+    previousOutcome: "drafted",
+    nextHumanAction: input.status === "committed"
+      ? "Run npm run jispec-cli -- verify and review any blocking, spec-debt, or owner-review follow-up."
+      : "Review the bootstrap draft session and decide whether to accept, edit, defer, or reject each artifact.",
+  };
+}
+
+function quoteShellValue(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
 }
 
 export function writeBootstrapTakeoverReport(rootInput: string, report: BootstrapTakeoverReport): string {

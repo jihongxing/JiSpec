@@ -1,9 +1,18 @@
 import path from "node:path";
 import {
+  buildConsoleGovernanceActionPlanFromSnapshot,
+  selectPrimaryConsoleGovernanceAction,
+  type ConsoleGovernanceActionPacket,
+  type ConsoleGovernanceActionPlan,
+  type ConsoleGovernanceActionStatus,
+  type ConsoleGovernanceRiskLevel,
+} from "./governance-actions";
+import {
   collectConsoleLocalSnapshot,
   type ConsoleGovernanceObjectSnapshot,
   type ConsoleLocalSnapshot,
 } from "./read-model-snapshot";
+import type { MultiRepoGovernanceAggregate } from "./multi-repo";
 
 export type ConsoleGovernanceQuestionId =
   | "mergeability"
@@ -15,6 +24,33 @@ export type ConsoleGovernanceQuestionId =
   | "audit_traceability";
 
 export type ConsoleGovernanceStatus = "ok" | "attention" | "blocked" | "unknown";
+
+export interface ConsoleGovernanceDashboardHeadline {
+  status: ConsoleGovernanceStatus;
+  title: string;
+  summary: string;
+  source: string;
+  mergeability: {
+    status: ConsoleGovernanceStatus;
+    answer: string;
+    evidence: string[];
+  };
+  risk: {
+    level: ConsoleGovernanceRiskLevel;
+    summary: string;
+  };
+  ownerAction: {
+    status: ConsoleGovernanceActionStatus | "not_available";
+    owner: string;
+    summary: string;
+    command: string;
+    sourceArtifacts: string[];
+  };
+  evidence: {
+    primary: string;
+    sources: string[];
+  };
+}
 
 export interface ConsoleGovernanceDashboardQuestion {
   id: ConsoleGovernanceQuestionId;
@@ -37,12 +73,7 @@ export interface ConsoleGovernanceDashboard {
     scansSourceCode: false;
     firstScreen: "governance_status";
   };
-  headline: {
-    status: ConsoleGovernanceStatus;
-    title: string;
-    summary: string;
-    source: string;
-  };
+  headline: ConsoleGovernanceDashboardHeadline;
   questions: ConsoleGovernanceDashboardQuestion[];
   snapshot: {
     createdAt: string;
@@ -54,6 +85,14 @@ export interface ConsoleGovernanceDashboard {
 export function buildConsoleGovernanceDashboard(rootInput: string): ConsoleGovernanceDashboard {
   const root = path.resolve(rootInput);
   const snapshot = collectConsoleLocalSnapshot(root);
+  const actionPlan = buildConsoleGovernanceActionPlanFromSnapshot(snapshot, root);
+  return buildConsoleGovernanceDashboardFromSnapshot(snapshot, actionPlan);
+}
+
+export function buildConsoleGovernanceDashboardFromSnapshot(
+  snapshot: ConsoleLocalSnapshot,
+  actionPlan: ConsoleGovernanceActionPlan = buildConsoleGovernanceActionPlanFromSnapshot(snapshot),
+): ConsoleGovernanceDashboard {
   const questions = [
     buildMergeabilityQuestion(snapshot),
     buildWaiverQuestion(snapshot),
@@ -63,11 +102,11 @@ export function buildConsoleGovernanceDashboard(rootInput: string): ConsoleGover
     buildApprovalQuestion(snapshot),
     buildAuditQuestion(snapshot),
   ];
-  const headline = buildHeadline(questions);
+  const headline = buildHeadline(questions, actionPlan);
 
   return {
     version: 1,
-    root,
+    root: snapshot.root,
     createdAt: new Date().toISOString(),
     boundary: {
       readOnly: true,
@@ -94,7 +133,11 @@ export function renderConsoleGovernanceDashboardText(dashboard: ConsoleGovernanc
     `Status: ${dashboard.headline.status.toUpperCase()}`,
     dashboard.headline.title,
     dashboard.headline.summary,
-    `Source: ${dashboard.headline.source}`,
+    `Mergeability: ${dashboard.headline.mergeability.answer}`,
+    `Risk: ${dashboard.headline.risk.level} - ${dashboard.headline.risk.summary}`,
+    `Owner action: ${dashboard.headline.ownerAction.owner} - ${dashboard.headline.ownerAction.summary}`,
+    `Recommended command: ${dashboard.headline.ownerAction.command}`,
+    `Evidence source: ${dashboard.headline.source}`,
     "",
     "Governance Questions:",
   ];
@@ -129,18 +172,62 @@ export function renderConsoleGovernanceDashboardJSON(dashboard: ConsoleGovernanc
   return JSON.stringify(dashboard, null, 2);
 }
 
-function buildHeadline(questions: ConsoleGovernanceDashboardQuestion[]): ConsoleGovernanceDashboard["headline"] {
+export function buildCrossRepoDriftDashboardSummary(
+  aggregate: MultiRepoGovernanceAggregate,
+): ConsoleGovernanceDashboardQuestion {
+  if (aggregate.contractDriftHints.length === 0) {
+    return question({
+      id: "contract_drift_review",
+      label: "Which cross-repo contract drift needs owner review?",
+      status: "ok",
+      answer: "No cross-repo contract drift hints were found in the multi-repo aggregate.",
+      evidence: [".spec/console/multi-repo-governance.json"],
+      nextActions: [],
+    });
+  }
+
+  return question({
+    id: "contract_drift_review",
+    label: "Which cross-repo contract drift needs owner review?",
+    status: "attention",
+    answer: `${aggregate.contractDriftHints.length} cross-repo contract drift hint(s) need owner review.`,
+    evidence: aggregate.contractDriftHints.slice(0, 5).map((hint) =>
+      `${hint.upstreamRepoId} -> ${hint.downstreamRepoId}: ${hint.contractRef}`,
+    ),
+    nextActions: aggregate.contractDriftHints.slice(0, 5).map((hint) => hint.suggestedCommand),
+  });
+}
+
+function buildHeadline(
+  questions: ConsoleGovernanceDashboardQuestion[],
+  actionPlan: ConsoleGovernanceActionPlan | undefined,
+): ConsoleGovernanceDashboard["headline"] {
   const mergeability = questions.find((question) => question.id === "mergeability");
   const blocked = questions.filter((question) => question.status === "blocked");
   const attention = questions.filter((question) => question.status === "attention");
   const unknown = questions.filter((question) => question.status === "unknown");
+  const primaryAction = actionPlan ? selectPrimaryConsoleGovernanceAction(actionPlan) : undefined;
+  const riskSelection = buildHeadlineRisk(questions, blocked, attention, unknown, primaryAction);
+  const risk = riskSelection.risk;
+  const mergeabilityNeedsRefresh = mergeability?.status === "blocked" || mergeability?.status === "unknown";
+  const ownerAction = buildHeadlineOwnerAction(questions, mergeabilityNeedsRefresh ? undefined : primaryAction);
+  const evidence = buildHeadlineEvidence(mergeability, riskSelection.sourceQuestion, ownerAction);
+  const mergeabilitySignal = {
+    status: mergeability?.status ?? "unknown",
+    answer: mergeability?.answer ?? "No mergeability question is available.",
+    evidence: mergeability?.evidence ?? [],
+  };
 
   if (blocked.length > 0) {
     return {
       status: "blocked",
       title: "Governance is blocked.",
       summary: `${blocked.length} governance question(s) are blocked; start with mergeability and release drift.`,
-      source: mergeability?.evidence[0] ?? "declared JiSpec artifacts",
+      source: evidence.primary,
+      mergeability: mergeabilitySignal,
+      risk,
+      ownerAction,
+      evidence,
     };
   }
 
@@ -149,7 +236,11 @@ function buildHeadline(questions: ConsoleGovernanceDashboardQuestion[]): Console
       status: "attention",
       title: "Governance needs attention.",
       summary: `${attention.length} governance question(s) need owner review before treating the repo as clean.`,
-      source: mergeability?.evidence[0] ?? "declared JiSpec artifacts",
+      source: evidence.primary,
+      mergeability: mergeabilitySignal,
+      risk,
+      ownerAction,
+      evidence,
     };
   }
 
@@ -158,7 +249,11 @@ function buildHeadline(questions: ConsoleGovernanceDashboardQuestion[]): Console
       status: "unknown",
       title: "Governance state is incomplete.",
       summary: `${unknown.length} governance question(s) are waiting for local JiSpec artifacts.`,
-      source: "declared JiSpec artifacts",
+      source: evidence.primary,
+      mergeability: mergeabilitySignal,
+      risk,
+      ownerAction,
+      evidence,
     };
   }
 
@@ -166,8 +261,180 @@ function buildHeadline(questions: ConsoleGovernanceDashboardQuestion[]): Console
     status: "ok",
     title: "Governance is clear.",
     summary: "No blocking, advisory, drift, waiver, spec debt, mediation, or audit attention was found in the declared artifacts.",
-    source: mergeability?.evidence[0] ?? "declared JiSpec artifacts",
+    source: evidence.primary,
+    mergeability: mergeabilitySignal,
+    risk,
+    ownerAction,
+    evidence,
   };
+}
+
+function buildHeadlineRisk(
+  questions: ConsoleGovernanceDashboardQuestion[],
+  blocked: ConsoleGovernanceDashboardQuestion[],
+  attention: ConsoleGovernanceDashboardQuestion[],
+  unknown: ConsoleGovernanceDashboardQuestion[],
+  primaryAction: ConsoleGovernanceActionPacket | undefined,
+): {
+  risk: ConsoleGovernanceDashboardHeadline["risk"];
+  sourceQuestion?: ConsoleGovernanceDashboardQuestion;
+} {
+  const sourceQuestion = blocked[0] ?? attention[0] ?? unknown[0];
+
+  if (blocked.length > 0) {
+    return {
+      risk: {
+        level: "high",
+        summary: `${sourceQuestion.label}: ${sourceQuestion.answer}`,
+      },
+      sourceQuestion,
+    };
+  }
+
+  if (attention.length > 0) {
+    if (primaryAction) {
+      return {
+        risk: {
+          level: primaryAction.risk.level === "unknown" ? "medium" : primaryAction.risk.level,
+          summary: `${primaryAction.title}: ${primaryAction.risk.summary}`,
+        },
+        sourceQuestion: questionForActionSourceObject(questions, primaryAction.sourceObject) ?? sourceQuestion,
+      };
+    }
+
+    return {
+      risk: {
+        level: "medium",
+        summary: `${sourceQuestion.label}: ${sourceQuestion.answer}`,
+      },
+      sourceQuestion,
+    };
+  }
+
+  if (unknown.length > 0) {
+    return {
+      risk: {
+        level: "unknown",
+        summary: `${unknown.length} governance question(s) still need local artifacts before risk can be fully assessed.`,
+      },
+      sourceQuestion,
+    };
+  }
+
+  return {
+    risk: {
+      level: "low",
+      summary: "No blocking or attention risk was found in the declared artifacts.",
+    },
+  };
+}
+
+function questionForActionSourceObject(
+  questions: ConsoleGovernanceDashboardQuestion[],
+  sourceObject: string,
+): ConsoleGovernanceDashboardQuestion | undefined {
+  const questionIdBySourceObject: Partial<Record<string, ConsoleGovernanceQuestionId>> = {
+    waiver_lifecycle: "waiver_attention",
+    spec_debt_ledger: "spec_debt_attention",
+    contract_drift: "contract_drift_review",
+    implementation_mediation_outcomes: "execute_mediation_status",
+    approval_workflow: "approval_workflow_status",
+    audit_events: "audit_traceability",
+    verify_trend: "mergeability",
+  };
+  const questionId = questionIdBySourceObject[sourceObject];
+  return questionId ? questions.find((question) => question.id === questionId) : undefined;
+}
+
+function buildHeadlineOwnerAction(
+  questions: ConsoleGovernanceDashboardQuestion[],
+  primaryAction: ConsoleGovernanceActionPacket | undefined,
+): ConsoleGovernanceDashboardHeadline["ownerAction"] {
+  if (primaryAction) {
+    return {
+      status: primaryAction.status,
+      owner: primaryAction.owner,
+      summary: primaryAction.reason,
+      command: primaryAction.recommendedCommand,
+      sourceArtifacts: primaryAction.sourceArtifacts,
+    };
+  }
+
+  const question = questions.find((entry) => entry.status !== "ok" && entry.nextActions.length > 0)
+    ?? questions.find((entry) => entry.nextActions.length > 0);
+
+  if (question) {
+    return {
+      status: "needs_input",
+      owner: ownerForQuestion(question.id),
+      summary: question.nextActions[0] ?? "Review the governance question and produce the missing local artifact.",
+      command: fallbackCommandForQuestion(question),
+      sourceArtifacts: question.evidence,
+    };
+  }
+
+  return {
+    status: "not_available",
+    owner: "repo owner",
+    summary: "No owner action is suggested from the declared artifacts.",
+    command: "none",
+    sourceArtifacts: [],
+  };
+}
+
+function buildHeadlineEvidence(
+  mergeability: ConsoleGovernanceDashboardQuestion | undefined,
+  riskQuestion: ConsoleGovernanceDashboardQuestion | undefined,
+  ownerAction: ConsoleGovernanceDashboardHeadline["ownerAction"],
+): ConsoleGovernanceDashboardHeadline["evidence"] {
+  const sources = stableUnique([
+    ...ownerAction.sourceArtifacts,
+    ...(riskQuestion?.evidence ?? []),
+    ...(mergeability?.evidence ?? []),
+  ]);
+  const primary = sources[0] ?? "declared JiSpec artifacts";
+  return {
+    primary,
+    sources: sources.length > 0 ? sources : [primary],
+  };
+}
+
+function ownerForQuestion(id: ConsoleGovernanceQuestionId): string {
+  if (id === "waiver_attention") {
+    return "waiver owner";
+  }
+  if (id === "spec_debt_attention") {
+    return "spec debt owner";
+  }
+  if (id === "contract_drift_review") {
+    return "release owner";
+  }
+  if (id === "execute_mediation_status") {
+    return "implementation owner";
+  }
+  if (id === "approval_workflow_status") {
+    return "policy owner";
+  }
+  if (id === "audit_traceability") {
+    return "governance owner";
+  }
+  return "repo owner";
+}
+
+function fallbackCommandForQuestion(question: ConsoleGovernanceDashboardQuestion): string {
+  if (question.id === "mergeability") {
+    return "npm run ci:verify";
+  }
+  if (question.id === "contract_drift_review") {
+    return "npm run jispec-cli -- release compare --from <ref> --to <ref>";
+  }
+  if (question.id === "execute_mediation_status") {
+    return "npm run jispec-cli -- implement --from-handoff <path>";
+  }
+  if (question.id === "approval_workflow_status") {
+    return "npm run jispec-cli -- policy approval record --subject-kind <kind> --actor <name> --role reviewer --reason <reason>";
+  }
+  return question.nextActions[0] ?? "not_available_yet";
 }
 
 function buildMergeabilityQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
@@ -356,7 +623,7 @@ function buildContractDriftQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGove
       id: "contract_drift_review",
       label: "Which contract drift needs owner review?",
       status: "blocked",
-      answer: "Latest release compare reports changed contract, static collector, or policy drift.",
+      answer: "Latest release compare reports changed contract, behavior, static collector, or policy drift.",
       evidence: [
         `Latest compare report: ${latestReport ?? "unknown"}`,
         `Drift status: ${overall}`,
@@ -605,6 +872,10 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stableUnique(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

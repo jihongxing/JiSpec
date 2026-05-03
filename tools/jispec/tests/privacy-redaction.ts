@@ -147,6 +147,80 @@ async function main(): Promise<void> {
     assert.equal(redacted.findings[0]?.type, "connection_string");
   }));
 
+  results.push(record("privacy report classifies pilot packages, SCM issue payloads, and adapter requests as share artifacts", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-privacy-share-"));
+    try {
+      writeText(root, ".spec/pilot/package.json", JSON.stringify({
+        reviewerNote: `pilot reviewer token ${GITHUB_TOKEN}`,
+      }, null, 2));
+      writeText(root, ".spec/integrations/scm/github-scm_comment.json", JSON.stringify({
+        markdown: `SCM preview with api_key=${OPENAI_KEY}`,
+      }, null, 2));
+      writeText(root, ".spec/integrations/issues/jira-issue_link.json", JSON.stringify({
+        bodyMarkdown: `Issue preview password=${DB_URL}`,
+      }, null, 2));
+      writeText(root, ".jispec/handoff/adapters/change-1/codex-request.json", JSON.stringify({
+        prompt: `External request token=${AWS_KEY}`,
+      }, null, 2));
+
+      const result = buildPrivacyReport({
+        root,
+        generatedAt: "2026-05-02T00:00:00.000Z",
+      });
+      const byPath = new Map(result.report.artifacts.map((artifact) => [artifact.path, artifact]));
+
+      assert.equal(byPath.get(".spec/pilot/package.json")?.category, "pilot_package");
+      assert.equal(byPath.get(".spec/integrations/scm/github-scm_comment.json")?.category, "integration_payload");
+      assert.equal(byPath.get(".spec/integrations/issues/jira-issue_link.json")?.category, "integration_payload");
+      assert.equal(byPath.get(".jispec/handoff/adapters/change-1/codex-request.json")?.category, "handoff");
+      assert.equal(byPath.get(".spec/pilot/package.json")?.shareDecision, "review_before_sharing");
+      assert.equal(byPath.get(".spec/integrations/scm/github-scm_comment.json")?.shareDecision, "review_before_sharing");
+      assert.ok(result.report.artifactCategories.pilot_package.mayContain.includes("pilot reviewer notes"));
+      assert.ok(result.report.artifactCategories.integration_payload.mayContain.includes("SCM or issue markdown previews"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("privacy report treats agent discipline artifacts as review-gated handoff evidence", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-privacy-agent-run-"));
+    try {
+      const fakeSecret = "sk-test12345678901234567890";
+      writeText(root, ".jispec/agent-run/change-1/debug-packet.md", [
+        "# Debug Packet",
+        "",
+        `Failed command used token ${fakeSecret}`,
+        "",
+      ].join("\n"));
+      writeText(root, ".jispec/agent-run/change-1/discipline-report.json", JSON.stringify({
+        sessionId: "change-1",
+        status: "blocked",
+        note: `discipline evidence token ${fakeSecret}`,
+      }, null, 2));
+
+      const result = buildPrivacyReport({
+        root,
+        generatedAt: "2026-05-02T00:00:00.000Z",
+      });
+      const byPath = new Map(result.report.artifacts.map((artifact) => [artifact.path, artifact]));
+      const debugPacket = byPath.get(".jispec/agent-run/change-1/debug-packet.md");
+      const disciplineReport = byPath.get(".jispec/agent-run/change-1/discipline-report.json");
+
+      assert.equal(debugPacket?.category, "handoff");
+      assert.equal(disciplineReport?.category, "handoff");
+      assert.equal(debugPacket?.shareDecision, "review_before_sharing");
+      assert.equal(disciplineReport?.shareDecision, "review_before_sharing");
+      assert.ok(debugPacket?.redactedViewPath);
+      assert.ok(disciplineReport?.redactedViewPath);
+      const redactedDebug = fs.readFileSync(path.join(root, debugPacket?.redactedViewPath ?? ""), "utf-8");
+      const redactedReport = fs.readFileSync(path.join(root, disciplineReport?.redactedViewPath ?? ""), "utf-8");
+      assert.doesNotMatch(redactedDebug, /sk-test12345678901234567890/);
+      assert.doesNotMatch(redactedReport, /sk-test12345678901234567890/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
   let passed = 0;
   let failed = 0;
   for (const result of results) {

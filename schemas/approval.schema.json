@@ -23,7 +23,7 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["policy_change", "waiver_change", "release_drift", "execute_default_change"]
+          "enum": ["policy_change", "waiver_change", "release_drift", "execute_default_change", "pilot_risk_acceptance"]
         },
         "ref": {
           "type": "string",

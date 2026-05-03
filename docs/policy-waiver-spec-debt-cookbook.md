@@ -7,7 +7,7 @@ This cookbook covers the common governance commands a team needs after first tak
 Create or normalize policy:
 
 ```bash
-npm run jispec -- policy migrate --root . --profile solo --actor <name> --reason "Initialize JiSpec policy"
+npm run jispec -- policy migrate --root . --profile solo --owner <owner> --reviewer <reviewer> --actor <name> --reason "Initialize JiSpec policy"
 ```
 
 Profiles:

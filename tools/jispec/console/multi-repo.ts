@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { MultiRepoGovernanceSnapshot } from "./governance-export";
+import { loadRepoGroupConfig, type RepoGroupConfig, type RepoGroupRepo } from "./repo-group";
 
 export interface MultiRepoGovernanceAggregateOptions {
   root: string;
@@ -29,11 +30,47 @@ export interface MultiRepoGovernanceRepoPosture {
   releaseDriftStatus: string;
   releaseDriftTrendComparisons: number;
   latestAuditActor: string;
+  contractRefs: MultiRepoContractRef[];
   risk: {
     score: number;
     level: "low" | "medium" | "high";
     reasons: string[];
   };
+}
+
+export interface MultiRepoContractRef {
+  ref: string;
+  hash: string;
+}
+
+export interface MultiRepoGovernanceRepoGroupEntry extends RepoGroupRepo {
+  snapshotStatus: "available" | "not_available_yet";
+  snapshotPath?: string;
+}
+
+export interface CrossRepoContractDriftHint {
+  kind: "cross_repo_contract_drift";
+  upstreamRepoId: string;
+  downstreamRepoId: string;
+  contractRef: string;
+  upstreamHash: string;
+  downstreamHash: string;
+  severity: "owner_action";
+  suggestedCommand: string;
+  blockingGateReplacement: false;
+}
+
+export interface MultiRepoOwnerAction {
+  kind: "cross_repo_contract_drift";
+  repoId: string;
+  message: string;
+  suggestedCommand: string;
+}
+
+export interface MultiRepoGovernanceMissingSnapshot {
+  inputPath: string;
+  resolvedPath: string;
+  reason: "snapshot_not_found";
 }
 
 export interface MultiRepoGovernanceAggregate {
@@ -55,9 +92,11 @@ export interface MultiRepoGovernanceAggregate {
     snapshotPaths: string[];
     directoryPaths: string[];
     loadedSnapshots: number;
+    missingSnapshots: number;
   };
   summary: {
     repoCount: number;
+    missingSnapshotCount: number;
     verifyVerdicts: Record<string, number>;
     policyProfiles: Record<string, number>;
     totalActiveWaivers: number;
@@ -70,7 +109,17 @@ export interface MultiRepoGovernanceAggregate {
     totalReleaseDriftComparisons: number;
     latestAuditActors: string[];
   };
+  repoGroup: {
+    status: RepoGroupConfig["status"];
+    sourcePath: string;
+    repos: MultiRepoGovernanceRepoGroupEntry[];
+    warnings: string[];
+  };
   repos: MultiRepoGovernanceRepoPosture[];
+  missingSnapshots: MultiRepoGovernanceMissingSnapshot[];
+  contractDriftHints: CrossRepoContractDriftHint[];
+  ownerActions: MultiRepoOwnerAction[];
+  singleRepoGateReplacement: false;
   hotspots: {
     highestRiskRepos: MultiRepoGovernanceRepoPosture[];
     expiringSoonWaivers: Array<{ repoId: string; repoName: string; waiverId: string }>;
@@ -95,17 +144,34 @@ export function aggregateMultiRepoGovernance(
   options: MultiRepoGovernanceAggregateOptions,
 ): MultiRepoGovernanceAggregateResult {
   const root = path.resolve(options.root);
+  const repoGroup = loadRepoGroupConfig(root);
   const directoryPaths = (options.directoryPaths ?? []).map((entry) => normalizePath(path.resolve(root, entry)));
-  const snapshotPaths = resolveSnapshotPaths(root, options.snapshotPaths ?? [], directoryPaths);
-  if (snapshotPaths.length === 0) {
+  const snapshotInputs = resolveSnapshotInputs(root, options.snapshotPaths ?? [], directoryPaths);
+  if (snapshotInputs.snapshotPaths.length === 0 && snapshotInputs.missingSnapshots.length === 0 && repoGroup.repos.length === 0) {
     throw new Error("No governance snapshots found. Provide --snapshot or --dir with exported .spec/console/governance-snapshot.json files.");
   }
 
-  const repos = snapshotPaths
+  const repos = snapshotInputs.snapshotPaths
     .map((snapshotPath) => loadSnapshot(snapshotPath))
     .map(({ snapshot, snapshotPath }) => buildRepoPosture(snapshot, snapshotPath))
     .sort((left, right) => left.repoId.localeCompare(right.repoId));
-  const aggregate = buildAggregate(root, snapshotPaths, directoryPaths, repos, options.generatedAt ?? new Date().toISOString());
+  const repoGroupSummary = buildRepoGroupSummary(root, repoGroup, repos);
+  const repoGroupMissingSnapshots = repoGroupSummary.repos
+    .filter((repo) => repo.snapshotStatus === "not_available_yet")
+    .map((repo) => ({
+      inputPath: normalizePath(path.resolve(root, repo.path, DEFAULT_SNAPSHOT_PATH)),
+      resolvedPath: normalizePath(path.resolve(root, repo.path, DEFAULT_SNAPSHOT_PATH)),
+      reason: "snapshot_not_found" as const,
+    }));
+  const aggregate = buildAggregate(
+    root,
+    snapshotInputs.snapshotPaths,
+    directoryPaths,
+    repos,
+    [...snapshotInputs.missingSnapshots, ...repoGroupMissingSnapshots],
+    repoGroupSummary,
+    options.generatedAt ?? new Date().toISOString(),
+  );
   const aggregatePath = resolveOutPath(root, options.outPath);
   const summaryPath = aggregatePath.replace(/\.json$/i, ".md");
 
@@ -131,12 +197,23 @@ export function renderMultiRepoGovernanceAggregateText(aggregate: MultiRepoGover
     "",
     `Generated at: ${aggregate.generatedAt}`,
     `Repos: ${aggregate.summary.repoCount}`,
+    `Missing snapshots: ${aggregate.summary.missingSnapshotCount}`,
     `Verify verdicts: ${formatCounts(aggregate.summary.verifyVerdicts)}`,
     `Policy profiles: ${formatCounts(aggregate.summary.policyProfiles)}`,
     `Active waivers: ${aggregate.summary.totalActiveWaivers}`,
     `Expiring soon waivers: ${aggregate.summary.totalExpiringSoonWaivers}`,
     `Open spec debt: ${aggregate.summary.totalOpenSpecDebt}`,
     `Release drift hotspots: ${aggregate.summary.releaseDriftHotspotCount}`,
+    `Repo group: ${aggregate.repoGroup.status}`,
+    `Contract drift hints: ${aggregate.contractDriftHints.length}`,
+    "",
+    "## Repo Group",
+    "",
+    ...formatRepoGroup(aggregate.repoGroup.repos),
+    "",
+    "## Cross-Repo Contract Drift Hints",
+    "",
+    ...formatContractDriftHints(aggregate.contractDriftHints),
     "",
     "## Highest Risk Repos",
     "",
@@ -155,10 +232,15 @@ export function renderMultiRepoGovernanceAggregateText(aggregate: MultiRepoGover
     "",
     ...formatReleaseDriftHotspots(aggregate.hotspots.releaseDrift),
     "",
+    "## Missing Snapshots",
+    "",
+    ...formatMissingSnapshots(aggregate.missingSnapshots),
+    "",
     "## Boundary",
     "",
     "- Consumes exported `.spec/console/governance-snapshot.json` files only.",
     "- Does not scan source code, run verify, upload source, replace CI, or override single-repo `verify` verdicts.",
+    "- Cross-repo contract drift hints create owner actions and suggested commands only; they do not replace any single-repo gate.",
     "- Markdown is a human companion; JSON is the machine-readable aggregate.",
     "",
   ];
@@ -171,6 +253,8 @@ function buildAggregate(
   snapshotPaths: string[],
   directoryPaths: string[],
   repos: MultiRepoGovernanceRepoPosture[],
+  missingSnapshots: MultiRepoGovernanceMissingSnapshot[],
+  repoGroup: MultiRepoGovernanceAggregate["repoGroup"],
   generatedAt: string,
 ): MultiRepoGovernanceAggregate {
   const releaseDrift = repos
@@ -182,6 +266,7 @@ function buildAggregate(
       comparisons: repo.releaseDriftTrendComparisons,
     }));
 
+  const contractDriftHints = buildContractDriftHints(repoGroup, repos);
   return {
     schemaVersion: 1,
     kind: "jispec-multi-repo-governance-aggregate",
@@ -201,9 +286,11 @@ function buildAggregate(
       snapshotPaths: snapshotPaths.map(normalizePath),
       directoryPaths,
       loadedSnapshots: repos.length,
+      missingSnapshots: missingSnapshots.length,
     },
     summary: {
       repoCount: repos.length,
+      missingSnapshotCount: missingSnapshots.length,
       verifyVerdicts: countBy(repos.map((repo) => repo.verifyVerdict)),
       policyProfiles: countBy(repos.map((repo) => repo.policyProfile)),
       totalActiveWaivers: sum(repos.map((repo) => repo.activeWaivers)),
@@ -217,6 +304,7 @@ function buildAggregate(
       latestAuditActors: stableUnique(repos.map((repo) => repo.latestAuditActor).filter((actor) => !isMissing(actor))),
     },
     repos,
+    missingSnapshots,
     hotspots: {
       highestRiskRepos: repos
         .filter((repo) => repo.risk.score > 0)
@@ -249,6 +337,10 @@ function buildAggregate(
           verdict: repo.verifyVerdict,
         })),
     },
+    repoGroup,
+    contractDriftHints,
+    ownerActions: buildOwnerActions(contractDriftHints),
+    singleRepoGateReplacement: false,
   };
 }
 
@@ -273,12 +365,115 @@ function buildRepoPosture(snapshot: MultiRepoGovernanceSnapshot, snapshotPath: s
     releaseDriftStatus: stringHint(hints.releaseDriftStatus),
     releaseDriftTrendComparisons: numberHint(hints.releaseDriftTrendComparisons),
     latestAuditActor: stringHint(hints.latestAuditActor),
+    contractRefs: contractRefArrayHint(hints.contractRefs),
   };
 
   return {
     ...repo,
     risk: scoreRepoRisk(repo),
   };
+}
+
+function buildRepoGroupSummary(
+  root: string,
+  repoGroup: RepoGroupConfig,
+  repos: MultiRepoGovernanceRepoPosture[],
+): MultiRepoGovernanceAggregate["repoGroup"] {
+  const postureById = new Map(repos.map((repo) => [repo.repoId, repo]));
+  return {
+    status: repoGroup.status,
+    sourcePath: repoGroup.sourcePath,
+    warnings: repoGroup.warnings,
+    repos: repoGroup.repos.map((repo) => {
+      const posture = postureById.get(repo.id);
+      return {
+        ...repo,
+        snapshotStatus: posture ? "available" : "not_available_yet",
+        snapshotPath: posture?.snapshotPath ?? normalizePath(path.resolve(root, repo.path, DEFAULT_SNAPSHOT_PATH)),
+      };
+    }),
+  };
+}
+
+function buildContractDriftHints(
+  repoGroup: MultiRepoGovernanceAggregate["repoGroup"],
+  repos: MultiRepoGovernanceRepoPosture[],
+): CrossRepoContractDriftHint[] {
+  if (repoGroup.status !== "available") {
+    return [];
+  }
+  const repoById = new Map(repos.map((repo) => [repo.repoId, repo]));
+  const hints: CrossRepoContractDriftHint[] = [];
+  const seen = new Set<string>();
+
+  for (const downstream of repoGroup.repos) {
+    for (const upstreamRef of downstream.upstreamContractRefs) {
+      const parsed = parseRepoContractRef(upstreamRef);
+      if (!parsed) {
+        continue;
+      }
+      const upstream = repoById.get(parsed.repoId);
+      const downstreamPosture = repoById.get(downstream.id);
+      if (!upstream || !downstreamPosture) {
+        continue;
+      }
+      const upstreamContract = findContractRef(upstream, parsed.contractRef);
+      const downstreamContract = findContractRef(downstreamPosture, parsed.contractRef);
+      if (!upstreamContract || !downstreamContract || upstreamContract.hash === downstreamContract.hash) {
+        continue;
+      }
+      const key = `${parsed.repoId}->${downstream.id}:${parsed.contractRef}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      hints.push({
+        kind: "cross_repo_contract_drift",
+        upstreamRepoId: parsed.repoId,
+        downstreamRepoId: downstream.id,
+        contractRef: parsed.contractRef,
+        upstreamHash: upstreamContract.hash,
+        downstreamHash: downstreamContract.hash,
+        severity: "owner_action",
+        suggestedCommand: buildCrossRepoSuggestedCommand(parsed.repoId, downstream.id, parsed.contractRef),
+        blockingGateReplacement: false,
+      });
+    }
+  }
+
+  return hints.sort((left, right) =>
+    left.upstreamRepoId.localeCompare(right.upstreamRepoId) ||
+    left.downstreamRepoId.localeCompare(right.downstreamRepoId) ||
+    left.contractRef.localeCompare(right.contractRef),
+  );
+}
+
+function buildOwnerActions(hints: CrossRepoContractDriftHint[]): MultiRepoOwnerAction[] {
+  return hints.map((hint) => ({
+    kind: "cross_repo_contract_drift",
+    repoId: hint.downstreamRepoId,
+    message: `${hint.downstreamRepoId} may need to reconcile ${hint.contractRef} from ${hint.upstreamRepoId}.`,
+    suggestedCommand: hint.suggestedCommand,
+  }));
+}
+
+function parseRepoContractRef(value: string): { repoId: string; contractRef: string } | undefined {
+  const separator = value.indexOf(":");
+  if (separator <= 0 || separator === value.length - 1) {
+    return undefined;
+  }
+  return {
+    repoId: value.slice(0, separator),
+    contractRef: normalizePath(value.slice(separator + 1)),
+  };
+}
+
+function findContractRef(repo: MultiRepoGovernanceRepoPosture, contractRef: string): MultiRepoContractRef | undefined {
+  return repo.contractRefs.find((candidate) => normalizePath(candidate.ref) === normalizePath(contractRef));
+}
+
+function buildCrossRepoSuggestedCommand(upstreamRepoId: string, downstreamRepoId: string, contractRef: string): string {
+  return `jispec console aggregate-governance --review-drift ${upstreamRepoId}:${contractRef}->${downstreamRepoId}:${contractRef}`;
 }
 
 function scoreRepoRisk(repo: Omit<MultiRepoGovernanceRepoPosture, "risk">): MultiRepoGovernanceRepoPosture["risk"] {
@@ -324,12 +519,33 @@ function scoreRepoRisk(repo: Omit<MultiRepoGovernanceRepoPosture, "risk">): Mult
   };
 }
 
-function resolveSnapshotPaths(root: string, snapshotInputs: string[], directoryInputs: string[]): string[] {
-  const explicit = snapshotInputs.map((entry) => path.resolve(root, entry));
+function resolveSnapshotInputs(
+  root: string,
+  snapshotInputs: string[],
+  directoryInputs: string[],
+): { snapshotPaths: string[]; missingSnapshots: MultiRepoGovernanceMissingSnapshot[] } {
+  const explicit = snapshotInputs.map((entry) => ({
+    inputPath: entry,
+    resolvedPath: path.resolve(root, entry),
+  }));
   const discovered = (directoryInputs.length > 0 ? directoryInputs : [root])
     .flatMap((directoryPath) => discoverSnapshotPaths(directoryPath));
-  return stableUnique([...explicit, ...discovered].filter((snapshotPath) => fs.existsSync(snapshotPath)))
-    .map((snapshotPath) => path.resolve(snapshotPath));
+  const existingExplicit = explicit
+    .filter((entry) => fs.existsSync(entry.resolvedPath))
+    .map((entry) => entry.resolvedPath);
+  const missingSnapshots = explicit
+    .filter((entry) => !fs.existsSync(entry.resolvedPath))
+    .map((entry) => ({
+      inputPath: normalizePath(path.isAbsolute(entry.inputPath) ? entry.inputPath : path.resolve(root, entry.inputPath)),
+      resolvedPath: normalizePath(entry.resolvedPath),
+      reason: "snapshot_not_found" as const,
+    }));
+
+  return {
+    snapshotPaths: stableUnique([...existingExplicit, ...discovered].filter((snapshotPath) => fs.existsSync(snapshotPath)))
+      .map((snapshotPath) => path.resolve(snapshotPath)),
+    missingSnapshots,
+  };
 }
 
 function discoverSnapshotPaths(directoryPath: string): string[] {
@@ -371,6 +587,9 @@ function validateSnapshot(snapshot: MultiRepoGovernanceSnapshot, snapshotPath: s
   if (!snapshot.repo?.id || !snapshot.repo?.name || !snapshot.aggregateHints || !Array.isArray(snapshot.governanceObjects)) {
     throw new Error(`Invalid governance snapshot at ${snapshotPath}: missing repo, aggregate hints, or governance objects.`);
   }
+  if (snapshot.contract && (snapshot.contract.snapshotContractVersion !== 1 || snapshot.contract.compatibleAggregateVersion !== 1)) {
+    throw new Error(`Invalid governance snapshot at ${snapshotPath}: unsupported multi-repo snapshot contract.`);
+  }
 }
 
 function resolveOutPath(root: string, outPath?: string): string {
@@ -395,6 +614,20 @@ function stringHint(value: unknown): string {
 
 function stringArrayHint(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).filter(Boolean).sort((left, right) => left.localeCompare(right)) : [];
+}
+
+function contractRefArrayHint(value: unknown): MultiRepoContractRef[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter(isRecord)
+    .map((entry) => ({
+      ref: stringHint(entry.ref),
+      hash: stringHint(entry.hash),
+    }))
+    .filter((entry) => !isMissing(entry.ref) && !isMissing(entry.hash))
+    .sort((left, right) => left.ref.localeCompare(right.ref));
 }
 
 function isReleaseDriftHotspot(status: string): boolean {
@@ -433,6 +666,28 @@ function formatRiskRepos(repos: MultiRepoGovernanceRepoPosture[]): string[] {
   return repos.map((repo) => `- ${repo.repoName} (${repo.repoId}): ${repo.risk.level} risk, score ${repo.risk.score}; ${repo.risk.reasons.join("; ")}`);
 }
 
+function formatRepoGroup(repos: MultiRepoGovernanceRepoGroupEntry[]): string[] {
+  if (repos.length === 0) {
+    return ["- not_available_yet"];
+  }
+  return repos.map((repo) =>
+    `- ${repo.id} (${repo.role}) ${repo.snapshotStatus}: upstream=${formatList(repo.upstreamContractRefs)}, downstream=${formatList(repo.downstreamContractRefs)}`,
+  );
+}
+
+function formatContractDriftHints(hints: CrossRepoContractDriftHint[]): string[] {
+  if (hints.length === 0) {
+    return ["- None"];
+  }
+  return hints.map((hint) =>
+    `- ${hint.upstreamRepoId} -> ${hint.downstreamRepoId} ${hint.contractRef}: ${hint.upstreamHash} != ${hint.downstreamHash}; ${hint.suggestedCommand}`,
+  );
+}
+
+function formatList(values: string[]): string {
+  return values.length > 0 ? values.join(", ") : "none";
+}
+
 function formatWaiverRefs(refs: Array<{ repoId: string; repoName: string; waiverId: string }>, label: string): string[] {
   if (refs.length === 0) {
     return [`- No ${label} waivers`];
@@ -454,6 +709,17 @@ function formatReleaseDriftHotspots(hotspots: Array<{ repoId: string; repoName: 
   return hotspots.map((hotspot) => `- ${hotspot.repoName} (${hotspot.repoId}): ${hotspot.status}, comparisons=${hotspot.comparisons}`);
 }
 
+function formatMissingSnapshots(missingSnapshots: MultiRepoGovernanceMissingSnapshot[]): string[] {
+  if (missingSnapshots.length === 0) {
+    return ["- None"];
+  }
+  return missingSnapshots.map((entry) => `- ${entry.inputPath}: ${entry.reason}`);
+}
+
 function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, "/");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -10,6 +10,7 @@
     "createdAt",
     "tool",
     "sourceHandoff",
+    "contract",
     "request",
     "constraints",
     "authorityBoundary",
@@ -43,6 +44,37 @@
         "path": { "type": "string", "minLength": 1 },
         "replayable": { "const": true },
         "outcome": { "type": "string", "minLength": 1 }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "integrationContractVersion",
+        "payloadRole",
+        "localArtifactsRemainSourceOfTruth",
+        "previewOnly",
+        "sourceUploadRequired",
+        "requiredReturnPath",
+        "mediatedChecks"
+      ],
+      "properties": {
+        "integrationContractVersion": { "const": 1 },
+        "payloadRole": { "const": "external_coding_tool_request" },
+        "localArtifactsRemainSourceOfTruth": { "const": true },
+        "previewOnly": { "const": true },
+        "sourceUploadRequired": { "const": false },
+        "requiredReturnPath": { "const": "implement_external_patch" },
+        "mediatedChecks": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "scope_check" },
+            { "const": "tests" },
+            { "const": "verify" }
+          ],
+          "minItems": 3,
+          "maxItems": 3
+        }
       }
     },
     "request": {

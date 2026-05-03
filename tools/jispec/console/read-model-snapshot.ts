@@ -15,6 +15,7 @@ import {
   type ConsoleGovernanceObjectContract,
   type ConsoleGovernanceObjectId,
 } from "./read-model-contract";
+import { summarizeDecisionCompanion, type DecisionCompanionSummary } from "../companion/decision-sections";
 
 export type ConsoleSnapshotArtifactStatus = "available" | "not_available_yet" | "unreadable" | "invalid";
 export type ConsoleGovernanceObjectStatus = "available" | "partial" | "not_available_yet" | "invalid";
@@ -27,6 +28,7 @@ export interface ConsoleSnapshotArtifactInstance {
   contentHash?: string;
   data?: unknown;
   displayOnlyText?: string;
+  companion?: DecisionCompanionSummary;
   error?: string;
 }
 
@@ -258,6 +260,7 @@ function readArtifactInstance(
         ...base,
         status: "available",
         displayOnlyText: content,
+        companion: summarizeDecisionCompanion({ path: relativePath, text: content }),
       };
     }
 
@@ -457,6 +460,7 @@ function summarizePolicyPosture(sourceArtifacts: ConsoleSnapshotArtifact[]): Rec
     waiverMaxActiveDays: waivers.max_active_days ?? "not_declared",
     releaseRequireCompare: release.require_compare ?? "not_declared",
     releaseDriftRequiresOwnerReview: release.drift_requires_owner_review ?? "not_declared",
+    releaseBehaviorDriftSeverity: release.behavior_drift_severity ?? "not_declared",
     executeDefaultAllowed: executeDefault.allowed ?? "not_declared",
     executeDefaultRequireCleanVerify: executeDefault.require_clean_verify ?? "not_declared",
     ruleCount: rules.length,
@@ -528,6 +532,7 @@ function summarizeContractDrift(sourceArtifacts: ConsoleSnapshotArtifact[]): Rec
             overallStatus: latestTrend.overallStatus ?? "not_declared",
             contractGraph: { status: latestTrend.contractGraphStatus ?? "not_declared" },
             staticCollector: { status: latestTrend.staticCollectorStatus ?? "not_declared" },
+            behavior: { status: latestTrend.behaviorStatus ?? "not_declared" },
             policy: { status: latestTrend.policyStatus ?? "not_declared" },
           }
         : "not_declared",
@@ -681,6 +686,8 @@ function summarizeApprovalWorkflow(root: string): Record<string, unknown> {
       state: posture.summary.totalSubjects > 0 || posture.summary.approvals > 0 ? "available" : "not_available_yet",
       status: posture.status,
       profile: posture.profile,
+      owner: posture.requirement.owner,
+      reviewers: posture.requirement.reviewers,
       requiredReviewers: posture.requirement.requiredReviewers,
       ownerApprovalAllowed: posture.requirement.ownerApprovalAllowed,
       totalSubjects: posture.summary.totalSubjects,

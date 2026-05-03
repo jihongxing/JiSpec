@@ -1,5 +1,7 @@
 import path from "node:path";
 import { collectConsoleLocalSnapshot, type ConsoleLocalSnapshot } from "./read-model-snapshot";
+import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
+import type { MultiRepoGovernanceAggregate } from "./multi-repo";
 
 export type ConsoleGovernanceActionKind =
   | "migrate_policy"
@@ -8,7 +10,9 @@ export type ConsoleGovernanceActionKind =
   | "repay_spec_debt"
   | "cancel_spec_debt"
   | "mark_spec_debt_owner_review"
-  | "compare_release_drift";
+  | "compare_release_drift"
+  | "record_policy_approval"
+  | "review_cross_repo_contract_drift";
 
 export type ConsoleGovernanceActionStatus = "ready" | "needs_input" | "not_available";
 export type ConsoleGovernanceRiskLevel = "low" | "medium" | "high" | "unknown";
@@ -69,6 +73,14 @@ export interface ConsoleGovernanceActionPlan {
 export function buildConsoleGovernanceActionPlan(rootInput: string): ConsoleGovernanceActionPlan {
   const root = path.resolve(rootInput);
   const snapshot = collectConsoleLocalSnapshot(root);
+  return buildConsoleGovernanceActionPlanFromSnapshot(snapshot, root);
+}
+
+export function buildConsoleGovernanceActionPlanFromSnapshot(
+  snapshot: ConsoleLocalSnapshot,
+  rootInput?: string,
+): ConsoleGovernanceActionPlan {
+  const root = path.resolve(rootInput ?? snapshot.root);
   return {
     version: 1,
     root,
@@ -85,8 +97,15 @@ export function buildConsoleGovernanceActionPlan(rootInput: string): ConsoleGove
       ...buildWaiverActions(snapshot),
       ...buildSpecDebtActions(snapshot),
       ...buildReleaseDriftActions(snapshot),
+      ...buildApprovalActions(snapshot),
     ],
   };
+}
+
+export function selectPrimaryConsoleGovernanceAction(
+  plan: ConsoleGovernanceActionPlan,
+): ConsoleGovernanceActionPacket | undefined {
+  return plan.actions.find((action) => action.status !== "not_available");
 }
 
 export function renderConsoleGovernanceActionPlanText(plan: ConsoleGovernanceActionPlan): string {
@@ -106,6 +125,14 @@ export function renderConsoleGovernanceActionPlanText(plan: ConsoleGovernanceAct
   for (const action of plan.actions) {
     lines.push("");
     lines.push(`[${action.status.toUpperCase()}] ${action.title}`);
+    lines.push("Decision packet:");
+    lines.push(...renderHumanDecisionSnapshotText({
+      currentState: `${action.status} ${action.kind}`,
+      risk: `${action.risk.level} - ${action.risk.summary}`,
+      evidence: action.sourceArtifacts,
+      owner: action.owner,
+      nextCommand: action.recommendedCommand,
+    }).map((entry) => `- ${entry}`));
     lines.push(`Kind: ${action.kind}`);
     lines.push(`Owner: ${action.owner}`);
     lines.push(`Reason: ${action.reason}`);
@@ -130,6 +157,28 @@ export function renderConsoleGovernanceActionPlanText(plan: ConsoleGovernanceAct
 
 export function renderConsoleGovernanceActionPlanJSON(plan: ConsoleGovernanceActionPlan): string {
   return JSON.stringify(plan, null, 2);
+}
+
+export function buildCrossRepoDriftActions(
+  aggregate: MultiRepoGovernanceAggregate,
+): ConsoleGovernanceActionPacket[] {
+  return aggregate.contractDriftHints.map((hint) => action({
+    kind: "review_cross_repo_contract_drift",
+    status: "needs_input",
+    title: `Review cross-repo drift for ${hint.contractRef}`,
+    reason: `${hint.downstreamRepoId} has ${hint.downstreamHash}, while upstream ${hint.upstreamRepoId} has ${hint.upstreamHash}.`,
+    command: hint.suggestedCommand,
+    owner: `${hint.downstreamRepoId} owner`,
+    risk: {
+      level: "medium",
+      summary: "Cross-repo contract drift is an owner-action hint and does not replace any single-repo verify gate.",
+    },
+    sourceObject: "multi_repo_export",
+    sourceArtifacts: [".spec/console/multi-repo-governance.json"],
+    affectedContracts: [`${hint.upstreamRepoId}:${hint.contractRef}`, `${hint.downstreamRepoId}:${hint.contractRef}`],
+    targetRefs: [`cross-repo-drift:${hint.upstreamRepoId}:${hint.contractRef}->${hint.downstreamRepoId}`],
+    commandWrites: [],
+  }));
 }
 
 function buildPolicyActions(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceActionPacket[] {
@@ -318,6 +367,47 @@ function buildReleaseDriftActions(snapshot: ConsoleLocalSnapshot): ConsoleGovern
   return [];
 }
 
+function buildApprovalActions(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceActionPacket[] {
+  const approval = governanceObject(snapshot, "approval_workflow");
+  const summary = approval?.summary ?? {};
+  const subjects = Array.isArray(summary.subjects) ? summary.subjects.filter(isRecord) : [];
+  if (!approval || summary.state !== "available") {
+    return [];
+  }
+
+  return subjects
+    .filter((subject) => subject.status === "approval_missing" || subject.status === "approval_stale")
+    .map((subject) => {
+      const kind = stringValue(subject.kind) ?? "policy_change";
+      const ref = stringValue(subject.ref) ?? ".spec/policy.yaml";
+      const stale = subject.status === "approval_stale";
+      return action({
+        kind: "record_policy_approval",
+        status: "needs_input",
+        title: `${stale ? "Refresh" : "Record"} approval for ${kind}`,
+        reason: stale
+          ? "Approval exists but is stale because the subject changed or the approval expired."
+          : "Approval subject is missing reviewer quorum or owner approval.",
+        command: `npm run jispec-cli -- policy approval record --subject-kind ${kind} --subject-ref ${ref} --actor <actor> --role reviewer --reason "<reason>"`,
+        owner: stringValue(summary.owner) ?? "approval owner",
+        risk: {
+          level: approvalRiskLevel(kind, stale, stringValue(summary.profile)),
+          summary: stale
+            ? "Stale approvals can make governance appear reviewed after the underlying artifact changed."
+            : "Missing approvals leave governance decisions without the required reviewer or owner record.",
+        },
+        sourceObject: "approval_workflow",
+        sourceArtifacts: approval.sourcePaths.length > 0 ? approval.sourcePaths : [ref],
+        affectedContracts: [
+          ref,
+          `${kind}:${stringValue(subject.hash) ?? "unknown-hash"}`,
+        ],
+        targetRefs: [`${kind}:${ref}`],
+        commandWrites: [".spec/approvals/*.json", ".spec/audit/events.jsonl"],
+      });
+    });
+}
+
 function action(
   input: Omit<
     ConsoleGovernanceActionPacket,
@@ -371,6 +461,12 @@ function buildReviewerInstructions(input: Pick<ConsoleGovernanceActionPacket, "k
   if (input.kind === "compare_release_drift") {
     return ["Choose the release refs.", "Run the recommended local CLI command explicitly.", "Review generated drift reports before release."];
   }
+  if (input.kind === "record_policy_approval") {
+    return ["Review the current governance subject.", "Run the recommended local CLI command explicitly.", "Confirm the resulting approval audit event."];
+  }
+  if (input.kind === "review_cross_repo_contract_drift") {
+    return ["Review upstream and downstream contract ownership.", "Run the suggested command explicitly if you want to refresh the aggregate.", "Do not treat this action as a replacement for either repo's verify gate."];
+  }
   return ["Run the recommended local CLI command explicitly.", "Review the resulting audit event."];
 }
 
@@ -408,6 +504,16 @@ function affectedContractsFromSpecDebt(debt: Record<string, unknown>): string[] 
     : [];
   const values = [...affectedContracts, ...affectedAssets];
   return values.length > 0 ? values : [`spec-debt:${stringValue(debt.id) ?? "unknown"}`];
+}
+
+function approvalRiskLevel(kind: string, stale: boolean, profile: string | undefined): ConsoleGovernanceRiskLevel {
+  if (stale || kind === "release_drift" || profile === "regulated") {
+    return "high";
+  }
+  if (kind === "waiver_change" || kind === "execute_default_change") {
+    return "medium";
+  }
+  return "medium";
 }
 
 function expiresWithinDays(value: string | undefined, days: number): boolean {

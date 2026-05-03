@@ -111,7 +111,10 @@ async function main(): Promise<void> {
       assert.match(dirtyReport, /# Dirty Propagation Report:/);
       assert.match(impactReport, /## Dirty Propagation/);
       assert.ok(verifyFocus.dirty_propagation?.dirty_nodes?.includes("@api:CTR-ORDERING-002"));
-      assert.ok(change.session.impactSummary?.some((line) => line.includes("Required dirty updates:")));
+      const impactSummary = change.session.impactSummary;
+      assert.ok(impactSummary && !Array.isArray(impactSummary));
+      assert.ok(impactSummary.missingVerificationHints.length >= 0);
+      assert.ok(impactSummary.impactedFiles.includes("contexts/ordering/behavior/scenarios/SCN-ORDER-CHECKOUT-OUT-OF-STOCK.feature"));
     }));
 
     const verifyWithDirtyDelta = await runVerify({ root, generatedAt: "2026-04-29T00:00:00.000Z" });

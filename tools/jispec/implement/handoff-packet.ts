@@ -10,6 +10,9 @@ import type { ChangeSession } from "../change/change-session";
 import type { ImplementRunResult } from "./implement-runner";
 import type { EpisodeMemory } from "./episode-memory";
 import { getRecentHypotheses, getRejectedPaths, getEpisodesByOutcome } from "./episode-memory";
+import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
+import { splitDecisionCompanionSections } from "../companion/decision-sections";
+import type { ReviewDiscipline } from "../discipline/types";
 
 export interface ImplementContractContext {
   lane: "fast" | "strict";
@@ -134,6 +137,15 @@ export interface HandoffPacket {
   costUSD: number;
   contractContext: ImplementContractContext;
   decisionPacket: ImplementationDecisionPacket;
+  discipline?: {
+    sessionPath?: string;
+    completionEvidencePath?: string;
+    disciplineReportPath?: string;
+    disciplineSummaryPath?: string;
+    debugPacketPath?: string;
+    debugPacketMarkdownPath?: string;
+  };
+  reviewDiscipline?: ReviewDiscipline;
 
   summary: {
     whatWorked: string[];
@@ -146,6 +158,13 @@ export interface HandoffPacket {
     suggestedActions: string[];
     filesNeedingAttention: string[];
     externalToolHandoff?: NonNullable<ImplementationDecisionPacket["nextActionDetail"]["externalToolHandoff"]>;
+    impact?: {
+      impactedContracts: string[];
+      impactedFiles: string[];
+      missingVerificationHints: string[];
+      nextReplayCommand: string;
+      freshness: string;
+    };
     testCommand: string;
     verifyCommand: string;
     verifyRecommendation: string;
@@ -249,6 +268,7 @@ export function generateHandoffPacket(
       ],
       filesNeedingAttention,
       externalToolHandoff: decisionPacket.nextActionDetail.externalToolHandoff,
+      impact: buildImpactNextStep(session),
       testCommand: result.metadata.testCommand,
       verifyCommand,
       verifyRecommendation,
@@ -266,6 +286,21 @@ export function generateHandoffPacket(
       startedAt: result.metadata.startedAt,
       completedAt: result.metadata.completedAt,
     },
+  };
+}
+
+function buildImpactNextStep(session: ChangeSession): HandoffPacket["nextSteps"]["impact"] | undefined {
+  const impact = session.impactSummary;
+  if (!impact || Array.isArray(impact)) {
+    return undefined;
+  }
+
+  return {
+    impactedContracts: impact.impactedContracts,
+    impactedFiles: impact.impactedFiles,
+    missingVerificationHints: impact.missingVerificationHints,
+    nextReplayCommand: impact.nextReplayCommand,
+    freshness: impact.freshness.status,
   };
 }
 
@@ -913,6 +948,52 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   lines.push("");
 
   lines.push("=== Decision Packet ===");
+  lines.push("Decision snapshot:");
+  lines.push(...renderHumanDecisionSnapshotText({
+    currentState: `${packet.decisionPacket.state} at ${packet.decisionPacket.stopPoint}`,
+    risk: packet.decisionPacket.summary,
+    evidence: [
+      `scope=${packet.decisionPacket.executionStatus.scopeCheck}`,
+      `test=${packet.decisionPacket.executionStatus.tests}`,
+      `verify=${packet.decisionPacket.executionStatus.verify}`,
+    ],
+    owner: packet.decisionPacket.executionStatus.nextActionOwner,
+    nextCommand: packet.decisionPacket.nextActionDetail.command ?? "no command recorded",
+  }).map((entry) => `  ${entry}`));
+  lines.push("");
+  lines.push("Reviewer decision companion:");
+  const sessionImpact = packet.replay.sourceSession.impactSummary;
+  const impactTruthSources = sessionImpact && !Array.isArray(sessionImpact)
+    ? [sessionImpact.artifacts.impactGraphPath, sessionImpact.artifacts.verifyFocusPath]
+    : [packet.replay.sourceSession.specDelta?.verifyFocusPath ?? ".spec/deltas/<changeId>/verify-focus.yaml"];
+  lines.push(...splitDecisionCompanionSections({
+    subject: `implementation handoff ${packet.sessionId}`,
+    truthSources: [
+      `.jispec/handoff/${packet.sessionId}.json`,
+      ...impactTruthSources,
+    ],
+    strongestEvidence: [
+      `outcome: ${packet.outcome}`,
+      `stop point: ${packet.decisionPacket.stopPoint}`,
+      `failed check: ${packet.decisionPacket.nextActionDetail.failedCheck}`,
+    ],
+    inferredEvidence: [
+      ...packet.nextSteps.filesNeedingAttention.slice(0, 6).map((file) => `file needing attention: ${file}`),
+      ...packet.episodeMemory.rejectedPaths.slice(0, 4).map((file) => `rejected path: ${file}`),
+    ],
+    drift: [
+      `scope=${packet.decisionPacket.executionStatus.scopeCheck}`,
+      `test=${packet.decisionPacket.executionStatus.tests}`,
+      `verify=${packet.decisionPacket.executionStatus.verify}`,
+    ],
+    impact: [
+      ...(packet.nextSteps.impact?.impactedContracts ?? []).slice(0, 8).map((contract) => `contract: ${contract}`),
+      ...(packet.nextSteps.impact?.impactedFiles ?? []).slice(0, 8).map((file) => `file: ${file}`),
+      ...(packet.nextSteps.impact?.missingVerificationHints ?? []).slice(0, 4).map((hint) => `verification hint: ${hint}`),
+    ],
+    nextSteps: packet.nextSteps.suggestedActions.slice(0, 6),
+    maxLines: 150,
+  }).map((entry) => `  ${entry}`));
   lines.push(`State: ${packet.decisionPacket.state}`);
   lines.push(`Stop point: ${packet.decisionPacket.stopPoint}`);
   lines.push(`Mergeable: ${packet.decisionPacket.mergeable}`);
@@ -999,10 +1080,41 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
     lines.push("");
   }
 
+  if (packet.nextSteps.impact) {
+    lines.push("Impact Scope:");
+    lines.push(`  Freshness: ${packet.nextSteps.impact.freshness}`);
+    lines.push(`  Impacted contracts: ${packet.nextSteps.impact.impactedContracts.join(", ") || "none"}`);
+    lines.push(`  Impacted files: ${packet.nextSteps.impact.impactedFiles.join(", ") || "none"}`);
+    lines.push(`  Missing verification hints: ${packet.nextSteps.impact.missingVerificationHints.join("; ") || "none"}`);
+    lines.push(`  Replay: ${packet.nextSteps.impact.nextReplayCommand}`);
+    lines.push("");
+  }
+
   lines.push(`Test Command: ${packet.nextSteps.testCommand}`);
   lines.push(`Verify Command: ${packet.nextSteps.verifyCommand}`);
   lines.push(`Verify Recommendation: ${packet.nextSteps.verifyRecommendation}`);
   lines.push("");
+
+  if (packet.discipline) {
+    lines.push("Agent discipline:");
+    lines.push(`  Report: ${packet.discipline.disciplineReportPath ?? "not_available_yet"}`);
+    lines.push(`  Summary: ${packet.discipline.disciplineSummaryPath ?? "not_available_yet"}`);
+    lines.push(`  Completion evidence: ${packet.discipline.completionEvidencePath ?? "not_available_yet"}`);
+    if (packet.discipline.debugPacketPath) {
+      lines.push(`  Debug packet: ${packet.discipline.debugPacketPath}`);
+    }
+    if (packet.discipline.debugPacketMarkdownPath) {
+      lines.push(`  Debug summary: ${packet.discipline.debugPacketMarkdownPath}`);
+    }
+    lines.push("");
+  }
+  if (packet.reviewDiscipline) {
+    lines.push("Review discipline:");
+    lines.push(`  Purpose: ${packet.reviewDiscipline.purpose}`);
+    lines.push(`  Verification: ${packet.reviewDiscipline.verificationCommands.join(", ") || "none"}`);
+    lines.push(`  Next reviewer action: ${packet.reviewDiscipline.nextReviewerAction}`);
+    lines.push("");
+  }
 
   // Episode Memory
   if (packet.episodeMemory.attemptedHypotheses.length > 0) {

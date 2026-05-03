@@ -43,6 +43,8 @@ async function main(): Promise<void> {
       assert.equal(trend.changedCompareCount, 2);
       assert.equal(trend.latest?.from, "v2");
       assert.equal(trend.latest?.to, "v3");
+      assert.equal(trend.surfaces.behavior.changed, 2);
+      assert.equal(trend.latest?.behaviorStatus, "changed");
       assert.match(fs.readFileSync(second.compareReportMarkdownPath, "utf-8"), /## Drift Trend/);
       assert.match(fs.readFileSync(second.driftTrendMarkdownPath, "utf-8"), /# Release Drift Trend/);
     } finally {
@@ -69,14 +71,18 @@ async function main(): Promise<void> {
 
       assert.equal(first.driftSummary.contractGraph.status, "changed");
       assert.equal(first.driftSummary.staticCollector.status, "changed");
+      assert.equal(first.driftSummary.behavior.status, "changed");
       assert.equal(first.driftSummary.policy.status, "unchanged");
       assert.equal(second.driftSummary.contractGraph.status, "unchanged");
       assert.equal(second.driftSummary.staticCollector.status, "unchanged");
+      assert.equal(second.driftSummary.behavior.status, "changed");
       assert.equal(second.driftSummary.policy.status, "changed");
       assert.equal(trend.surfaces.contractGraph.changed, 1);
       assert.equal(trend.surfaces.staticCollector.changed, 1);
+      assert.equal(trend.surfaces.behavior.changed, 2);
       assert.equal(trend.surfaces.policy.changed, 1);
       assert.equal(trend.surfaces.contractGraph.unchanged, 1);
+      assert.equal(trend.surfaces.behavior.unchanged, 0);
       assert.equal(trend.surfaces.policy.unchanged, 1);
     } finally {
       removeFixtureRoot(root);
@@ -101,16 +107,18 @@ async function main(): Promise<void> {
 
       const snapshot = collectConsoleLocalSnapshot(root);
       const drift = snapshot.governance.objects.find((object) => object.id === "contract_drift");
+      const driftSummary = drift?.summary.driftSummary as Record<string, unknown> | undefined;
       assert.equal(drift?.status, "available");
       assert.equal(drift?.summary.trendAvailable, true);
       assert.equal(drift?.summary.trendCompareCount, 2);
       assert.equal(drift?.summary.trendChangedCompareCount, 2);
+      assert.equal((driftSummary?.behavior as Record<string, unknown> | undefined)?.status, "changed");
       assert.deepEqual(drift?.summary.latestComparison, {
         from: "v2",
         to: "v3",
         comparedAt: "2026-05-01T02:00:00.000Z",
       });
-      assert.equal((drift?.summary.driftSummary as Record<string, unknown>).overallStatus, "changed");
+      assert.equal(driftSummary?.overallStatus, "changed");
     } finally {
       removeFixtureRoot(root);
     }
@@ -163,18 +171,21 @@ function createReleaseTrendFixture(): string {
     staticFactCount: 1,
     policyContentHash: "policy-v1",
     policyRuleIds: ["no-blocking"],
+    scenarios: ["SCN-ORDER-1"],
   });
   writeRelease(root, "v2", {
     graphLabel: "Checkout contract v2",
     staticFactCount: 2,
     policyContentHash: "policy-v1",
     policyRuleIds: ["no-blocking"],
+    scenarios: ["SCN-ORDER-1", "SCN-ORDER-2"],
   });
   writeRelease(root, "v3", {
     graphLabel: "Checkout contract v2",
     staticFactCount: 2,
     policyContentHash: "policy-v3",
     policyRuleIds: ["no-blocking", "require-owner-review"],
+    scenarios: ["SCN-ORDER-1", "SCN-ORDER-2", "SCN-ORDER-3"],
   });
   return root;
 }
@@ -187,6 +198,7 @@ function writeRelease(
     staticFactCount: number;
     policyContentHash: string;
     policyRuleIds: string[];
+    scenarios: string[];
   },
 ): void {
   const graphArtifacts = writeMerkleContractDagArtifacts({
@@ -205,7 +217,7 @@ function writeRelease(
       requirement_ids: ["REQ-1"],
       contexts: ["ordering"],
       contracts: ["CTR-ORDERING"],
-      scenarios: [],
+      scenarios: options.scenarios,
       slices: [],
       assets: [],
       contract_graph: {

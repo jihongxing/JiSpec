@@ -103,6 +103,16 @@ import {
   renderPrivacyReportText,
 } from "./privacy/redaction";
 import {
+  renderPilotProductPackageJSON,
+  renderPilotProductPackageText,
+  writePilotProductPackage,
+} from "./pilot/product-package";
+import {
+  renderNorthStarAcceptanceJSON,
+  renderNorthStarAcceptanceText,
+  writeNorthStarAcceptance,
+} from "./north-star/acceptance";
+import {
   buildValueReport,
   renderValueReportJSON,
   renderValueReportText,
@@ -137,6 +147,8 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli console aggregate-governance [--snapshot <paths...>] [--dir <paths...>] [--json]",
     "  jispec-cli metrics value-report [--json]",
     "  jispec-cli privacy report [--json]",
+    "  jispec-cli pilot package [--json]",
+    "  jispec-cli north-star acceptance [--json]",
     "  jispec-cli integrations payload --provider github|gitlab|jira|linear --kind scm_comment|issue_link [--json]",
     "  jispec-cli handoff adapter --from-handoff <path-or-session> --tool codex|claude_code|cursor|copilot|devin [--json]",
     "  jispec-cli implement [--fast] [--external-patch <path>] [--from-handoff <path-or-session>] [--json]",
@@ -145,7 +157,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli bootstrap discover [--json]",
     "  jispec-cli bootstrap draft [--json]",
     "  jispec-cli adopt --interactive [--json]",
-    "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--json]",
+    "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--owner <owner>] [--reviewer <reviewer...>] [--json]",
     "  jispec-cli policy approval status|record [--json]",
     "  jispec-cli doctor v1",
     "  jispec-cli doctor runtime",
@@ -327,14 +339,18 @@ function registerPolicyCommands(program: Command): void {
     .option("--root <path>", "Repository root.", ".")
     .option("--path <path>", "Override the policy file path.")
     .option("--profile <profile>", "Policy profile: solo|small_team|regulated.")
+    .option("--owner <owner>", "Accountable team owner for the policy profile.")
+    .option("--reviewer <reviewer...>", "Reviewer identifier(s) for the policy profile.")
     .option("--actor <actor>", "Actor recorded in the audit event.")
     .option("--reason <reason>", "Reason recorded in the audit event.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; path?: string; profile?: string; actor?: string; reason?: string; json: boolean }) => {
+    .action((options: { root: string; path?: string; profile?: string; owner?: string; reviewer?: string[]; actor?: string; reason?: string; json: boolean }) => {
       try {
         const profile = parsePolicyProfileOption(options.profile);
         const result = migrateVerifyPolicy(path.resolve(options.root), options.path, {
           profile,
+          owner: options.owner,
+          reviewers: options.reviewer,
           actor: options.actor,
           reason: options.reason,
         });
@@ -376,7 +392,7 @@ function registerPolicyCommands(program: Command): void {
     .command("record")
     .description("Write a local approval decision and append an audit event.")
     .option("--root <path>", "Repository root.", ".")
-    .requiredOption("--subject-kind <kind>", "policy_change|waiver_change|release_drift|execute_default_change.")
+    .requiredOption("--subject-kind <kind>", "policy_change|waiver_change|release_drift|execute_default_change|pilot_risk_acceptance|external_graph_summary_sharing.")
     .option("--subject-ref <path>", "Subject artifact path. Defaults to policy.yaml or latest release compare where possible.")
     .option("--actor <actor>", "Actor recording the approval.")
     .option("--role <role>", "Approval role: owner|reviewer.", "reviewer")
@@ -438,10 +454,10 @@ function parsePolicyProfileOption(profile?: string): TeamPolicyProfileName | und
 }
 
 function parseApprovalSubjectKindOption(kind: string): ApprovalSubjectKind {
-  if (kind === "policy_change" || kind === "waiver_change" || kind === "release_drift" || kind === "execute_default_change") {
+  if (kind === "policy_change" || kind === "waiver_change" || kind === "release_drift" || kind === "execute_default_change" || kind === "pilot_risk_acceptance" || kind === "external_graph_summary_sharing") {
     return kind;
   }
-  throw new Error("--subject-kind must be one of: policy_change, waiver_change, release_drift, execute_default_change");
+  throw new Error("--subject-kind must be one of: policy_change, waiver_change, release_drift, execute_default_change, pilot_risk_acceptance, external_graph_summary_sharing");
 }
 
 function parseApprovalActorRoleOption(role: string): ApprovalActorRole {
@@ -818,6 +834,56 @@ function registerPrivacyCommands(program: Command): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Privacy report failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerPilotCommands(program: Command): void {
+  const pilot = program.command("pilot").description("Build local pilot adoption packages and readiness companions.");
+
+  pilot
+    .command("package")
+    .description("Write a local pilot product package and adoption path from existing JiSpec artifacts.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--out <path>", "Output JSON path.", ".spec/pilot/package.json")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; out?: string; json: boolean }) => {
+      try {
+        const result = writePilotProductPackage({
+          root: path.resolve(options.root),
+          outPath: options.out,
+        });
+        console.log(options.json ? renderPilotProductPackageJSON(result) : renderPilotProductPackageText(result));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Pilot package failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
+function registerNorthStarCommands(program: Command): void {
+  const northStar = program.command("north-star").description("Build final local North Star acceptance artifacts.");
+
+  northStar
+    .command("acceptance")
+    .description("Write the local North Star acceptance suite aggregate and scenario decision packets.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--out <path>", "Output JSON path.", ".spec/north-star/acceptance.json")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; out?: string; json: boolean }) => {
+      try {
+        const result = writeNorthStarAcceptance({
+          root: path.resolve(options.root),
+          outPath: options.out,
+        });
+        console.log(options.json ? renderNorthStarAcceptanceJSON(result) : renderNorthStarAcceptanceText(result.acceptance));
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`North Star acceptance failed: ${message}`);
         process.exitCode = 1;
       }
     });
@@ -1497,6 +1563,8 @@ export function buildProgram(): Command {
   registerConsoleCommands(program);
   registerMetricsCommands(program);
   registerPrivacyCommands(program);
+  registerPilotCommands(program);
+  registerNorthStarCommands(program);
   registerIntegrationCommands(program);
   registerSpecDebtCommands(program);
   registerHandoffAdapterCommand(program);

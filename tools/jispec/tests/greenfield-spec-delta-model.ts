@@ -132,7 +132,11 @@ async function main(): Promise<void> {
       assert.match(change.text, /AI handoff:/);
       assert.ok(change.session.nextCommands.some((hint) => hint.command.includes(`/ai-implement-handoff.md`) || hint.command.includes("\\ai-implement-handoff.md")));
       assert.ok(change.session.nextCommands.some((hint) => hint.command.includes(`/delta.yaml`) || hint.command.includes("\\delta.yaml")));
-      assert.ok(change.session.impactSummary?.some((line) => line.includes("Active baseline remains unchanged")));
+      const impactSummary = change.session.impactSummary;
+      assert.ok(impactSummary && !Array.isArray(impactSummary));
+      assert.equal(impactSummary.advisoryOnly, true);
+      assert.match(impactSummary.artifacts.impactGraphPath, /impact-graph\.json$/);
+      assert.match(change.text, /Impact graph freshness:/);
     }));
 
     const cliRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-greenfield-delta-cli-"));

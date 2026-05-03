@@ -3,6 +3,11 @@ import {
   type BootstrapTakeoverReport,
   type BootstrapTakeoverDecisionRecord,
 } from "./takeover";
+import {
+  HUMAN_SUMMARY_COMPANION_NOTE,
+  renderHumanDecisionSnapshot,
+  renderHumanReviewerDecisionCompanion,
+} from "../human-decision-packet";
 
 export interface BootstrapAdoptSummary {
   relativePath: string;
@@ -16,6 +21,48 @@ export function buildBootstrapAdoptSummary(report: BootstrapTakeoverReport): Boo
     `Session: \`${report.sessionId}\``,
     `Status: \`${report.status}\``,
     `Generated from: \`${report.sourceEvidenceGraphPath}\``,
+    "",
+    ...renderHumanDecisionSnapshot({
+      currentState: `${report.status} takeover adoption with ${report.adoptedArtifactPaths.length} adopted contract(s), ${report.specDebtPaths.length} deferred debt record(s), and ${report.rejectedArtifactKinds.length} rejected draft(s)`,
+      risk: `Correction load ${renderCorrectionLoad(report.decisions)}; ${renderCorrectionHotspots(report.decisions)} hotspot(s) need reviewer attention`,
+      evidence: [
+        `\`${report.manifestPath}\``,
+        `\`${report.sourceEvidenceGraphPath}\``,
+        "`.spec/handoffs/bootstrap-takeover.json`",
+      ],
+      owner: report.replay?.actor ? `reviewer \`${report.replay.actor}\`` : "reviewer",
+      nextCommand: "`npm run jispec-cli -- verify`",
+    }),
+    ...renderHumanReviewerDecisionCompanion({
+      subject: `bootstrap adoption ${report.sessionId}`,
+      truthSources: [
+        report.manifestPath,
+        report.sourceEvidenceGraphPath,
+        ".spec/handoffs/bootstrap-takeover.json",
+      ],
+      strongestEvidence: report.adoptedArtifactPaths.length > 0
+        ? report.adoptedArtifactPaths.slice(0, 5).map((artifactPath) => `adopted contract: ${artifactPath}`)
+        : ["No contracts were adopted in this takeover commit."],
+      inferredEvidence: report.decisions
+        .filter((decision) => decision.edited || decision.finalState !== "adopted")
+        .slice(0, 5)
+        .map((decision) => `${decision.artifactKind} requires reviewer attention after ${decision.finalState}`),
+      drift: [
+        `Correction load: ${renderCorrectionLoad(report.decisions)}`,
+        `Correction hotspots: ${renderCorrectionHotspots(report.decisions)}`,
+      ],
+      impact: [
+        ...report.adoptedArtifactPaths.slice(0, 8).map((artifactPath) => `contract: ${artifactPath}`),
+        ...report.specDebtPaths.slice(0, 4).map((artifactPath) => `spec debt: ${artifactPath}`),
+      ],
+      nextSteps: renderNextVerifyStep(report),
+      maxLines: 150,
+    }),
+    "",
+    "## Source Of Truth",
+    "",
+    `- Machine report: \`${report.manifestPath}\` and \`.spec/handoffs/bootstrap-takeover.json\`.`,
+    `- ${HUMAN_SUMMARY_COMPANION_NOTE}`,
     "",
     "## Decision Totals",
     "",
@@ -49,6 +96,10 @@ export function buildBootstrapAdoptSummary(report: BootstrapTakeoverReport): Boo
     "",
     ...renderHumanEdits(report.decisions),
     "",
+    "## Replay / Provenance",
+    "",
+    ...renderReplayProvenance(report),
+    "",
     "## Next Verify Step",
     "",
     ...renderNextVerifyStep(report),
@@ -59,6 +110,24 @@ export function buildBootstrapAdoptSummary(report: BootstrapTakeoverReport): Boo
     relativePath: getBootstrapAdoptSummaryRelativePath(),
     content: `${lines.join("\n")}\n`,
   };
+}
+
+function renderReplayProvenance(report: BootstrapTakeoverReport): string[] {
+  const replay = report.replay;
+  if (!replay) {
+    return ["- Replay metadata is not available for this adopt summary."];
+  }
+
+  return [
+    `- Source session: \`${replay.sourceSession ?? report.sessionId}\``,
+    `- Source artifact: \`${replay.sourceArtifact ?? report.manifestPath}\``,
+    `- Input artifacts: ${replay.inputArtifacts.length > 0 ? replay.inputArtifacts.slice(0, 8).map((entry) => `\`${entry}\``).join(", ") : "none recorded"}`,
+    `- Actor: \`${replay.actor ?? "not recorded"}\``,
+    `- Reason: ${replay.reason ?? "not recorded"}`,
+    `- Previous outcome: \`${replay.previousOutcome ?? "not recorded"}\``,
+    `- Replay command: \`${replay.commands.rerun ?? "not recorded"}\``,
+    `- Next human action: ${replay.nextHumanAction}`,
+  ];
 }
 
 function renderAcceptedContracts(decisions: BootstrapTakeoverDecisionRecord[]): string[] {

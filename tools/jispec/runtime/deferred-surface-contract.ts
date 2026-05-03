@@ -7,7 +7,7 @@ export interface DeferredSurfaceContract {
   reason: string;
   allowedRegressionArea: "runtime-extended";
   allowedDoctorProfiles: ["runtime"];
-  forbiddenDoctorProfiles: ["v1"];
+  forbiddenDoctorProfiles: ["v1", "pilot"];
   doesBlockV1Readiness: false;
   canOverrideVerify: false;
   productizedInV1: false;
@@ -24,7 +24,7 @@ export const DEFERRED_SURFACE_CONTRACTS: DeferredSurfaceContract[] = [
     reason: "Distributed execution and remote runtime remain extended runtime experiments until the contract-aware mainline is stronger.",
     allowedRegressionArea: "runtime-extended",
     allowedDoctorProfiles: ["runtime"],
-    forbiddenDoctorProfiles: ["v1"],
+    forbiddenDoctorProfiles: ["v1", "pilot"],
     doesBlockV1Readiness: false,
     canOverrideVerify: false,
     productizedInV1: false,
@@ -42,7 +42,7 @@ export const DEFERRED_SURFACE_CONTRACTS: DeferredSurfaceContract[] = [
     reason: "Collaboration, conflict resolution, locking, notifications, and analytics are not V1 mainline readiness gates.",
     allowedRegressionArea: "runtime-extended",
     allowedDoctorProfiles: ["runtime"],
-    forbiddenDoctorProfiles: ["v1"],
+    forbiddenDoctorProfiles: ["v1", "pilot"],
     doesBlockV1Readiness: false,
     canOverrideVerify: false,
     productizedInV1: false,
@@ -61,7 +61,7 @@ export const DEFERRED_SURFACE_CONTRACTS: DeferredSurfaceContract[] = [
     reason: "Presence and awareness signals may support a future workspace, but cannot affect local verify or V1 readiness.",
     allowedRegressionArea: "runtime-extended",
     allowedDoctorProfiles: ["runtime"],
-    forbiddenDoctorProfiles: ["v1"],
+    forbiddenDoctorProfiles: ["v1", "pilot"],
     doesBlockV1Readiness: false,
     canOverrideVerify: false,
     productizedInV1: false,

@@ -94,4 +94,6 @@ After `adopt` and later `change` or `implement` runs, use the handoff packet to 
 - implementer receives focused allowed paths, test command, verify command, and stop point
 - CI remains the deterministic gate
 
+Human-facing summaries now start with the same decision snapshot shape: current state, risk, evidence, owner, and next command. Use that block for review triage, then use the JSON/YAML artifacts named in the summary as the machine source of truth.
+
 JiSpec does not become the business-code author. It keeps the contract, scope, test, verify, audit, and replay boundary stable.

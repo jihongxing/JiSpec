@@ -3,6 +3,7 @@ import path from "node:path";
 import type { LaneDecision } from "./lane-decision";
 import type { ClassifiedPath } from "./git-diff-classifier";
 import type { SpecDeltaChangeType, SpecDeltaDraftResult } from "./spec-delta";
+import type { ChangeImpactSummary } from "./impact-summary";
 
 export type ChangeSessionOrchestrationMode = "prompt" | "execute";
 
@@ -30,7 +31,7 @@ export interface ChangeSession {
   contextId?: string;
   baseRef?: string;
   nextCommands: ChangeSessionCommandHint[];
-  impactSummary?: string[];
+  impactSummary?: ChangeImpactSummary | string[];
 }
 
 /**

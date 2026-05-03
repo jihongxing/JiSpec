@@ -18,6 +18,8 @@ import {
   collectGreenfieldProvenanceAnchorDrift,
   renderGreenfieldProvenanceDriftWarnings,
 } from "../greenfield/provenance-drift";
+import { summarizeChangeImpact, type ChangeImpactSummary } from "./impact-summary";
+import { splitDecisionCompanionSections } from "../companion/decision-sections";
 
 export type SpecDeltaChangeType = "add" | "modify" | "deprecate" | "fix" | "redesign";
 const SPEC_DELTA_CHANGE_TYPES = new Set<string>(["add", "modify", "deprecate", "fix", "redesign"]);
@@ -76,6 +78,7 @@ export interface SpecDeltaDraftResult {
   dirtyReportPath: string;
   handoffPath: string;
   adoptionRecordPath: string;
+  impactSummary: ChangeImpactSummary;
   references: SpecDeltaReferences;
   blastRadius?: BlastRadiusAnalysis;
   dirtyAnalysis?: DirtyAnalysis;
@@ -163,7 +166,7 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
 
   fs.writeFileSync(deltaPath, dumpYaml(delta), "utf-8");
   fs.writeFileSync(impactReportPath, renderImpactReport(delta, blastRadius, dirtyAnalysis), "utf-8");
-  fs.writeFileSync(impactGraphPath, `${JSON.stringify(buildBlastRadiusGraphPayload(changeId, blastRadius), null, 2)}\n`, "utf-8");
+  fs.writeFileSync(impactGraphPath, `${JSON.stringify(buildBlastRadiusGraphPayload(changeId, blastRadius, createdAt), null, 2)}\n`, "utf-8");
   fs.writeFileSync(dirtyGraphPath, `${JSON.stringify(dirtyAnalysis.dirtyGraph, null, 2)}\n`, "utf-8");
   fs.writeFileSync(dirtyReportPath, renderDirtyReport(dirtyAnalysis.dirtyGraph), "utf-8");
   fs.writeFileSync(verifyFocusPath, renderDirtyVerifyFocusYaml(changeId, dirtyAnalysis.dirtyGraph, loadYamlObject(renderVerifyFocusYaml(changeId, blastRadius))), "utf-8");
@@ -181,6 +184,15 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
     dirtyReportPath: normalizePath(dirtyReportPath),
     handoffPath: normalizePath(handoffPath),
     adoptionRecordPath: normalizePath(adoptionRecordPath),
+    impactSummary: summarizeChangeImpact({
+      root,
+      changeId,
+      generatedAt: createdAt,
+      summary: options.summary,
+      changeType,
+      contextId: options.contextId,
+      sliceId: options.sliceId,
+    }),
     references,
     blastRadius,
     dirtyAnalysis,
@@ -362,6 +374,36 @@ function renderImpactReport(delta: SpecDelta, blastRadius: BlastRadiusAnalysis, 
     `Change type: ${delta.change_type}`,
     `State: ${delta.state}`,
     "",
+    ...splitDecisionCompanionSections({
+      subject: `change delta ${delta.change_id}`,
+      truthSources: [
+        `.spec/deltas/${delta.change_id}/delta.yaml`,
+        `.spec/deltas/${delta.change_id}/impact-graph.json`,
+        `.spec/deltas/${delta.change_id}/verify-focus.yaml`,
+      ],
+      strongestEvidence: [
+        `change type: ${delta.change_type}`,
+        `contract graph: ${blastRadius.available ? "available" : "not_available_yet"}`,
+        `dirty required updates: ${dirtyAnalysis.dirtyGraph.required_updates.length}`,
+      ],
+      inferredEvidence: [
+        ...delta.references.slices.slice(0, 4).map((slice) => `slice impact: ${slice}`),
+        ...dirtyAnalysis.dirtyGraph.dirty_asset_paths.slice(0, 4).map((assetPath) => `dirty asset: ${assetPath}`),
+      ],
+      drift: dirtyAnalysis.dirtyGraph.warnings.length > 0
+        ? dirtyAnalysis.dirtyGraph.warnings.slice(0, 5)
+        : [`impact graph freshness depends on .spec/deltas/${delta.change_id}/impact-graph.json`],
+      impact: [
+        ...delta.references.contracts.slice(0, 8).map((contract) => `contract: ${contract}`),
+        ...delta.references.tests.slice(0, 8).map((test) => `test: ${test}`),
+      ],
+      nextSteps: [
+        `review .spec/deltas/${delta.change_id}/verify-focus.yaml`,
+        "run npm run jispec-cli -- verify",
+      ],
+      maxLines: 150,
+    }),
+    "",
     "## Affected References",
     "",
     ...renderReferenceList("Requirements", delta.references.requirement_ids),
@@ -411,6 +453,31 @@ function renderChangeAiImplementHandoff(
     `- Type: \`${delta.change_type}\``,
     `- State: \`${delta.state}\``,
     "- Active baseline remains unchanged until this delta is adopted.",
+    "",
+    ...splitDecisionCompanionSections({
+      subject: `implementation handoff for ${delta.change_id}`,
+      truthSources: [
+        `.spec/deltas/${delta.change_id}/delta.yaml`,
+        `.spec/deltas/${delta.change_id}/dirty-graph.json`,
+        `.spec/deltas/${delta.change_id}/verify-focus.yaml`,
+      ],
+      strongestEvidence: [
+        `dirty nodes: ${dirty.dirty_nodes.length}`,
+        `required updates: ${dirty.required_updates.length}`,
+        `contract graph: ${dirtyAnalysis.graphAvailable ? "available" : "not_available_yet"}`,
+      ],
+      inferredEvidence: dirty.dirty_asset_paths.slice(0, 6).map((assetPath) => `file needing attention: ${assetPath}`),
+      drift: dirty.warnings.length > 0 ? dirty.warnings.slice(0, 5) : ["no conflict detected"],
+      impact: [
+        ...delta.verification_focus.contracts.slice(0, 8).map((contract) => `contract: ${contract}`),
+        ...delta.verification_focus.tests.slice(0, 8).map((test) => `test: ${test}`),
+      ],
+      nextSteps: [
+        "update, adopt, defer, or waive every pending dirty required update",
+        "run jispec-cli verify --root . --policy .spec/policy.yaml",
+      ],
+      maxLines: 150,
+    }),
     "",
     "## Dirty Subgraph",
     "",

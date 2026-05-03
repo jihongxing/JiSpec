@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
+import * as yaml from "js-yaml";
 import { loadBootstrapTakeoverReport } from "../bootstrap/takeover";
 import { runLegacyRepositoryValidation } from "./legacy-validator-adapter";
 import {
@@ -27,15 +28,22 @@ import { buildCanonicalFacts, stableSortCanonicalFacts, type CanonicalFactsSnaps
 import { createFactsContract } from "../facts/facts-contract";
 import { loadVerifyPolicy, policyFileExists, resolvePolicyPath } from "../policy/policy-loader";
 import { evaluateVerifyPolicy } from "../policy/policy-engine";
+import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
 import { isPolicySchemaError, validatePolicyAgainstFactsContract } from "../policy/policy-schema";
 import { classifyGitDiff } from "../change/git-diff-classifier";
 import { computeLaneDecision } from "../change/lane-decision";
+import { readChangeSession } from "../change/change-session";
+import { agentDisciplineCollector } from "./agent-discipline-collector";
 import { collectBootstrapTakeoverIssues } from "./bootstrap-takeover-collector";
 import { collectContractAssetIssues, isContractScopedPath } from "./contract-asset-collector";
 import { collectGreenfieldRatchetIssues } from "./greenfield-ratchet-collector";
 import { collectGreenfieldSpecDebtIssues } from "./greenfield-spec-debt-collector";
 import { collectGreenfieldReviewPackIssues } from "./greenfield-review-pack-collector";
 import { collectGreenfieldDirtyIssues } from "./greenfield-dirty-collector";
+import {
+  importExternalGraphArtifact,
+  type ExternalGraphImportResult,
+} from "../integrations/external-graph-import";
 
 export interface VerifySupplementalCollector {
   source: string;
@@ -46,6 +54,7 @@ export interface VerifyRunOptions {
   root: string;
   strict?: boolean;
   supplementalCollectors?: VerifySupplementalCollector[];
+  ignoreAgentDiscipline?: boolean;
   generatedAt?: string;
   useBaseline?: boolean;
   writeBaseline?: boolean;
@@ -57,6 +66,7 @@ export interface VerifyRunOptions {
 }
 
 const DEFAULT_SUPPLEMENTAL_COLLECTORS: VerifySupplementalCollector[] = [
+  agentDisciplineCollector,
   {
     source: "contract-assets",
     collect(root) {
@@ -94,6 +104,7 @@ const DEFAULT_SUPPLEMENTAL_COLLECTORS: VerifySupplementalCollector[] = [
     },
   },
 ];
+const DEFAULT_EXTERNAL_GRAPH_PATH = ".spec/integrations/external-graph.json";
 
 export async function runVerify(options: VerifyRunOptions): Promise<VerifyRunResult> {
   const root = path.resolve(options.root);
@@ -137,14 +148,22 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   const sources: string[] = ["legacy-validator"];
   const legacyIssues = reconcileLegacyIssuesWithTakeover(await collectLegacyIssues(root), root);
   const supplementalResult = await collectSupplementalIssues(root, options.strict === true, options);
+  const externalGraphImport = importExternalGraphArtifact({
+    root,
+    mode: "import-only",
+    sourcePath: DEFAULT_EXTERNAL_GRAPH_PATH,
+  });
 
   for (const source of supplementalResult.sources) {
     sources.push(source);
   }
+  if (externalGraphImport.status !== "not_available_yet") {
+    sources.push("external-graph-import");
+  }
 
   let result = createVerifyRunResult(
     root,
-    mergeVerifyIssues(legacyIssues, supplementalResult.issues),
+    mergeVerifyIssues(legacyIssues, supplementalResult.issues, collectExternalGraphImportIssues(externalGraphImport)),
     {
       sources,
       generatedAt: options.generatedAt,
@@ -153,6 +172,7 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   result.metadata = {
     ...result.metadata,
     factsContractVersion: factsContract.version,
+    ...buildExternalGraphImportMetadata(externalGraphImport),
   };
 
   // Write baseline if requested
@@ -161,7 +181,7 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   }
 
   // Build facts and apply policy if requested
-  const rawFacts = await buildRawFactsSnapshot(result, options);
+  const rawFacts = await buildRawFactsSnapshot(result, options, externalGraphImport);
   const canonicalFacts = buildCanonicalFacts(rawFacts);
 
   // Write facts if requested
@@ -174,8 +194,122 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
 
   // Apply post-processing in order: waivers -> baseline -> observe
   result = await applyPostProcessing(result, options);
+  result.metadata = {
+    ...result.metadata,
+    replay: buildVerifyReplay(result, options),
+  };
+  result.metadata = {
+    ...result.metadata,
+    ...buildImpactGraphMetadata(root),
+  };
 
   return result;
+}
+
+function buildImpactGraphMetadata(root: string): Record<string, unknown> {
+  const activeSession = readChangeSession(root);
+  const impactSummary = activeSession?.impactSummary;
+  if (impactSummary && !Array.isArray(impactSummary)) {
+    return {
+      impactGraphFreshness: impactSummary.freshness.status,
+      impactGraphPath: impactSummary.artifacts.impactGraphPath,
+      impactAdvisoryOnly: impactSummary.advisoryOnly,
+    };
+  }
+
+  return {
+    impactGraphFreshness: "not_available_yet",
+    impactAdvisoryOnly: true,
+  };
+}
+
+function collectExternalGraphImportIssues(result: ExternalGraphImportResult): VerifyIssue[] {
+  return result.warnings.map((warning) => ({
+    kind: "runtime_error",
+    severity: "advisory",
+    code: "INVALID_EXTERNAL_GRAPH_ARTIFACT",
+    path: result.sourcePath,
+    message: `External graph import skipped: ${warning.message}`,
+    details: {
+      kind: warning.kind,
+      blocking: false,
+      verifyInterruption: result.verifyInterruption,
+      advisoryOnly: true,
+    },
+  }));
+}
+
+function buildExternalGraphImportMetadata(result: ExternalGraphImportResult): Record<string, unknown> {
+  return {
+    externalGraphImportStatus: result.status,
+    externalGraphImportPath: result.sourcePath,
+    externalGraphEvidenceCount: result.evidence.length,
+    externalGraphWarningCount: result.warnings.length,
+    externalGraphAdvisoryOnly: true,
+    externalGraphImportOnly: true,
+    externalGraphExecution: result.execution,
+  };
+}
+
+function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): ReplayMetadata {
+  const inputArtifacts = [
+    ".spec/handoffs/bootstrap-takeover.json",
+    ".spec/contracts/domain.yaml",
+    ".spec/contracts/api_spec.json",
+    ".spec/contracts/behaviors.feature",
+    ".spec/policy.yaml",
+    DEFAULT_EXTERNAL_GRAPH_PATH,
+    options.policyPath,
+    options.factsOutPath,
+  ].filter((candidate): candidate is string => typeof candidate === "string");
+
+  const existingInputs = inputArtifacts.filter((candidate) => {
+    if (candidate === options.factsOutPath) {
+      return true;
+    }
+    return fs.existsSync(path.isAbsolute(candidate) ? candidate : path.join(options.root, candidate));
+  });
+
+  const commandParts = ["npm run jispec-cli -- verify"];
+  if (options.fast) {
+    commandParts.push("--fast");
+  }
+  if (options.strict) {
+    commandParts.push("--strict");
+  }
+  if (options.useBaseline) {
+    commandParts.push("--baseline");
+  }
+  if (options.writeBaseline) {
+    commandParts.push("--write-baseline");
+  }
+  if (options.observe) {
+    commandParts.push("--observe");
+  }
+  if (options.policyPath) {
+    commandParts.push(`--policy ${quoteShellValue(options.policyPath)}`);
+  }
+  if (options.factsOutPath) {
+    commandParts.push(`--facts-out ${quoteShellValue(options.factsOutPath)}`);
+  }
+
+  return {
+    version: 1,
+    replayable: true,
+    source: "verify",
+    sourceArtifact: fs.existsSync(path.join(options.root, ".spec", "handoffs", "bootstrap-takeover.json"))
+      ? ".spec/handoffs/bootstrap-takeover.json"
+      : ".spec/contracts",
+    inputArtifacts: normalizeReplayPaths(options.root, existingInputs),
+    commands: {
+      rerun: commandParts.join(" "),
+      inspectSummary: "type .spec\\handoffs\\verify-summary.md",
+    },
+    previousOutcome: result.verdict,
+    nextHumanAction: result.exitCode === 0
+      ? "Review verify summary and continue with merge or advisory follow-up."
+      : "Fix blocking verify issues or record an explicit waiver/spec-debt decision, then rerun verify.",
+  };
 }
 
 export function renderVerifyText(result: VerifyRunResult): string {
@@ -255,7 +389,7 @@ async function collectSupplementalIssues(
   const collectors = [
     ...DEFAULT_SUPPLEMENTAL_COLLECTORS,
     ...(options.supplementalCollectors ?? []),
-  ];
+  ].filter((collector) => !(options.ignoreAgentDiscipline === true && collector.source === "agent-discipline"));
 
   const issues: VerifyIssue[] = [];
   const sources: string[] = [];
@@ -322,6 +456,7 @@ function normalizeRuntimeError(error: unknown, source: string): VerifyIssue {
 async function buildRawFactsSnapshot(
   result: VerifyRunResult,
   options: VerifyRunOptions,
+  externalGraphImport?: ExternalGraphImportResult,
 ): Promise<RawFactsSnapshot> {
   const snapshot = createRawFactsSnapshot(options.root);
 
@@ -343,6 +478,9 @@ async function buildRawFactsSnapshot(
   addRawFact(snapshot, "greenfield.review_deferred_or_waived_count", result.issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_DEFERRED_OR_WAIVED").length, "greenfield-review-pack");
   addRawFact(snapshot, "greenfield.dirty_required_update_count", result.issues.filter((issue) => issue.code === "GREENFIELD_DIRTY_CHAIN_UNRECONCILED").length, "greenfield-dirty");
   addRawFact(snapshot, "greenfield.dirty_graph_warning_count", result.issues.filter((issue) => issue.code === "GREENFIELD_DIRTY_GRAPH_WARNING").length, "greenfield-dirty");
+  if (externalGraphImport && externalGraphImport.evidence.length > 0) {
+    addRawFact(snapshot, "externalGraph.normalizedEvidence", externalGraphImport.evidence, "external-graph-import");
+  }
 
   // Add contract presence facts
   const contractsDir = path.join(options.root, ".spec", "contracts");
@@ -351,11 +489,35 @@ async function buildRawFactsSnapshot(
   addRawFact(snapshot, "contracts.behavior.present", fs.existsSync(path.join(contractsDir, "behaviors.feature")), "verify-runner");
 
   const takeoverReport = loadBootstrapTakeoverReport(options.root);
+  const behaviorDeferred = Boolean(
+    takeoverReport?.status === "committed" &&
+      takeoverReport.decisions.some(
+        (decision) =>
+          decision.artifactKind === "feature" &&
+          decision.finalState === "spec_debt" &&
+          typeof decision.targetPath === "string" &&
+          fs.existsSync(path.join(options.root, decision.targetPath)),
+      ),
+  );
+  addRawFact(snapshot, "contracts.behavior.deferred", behaviorDeferred, "verify-runner");
+  addRawFact(snapshot, "contracts.adopted_count", takeoverReport?.adoptedArtifactPaths.length ?? 0, "verify-runner");
+  addRawFact(snapshot, "contracts.deferred_count", takeoverReport?.specDebtPaths.length ?? 0, "verify-runner");
+  addRawFact(snapshot, "contracts.missing_count", countContractMissingIssues(result.issues), "verify-runner");
+  addRawFact(snapshot, "contracts.drifted_count", countContractDriftIssues(result.issues), "verify-runner");
   addRawFact(snapshot, "bootstrap.takeover.present", Boolean(takeoverReport && takeoverReport.status === "committed"), "verify-runner");
   addRawFact(snapshot, "bootstrap.adopted_contract_count", takeoverReport?.adoptedArtifactPaths.length ?? 0, "verify-runner");
   addRawFact(snapshot, "bootstrap.spec_debt_count", takeoverReport?.specDebtPaths.length ?? 0, "verify-runner");
   addRawFact(snapshot, "bootstrap.rejected_artifact_kinds", takeoverReport?.rejectedArtifactKinds ?? [], "verify-runner");
   addRawFact(snapshot, "bootstrap.historical_debt_issue_count", result.issues.filter((issue) => isHistoricalDebtIssue(issue)).length, "verify-runner");
+
+  const releaseFacts = collectReleaseBaselineFacts(options.root);
+  addRawFact(snapshot, "release.baseline.present", releaseFacts.baselinePresent, "verify-runner");
+  addRawFact(snapshot, "release.contract_graph.present", releaseFacts.contractGraphPresent, "verify-runner");
+  addRawFact(snapshot, "release.static_collector.present", releaseFacts.staticCollectorPresent, "verify-runner");
+  addRawFact(snapshot, "release.policy.present", releaseFacts.policyPresent, "verify-runner");
+  addRawFact(snapshot, "release.compare.present", releaseFacts.compareCount > 0, "verify-runner");
+  addRawFact(snapshot, "release.compare.count", releaseFacts.compareCount, "verify-runner");
+  addRawFact(snapshot, "release.compare.changed_count", releaseFacts.compareChangedCount, "verify-runner");
 
   return stableSortRawFacts(snapshot);
 }
@@ -587,12 +749,109 @@ function normalizeRepoPath(repoPath: string | undefined): string | undefined {
   return repoPath.replace(/\\/g, "/");
 }
 
+function quoteShellValue(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
 function isContractScopedIssue(issue: VerifyIssue): boolean {
   return Boolean(issue.path && isContractScopedPath(issue.path.replace(/\\/g, "/")));
 }
 
 function isHistoricalDebtIssue(issue: VerifyIssue): boolean {
   return issue.code.startsWith("HISTORICAL_");
+}
+
+function countContractMissingIssues(issues: VerifyIssue[]): number {
+  return issues.filter((issue) => isMissingContractIssue(issue)).length;
+}
+
+function countContractDriftIssues(issues: VerifyIssue[]): number {
+  return issues.filter((issue) => isDriftedContractIssue(issue)).length;
+}
+
+function isMissingContractIssue(issue: VerifyIssue): boolean {
+  return new Set([
+    "BOOTSTRAP_MANIFEST_MISSING",
+    "BOOTSTRAP_CONTRACT_MISSING",
+    "BOOTSTRAP_SPEC_DEBT_RECORD_MISSING",
+    "DOMAIN_CONTRACT_INVALID_YAML",
+    "DOMAIN_CONTRACT_INVALID_SHAPE",
+    "DOMAIN_CONTRACT_METADATA_MISSING",
+    "DOMAIN_CONTRACT_SECTION_MISSING",
+    "API_CONTRACT_INVALID_JSON",
+    "API_CONTRACT_SECTION_MISSING",
+    "API_CONTRACT_ENDPOINTS_MISSING",
+    "FEATURE_CONTRACT_SCENARIOS_MISSING",
+  ]).has(issue.code);
+}
+
+function isDriftedContractIssue(issue: VerifyIssue): boolean {
+  if (issue.path && issue.path.replace(/\\/g, "/").startsWith(".spec/contracts/")) {
+    return !isMissingContractIssue(issue);
+  }
+
+  return issue.code.startsWith("GREENFIELD_") && issue.code.includes("DRIFT");
+}
+
+function collectReleaseBaselineFacts(root: string): {
+  baselinePresent: boolean;
+  contractGraphPresent: boolean;
+  staticCollectorPresent: boolean;
+  policyPresent: boolean;
+  compareCount: number;
+  compareChangedCount: number;
+} {
+  const baselinePath = path.join(root, ".spec", "baselines", "current.yaml");
+  if (!fs.existsSync(baselinePath)) {
+    return {
+      baselinePresent: false,
+      contractGraphPresent: false,
+      staticCollectorPresent: false,
+      policyPresent: false,
+      compareCount: 0,
+      compareChangedCount: 0,
+    };
+  }
+
+  const parsed = yaml.load(fs.readFileSync(baselinePath, "utf-8"));
+  const baseline = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  const compareReports = listReleaseCompareReports(root);
+
+  return {
+    baselinePresent: true,
+    contractGraphPresent: isRecord(baseline.contract_graph),
+    staticCollectorPresent: isRecord(baseline.static_collector_manifest),
+    policyPresent: isRecord(baseline.policy_snapshot),
+    compareCount: compareReports.length,
+    compareChangedCount: compareReports.filter((report) => report.overallStatus === "changed").length,
+  };
+}
+
+function listReleaseCompareReports(root: string): Array<{ overallStatus: string }> {
+  const compareRoot = path.join(root, ".spec", "releases", "compare");
+  if (!fs.existsSync(compareRoot)) {
+    return [];
+  }
+
+  return fs.readdirSync(compareRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(compareRoot, entry.name, "compare-report.json"))
+    .filter((reportPath) => fs.existsSync(reportPath))
+    .map((reportPath) => {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(reportPath, "utf-8")) as Record<string, unknown>;
+        const driftSummary = parsed.driftSummary as Record<string, unknown> | undefined;
+        return {
+          overallStatus: typeof driftSummary?.overallStatus === "string" ? driftSummary.overallStatus : "not_tracked",
+        };
+      } catch {
+        return { overallStatus: "not_tracked" };
+      }
+    });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function appendVerifyIssues(

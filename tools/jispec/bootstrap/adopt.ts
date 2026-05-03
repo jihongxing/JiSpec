@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
+import * as yaml from "js-yaml";
 import { appendAuditEvent, inferAuditActor } from "../audit/event-ledger";
 import {
   getContractRelativePath,
@@ -27,6 +28,14 @@ import {
   getBootstrapTakeoverReportRelativePath,
   type BootstrapBaselineHandoff,
 } from "./takeover";
+import type { ReplayMetadata } from "../replay/replay-metadata";
+import type {
+  ContractGraph,
+  ContractGraphEdge,
+  ContractGraphEdgeRelation,
+  ContractGraphNode,
+  ContractGraphNodeKind,
+} from "../greenfield/contract-graph";
 
 export type AdoptDecisionKind = "accept" | "reject" | "skip_as_spec_debt" | "edit";
 
@@ -65,7 +74,7 @@ export interface BootstrapAdoptResult {
 }
 
 interface CommitOperation {
-  label: "contracts" | "spec-debt" | "takeover-report" | "takeover-brief" | "adopt-summary";
+  label: "contracts" | "spec-debt" | "takeover-report" | "takeover-brief" | "adopt-summary" | "current-baseline" | "contract-graph";
   stagedPath: string;
   finalPath: string;
 }
@@ -81,6 +90,7 @@ interface PreparedShadowBatch {
   adoptSummaryPath?: string;
   takeoverBriefSummary?: BootstrapTakeoverBriefSummary;
   baselineHandoff?: BootstrapBaselineHandoff;
+  takeoverReplay?: ReplayMetadata;
 }
 
 interface InteractiveQuestionSession {
@@ -117,7 +127,10 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
       preparedBatch.adoptedArtifactPaths.length > 0 || preparedBatch.specDebtFiles.length > 0 ? "committed" : "abandoned";
 
     if (status === "committed") {
-      stageBootstrapTakeoverReport(root, manifest, session.artifacts, decisions, preparedBatch, status);
+      stageBootstrapTakeoverReport(root, manifest, session.artifacts, decisions, preparedBatch, status, {
+        actor: options.actor ?? inferAuditActor(),
+        reason: options.reason,
+      });
     }
 
     const writtenFiles =
@@ -134,6 +147,7 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
       takeoverReportPath: preparedBatch.takeoverReportPath,
       takeoverBriefPath: preparedBatch.takeoverBriefPath,
       adoptSummaryPath: preparedBatch.adoptSummaryPath,
+      replay: preparedBatch.takeoverReplay,
       baselineHandoff: preparedBatch.baselineHandoff,
       decisionLog: decisions.map((decision) => ({
         artifactKind: decision.artifactKind,
@@ -541,6 +555,7 @@ function stageBootstrapTakeoverReport(
   decisions: AdoptDecision[],
   batch: PreparedShadowBatch,
   status: DraftSessionManifest["status"],
+  replayContext: { actor?: string; reason?: string },
 ): void {
   const report = buildBootstrapTakeoverReport({
     root,
@@ -553,6 +568,8 @@ function stageBootstrapTakeoverReport(
     rejectedArtifactKinds: decisions
       .filter((decision) => decision.kind === "reject")
       .map((decision) => decision.artifactKind),
+    actor: replayContext.actor,
+    reason: replayContext.reason,
   });
   const stagedPath = path.join(batch.shadowRoot, "handoffs", "bootstrap-takeover.json");
   fs.mkdirSync(path.dirname(stagedPath), { recursive: true });
@@ -565,6 +582,8 @@ function stageBootstrapTakeoverReport(
   batch.stagedFiles.push(normalizeEvidencePath(stagedPath));
   batch.takeoverReportPath = getBootstrapTakeoverReportRelativePath();
   batch.baselineHandoff = report.baselineHandoff;
+  batch.takeoverReplay = report.replay;
+  stageBootstrapMainlineBaseline(root, manifest, report, batch);
 
   const adoptSummary = buildBootstrapAdoptSummary(report);
   const stagedAdoptSummaryPath = path.join(batch.shadowRoot, "handoffs", path.basename(adoptSummary.relativePath));
@@ -595,6 +614,150 @@ function stageBootstrapTakeoverReport(
   batch.stagedFiles.push(normalizeEvidencePath(stagedBriefPath));
   batch.takeoverBriefPath = brief.relativePath;
   batch.takeoverBriefSummary = brief.summary;
+}
+
+function stageBootstrapMainlineBaseline(
+  root: string,
+  manifest: DraftSessionManifest,
+  report: ReturnType<typeof buildBootstrapTakeoverReport>,
+  batch: PreparedShadowBatch,
+): void {
+  const baselinePath = path.join(batch.shadowRoot, "baselines", "current.yaml");
+  fs.mkdirSync(path.dirname(baselinePath), { recursive: true });
+  fs.writeFileSync(
+    baselinePath,
+    yaml.dump(buildLegacyCurrentBaseline(root, manifest, report), { lineWidth: 100, noRefs: true, sortKeys: false }),
+    "utf-8",
+  );
+  batch.operations.push({
+    label: "current-baseline",
+    stagedPath: baselinePath,
+    finalPath: path.join(root, ".spec", "baselines", "current.yaml"),
+  });
+  batch.stagedFiles.push(normalizeEvidencePath(baselinePath));
+
+  const graphPath = path.join(batch.shadowRoot, "evidence", "contract-graph.json");
+  fs.mkdirSync(path.dirname(graphPath), { recursive: true });
+  fs.writeFileSync(graphPath, `${JSON.stringify(buildLegacyContractGraph(report), null, 2)}\n`, "utf-8");
+  batch.operations.push({
+    label: "contract-graph",
+    stagedPath: graphPath,
+    finalPath: path.join(root, ".spec", "evidence", "contract-graph.json"),
+  });
+  batch.stagedFiles.push(normalizeEvidencePath(graphPath));
+}
+
+function buildLegacyCurrentBaseline(
+  root: string,
+  manifest: DraftSessionManifest,
+  report: ReturnType<typeof buildBootstrapTakeoverReport>,
+): Record<string, unknown> {
+  const project = readProjectIdentity(root);
+  const contracts = [...report.adoptedArtifactPaths].sort((left, right) => left.localeCompare(right));
+  return {
+    baseline_id: `${manifest.sessionId}-legacy-current`,
+    project_id: project.id,
+    project_name: project.name,
+    entry_model: "legacy_takeover",
+    status: "adopted",
+    source_takeover: {
+      path: ".spec/handoffs/bootstrap-takeover.json",
+      session_id: manifest.sessionId,
+      evidence_graph_path: manifest.sourceEvidenceGraphPath,
+      generation_mode: manifest.generationMode,
+    },
+    requirement_ids: [],
+    contexts: contracts.filter((entry) => entry.endsWith("domain.yaml")),
+    contracts,
+    scenarios: contracts.filter((entry) => entry.endsWith("behaviors.feature")),
+    slices: [],
+    bootstrap_takeover: {
+      adopted_contract_paths: contracts,
+      deferred_spec_debt_paths: report.specDebtPaths,
+      rejected_artifact_kinds: report.rejectedArtifactKinds,
+    },
+    change_mainline_handoff: {
+      path: ".spec/handoffs/bootstrap-takeover.json",
+      summary_path: ".spec/handoffs/adopt-summary.md",
+      status: "ready",
+      change_summary: "Continue from adopted legacy takeover baseline.",
+      next_commands: [
+        "npm run jispec-cli -- change <summary> --mode execute",
+        "npm run jispec-cli -- verify",
+        "npm run ci:verify",
+      ],
+    },
+    verify_policy: {
+      path: ".spec/policy.yaml",
+      status: "run policy migrate if missing",
+    },
+    ci_gate: {
+      provider: "local",
+      local_command: "npm run ci:verify",
+    },
+    assets: stableUnique([
+      "jiproject/project.yaml",
+      ".spec/baselines/current.yaml",
+      ".spec/evidence/contract-graph.json",
+      ".spec/handoffs/bootstrap-takeover.json",
+      ".spec/handoffs/takeover-brief.md",
+      ".spec/handoffs/adopt-summary.md",
+      ...contracts,
+      ...report.specDebtPaths,
+    ]),
+  };
+}
+
+function buildLegacyContractGraph(report: ReturnType<typeof buildBootstrapTakeoverReport>): ContractGraph {
+  const baselineNode: ContractGraphNode = {
+    id: "@baseline:legacy-takeover",
+    kind: "baseline",
+    label: "Legacy takeover baseline",
+    path: ".spec/baselines/current.yaml",
+    source_id: report.sessionId,
+  };
+  const contractNodes: ContractGraphNode[] = report.adoptedArtifactPaths.map((contractPath) => ({
+    id: contractNodeId(contractPath),
+    kind: contractNodeKind(contractPath),
+    label: contractPath,
+    path: contractPath,
+    source_id: contractPath,
+  }));
+  const debtNodes: ContractGraphNode[] = report.specDebtPaths.map((debtPath) => ({
+    id: specDebtNodeId(debtPath),
+    kind: "spec_debt",
+    label: debtPath,
+    path: debtPath,
+    source_id: debtPath,
+  }));
+  const edges: ContractGraphEdge[] = [
+    ...contractNodes.map((node) => ({
+      from: baselineNode.id,
+      to: node.id,
+      relation: "defines" as const,
+      source: "review_record" as const,
+      reason: "Legacy takeover adopted this contract into the current baseline.",
+    })),
+    ...debtNodes.map((node) => ({
+      from: baselineNode.id,
+      to: node.id,
+      relation: "deferred_by" as const,
+      source: "spec_debt" as const,
+      reason: "Legacy takeover deferred this artifact as spec debt.",
+    })),
+  ];
+  const nodes = stableGraphNodes([baselineNode, ...contractNodes, ...debtNodes]);
+  const stableEdges = stableGraphEdges(edges);
+
+  return {
+    schema_version: 1,
+    graph_kind: "deterministic-contract-graph",
+    generated_at: report.updatedAt,
+    nodes,
+    edges: stableEdges,
+    summary: summarizeLegacyContractGraph(nodes, stableEdges),
+    warnings: report.rejectedArtifactKinds.map((kind) => `Rejected bootstrap artifact was not included in current baseline: ${kind}.`),
+  };
 }
 
 function commitShadowBatch(batch: PreparedShadowBatch, testFailAfterOperation?: number): string[] {
@@ -677,4 +840,131 @@ function listFilesRecursive(targetPath: string): string[] {
   }
 
   return files.sort((left, right) => left.localeCompare(right));
+}
+
+function readProjectIdentity(root: string): { id: string; name: string } {
+  const projectPath = path.join(root, "jiproject", "project.yaml");
+  if (fs.existsSync(projectPath)) {
+    const parsed = yaml.load(fs.readFileSync(projectPath, "utf-8"));
+    if (isRecord(parsed)) {
+      const id = stringValue(parsed.id);
+      const name = stringValue(parsed.name);
+      if (id || name) {
+        return {
+          id: id ?? slugify(name ?? "legacy-takeover"),
+          name: name ?? id ?? "Legacy Takeover",
+        };
+      }
+    }
+  }
+
+  const packagePath = path.join(root, "package.json");
+  if (fs.existsSync(packagePath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(packagePath, "utf-8"));
+      const name = isRecord(parsed) ? stringValue(parsed.name) : undefined;
+      if (name) {
+        return { id: slugify(name), name };
+      }
+    } catch {
+      // Fall through to the default identity.
+    }
+  }
+
+  return { id: "legacy-takeover", name: "Legacy Takeover" };
+}
+
+function contractNodeId(contractPath: string): string {
+  return `@contract:${contractPath}`;
+}
+
+function specDebtNodeId(debtPath: string): string {
+  return `@spec-debt:${debtPath}`;
+}
+
+function contractNodeKind(contractPath: string): ContractGraphNodeKind {
+  if (contractPath.endsWith("domain.yaml")) {
+    return "bounded_context";
+  }
+  if (contractPath.endsWith("behaviors.feature")) {
+    return "bdd_scenario";
+  }
+  return "api_contract";
+}
+
+function summarizeLegacyContractGraph(nodes: ContractGraphNode[], edges: ContractGraphEdge[]): ContractGraph["summary"] {
+  const nodeCounts = emptyNodeCounts();
+  const edgeCounts = emptyEdgeCounts();
+  for (const node of nodes) {
+    nodeCounts[node.kind]++;
+  }
+  for (const edge of edges) {
+    edgeCounts[edge.relation]++;
+  }
+  return {
+    node_counts: nodeCounts,
+    edge_counts: edgeCounts,
+  };
+}
+
+function emptyNodeCounts(): Record<ContractGraphNodeKind, number> {
+  return {
+    requirement: 0,
+    bounded_context: 0,
+    domain_entity: 0,
+    domain_event: 0,
+    invariant: 0,
+    api_contract: 0,
+    bdd_scenario: 0,
+    slice: 0,
+    test: 0,
+    code_fact: 0,
+    migration: 0,
+    review_decision: 0,
+    spec_debt: 0,
+    baseline: 0,
+    delta: 0,
+  };
+}
+
+function emptyEdgeCounts(): Record<ContractGraphEdgeRelation, number> {
+  return {
+    defines: 0,
+    owns: 0,
+    depends_on: 0,
+    verifies: 0,
+    covered_by: 0,
+    implements: 0,
+    consumes: 0,
+    emits: 0,
+    blocked_by: 0,
+    supersedes: 0,
+    deferred_by: 0,
+    waived_by: 0,
+    derived_from: 0,
+  };
+}
+
+function stableGraphNodes(nodes: ContractGraphNode[]): ContractGraphNode[] {
+  return [...nodes].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function stableGraphEdges(edges: ContractGraphEdge[]): ContractGraphEdge[] {
+  return [...edges].sort((left, right) => `${left.from}|${left.relation}|${left.to}`.localeCompare(`${right.from}|${right.relation}|${right.to}`));
+}
+
+function stableUnique(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) => left.localeCompare(right));
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function slugify(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "legacy-takeover";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -10,6 +10,7 @@ The code-level contract lives in `tools/jispec/runtime/deferred-surface-contract
 
 - `doctor v1` must not include distributed, collaboration, or presence checks.
 - `doctor runtime` may continue checking these surfaces as extended runtime diagnostics.
+- `doctor pilot` must not treat these surfaces as pilot readiness gates; pilot readiness is a separate contract.
 - Regression suites for these surfaces must stay in `runtime-extended`.
 - These surfaces must not override `verify`, `ci:verify`, policy evaluation, waiver lifecycle, release compare, or implementation mediation.
 - These surfaces must not become default CLI gates or release blockers until a future task explicitly promotes them.

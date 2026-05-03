@@ -3,6 +3,11 @@ import type { GreenfieldBehaviorDraft, GreenfieldScenarioDraft } from "./behavio
 import type { GreenfieldDomainDraft } from "./domain-draft";
 import type { GreenfieldSliceDraft, GreenfieldSliceQueueDraft } from "./slice-queue";
 import type { GreenfieldInputContract } from "./source-documents";
+import {
+  inferEvidenceProvenanceDescriptor,
+  type EvidenceOwnerReviewPosture,
+  type EvidenceProvenanceLabel,
+} from "../provenance/evidence-provenance";
 
 export type GreenfieldEvidenceNodeType =
   | "source_document"
@@ -42,6 +47,11 @@ export interface GreenfieldEvidenceNode {
   requirementIds?: string[];
   sourceConfidence?: "requirements" | "technical_solution" | "inferred";
   implementationKind?: GreenfieldImplementationFactKind;
+  provenanceLabel?: EvidenceProvenanceLabel;
+  evidenceKind?: string;
+  sourcePath?: string;
+  confidence?: number | null;
+  ownerReviewPosture?: EvidenceOwnerReviewPosture;
   data?: Record<string, unknown>;
 }
 
@@ -63,6 +73,11 @@ export interface GreenfieldImplementationFact {
   scenarioIds?: string[];
   testIds?: string[];
   sliceIds?: string[];
+  provenanceLabel?: EvidenceProvenanceLabel;
+  evidenceKind?: string;
+  sourcePath?: string;
+  confidence?: number | null;
+  ownerReviewPosture?: EvidenceOwnerReviewPosture;
 }
 
 export interface GreenfieldEvidenceGraph {
@@ -229,7 +244,7 @@ export function draftGreenfieldEvidenceGraph(input: GreenfieldEvidenceGraphInput
     graphKind: "greenfield-initialization",
     nodes: [],
     edges: [],
-    implementationFacts: input.implementationFacts ?? [],
+    implementationFacts: normalizeImplementationFacts(input.implementationFacts ?? []),
     summary: emptySummary(),
     warnings: [],
   };
@@ -260,7 +275,7 @@ export function absorbGreenfieldImplementationFacts(
   const facts = new Map(graph.implementationFacts.map((fact) => [fact.id, fact]));
 
   for (const fact of implementationFacts) {
-    facts.set(fact.id, fact);
+    facts.set(fact.id, withImplementationFactProvenance(fact));
     const factNodeId = implementationFactNodeId(fact.id);
     addNode(nodes, {
       id: factNodeId,
@@ -683,11 +698,57 @@ function addRequirementEdges(
 }
 
 function addNode(nodes: Map<string, GreenfieldEvidenceNode>, node: GreenfieldEvidenceNode): void {
+  const normalizedPath = node.path ? normalizeEvidencePath(node.path) : undefined;
+  const descriptor = inferEvidenceProvenanceDescriptor({
+    confidence: confidenceForGreenfieldNode(node),
+    evidenceKind: node.type,
+    sourcePath: normalizedPath ?? "",
+    ownerReviewRequired: node.sourceConfidence === "inferred" || node.type === "context",
+    ambiguous: node.sourceConfidence === "inferred" && node.type !== "context",
+  });
+
   nodes.set(node.id, {
     ...node,
-    path: node.path ? normalizeEvidencePath(node.path) : undefined,
+    path: normalizedPath,
     requirementIds: stableUnique(node.requirementIds ?? []),
+    ...descriptor,
   });
+}
+
+function normalizeImplementationFacts(facts: GreenfieldImplementationFact[]): GreenfieldImplementationFact[] {
+  return facts.map(withImplementationFactProvenance);
+}
+
+function withImplementationFactProvenance(fact: GreenfieldImplementationFact): GreenfieldImplementationFact {
+  return {
+    ...fact,
+    path: normalizeEvidencePath(fact.path),
+    ...inferEvidenceProvenanceDescriptor({
+      confidence: 0.78,
+      evidenceKind: fact.kind,
+      sourcePath: fact.path,
+      ownerReviewRequired: true,
+    }),
+  };
+}
+
+function confidenceForGreenfieldNode(node: GreenfieldEvidenceNode): number | undefined {
+  if (node.type === "context") {
+    return 0.72;
+  }
+  if (node.sourceConfidence === "requirements") {
+    return 0.96;
+  }
+  if (node.sourceConfidence === "technical_solution") {
+    return 0.82;
+  }
+  if (node.sourceConfidence === "inferred") {
+    return 0.72;
+  }
+  if (node.type === "source_document") {
+    return 0.98;
+  }
+  return 0.6;
 }
 
 function addEdge(edges: Map<string, GreenfieldEvidenceEdge>, edge: GreenfieldEvidenceEdge): void {

@@ -55,7 +55,7 @@ async function main(): Promise<void> {
       assert.equal(contract.status, "deferred");
       assert.equal(contract.allowedRegressionArea, "runtime-extended");
       assert.deepEqual(contract.allowedDoctorProfiles, ["runtime"]);
-      assert.deepEqual(contract.forbiddenDoctorProfiles, ["v1"]);
+      assert.deepEqual(contract.forbiddenDoctorProfiles, ["v1", "pilot"]);
       assert.equal(contract.doesBlockV1Readiness, false);
       assert.equal(contract.canOverrideVerify, false);
       assert.equal(contract.productizedInV1, false);

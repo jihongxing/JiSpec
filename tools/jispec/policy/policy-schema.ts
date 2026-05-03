@@ -59,6 +59,7 @@ export interface ReleasePolicy {
   drift_requires_owner_review?: boolean;
   policy_drift_severity?: "ignore" | "advisory" | "blocking";
   static_collector_drift_severity?: "ignore" | "advisory" | "blocking";
+  behavior_drift_severity?: "ignore" | "advisory" | "blocking";
   contract_graph_drift_severity?: "ignore" | "advisory" | "blocking";
 }
 
@@ -349,6 +350,7 @@ function validateReleasePolicy(release: unknown): void {
     "drift_requires_owner_review",
     "policy_drift_severity",
     "static_collector_drift_severity",
+    "behavior_drift_severity",
     "contract_graph_drift_severity",
   ]));
   const typed = release as Record<string, unknown>;
@@ -357,6 +359,7 @@ function validateReleasePolicy(release: unknown): void {
   validateOptionalBoolean(typed, "release", "drift_requires_owner_review");
   validateOptionalSeverity(typed, "release", "policy_drift_severity");
   validateOptionalSeverity(typed, "release", "static_collector_drift_severity");
+  validateOptionalSeverity(typed, "release", "behavior_drift_severity");
   validateOptionalSeverity(typed, "release", "contract_graph_drift_severity");
 }
 

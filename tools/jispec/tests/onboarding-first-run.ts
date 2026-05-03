@@ -86,6 +86,19 @@ function main(): void {
     });
   });
 
+  runCase(results, "adopted repo with policy recommends deterministic verify", () => {
+    withTempRoot("jispec-first-run-adopted-", (root) => {
+      writeText(root, "jiproject/project.yaml", "name: adopted\n");
+      writeText(root, ".spec/contracts/domain.yaml", "contexts: []\n");
+      writeText(root, ".spec/policy.yaml", "version: 1\nrules: []\n");
+      const result = runFirstRun({ root });
+      assert.equal(result.classification, "ready_to_verify");
+      assert.match(result.nextAction.command, /verify/);
+      assert.equal(result.nextAction.writesLocalArtifacts, true);
+      assert.ok(result.nextAction.writes.includes(".spec/handoffs/verify-summary.md"));
+    });
+  });
+
   runCase(results, "active change session recommends implement and CLI emits JSON", () => {
     withTempRoot("jispec-first-run-active-", (root) => {
       writeJson(root, ".jispec/change-session.json", {

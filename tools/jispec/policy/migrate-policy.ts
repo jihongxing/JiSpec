@@ -20,6 +20,8 @@ export interface PolicyMigrationAuditOptions {
   actor?: string;
   reason?: string;
   profile?: TeamPolicyProfileName;
+  owner?: string;
+  reviewers?: string[];
 }
 
 /**
@@ -88,11 +90,18 @@ function createStarterRules(): VerifyPolicy["rules"] {
       action: "warn",
       message: "Behavior contract is missing",
       when: {
-        not: {
-          fact: "contracts.behavior.present",
-          op: "==",
-          value: true,
-        },
+        all: [
+          {
+            fact: "contracts.behavior.present",
+            op: "==",
+            value: false,
+          },
+          {
+            fact: "contracts.behavior.deferred",
+            op: "==",
+            value: false,
+          },
+        ],
       },
     },
   ];
@@ -109,6 +118,10 @@ export function migrateVerifyPolicy(root: string, filePath?: string, audit?: Pol
   const changes: string[] = [];
   const basePolicy = exists ? loadPolicyForMigration(targetPath, changes) : null;
   const requestedProfile = audit?.profile ?? basePolicy?.team?.profile ?? "small_team";
+  const requestedOwner = audit?.owner;
+  const requestedReviewers = audit?.reviewers;
+  const previousOwner = basePolicy?.team?.owner;
+  const previousReviewers = basePolicy?.team?.reviewers ?? [];
 
   let nextPolicy = basePolicy ?? createStarterVerifyPolicy(requestedProfile);
 
@@ -132,11 +145,19 @@ export function migrateVerifyPolicy(root: string, filePath?: string, audit?: Pol
     },
     team: {
       profile: requestedProfile,
-      owner: nextPolicy.team?.owner ?? "unassigned",
-      reviewers: nextPolicy.team?.reviewers ?? [],
+      owner: requestedOwner ?? nextPolicy.team?.owner ?? "unassigned",
+      reviewers: requestedReviewers ?? nextPolicy.team?.reviewers ?? [],
       required_reviewers: nextPolicy.team?.required_reviewers,
     },
   }, requestedProfile, changes);
+
+  if (requestedOwner !== undefined && previousOwner !== requestedOwner) {
+    changes.push(`Set team owner to ${requestedOwner}`);
+  }
+  if (requestedReviewers !== undefined && !sameStringList(previousReviewers, requestedReviewers)) {
+    const reviewerList = requestedReviewers.length > 0 ? requestedReviewers.join(", ") : "none";
+    changes.push(`Set team reviewers to ${reviewerList}`);
+  }
 
   writeVerifyPolicy(root, nextPolicy, filePath);
   appendAuditEvent(root, {
@@ -388,6 +409,13 @@ function profileDefaults(profile: TeamPolicyProfileName): Required<Pick<VerifyPo
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sameStringList(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((entry, index) => entry === right[index]);
 }
 
 export function renderPolicyMigrationText(result: PolicyMigrationResult): string {

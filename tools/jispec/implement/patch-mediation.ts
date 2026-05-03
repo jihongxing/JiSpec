@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { appendAuditEvent } from "../audit/event-ledger";
 import type { ChangeSession } from "../change/change-session";
+import type { ImplementationDecisionPacket } from "./handoff-packet";
+import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
 
 export type PatchMediationStatus =
   | "accepted"
@@ -44,6 +46,7 @@ export interface PatchMediationArtifact {
   applyStderr?: string;
   test?: PatchMediationTestSummary;
   postVerify?: PatchMediationVerifySummary;
+  replay?: ReplayMetadata;
 }
 
 export interface PatchScopeValidation {
@@ -141,9 +144,11 @@ export function mediateExternalPatch(
     violations: scope.violations,
     applied: false,
   };
+  artifact.replay = buildPatchMediationReplay(root, session, artifact);
 
   if (!scope.valid) {
     artifact.completedAt = new Date().toISOString();
+    artifact.replay = buildPatchMediationReplay(root, session, artifact);
     const artifactPath = writePatchMediationArtifact(root, artifact);
     recordPatchIntakeAudit(root, artifact, artifactPath, session);
     return { artifact, artifactPath };
@@ -167,11 +172,48 @@ export function mediateExternalPatch(
       artifact.applyStderr.trim() || artifact.applyStdout.trim() || "git apply failed",
     ];
     artifact.completedAt = new Date().toISOString();
+    artifact.replay = buildPatchMediationReplay(root, session, artifact);
   }
 
   const artifactPath = writePatchMediationArtifact(root, artifact);
   recordPatchIntakeAudit(root, artifact, artifactPath, session);
   return { artifact, artifactPath };
+}
+
+function buildPatchMediationReplay(
+  root: string,
+  session: ChangeSession,
+  artifact: PatchMediationArtifact,
+): ReplayMetadata {
+  return {
+    version: 1,
+    replayable: true,
+    source: "patch_mediation",
+    sourceSession: session.id,
+    sourceArtifact: `.jispec/implement/${session.id}/patch-mediation.json`,
+    inputArtifacts: normalizeReplayPaths(root, [
+      artifact.externalPatchPath,
+      ...artifact.allowedPaths,
+      ...artifact.touchedPaths,
+      ...extractSessionContractRefs(session),
+    ]),
+    commands: {
+      retryWithExternalPatch: `npm run jispec-cli -- implement --from-handoff .jispec/handoff/${session.id}.json --external-patch <path>`,
+      inspectHandoff: `npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/${session.id}.json --tool codex`,
+    },
+    previousOutcome: artifact.status,
+    nextHumanAction: buildPatchNextHumanAction(artifact),
+  };
+}
+
+function buildPatchNextHumanAction(artifact: PatchMediationArtifact): string {
+  if (artifact.status === "rejected_out_of_scope") {
+    return "Fix patch scope so touched paths stay inside the active change session, or start a new change session for the broader scope.";
+  }
+  if (artifact.status === "apply_failed") {
+    return "Refresh the patch against the current workspace so git apply succeeds, then replay implementation mediation.";
+  }
+  return "Run the mediated test and verify commands, then review patch mediation before merge.";
 }
 
 export function writePatchMediationArtifact(root: string, artifact: PatchMediationArtifact): string {
@@ -181,6 +223,70 @@ export function writePatchMediationArtifact(root: string, artifact: PatchMediati
   const artifactPath = path.join(artifactDir, "patch-mediation.json");
   fs.writeFileSync(artifactPath, JSON.stringify(artifact, null, 2), "utf-8");
   return artifactPath;
+}
+
+export function recordPatchMediationCompletionAudit(
+  root: string,
+  artifact: PatchMediationArtifact,
+  artifactPath: string,
+  session: ChangeSession,
+  decisionPacket: ImplementationDecisionPacket,
+): void {
+  appendAuditEvent(root, {
+    type: "external_patch_intake",
+    reason: `External patch mediation completed as ${decisionPacket.state} for change session ${session.id}.`,
+    sourceArtifact: {
+      kind: "implementation-patch-mediation",
+      path: artifactPath,
+    },
+    affectedContracts: [
+      ...artifact.allowedPaths,
+      ...artifact.touchedPaths,
+      ...extractSessionContractRefs(session),
+    ],
+    details: {
+      sessionId: session.id,
+      status: artifact.status,
+      applied: artifact.applied,
+      externalPatchPath: artifact.externalPatchPath,
+      touchedPaths: artifact.touchedPaths,
+      allowedPaths: artifact.allowedPaths,
+      violations: artifact.violations,
+      test: artifact.test
+        ? {
+          command: artifact.test.command,
+          passed: artifact.test.passed,
+          exitCode: artifact.test.exitCode,
+        }
+        : undefined,
+      postVerify: artifact.postVerify
+        ? {
+          command: artifact.postVerify.command,
+          verdict: artifact.postVerify.verdict,
+          ok: artifact.postVerify.ok,
+          exitCode: artifact.postVerify.exitCode,
+        }
+        : undefined,
+      decision: {
+        state: decisionPacket.state,
+        stopPoint: decisionPacket.stopPoint,
+        owner: decisionPacket.nextActionDetail.owner,
+        failedCheck: decisionPacket.nextActionDetail.failedCheck,
+        nextCommand: decisionPacket.nextActionDetail.command,
+        mergeable: decisionPacket.mergeable,
+        verifyCommand: decisionPacket.verify.command ?? decisionPacket.nextActionDetail.externalToolHandoff?.verifyCommand,
+        allowedPaths: decisionPacket.scope.allowedPaths,
+      },
+      replay: artifact.replay
+        ? {
+          replayable: artifact.replay.replayable,
+          retryWithExternalPatch: artifact.replay.commands.retryWithExternalPatch,
+          inspectHandoff: artifact.replay.commands.inspectHandoff,
+          previousOutcome: artifact.replay.previousOutcome,
+        }
+        : undefined,
+    },
+  });
 }
 
 function addNormalizedPath(target: Set<string>, candidate: string): void {

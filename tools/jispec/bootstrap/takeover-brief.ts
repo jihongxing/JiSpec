@@ -14,15 +14,23 @@ import {
   type BootstrapTakeoverDecisionRecord,
   type BootstrapTakeoverReport,
 } from "./takeover";
+import {
+  HUMAN_SUMMARY_COMPANION_NOTE,
+  renderHumanDecisionSnapshot,
+  renderHumanReviewerDecisionCompanion,
+} from "../human-decision-packet";
 
 const ADOPTION_RANKED_EVIDENCE_PATH = ".spec/facts/bootstrap/adoption-ranked-evidence.json";
 
 export interface BootstrapTakeoverBriefSummary {
   boundaryCandidates: string[];
   adoptedContracts: string[];
+  topAdoptionCandidates: string[];
+  ownerReviewCandidates: string[];
   deferredSpecDebt: string[];
   strongestEvidence: string[];
   excludedFileCount: number;
+  riskSummary: string[];
   featureRecommendation?: FeatureRecommendation;
   featureConfidenceReason?: string;
   nextActions: string[];
@@ -63,16 +71,22 @@ interface DomainDraft {
 export function buildBootstrapTakeoverBrief(input: BootstrapTakeoverBriefInput): BootstrapTakeoverBrief {
   const rankedEvidence = loadAdoptionRankedEvidence(input.root);
   const boundaries = extractBoundaryCandidates(input.artifacts, input.decisions, input.report);
+  const topAdoptionCandidates = selectTopAdoptionCandidates(rankedEvidence?.evidence ?? [], 3);
   const strongestEvidence = (rankedEvidence?.evidence ?? []).slice(0, 5);
   const excludedSummary = rankedEvidence?.excludedSummary ?? emptyExclusionSummary();
   const featureConfidence = extractFeatureConfidence(input.artifacts, input.decisions);
-  const nextActions = buildNextActions(input.report);
+  const ownerReviewCandidates = selectOwnerReviewCandidates(featureConfidence, rankedEvidence?.evidence ?? []);
+  const riskSummary = buildRiskSummary(input.report, featureConfidence, excludedSummary, ownerReviewCandidates);
+  const nextActions = buildNextActions(input.report, featureConfidence, ownerReviewCandidates);
   const summary: BootstrapTakeoverBriefSummary = {
     boundaryCandidates: boundaries.map((boundary) => boundary.name),
     adoptedContracts: [...input.report.adoptedArtifactPaths],
+    topAdoptionCandidates: topAdoptionCandidates.map((entry) => entry.path),
+    ownerReviewCandidates,
     deferredSpecDebt: [...input.report.specDebtPaths],
     strongestEvidence: strongestEvidence.map((entry) => entry.path),
     excludedFileCount: excludedSummary.totalExcludedFileCount,
+    riskSummary,
     featureRecommendation: featureConfidence.recommendation,
     featureConfidenceReason: featureConfidence.confidenceReasons[0],
     nextActions,
@@ -84,9 +98,12 @@ export function buildBootstrapTakeoverBrief(input: BootstrapTakeoverBriefInput):
     content: renderTakeoverBriefMarkdown({
       report: input.report,
       boundaries,
+      topAdoptionCandidates,
       strongestEvidence,
       excludedSummary,
       featureConfidence,
+      ownerReviewCandidates,
+      riskSummary,
       nextActions,
     }),
   };
@@ -95,18 +112,13 @@ export function buildBootstrapTakeoverBrief(input: BootstrapTakeoverBriefInput):
 export function renderTakeoverBriefSummary(summary: BootstrapTakeoverBriefSummary): string[] {
   const lines: string[] = [];
   lines.push(
-    `Boundaries: ${summary.boundaryCandidates.length > 0 ? summary.boundaryCandidates.slice(0, 5).join(", ") : "none identified"}`,
+    `Top adoption: ${summary.topAdoptionCandidates.length > 0 ? summary.topAdoptionCandidates.slice(0, 3).join(", ") : "none identified"}`,
   );
   lines.push(
-    `Adopted: ${summary.adoptedContracts.length}; Spec debt: ${summary.deferredSpecDebt.length}; Excluded noise: ${summary.excludedFileCount}`,
+    `Owner review: ${summary.ownerReviewCandidates.length > 0 ? summary.ownerReviewCandidates.slice(0, 3).join(" | ") : "none identified"}`,
   );
-  if (summary.strongestEvidence.length > 0) {
-    lines.push(`Top evidence: ${summary.strongestEvidence.slice(0, 3).join(", ")}`);
-  }
-  if (summary.featureRecommendation) {
-    const reason = summary.featureConfidenceReason ? ` - ${summary.featureConfidenceReason}` : "";
-    lines.push(`Feature gate: ${summary.featureRecommendation}${reason}`);
-  }
+  lines.push(`Deferred debt: ${summary.deferredSpecDebt.length > 0 ? summary.deferredSpecDebt.slice(0, 3).join(", ") : "none"}`);
+  lines.push(`Risk: ${summary.riskSummary.length > 0 ? summary.riskSummary.join("; ") : "none"}`);
   if (summary.nextActions.length > 0) {
     lines.push(`Next: ${summary.nextActions[0]}`);
   }
@@ -116,9 +128,12 @@ export function renderTakeoverBriefSummary(summary: BootstrapTakeoverBriefSummar
 function renderTakeoverBriefMarkdown(input: {
   report: BootstrapTakeoverReport;
   boundaries: BoundaryCandidate[];
+  topAdoptionCandidates: AdoptionRankedEvidenceEntry[];
   strongestEvidence: AdoptionRankedEvidenceEntry[];
   excludedSummary: NonNullable<EvidenceExclusionSummary>;
   featureConfidence: ParsedFeatureConfidenceSummary;
+  ownerReviewCandidates: string[];
+  riskSummary: string[];
   nextActions: string[];
 }): string {
   const lines: string[] = [
@@ -134,9 +149,45 @@ function renderTakeoverBriefMarkdown(input: {
     `- Rejected artifacts: ${input.report.rejectedArtifactKinds.length > 0 ? input.report.rejectedArtifactKinds.map(inlineCode).join(", ") : "none"}`,
     `- Machine report: ${markdownLink("bootstrap-takeover.json", ".spec/handoffs/bootstrap-takeover.json")}`,
     "",
-    "## Boundary / Aggregate Candidates",
+    ...renderHumanDecisionSnapshot({
+      currentState: `${input.report.status} takeover brief with ${input.report.adoptedArtifactPaths.length} adopted contract(s) and ${input.report.specDebtPaths.length} deferred debt record(s)`,
+      risk: input.riskSummary.length > 0 ? input.riskSummary.slice(0, 2).join("; ") : "no takeover risk summary recorded",
+      evidence: [
+        `${input.topAdoptionCandidates.length} top adoption candidate(s)`,
+        `${input.strongestEvidence.length} strongest evidence item(s)`,
+        markdownLink("bootstrap-takeover.json", ".spec/handoffs/bootstrap-takeover.json"),
+      ],
+      owner: "reviewer",
+      nextCommand: "`npm run jispec-cli -- verify`",
+    }),
+    ...renderHumanReviewerDecisionCompanion({
+      subject: `bootstrap takeover ${input.report.sessionId}`,
+      truthSources: [
+        ".spec/handoffs/bootstrap-takeover.json",
+        ADOPTION_RANKED_EVIDENCE_PATH,
+      ],
+      strongestEvidence: input.strongestEvidence.length > 0
+        ? input.strongestEvidence.slice(0, 5).map((entry) => `${entry.path} (score ${Math.round(entry.score)}): ${entry.reason}`)
+        : ["No adoption-ranked evidence packet was found; inspect the evidence graph manually."],
+      inferredEvidence: input.topAdoptionCandidates.length > 0
+        ? input.topAdoptionCandidates.slice(0, 3).map((entry) => `Top adoption candidate inferred from ranked evidence: ${entry.path}`)
+        : [],
+      drift: input.riskSummary.length > 0 ? input.riskSummary.slice(0, 4) : ["no conflict detected"],
+      impact: [
+        ...input.report.adoptedArtifactPaths.slice(0, 8).map((artifactPath) => `contract: ${artifactPath}`),
+        ...input.report.specDebtPaths.slice(0, 4).map((artifactPath) => `spec debt: ${artifactPath}`),
+      ],
+      nextSteps: input.nextActions.slice(0, 5),
+      maxLines: 150,
+    }),
     "",
-    ...renderBoundaryCandidates(input.boundaries),
+    "## Top Adoption Candidates",
+    "",
+    ...renderTopAdoptionCandidates(input.topAdoptionCandidates, input.boundaries),
+    "",
+    "## Owner Review Candidates",
+    "",
+    ...renderOwnerReviewCandidates(input.ownerReviewCandidates),
     "",
     "## Adopted Contracts",
     "",
@@ -154,6 +205,10 @@ function renderTakeoverBriefMarkdown(input: {
     "",
     ...renderExcludedSummary(input.excludedSummary),
     "",
+    "## Risk Summary",
+    "",
+    ...renderRiskSummary(input.riskSummary, input.featureConfidence),
+    "",
     "## Feature Confidence Gate",
     "",
     ...renderFeatureConfidenceGate(input.featureConfidence),
@@ -162,22 +217,45 @@ function renderTakeoverBriefMarkdown(input: {
     "",
     ...input.nextActions.map((action) => `- ${action}`),
     "",
+    "## Source Of Truth",
+    "",
+    `- Machine report: ${markdownLink("bootstrap-takeover.json", ".spec/handoffs/bootstrap-takeover.json")}.`,
+    `- ${HUMAN_SUMMARY_COMPANION_NOTE}`,
+    "",
   ];
 
   return `${lines.join("\n").trimEnd()}\n`;
 }
 
-function renderBoundaryCandidates(boundaries: BoundaryCandidate[]): string[] {
-  if (boundaries.length === 0) {
-    return ["- No strong boundary candidates were identified; review the source evidence before widening adoption."];
+function renderTopAdoptionCandidates(topAdoptionCandidates: AdoptionRankedEvidenceEntry[], boundaries: BoundaryCandidate[]): string[] {
+  if (topAdoptionCandidates.length === 0) {
+    return ["- No strong adoption candidates were identified; review the source evidence before widening adoption."];
   }
 
-  return boundaries.slice(0, 5).map((boundary) => {
-    const confidence = `${Math.round(boundary.confidenceScore * 100)}%`;
-    const sources = boundary.sourceFiles.slice(0, 3).map(renderSourceReference).join(", ");
-    const provenance = boundary.provenanceNote ? ` - ${boundary.provenanceNote}` : "";
-    return `- ${inlineCode(boundary.name)} (${confidence}) from ${sources || "draft evidence"}${provenance}`;
+  const boundaryMap = new Map(boundaries.map((boundary) => [boundary.name, boundary]));
+  return topAdoptionCandidates.slice(0, 5).map((entry) => {
+    const score = `${Math.round(entry.score)}`;
+    const sources = entry.sourceFiles.slice(0, 2).map(renderSourceReference).join(", ");
+    const boundary = boundaryMap.get(entry.path);
+    const boundarySuffix = boundary ? `; boundary ${inlineCode(boundary.name)} (${Math.round(boundary.confidenceScore * 100)}%)` : "";
+    return `- ${inlineCode(entry.path)} (score ${score}) - ${entry.reason}${sources ? `; sources ${sources}` : ""}${boundarySuffix}`;
   });
+}
+
+function renderOwnerReviewCandidates(ownerReviewCandidates: string[]): string[] {
+  if (ownerReviewCandidates.length === 0) {
+    return ["- No owner-review candidates were identified in the feature confidence gate."];
+  }
+
+  return ownerReviewCandidates.slice(0, 5).map((candidate) => `- ${candidate}`);
+}
+
+function renderRiskSummary(riskSummary: string[], featureConfidence: ParsedFeatureConfidenceSummary): string[] {
+  const lines = riskSummary.slice(0, 4).map((entry) => `- ${entry}`);
+  if (featureConfidence.confidenceReasons.length > 0) {
+    lines.push(`- Why: ${featureConfidence.confidenceReasons.slice(0, 3).join("; ")}.`);
+  }
+  return lines.length > 0 ? lines : ["- No additional risk context was identified."];
 }
 
 function renderAdoptedContracts(report: BootstrapTakeoverReport): string[] {
@@ -239,12 +317,12 @@ function renderFeatureConfidenceGate(summary: ParsedFeatureConfidenceSummary): s
   const decisionGuidance =
     summary.recommendation === "accept_candidate"
       ? summary.humanReviewScenarioCount > 0 || summary.deferredScenarioCount > 0
-        ? "Feature draft can be adopted for its strong scenarios, but tagged behavior scenarios remain review warnings and must not become blocking gates until confirmed."
+        ? "Strong scenarios can be adopted, but tagged behavior scenarios remain owner-review warnings and must not become blocking gates until confirmed."
         : "Feature draft can be adopted as an initial behavior contract because the scenarios passed the confidence gate."
       : "Defer the feature draft as spec debt until an owner confirms the tagged behavior scenarios; do not use it as a blocking gate yet.";
   const lines = [
     `- Recommendation: ${inlineCode(recommendation)}`,
-    `- Scenario mix: ${summary.acceptCandidateCount} accept candidate(s), ${summary.deferredScenarioCount} deferred, ${summary.humanReviewScenarioCount} human-review.`,
+    `- Scenario mix: ${summary.acceptCandidateCount} accept candidate(s), ${summary.deferredScenarioCount} deferred, ${summary.humanReviewScenarioCount} owner-review.`,
     `- Decision guidance: ${decisionGuidance}`,
   ];
 
@@ -259,7 +337,7 @@ function renderFeatureConfidenceGate(summary: ParsedFeatureConfidenceSummary): s
   if (summary.scenarios.length > 0) {
     lines.push("- Scenario recommendations:");
     for (const scenario of summary.scenarios.slice(0, 5)) {
-      const review = scenario.humanReviewRequired ? " human review required" : " no human-review tag";
+      const review = scenario.humanReviewRequired ? " owner-review required" : " no owner-review tag";
       const confidence =
         typeof scenario.confidenceScore === "number" ? `, ${Math.round(scenario.confidenceScore * 100)}%` : "";
       const reason = scenario.confidenceReasons[0] ? ` - ${scenario.confidenceReasons[0]}` : "";
@@ -270,7 +348,11 @@ function renderFeatureConfidenceGate(summary: ParsedFeatureConfidenceSummary): s
   return lines;
 }
 
-function buildNextActions(report: BootstrapTakeoverReport): string[] {
+function buildNextActions(
+  report: BootstrapTakeoverReport,
+  featureConfidence: ParsedFeatureConfidenceSummary,
+  ownerReviewCandidates: string[],
+): string[] {
   const actions: string[] = [];
 
   if (report.specDebtPaths.length > 0) {
@@ -287,6 +369,14 @@ function buildNextActions(report: BootstrapTakeoverReport): string[] {
 
   if (report.adoptedArtifactPaths.length > 0) {
     actions.push("Run `jispec-cli verify --root .` and treat missing adopted contracts as blocking.");
+  }
+
+  if (featureConfidence.recommendation === "defer_as_spec_debt") {
+    actions.push("Confirm owner-review behavior scenarios before promoting the feature gate.");
+  }
+
+  if (ownerReviewCandidates.length > 0) {
+    actions.push(`Carry owner-review candidates into the takeover review: ${ownerReviewCandidates.slice(0, 3).join(", ")}.`);
   }
 
   actions.push(`Attach this brief and ${markdownLink("bootstrap-takeover.json", ".spec/handoffs/bootstrap-takeover.json")} to the takeover review.`);
@@ -368,6 +458,81 @@ function extractBoundaryCandidates(
       return left.name.localeCompare(right.name);
     })
     .slice(0, 5);
+}
+
+function selectTopAdoptionCandidates(
+  evidence: AdoptionRankedEvidenceEntry[],
+  limit: number,
+): AdoptionRankedEvidenceEntry[] {
+  const strongCandidates = evidence.filter((entry) => getBoundarySignal(entry) !== "weak_candidate");
+  const selected = strongCandidates.length > 0 ? strongCandidates : evidence;
+  return [...selected]
+    .sort((left, right) => {
+      const scoreDelta = right.score - left.score;
+      if (scoreDelta !== 0) {
+        return scoreDelta;
+      }
+      return left.path.localeCompare(right.path);
+    })
+    .slice(0, limit);
+}
+
+function selectOwnerReviewCandidates(
+  featureConfidence: ParsedFeatureConfidenceSummary,
+  evidence: AdoptionRankedEvidenceEntry[],
+): string[] {
+  const scenarioLines = featureConfidence.scenarios
+    .filter((scenario) => scenario.humanReviewRequired)
+    .sort((left, right) => {
+      const confidenceDelta = (left.confidenceScore ?? 0) - (right.confidenceScore ?? 0);
+      if (confidenceDelta !== 0) {
+        return confidenceDelta;
+      }
+      return left.scenarioName.localeCompare(right.scenarioName);
+    })
+    .slice(0, 3)
+    .map((scenario) => {
+      const confidence = typeof scenario.confidenceScore === "number" ? `${Math.round(scenario.confidenceScore * 100)}%` : "unknown confidence";
+      const reason = scenario.confidenceReasons[0] ? ` - ${scenario.confidenceReasons[0]}` : "";
+      return `${scenario.scenarioName} (${confidence})${reason}`;
+    });
+
+  if (scenarioLines.length > 0) {
+    return scenarioLines;
+  }
+
+  const weakEvidenceLines = evidence
+    .filter((entry) => getBoundarySignal(entry) === "weak_candidate")
+    .slice(0, 3)
+    .map((entry) => `${entry.path} (score ${Math.round(entry.score)}) - weak adoption evidence`);
+
+  return weakEvidenceLines;
+}
+
+function buildRiskSummary(
+  report: BootstrapTakeoverReport,
+  featureConfidence: ParsedFeatureConfidenceSummary,
+  excludedSummary: NonNullable<EvidenceExclusionSummary>,
+  ownerReviewCandidates: string[],
+): string[] {
+  const lines = [
+    `Feature gate: ${featureConfidence.recommendation}`,
+    `Owner-review candidates: ${ownerReviewCandidates.length}`,
+    `Deferred debt items: ${report.specDebtPaths.length}`,
+    `Excluded noise files: ${excludedSummary.totalExcludedFileCount}`,
+  ];
+  if (report.adoptedArtifactPaths.length > 0) {
+    lines.push(`Adopted artifacts: ${report.adoptedArtifactPaths.length}`);
+  }
+  if (featureConfidence.confidenceReasons.length > 0) {
+    lines.push(`Why: ${featureConfidence.confidenceReasons.slice(0, 3).join("; ")}.`);
+  }
+  return lines;
+}
+
+function getBoundarySignal(entry: AdoptionRankedEvidenceEntry): string | undefined {
+  const value = entry.metadata?.boundarySignal;
+  return typeof value === "string" ? value : undefined;
 }
 
 function parseDomainDraft(content: string | undefined): DomainDraft | undefined {

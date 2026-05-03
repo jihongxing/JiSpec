@@ -108,14 +108,44 @@ async function main(): Promise<void> {
     }
   });
 
+  await runCase(results, "pilot ready gate script exits with blocker actions", async () => {
+    const readyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-pilot-gate-ready-"));
+    const missingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-pilot-gate-missing-"));
+    try {
+      writePilotReadyFixture(readyRoot);
+      writeJson(missingRoot, "package.json", { scripts: { jispec: "jispec" } });
+
+      const pass = runPilotGate(["--root", readyRoot]);
+      assert.equal(pass.status, 0, pass.stderr);
+      assert.match(pass.stdout, /Pilot ready gate passed/);
+      assert.match(pass.stdout, /Ready: YES/);
+
+      const json = runPilotGate(["--root", readyRoot, "--json"]);
+      assert.equal(json.status, 0, json.stderr);
+      const report = JSON.parse(json.stdout) as DoctorReport;
+      assert.equal(report.profile, "pilot");
+      assert.equal(report.readinessSummary?.blockerCount, 0);
+
+      const fail = runPilotGate(["--root", missingRoot]);
+      assert.notEqual(fail.status, 0);
+      const combinedOutput = `${fail.stdout}\n${fail.stderr}`;
+      assert.match(combinedOutput, /Pilot ready gate failed/);
+      assert.match(combinedOutput, /Owner action:/);
+      assert.match(combinedOutput, /Next command:/);
+    } finally {
+      fs.rmSync(readyRoot, { recursive: true, force: true });
+      fs.rmSync(missingRoot, { recursive: true, force: true });
+    }
+  });
+
   await runCase(results, "pilot checklist doc states boundary and blocker requirements", async () => {
     const repoRoot = path.resolve(__dirname, "..", "..", "..");
     const doc = fs.readFileSync(path.join(repoRoot, "docs", "pilot-readiness-checklist.md"), "utf-8");
     const cliHelp = runCli(["doctor", "--help"]);
 
-    assert.match(doc, /does not promise automatic understanding of an old repository/i);
+    assert.match(doc, /不承诺自动理解旧仓库/);
     assert.match(doc, /owner action/i);
-    assert.match(doc, /next local command/i);
+    assert.match(doc, /下一条本地命令/);
     assert.match(doc, /privacy report/i);
     assert.match(doc, /Console governance/i);
     assert.match(cliHelp.stdout, /pilot/);
@@ -239,6 +269,21 @@ function runCli(args: string[]): { status: number | null; stdout: string; stderr
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const cliPath = path.join(repoRoot, "tools", "jispec", "cli.ts");
   const result = spawnSync(process.execPath, ["--import", "tsx", cliPath, ...args], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+  });
+
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+function runPilotGate(args: string[]): { status: number | null; stdout: string; stderr: string } {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const gatePath = path.join(repoRoot, "scripts", "pilot-ready-gate.ts");
+  const result = spawnSync(process.execPath, ["--import", "tsx", gatePath, ...args], {
     cwd: repoRoot,
     encoding: "utf-8",
   });

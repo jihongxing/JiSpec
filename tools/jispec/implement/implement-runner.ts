@@ -4,6 +4,7 @@
  */
 
 import path from "node:path";
+import { appendAuditEvent } from "../audit/event-ledger";
 import {
   archiveChangeSession,
   isActiveChangeSession,
@@ -29,8 +30,16 @@ import {
 import { resolveTestCommand as resolveTestCommandFromResolver, describeTestCommand, validateTestCommand } from "./test-command-resolver";
 import { runVerify } from "../verify/verify-runner";
 import type { VerifyRunResult } from "../verify/verdict";
+import { writeAgentRunSession, writeCompletionEvidence, writeDebugPacket, writeDisciplineReport, writeDisciplineSummary } from "../discipline/artifacts";
+import { buildCompletionEvidence } from "../discipline/completion-evidence";
+import { buildDebugPacketFromImplementResult } from "../discipline/debug-packet";
+import { validatePhaseGate } from "../discipline/phase-gate";
+import { buildReviewDiscipline } from "../discipline/review-discipline";
+import { buildTestStrategy, validateTestStrategy } from "../discipline/test-strategy";
+import type { AgentRunSession, DisciplineReport } from "../discipline/types";
 import {
   mediateExternalPatch,
+  recordPatchMediationCompletionAudit,
   writePatchMediationArtifact,
   type PatchMediationArtifact,
 } from "./patch-mediation";
@@ -93,6 +102,14 @@ export interface ImplementRunResult {
     externalPatchPath?: string;
     verifyCommand?: string;
     sessionArchived?: boolean;
+    agentDiscipline?: {
+      sessionPath?: string;
+      completionEvidencePath?: string;
+      disciplineReportPath?: string;
+      disciplineSummaryPath?: string;
+      debugPacketPath?: string;
+      debugPacketMarkdownPath?: string;
+    };
     replay?: {
       fromHandoffPath: string;
       previousOutcome: HandoffPacket["outcome"];
@@ -263,6 +280,16 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
   }
 
   result.decisionPacket = buildImplementationDecisionPacket(result, session);
+  writeAgentDisciplineArtifacts(root, result, session);
+  if (result.patchMediation && result.metadata.patchMediationPath) {
+    recordPatchMediationCompletionAudit(
+      root,
+      result.patchMediation,
+      result.metadata.patchMediationPath,
+      session,
+      result.decisionPacket,
+    );
+  }
 
   if (shouldWriteHandoffPacket(result)) {
     if (result.patchMediation?.touchedPaths.length && !episodeMemory) {
@@ -283,6 +310,8 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
       episodeMemory ?? createEpisodeMemory(),
       lastError,
     );
+    handoffPacket.discipline = result.metadata.agentDiscipline;
+    handoffPacket.reviewDiscipline = buildReviewDiscipline(handoffPacket);
     const handoffPath = writeHandoffPacket(root, handoffPacket);
 
     result.handoffPacket = handoffPacket;
@@ -293,6 +322,172 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
   }
 
   return result;
+}
+
+function buildAgentRunSession(root: string, result: ImplementRunResult, session: ChangeSession, generatedAt: string): AgentRunSession {
+  const touchedPaths = result.patchMediation?.touchedPaths ?? [];
+  const allowedPaths = result.patchMediation?.allowedPaths ?? session.changedPaths.map((entry) => entry.path).sort((left, right) => left.localeCompare(right));
+  const unexpectedPaths = result.patchMediation?.violations
+    .map((violation) => violation.match(/out-of-scope path:\s*(.+)$/)?.[1])
+    .filter((entry): entry is string => Boolean(entry))
+    ?? touchedPaths.filter((entry) => !isPathAllowed(entry, allowedPaths));
+  const testStrategy = buildTestStrategy(session, result.metadata.testCommand, result.lane === "fast");
+  const mode = result.lane === "fast" ? "fast_advisory" : "strict_gate";
+
+  return {
+    schemaVersion: 1,
+    kind: "jispec-agent-discipline-session",
+    sessionId: result.sessionId,
+    generatedAt,
+    mode,
+    currentPhase: result.postVerify ? "handoff" : result.testsPassed ? "implement" : "debug",
+    transitions: [
+      {
+        phase: "intent",
+        status: "passed",
+        actor: "jispec-change",
+        timestamp: session.createdAt,
+        sourceCommand: "npm run jispec-cli -- change",
+        truthSources: [{ path: ".jispec/change-session.json", provenance: "EXTRACTED", note: "Active change session." }],
+      },
+      {
+        phase: "plan",
+        status: mode === "strict_gate" ? "passed" : "not_applicable",
+        actor: "jispec-implement",
+        timestamp: generatedAt,
+        sourceCommand: "npm run jispec-cli -- implement",
+        truthSources: [{ path: ".jispec/change-session.json", provenance: "EXTRACTED", note: "Change session lane and scope." }],
+      },
+      {
+        phase: "implement",
+        status: result.patchMediation?.status === "rejected_out_of_scope" ? "failed" : "passed",
+        actor: "external_patch_author",
+        timestamp: generatedAt,
+        sourceCommand: result.metadata.externalPatchPath ? `npm run jispec-cli -- implement --external-patch ${result.metadata.externalPatchPath}` : "npm run jispec-cli -- implement",
+        truthSources: result.metadata.patchMediationPath
+          ? [{ path: normalizeArtifactPath(root, result.metadata.patchMediationPath), provenance: "EXTRACTED", note: "Patch mediation artifact." }]
+          : [],
+      },
+      {
+        phase: result.postVerify ? "verify" : "debug",
+        status: result.postVerify?.ok ? "passed" : result.outcome === "patch_verified" ? "passed" : "failed",
+        actor: result.postVerify ? "verify_gate" : "jispec-implement",
+        timestamp: generatedAt,
+        sourceCommand: result.postVerify?.command ?? result.metadata.testCommand ?? "not recorded",
+        truthSources: result.metadata.handoffPacketPath
+          ? [{ path: normalizeArtifactPath(root, result.metadata.handoffPacketPath), provenance: "EXTRACTED", note: "Implementation handoff." }]
+          : [],
+      },
+    ],
+    allowedPaths,
+    touchedPaths,
+    unexpectedPaths,
+    testStrategy,
+    truthSources: [
+      { path: ".jispec/change-session.json", provenance: "EXTRACTED", note: "Change session scope and lane." },
+    ],
+  };
+}
+
+function writeAgentDisciplineArtifacts(root: string, result: ImplementRunResult, session: ChangeSession): void {
+  const generatedAt = new Date().toISOString();
+  const agentSession = buildAgentRunSession(root, result, session, generatedAt);
+  const phaseGate = validatePhaseGate(agentSession);
+  const testStrategyResult = validateTestStrategy(agentSession.testStrategy!);
+  const completionEvidence = buildCompletionEvidence(result, generatedAt, root);
+  const sessionPath = writeAgentRunSession(root, agentSession);
+  const completionEvidencePath = writeCompletionEvidence(root, completionEvidence);
+  let debugPacketPath: string | undefined;
+  let debugPacketMarkdownPath: string | undefined;
+  if (completionEvidence.status === "blocked" || result.outcome === "external_patch_received" || result.outcome === "patch_rejected_out_of_scope") {
+    const debug = buildDebugPacketFromImplementResult(result, generatedAt, root);
+    const debugPacket = writeDebugPacket(root, debug);
+    debugPacketPath = debugPacket.jsonPath;
+    debugPacketMarkdownPath = debugPacket.markdownPath;
+  }
+
+  const report: DisciplineReport = {
+    schemaVersion: 1,
+    kind: "jispec-agent-discipline-report",
+    sessionId: result.sessionId,
+    generatedAt,
+    mode: agentSession.mode,
+    phaseGate,
+    testStrategy: {
+      status: testStrategyResult.status,
+      ownerReviewRequired: agentSession.testStrategy?.ownerReviewRequired ?? true,
+      command: agentSession.testStrategy?.command,
+    },
+    completion: {
+      status: completionEvidence.status,
+      missingEvidence: completionEvidence.missingEvidence,
+    },
+    isolation: {
+      allowedPaths: agentSession.allowedPaths,
+      touchedPaths: agentSession.touchedPaths,
+      unexpectedPaths: agentSession.unexpectedPaths,
+    },
+    artifacts: {
+      sessionPath,
+      completionEvidencePath,
+      debugPacketPath,
+      debugPacketMarkdownPath,
+      summaryPath: `.jispec/agent-run/${result.sessionId}/discipline-summary.md`,
+    },
+    truthSources: completionEvidence.truthSources,
+  };
+
+  const disciplineReportPath = writeDisciplineReport(root, report);
+  const disciplineSummaryPath = writeDisciplineSummary(root, report);
+  appendAuditEvent(root, {
+    type: "agent_discipline_recorded",
+    reason: `Agent discipline recorded ${completionEvidence.status} for change session ${result.sessionId}.`,
+    sourceArtifact: {
+      kind: "agent-discipline-report",
+      path: disciplineReportPath,
+    },
+    affectedContracts: session.impactSummary && !Array.isArray(session.impactSummary)
+      ? session.impactSummary.impactedContracts
+      : [],
+    details: {
+      sessionId: result.sessionId,
+      mode: report.mode,
+      completionStatus: completionEvidence.status,
+      phaseGateStatus: phaseGate.status,
+      testStrategyStatus: testStrategyResult.status,
+      unexpectedPaths: report.isolation.unexpectedPaths,
+      artifacts: {
+        sessionPath,
+        completionEvidencePath,
+        disciplineReportPath,
+        disciplineSummaryPath,
+        debugPacketPath,
+        debugPacketMarkdownPath,
+      },
+    },
+  });
+  result.metadata.agentDiscipline = {
+    sessionPath,
+    completionEvidencePath,
+    disciplineReportPath,
+    disciplineSummaryPath,
+    debugPacketPath,
+    debugPacketMarkdownPath,
+  };
+}
+
+function isPathAllowed(touchedPath: string, allowedPaths: string[]): boolean {
+  const normalizedTouched = touchedPath.replace(/\\/g, "/");
+  return allowedPaths.some((allowedPath) => {
+    const normalizedAllowed = allowedPath.replace(/\\/g, "/").replace(/\/+$/g, "");
+    return normalizedTouched === normalizedAllowed || normalizedTouched.startsWith(`${normalizedAllowed}/`);
+  });
+}
+
+function normalizeArtifactPath(root: string, artifactPath: string): string {
+  return path.isAbsolute(artifactPath)
+    ? path.relative(root, artifactPath).replace(/\\/g, "/")
+    : artifactPath.replace(/\\/g, "/");
 }
 
 function shouldWriteHandoffPacket(result: ImplementRunResult): boolean {
@@ -647,6 +842,20 @@ export function renderImplementText(result: ImplementRunResult): string {
     lines.push(`Handoff packet: ${result.metadata.handoffPacketPath}`);
   }
 
+  if (result.metadata.agentDiscipline) {
+    lines.push("");
+    lines.push("Agent discipline:");
+    lines.push(`  Report: ${result.metadata.agentDiscipline.disciplineReportPath ?? "not_available_yet"}`);
+    lines.push(`  Summary: ${result.metadata.agentDiscipline.disciplineSummaryPath ?? "not_available_yet"}`);
+    lines.push(`  Completion evidence: ${result.metadata.agentDiscipline.completionEvidencePath ?? "not_available_yet"}`);
+    if (result.metadata.agentDiscipline.debugPacketPath) {
+      lines.push(`  Debug packet: ${result.metadata.agentDiscipline.debugPacketPath}`);
+    }
+    if (result.metadata.agentDiscipline.debugPacketMarkdownPath) {
+      lines.push(`  Debug summary: ${result.metadata.agentDiscipline.debugPacketMarkdownPath}`);
+    }
+  }
+
   if (result.patchMediation) {
     lines.push("");
     lines.push("Patch mediation:");
@@ -745,6 +954,7 @@ async function runPostImplementVerify(
   const verifyResult = await runVerify({
     root,
     fast: lane === "fast",
+    ignoreAgentDiscipline: true,
   });
 
   return {

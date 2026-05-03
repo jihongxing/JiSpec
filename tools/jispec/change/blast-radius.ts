@@ -116,9 +116,14 @@ export function renderBlastRadiusReport(changeId: string, summary: string, analy
   ].join("\n");
 }
 
-export function buildBlastRadiusGraphPayload(changeId: string, analysis: BlastRadiusAnalysis): Record<string, unknown> {
+export function buildBlastRadiusGraphPayload(
+  changeId: string,
+  analysis: BlastRadiusAnalysis,
+  generatedAt?: string,
+): Record<string, unknown> {
   return {
     change_id: changeId,
+    generated_at: generatedAt ?? new Date().toISOString(),
     evidence_graph_available: analysis.available,
     seeds: analysis.seedIds,
     affected_nodes: analysis.affectedNodes,

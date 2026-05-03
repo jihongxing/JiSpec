@@ -33,6 +33,11 @@ async function main(): Promise<void> {
       assert.equal(dashboard.questions[0]?.id, "mergeability");
       assert.equal(dashboard.questions[0]?.status, "unknown");
       assert.equal(dashboard.headline.status, "unknown");
+      assert.equal(dashboard.headline.mergeability.status, "unknown");
+      assert.equal(dashboard.headline.risk.level, "unknown");
+      assert.equal(dashboard.headline.ownerAction.owner, "repo owner");
+      assert.equal(dashboard.headline.ownerAction.command, "npm run ci:verify");
+      assert.match(dashboard.headline.evidence.primary, /\.jispec-ci\/verify-report\.json/);
       assert.ok(!renderConsoleGovernanceDashboardText(dashboard).includes("Artifact browser"));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -58,6 +63,9 @@ async function main(): Promise<void> {
       const mergeability = question(dashboard, "mergeability");
       const drift = question(dashboard, "contract_drift_review");
       assert.equal(dashboard.headline.status, "blocked");
+      assert.equal(dashboard.headline.risk.level, "high");
+      assert.match(dashboard.headline.ownerAction.command, /ci:verify/);
+      assert.match(dashboard.headline.evidence.primary, /verify-report\.json/);
       assert.equal(mergeability.status, "blocked");
       assert.match(mergeability.answer, /FAIL_BLOCKING/);
       assert.equal(drift.status, "blocked");
@@ -78,6 +86,16 @@ async function main(): Promise<void> {
         modes: {
           unmatchedActiveWaiverIds: ["waiver-stale"],
         },
+      });
+      writeYaml(root, ".spec/policy.yaml", {
+        version: 1,
+        team: {
+          profile: "small_team",
+          owner: "platform",
+          reviewers: ["reviewer"],
+          required_reviewers: 1,
+        },
+        rules: [],
       });
       writeJson(root, ".spec/waivers/waiver-soon.json", {
         id: "waiver-soon",
@@ -130,6 +148,10 @@ async function main(): Promise<void> {
       assert.match(question(dashboard, "execute_mediation_status").answer, /post_verify/);
       assert.equal(question(dashboard, "audit_traceability").status, "ok");
       assert.match(question(dashboard, "audit_traceability").answer, /reviewer/);
+      assert.equal(dashboard.headline.risk.level, "medium");
+      assert.equal(dashboard.headline.ownerAction.owner, "contracts-team");
+      assert.match(dashboard.headline.ownerAction.command, /waiver renew waiver-soon/);
+      assert.ok(dashboard.headline.evidence.sources.some((source) => source.includes(".spec/waivers") || source.includes("waiver")));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -148,6 +170,10 @@ async function main(): Promise<void> {
       assert.equal(text.status, 0, text.stderr);
       assert.match(text.stdout, /JiSpec Governance Console/);
       assert.match(text.stdout, /Can this repo merge right now/);
+      assert.match(text.stdout, /Mergeability:/);
+      assert.match(text.stdout, /Risk:/);
+      assert.match(text.stdout, /Owner action:/);
+      assert.match(text.stdout, /Evidence source:/);
       assert.doesNotMatch(text.stdout, /marketing/i);
       assert.doesNotMatch(text.stdout, /file browser/i);
 
@@ -156,6 +182,9 @@ async function main(): Promise<void> {
       const payload = JSON.parse(json.stdout) as ReturnType<typeof buildConsoleGovernanceDashboard>;
       assert.equal(payload.boundary.firstScreen, "governance_status");
       assert.equal(payload.questions[0]?.id, "mergeability");
+      assert.equal(payload.headline.mergeability.status, "ok");
+      assert.ok(payload.headline.ownerAction.command);
+      assert.ok(payload.headline.evidence.primary);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

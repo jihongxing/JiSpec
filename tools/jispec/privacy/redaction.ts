@@ -34,7 +34,16 @@ export interface PrivacyReportOptions {
 
 export interface PrivacyReportArtifact {
   path: string;
-  category: "discover" | "summary" | "handoff" | "console_export" | "audit" | "release" | "other_jispec_artifact";
+  category:
+    | "discover"
+    | "summary"
+    | "handoff"
+    | "console_export"
+    | "integration_payload"
+    | "pilot_package"
+    | "audit"
+    | "release"
+    | "other_jispec_artifact";
   shareDecision: "shareable" | "review_before_sharing";
   findingCount: number;
   findingTypes: SecretFindingType[];
@@ -99,6 +108,14 @@ const ARTIFACT_CATEGORIES: PrivacyReport["artifactCategories"] = {
   console_export: {
     description: "Console governance snapshots and multi-repo aggregate exports.",
     mayContain: ["repo names", "governance summaries", "waiver reasons", "audit actors"],
+  },
+  integration_payload: {
+    description: "SCM comment previews and issue tracker payload previews.",
+    mayContain: ["SCM or issue markdown previews", "change intent", "verify summaries", "handoff next actions"],
+  },
+  pilot_package: {
+    description: "Pilot package, pilot checklist, and share bundle artifacts.",
+    mayContain: ["pilot reviewer notes", "package metadata", "share risk summaries", "local artifact references"],
   },
   audit: {
     description: "Append-only governance audit ledger.",
@@ -221,7 +238,9 @@ export function buildPrivacyReport(options: PrivacyReportOptions): PrivacyReport
     const artifact: PrivacyReportArtifact = {
       path: normalizePath(relativePath),
       category,
-      shareDecision: redacted.findings.length > 0 ? "review_before_sharing" : "shareable",
+      shareDecision: redacted.findings.length > 0 || requiresReviewBeforeSharing(relativePath, original)
+        ? "review_before_sharing"
+        : "shareable",
       findingCount: redacted.findings.length,
       findingTypes: stableUnique(redacted.findings.map((finding) => finding.type)) as SecretFindingType[],
       findings: redacted.findings,
@@ -361,6 +380,15 @@ function categorizeArtifact(relativePath: string): PrivacyReportArtifact["catego
   if (relativePath.startsWith(".spec/sessions/") || relativePath.startsWith(".spec/facts/") || relativePath.includes("takeover")) {
     return "discover";
   }
+  if (relativePath.startsWith(".spec/integrations/")) {
+    return "integration_payload";
+  }
+  if (relativePath.startsWith(".spec/pilot/")) {
+    return "pilot_package";
+  }
+  if (relativePath.startsWith(".jispec/agent-run/")) {
+    return "handoff";
+  }
   if (relativePath.endsWith(".md") || relativePath.includes("summary")) {
     return "summary";
   }
@@ -377,6 +405,38 @@ function categorizeArtifact(relativePath: string): PrivacyReportArtifact["catego
     return "release";
   }
   return "other_jispec_artifact";
+}
+
+function requiresReviewBeforeSharing(relativePath: string, content?: string): boolean {
+  const normalized = normalizePath(relativePath);
+  if (isRiskyExternalToolRunArtifact(normalized, content)) {
+    return true;
+  }
+  if (normalized.startsWith(".jispec/agent-run/") && (normalized.includes("debug-packet") || normalized.includes("completion-evidence"))) {
+    return true;
+  }
+  return (
+    normalized.startsWith(".spec/facts/external-graphs/") ||
+    normalized.endsWith("/normalized-evidence.json") ||
+    normalized.includes("external-graph-summary") ||
+    normalized === ".spec/integrations/external-graph.json" ||
+    normalized.startsWith(".spec/integrations/external-graph/")
+  );
+}
+
+function isRiskyExternalToolRunArtifact(relativePath: string, content?: string): boolean {
+  if (!relativePath.startsWith(".spec/integrations/") || !relativePath.endsWith(".json") || !content) {
+    return false;
+  }
+  try {
+    const artifact = JSON.parse(content) as unknown;
+    if (!isRecord(artifact) || artifact.kind !== "jispec-external-tool-run") {
+      return false;
+    }
+    return artifact.networkRequired === true || artifact.sourceUploadRisk !== "none";
+  } catch {
+    return relativePath.includes("external-tool-run");
+  }
 }
 
 function positionForOffset(text: string, offset: number): { line: number; column: number } {
@@ -409,4 +469,8 @@ function stableUnique(values: string[]): string[] {
 
 function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, "/");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

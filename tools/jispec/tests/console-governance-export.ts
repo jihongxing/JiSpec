@@ -76,7 +76,12 @@ async function main(): Promise<void> {
       assert.ok(fs.existsSync(result.summaryPath));
       assert.equal(result.snapshot.repo.id, "repo-x");
       assert.equal(result.snapshot.boundary.localOnly, true);
+      assert.equal(result.snapshot.contract?.snapshotContractVersion, 1);
+      assert.equal(result.snapshot.contract?.compatibleAggregateVersion, 1);
+      assert.equal(result.snapshot.contract?.missingSemantics.unavailableValue, "not_available_yet");
+      assert.equal(result.snapshot.contract?.missingSemantics.missingSnapshotReason, "snapshot_not_found");
       assert.equal(result.snapshot.aggregateHints.releaseDriftStatus, "changed");
+      assert.match(renderConsoleGovernanceExportText(result.snapshot), /Snapshot contract: 1/);
       assert.match(renderConsoleGovernanceExportText(result.snapshot), /JiSpec Multi-Repo Governance Snapshot/);
 
       const snapshot = collectConsoleLocalSnapshot(root);

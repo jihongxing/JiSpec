@@ -288,6 +288,12 @@ function summarizeState(state: FirstRunState): string {
   if (state.verifyReport?.ok === false) {
     return `Latest verify report is ${state.verifyReport.verdict ?? "blocking"}.`;
   }
+  if (state.bootstrapEvidence && state.adoptedContracts && state.projectScaffold && state.policy) {
+    return "Bootstrap takeover baseline is committed and the repo is ready to verify.";
+  }
+  if (state.bootstrapEvidence && state.adoptedContracts) {
+    return "Bootstrap takeover baseline is committed.";
+  }
   if (state.bootstrapEvidence) {
     return "Bootstrap evidence exists but contracts are not adopted yet.";
   }

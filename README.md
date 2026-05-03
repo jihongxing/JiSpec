@@ -260,6 +260,7 @@ What they do:
   Records change intent, classifies the active diff into fast or strict lane, and writes the active change session.
 - `implement`
   Mediates an active change session through bounded handoff or an external patch file, then returns to verify. JiSpec does not generate business code.
+  JiSpec also records Agent Discipline evidence for AI or external coding tool attempts. The artifacts under `.jispec/agent-run/<session-id>/` show whether the work followed phase, scope, test strategy, debug, completion, and review discipline. They make "done" evidence-based, while `verify` and `ci:verify` remain the deterministic delivery gate.
 - `verify`
   Runs the current deterministic repository verification path, auto-loads `.spec/policy.yaml` when present, emits the four-state verdict surface, and writes `.spec/handoffs/verify-summary.md`.
 - `policy migrate`
@@ -274,6 +275,12 @@ What they do:
   Runs broader runtime and compatibility health diagnostics outside the V1 mainline readiness gate.
 - `doctor pilot`
   Checks commercial pilot readiness for a repository: installation path, first takeover baseline, CI verify, policy profile, waiver/spec debt hygiene, Console governance snapshot, and privacy report.
+- `pilot package`
+  Writes `.spec/pilot/package.json` and a Markdown companion that bundle install, first-run, first baseline, CI verify, Console governance, privacy report, and `doctor pilot` into a local adoption path.
+- `north-star acceptance`
+  Writes `.spec/north-star/acceptance.json`, `.spec/north-star/acceptance.md`, and per-scenario decision packets for the final local acceptance suite. It covers legacy takeover, Greenfield, daily change, external patch mediation, policy waiver, release drift, Console governance, multi-repo aggregation, and privacy report without replacing existing gates.
+- `pilot:ready`
+  Runs the repeatable pilot readiness gate for local or CI use; failures print blocker owner actions and next commands, and `--json` returns the underlying `doctor pilot` report.
 - `metrics value-report`
   Writes a repo-local ROI and adoption report under `.spec/metrics/`, with traceable local artifact sources and no default network access.
 - `ci:verify`
@@ -613,6 +620,8 @@ The `ordering` context includes one complete example slice:
   [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
 - Next north-star development plan:
   [docs/north-star-next-development-plan.md](docs/north-star-next-development-plan.md)
+- North Star acceptance suite:
+  [docs/north-star-acceptance.md](docs/north-star-acceptance.md)
 - Post-release gate:
   [docs/post-release-gate.md](docs/post-release-gate.md)
 - Retakeover regression pool:
@@ -625,8 +634,12 @@ The `ordering` context includes one complete example slice:
   [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
 - Greenfield input contract:
   [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
+- Greenfield walkthrough:
+  [docs/greenfield-walkthrough.md](docs/greenfield-walkthrough.md)
 - First takeover walkthrough:
   [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md)
+- Pilot product package:
+  [docs/pilot-product-package.md](docs/pilot-product-package.md)
 - Quickstart:
   [docs/quickstart.md](docs/quickstart.md)
 - Takeover guide:
