@@ -28,7 +28,7 @@ import {
 import {
   buildAdoptionRankedEvidence,
   buildBootstrapFullInventory,
-  renderAdoptionRankedEvidenceLines,
+  renderAdoptionRankedEvidenceSections,
 } from "./evidence-ranking";
 import {
   inferEvidenceProvenanceDescriptor,
@@ -161,10 +161,13 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
   }
 
   const rankedEvidence = buildAdoptionRankedEvidence(result.graph, { limit: 10 });
-  const topRankedEvidence = renderAdoptionRankedEvidenceLines(rankedEvidence, 10);
-  if (topRankedEvidence.length > 0) {
-    lines.push("Top adoption-ranked evidence:");
-    lines.push(...topRankedEvidence.map((entry) => `- ${entry}`));
+  const rankedSections = renderAdoptionRankedEvidenceSections(rankedEvidence, {
+    adoptionReadyLimit: 5,
+    ownerReviewLimit: 5,
+    rankedLimit: 10,
+  });
+  if (rankedSections.length > 0) {
+    lines.push(...rankedSections);
   }
 
   const adapterReport = buildContractSourceAdapterReport(result.graph);

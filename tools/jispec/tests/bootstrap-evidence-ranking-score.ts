@@ -88,6 +88,12 @@ function main(): void {
         explicitEndpoint?.metadata?.boundarySignal === "explicit_endpoint" &&
         entrypoint?.metadata?.boundarySignal === "service_entrypoint" &&
         weakCandidate?.metadata?.boundarySignal === "weak_candidate" &&
+        governanceDoc?.rankTier === "adoption_ready" &&
+        protoSchema?.rankTier === "adoption_ready" &&
+        explicitEndpoint?.rankTier === "adoption_ready" &&
+        entrypoint?.rankTier === "adoption_ready" &&
+        weakCandidate?.rankTier === "owner_review" &&
+        (ranked.summary.adoptionReadyCount ?? 0) > (ranked.summary.ownerReviewCount ?? 0) &&
         rankedPaths.indexOf("/orders") < rankedPaths.indexOf("src/controllers/unknown-controller.ts") &&
         rankedPaths.indexOf("api/proto/control-plane.proto") < rankedPaths.indexOf("src/controllers/unknown-controller.ts"),
       error: `Expected boundarySignal metadata and weak-candidate ordering, got ${JSON.stringify(ranked.evidence)}.`,

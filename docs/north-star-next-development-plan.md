@@ -338,6 +338,7 @@ governance productization -> adoption packaging -> ecosystem integration -> ente
 - 新增共享 `Decision Snapshot` 首屏语言，bootstrap summary、takeover brief、adopt summary、verify summary、release summary、Console action text 和 formatted implementation handoff 都回答 current state、risk、evidence、owner、next command。
 - adopt/takeover/verify/release/console/implement 回归测试覆盖人类可决策字段，waiver、release drift 和 external patch handoff 都可不读大 JSON 先完成 owner review triage。
 - 文档同步说明 Markdown/text 只是 human companion，JSON/YAML/JSONL/lock artifact 仍是机器事实源和 gate 输入。
+- 迭代 3 相关验证已通过：`node --import tsx ./tools/jispec/tests/console-governance-dashboard.ts`、`node --import tsx ./tools/jispec/tests/console-governance-actions.ts`、`node --import tsx ./tools/jispec/tests/console-governance-export.ts`、`node --import tsx ./tools/jispec/tests/console-multi-repo-governance.ts`、`node --import tsx ./tools/jispec/tests/audit-event-ledger.ts`、`node --import tsx ./tools/jispec/tests/collaboration-mvp.ts`、`node --import tsx ./tools/jispec/tests/collaboration-awareness-mvp.ts`、`node --import tsx ./tools/jispec/tests/collaboration-locking-mvp.ts`、`node --import tsx ./tools/jispec/tests/collaboration-notifications-mvp.ts`、`node --import tsx ./tools/jispec/tests/console-ui-smoke.ts`、`node --import tsx ./tools/jispec/tests/policy-approval-workflow.ts`，以及 `npm run typecheck`。
 
 ### 2026-07: 外部化和试点硬化
 
@@ -687,6 +688,76 @@ npm run jispec -- doctor pilot --json
 5. JiSpec 继续做 implementation mediation，不变成 autonomous business-code generator。
 6. 每个任务必须有稳定落盘产物、回归测试和可审计的人类决策包。
 7. 产品化任务必须降低采用摩擦，但不能绕过本地优先、deterministic gate、audit 和 replay 语义。
+
+## 6 周执行计划（3 个两周迭代）
+
+说明：
+
+- 下面的任务卡是把本文件里的 P0 / P1 / P2 方向拆成可以直接开工的 backlog。
+- “推荐负责人” 用角色名表示，不强行绑定个人。
+- 默认依赖顺序就是表格顺序；前一项未验收通过，不进入下一项。
+
+推荐负责人角色：
+
+- `Bootstrap Ranking Owner`：负责 `bootstrap discover`、evidence ranking、takeover summary。
+- `Implement Runtime Owner`：负责 `change` / `implement` 闭环、patch mediation、replay、budget / stall。
+- `Console Governance Owner`：负责 `console` read model、dashboard、action planner、multi-repo 聚合。
+- `Audit & Integration Owner`：负责审计、通知、协作事件和外部化接线。
+- `Test Owner`：负责回归、fixture、golden path、CLI parity。
+- `Docs / Release Owner`：负责 stable contract、guide、release note、README 对齐。
+
+### 迭代 1（第 1-2 周）：接管证据排序
+
+目标：把 `bootstrap discover` 从“扫描到什么”推进到“该先接管什么”。
+
+| 顺序 | 任务 | 推荐负责人 | 依赖 | 做什么 | 怎么做 | 涉及文件 | 怎么测试 | 验收标准 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 噪声压制与权重重排 | Bootstrap Ranking Owner | 无 | 让 README / governance / protocol / schema / entrypoint / manifest 优先于 vendor / cache / build / example / fixture。 | 调整 ranking 权重与排除规则，把第三方、生成物、示例和 fixture 明显降权；保持 deterministic 排序。 | `tools/jispec/bootstrap/discover.ts`、`tools/jispec/bootstrap/evidence-ranking.ts`、`tools/jispec/bootstrap/evidence-graph.ts` | `npm run typecheck`，新增 `node --import tsx ./tools/jispec/tests/bootstrap-ranking-regression.ts` | noisy repo 的前 10 个 adoption candidates 不再被噪声目录主导。 |
+| 2 | owner-review 与 adoption-ready 分流 | Bootstrap Ranking Owner | 1 | 把强边界证据和弱候选拆开，不让它们混在一个分数桶里。 | 复用 provenance / owner review posture，把 `weak_candidate` 明确标成需要人工 review；强证据保留可采纳语义。 | `tools/jispec/bootstrap/evidence-ranking.ts`、`tools/jispec/provenance/evidence-provenance.ts`、`tools/jispec/bootstrap/draft.ts` | `node --import tsx ./tools/jispec/tests/bootstrap-feature-confidence-gate.ts`、`node --import tsx ./tools/jispec/tests/bootstrap-draft-feature-scenarios.ts` | 弱证据始终进入 owner review 或 spec debt，不会伪装成 ready contract。 |
+| 3 | takeover brief / summary 收敛 | Bootstrap Ranking Owner + Docs / Release Owner | 1,2 | 让 `bootstrap-summary.md` 和 `takeover-brief.md` 直接回答“先接管什么”。 | 缩短 summary，保留 top candidates、excluded noise、next command 和风险摘要；人类读完即可进入 adopt。 | `tools/jispec/bootstrap/discover.ts`、`tools/jispec/human-decision-packet.ts`、`docs/retakeover-regression-pool.md` | 对 noisy fixture 运行 `npm run jispec-cli -- bootstrap discover`，再比对 summary 文本快照 | summary 能稳定给出 3-10 个高价值接管资产，而不是长 inventory。 |
+| 4 | 真实噪声 / 真实仓库回归池 | Test Owner | 1,2,3 | 补能证明排序改进的 fixture，而不是只靠 synthetic 小样本。 | 增加 noisy repo 和 real-like repo fixture，记录 correction load、verify safety、owner-review 比例。 | `tools/jispec/tests/bootstrap-ranking-regression.ts`、`tools/jispec/tests/bootstrap-retakeover-regression.ts`、`tools/jispec/tests/regression-runner.ts` | `node --import tsx ./tools/jispec/tests/bootstrap-ranking-regression.ts`、`node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts` | 回归池能证明排序改动同时降低噪声占比并提高 takeover 可决策性。 |
+| 5 | 文档与稳定契约对齐 | Docs / Release Owner | 1-4 | 把新的排序语义写进主文档，避免代码和文档口径漂移。 | 更新 north-star 计划、stable contract、README 摘要和 release note 的排序语言。 | `docs/north-star-next-development-plan.md`、`docs/v1-mainline-stable-contract.md`、`README.md`、`README.zh-CN.md` | `npm run typecheck`、人工核对文档链接与术语 | 文档不再把 discover 描述成广义 inventory，而是 takeover-oriented evidence prioritization。 |
+
+完成状态：已实现。
+
+- `tools/jispec/bootstrap/evidence-ranking.ts` 已加入 `rankTier`、adoption-ready / owner-review 分流、轻量 priority boost 和 summary counts。
+- `tools/jispec/bootstrap/discover.ts` 已输出 `Takeover priority`、`Top adoption-ready evidence`、`Owner-review evidence`，并保留 `Top adoption-ranked evidence` 做兼容。
+- `tools/jispec/tests/bootstrap-ranking-regression.ts` 已覆盖 noisy repo 的排序、分流和摘要文本。
+- `tools/jispec/tests/bootstrap-evidence-ranking-score.ts`、`tools/jispec/tests/regression-runner.ts`、`tools/jispec/tests/regression-matrix-contract.ts` 已同步新的契约。
+- 验证通过：`node --import tsx ./tools/jispec/tests/bootstrap-ranking-regression.ts`、`node --import tsx ./tools/jispec/tests/bootstrap-evidence-ranking-score.ts`、`node --import tsx ./tools/jispec/tests/regression-matrix-contract.ts`、`npm run typecheck`。
+
+### 迭代 2（第 3-4 周）：implement 闭环
+
+目标：把 `implement` 从“有流程”变成“可恢复、可重试、可解释”。
+
+| 顺序 | 任务 | 推荐负责人 | 依赖 | 做什么 | 怎么做 | 涉及文件 | 怎么测试 | 验收标准 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | decision packet 状态机收敛 | Implement Runtime Owner | 迭代 1 完成 | 让每个 implement outcome 都稳定映射到 next action、owner、stop point 和 mergeability。 | 收紧 `buildImplementationDecisionPacket` 的分支，统一 `ready_for_verify / ready_to_merge / needs_* / blocked_by_verify` 的落点。 | `tools/jispec/implement/implement-runner.ts`、`tools/jispec/implement/handoff-packet.ts` | `node --import tsx ./tools/jispec/tests/implement-mainline-lane.ts`、`node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts` | 所有 outcome 都能说清楚“下一步做什么、谁来做、现在停在哪”。 |
+| 2 | budget / stall / context 收敛 | Implement Runtime Owner | 1 | 让循环控制器尽早停下，避免无意义重复。 | 增强 `BudgetController`、`StallDetector`、`context-pruning`、`episode-memory` 的状态记录和停滞判定。 | `tools/jispec/implement/budget-controller.ts`、`tools/jispec/implement/stall-detector.ts`、`tools/jispec/implement/context-pruning.ts`、`tools/jispec/implement/episode-memory.ts`、`tools/jispec/implement/implement-runner.ts` | 新增 `node --import tsx ./tools/jispec/tests/implement-stall-budget.ts`，并跑现有 implement 回归 | 连续失败会更早进入 `stall_detected` 或 `budget_exhausted`，且有明确恢复建议。 |
+| 3 | patch mediation replay / recovery | Implement Runtime Owner + Audit & Integration Owner | 1,2 | 让外部 patch 失败后可以按同一 session 回放，而不是重新猜上下文。 | 保留 replay metadata、allowed paths、failed check、post-verify command，确保 `--from-handoff` 能恢复 active session。 | `tools/jispec/implement/patch-mediation.ts`、`tools/jispec/implement/adapters/handoff-adapter.ts`、`tools/jispec/change/change-command.ts` | `node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts`、`node --import tsx ./tools/jispec/tests/implement-handoff-adapters.ts` | 失败后的 patch mediation 能回放，且审计 / artifact / CLI 输出一致。 |
+| 4 | CLI 文本 / JSON / exit code 对齐 | Implement Runtime Owner + Test Owner | 1-3 | 让 `change` / `implement` 的人类输出和机器输出一致。 | 对齐 CLI 文本、JSON 字段和退出码，避免“文本说可合并，退出码却阻断”的情况。 | `tools/jispec/cli.ts`、`tools/jispec/change/change-command.ts`、`tools/jispec/implement/implement-runner.ts` | 新增 `node --import tsx ./tools/jispec/tests/implement-cli-parity.ts` | JSON / 文本 / exit code 三者能指向同一状态机结论。 |
+| 5 | post-implement verify 与 archive 语义 | Implement Runtime Owner | 1-4 | 只在真正 ok 时归档 session，失败时保留可恢复状态。 | 明确 archive 条件、verify blocked 条件和 handoff 写出条件。 | `tools/jispec/implement/implement-runner.ts`、`tools/jispec/change/change-session.ts`、`tools/jispec/verify/verify-runner.ts` | 继续跑 `implement-mainline-lane.ts`、`implement-patch-mediation.ts`，并补 verify-blocked 断言 | 成功才 archive，失败必须保留可 replay 的 active session。 |
+
+完成状态：已实现。
+
+- `tools/jispec/implement/handoff-packet.ts` 已稳定收敛 `ready_for_verify / ready_to_merge / needs_* / blocked_by_verify` 状态、owner、stop point 和 next action。
+- `tools/jispec/implement/implement-runner.ts` 已保留 replay metadata、budget/stall 退出语义、post-implement verify 与 archive 规则。
+- `tools/jispec/cli.ts` 已让 `implement --json` 输出纯 JSON，避免诊断日志污染机器消费。
+- `tools/jispec/tests/implement-stall-budget.ts`、`tools/jispec/tests/implement-cli-parity.ts` 已把预算收口、stall detector、context bundle、CLI 文本 / JSON / exit code 对齐固定进回归。
+- `tools/jispec/tests/regression-runner.ts`、`tools/jispec/tests/regression-matrix-contract.ts` 和相关 P9 冻结测试已同步新矩阵总数。
+- 验证通过：`node --import tsx ./tools/jispec/tests/implement-stall-budget.ts`、`node --import tsx ./tools/jispec/tests/implement-cli-parity.ts`、`node --import tsx ./tools/jispec/tests/regression-matrix-contract.ts`、`node --import tsx ./tools/jispec/tests/p9-baseline-contract.ts`、`npm run typecheck`。
+
+### 迭代 3（第 5-6 周）：治理 / 协作层
+
+目标：把本地治理 read model 做厚，并让协作层只服务 JiSpec 语义。
+
+| 顺序 | 任务 | 推荐负责人 | 依赖 | 做什么 | 怎么做 | 涉及文件 | 怎么测试 | 验收标准 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | governance dashboard actionability | Console Governance Owner | 迭代 2 完成 | 让 dashboard 第一屏直接回答 mergeability、risk、owner action 和证据来源。 | 统一 dashboard / actions / snapshot / static UI 的字段，输出明确 next command。 | `tools/jispec/console/governance-dashboard.ts`、`tools/jispec/console/governance-actions.ts`、`tools/jispec/console/read-model-snapshot.ts`、`tools/jispec/console/ui/static-dashboard.ts` | `node --import tsx ./tools/jispec/tests/console-governance-dashboard.ts`、`node --import tsx ./tools/jispec/tests/console-governance-actions.ts`、`node --import tsx ./tools/jispec/tests/console-ui-smoke.ts` | 每个治理问题都能落到明确 owner action，不会只给一段状态描述。 |
+| 2 | multi-repo export / aggregate | Console Governance Owner | 1 | 让多仓聚合基于稳定 snapshot，而不是临时拼装。 | 固化 snapshot version、missing snapshot 语义和 aggregate contract。 | `tools/jispec/console/governance-export.ts`、`tools/jispec/console/multi-repo.ts`、`tools/jispec/console/repo-group.ts`、`tools/jispec/console/read-model-contract.ts` | `node --import tsx ./tools/jispec/tests/console-governance-export.ts`、`node --import tsx ./tools/jispec/tests/console-multi-repo-governance.ts` | aggregate 的缺失项显式显示 `not_available_yet`，不靠猜。 |
+| 3 | audit / notification 语义接线 | Audit & Integration Owner | 1,2 | 把治理动作、审批和边界变化接到审计与通知流。 | 统一 audit event ledger、notification service、policy/waiver/release/patch intake 的记录字段。 | `tools/jispec/audit/event-ledger.ts`、`tools/jispec/notification-service.ts`、`tools/jispec/presence-manager.ts`、`tools/jispec/collaboration-server.ts` | `node --import tsx ./tools/jispec/tests/audit-event-ledger.ts`、`node --import tsx ./tools/jispec/tests/collaboration-notifications-mvp.ts` | 能追溯谁在何时批准了什么例外或边界变化。 |
+| 4 | 协作层只服务治理事件 | Audit & Integration Owner + Console Governance Owner | 1-3 | 避免把协作层做成泛文档协作产品。 | 让 collaboration / presence 只围绕 owner-review、waiver、spec-debt、audit、patch intake 传播。 | `tools/jispec/collaboration-server.ts`、`tools/jispec/presence-manager.ts`、`tools/jispec/notification-service.ts` | `node --import tsx ./tools/jispec/tests/collaboration-mvp.ts`、`node --import tsx ./tools/jispec/tests/collaboration-awareness-mvp.ts`、`node --import tsx ./tools/jispec/tests/collaboration-locking-mvp.ts` | 协作层能服务治理事件，但不会绕开本地 gate。 |
+| 5 | 文档 / guide / pilot 对齐 | Docs / Release Owner | 1-4 | 把治理台、审计和协作边界写清楚，避免产品误读。 | 同步 north-star 计划、console read model contract、README 和 release 文案。 | `docs/north-star-next-development-plan.md`、`docs/console-read-model-contract.md`、`README.md`、`README.zh-CN.md` | `npm run typecheck`、`npm run jispec-cli -- console dashboard --json`、`npm run jispec-cli -- console actions --json` | 文档明确写出：Console 是本地只读治理台，不替代 `verify`、`ci:verify` 或本地 policy gate。 |
 
 ## P0：Takeover 质量继续提升
 

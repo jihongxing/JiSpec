@@ -35,6 +35,8 @@ export type AdoptionEvidenceKind =
   | "migration"
   | "source";
 
+export type AdoptionRankTier = "adoption_ready" | "owner_review";
+
 export interface BootstrapFullInventory {
   version: 1;
   repoRoot: string;
@@ -52,6 +54,7 @@ export interface AdoptionRankedEvidenceEntry {
   reason: string;
   source: string;
   confidenceScore?: number;
+  rankTier: AdoptionRankTier;
   provenanceLabel: EvidenceProvenanceLabel;
   evidenceKind: AdoptionEvidenceKind;
   sourcePath: string;
@@ -69,6 +72,12 @@ export interface AdoptionRankedEvidence {
     candidateCount: number;
     selectedCount: number;
     topScore: number;
+    adoptionReadyCount: number;
+    ownerReviewCount: number;
+    topAdoptionReadyPath?: string;
+    topAdoptionReadyScore?: number;
+    topOwnerReviewPath?: string;
+    topOwnerReviewScore?: number;
   };
   evidence: AdoptionRankedEvidenceEntry[];
   excludedSummary: NonNullable<EvidenceGraph["excludedSummary"]>;
@@ -87,9 +96,14 @@ export type AdoptionBoundarySignal =
 
 interface UnrankedAdoptionEvidenceEntry extends Omit<
   AdoptionRankedEvidenceEntry,
-  "rank" | "provenanceLabel" | "evidenceKind" | "sourcePath" | "confidence" | "ownerReviewPosture"
+  "rank" | "rankTier" | "provenanceLabel" | "evidenceKind" | "sourcePath" | "confidence" | "ownerReviewPosture"
 > {
   stableKey: string;
+}
+
+interface RankedAdoptionCandidate extends UnrankedAdoptionEvidenceEntry {
+  rankTier: AdoptionRankTier;
+  priorityScore: number;
 }
 
 export interface EvidenceAssetScoreInput {
@@ -130,8 +144,21 @@ export function buildAdoptionRankedEvidence(
   const limit = Math.max(1, Math.trunc(options.limit ?? 20));
   const taxonomyPacks = options.taxonomyPacks ?? loadDomainTaxonomyPacksFromRoot(graph.repoRoot);
   const candidates = collectAdoptionCandidates(graph, taxonomyPacks);
-  const ranked = candidates
+  const annotated = candidates.map((entry) => {
+    const rankTier = classifyAdoptionRankTier(entry);
+    const priorityScore = Number((entry.score + rankTierPriorityBoost(rankTier)).toFixed(4));
+    return {
+      ...entry,
+      rankTier,
+      priorityScore,
+    };
+  });
+  const ranked = annotated
     .sort((left, right) => {
+      const priorityDelta = right.priorityScore - left.priorityScore;
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
       const scoreDelta = right.score - left.score;
       if (scoreDelta !== 0) {
         return scoreDelta;
@@ -159,12 +186,18 @@ export function buildAdoptionRankedEvidence(
         reason: entry.reason,
         source: entry.source,
         confidenceScore: entry.confidenceScore,
+        rankTier: entry.rankTier,
         ...descriptor,
         evidenceKind: entry.kind,
         sourceFiles: [...entry.sourceFiles].sort((left, right) => left.localeCompare(right)),
         metadata: entry.metadata,
       };
     });
+
+  const adoptionReadyCount = annotated.filter((entry) => entry.rankTier === "adoption_ready").length;
+  const ownerReviewCount = annotated.length - adoptionReadyCount;
+  const topAdoptionReady = ranked.find((entry) => entry.rankTier === "adoption_ready");
+  const topOwnerReview = ranked.find((entry) => entry.rankTier === "owner_review");
 
   return {
     version: 1,
@@ -174,6 +207,12 @@ export function buildAdoptionRankedEvidence(
       candidateCount: candidates.length,
       selectedCount: ranked.length,
       topScore: ranked[0]?.score ?? 0,
+      adoptionReadyCount,
+      ownerReviewCount,
+      topAdoptionReadyPath: topAdoptionReady?.path,
+      topAdoptionReadyScore: topAdoptionReady?.score,
+      topOwnerReviewPath: topOwnerReview?.path,
+      topOwnerReviewScore: topOwnerReview?.score,
     },
     evidence: ranked,
     excludedSummary: normalizeExcludedSummary(graph.excludedSummary),
@@ -185,6 +224,68 @@ export function renderAdoptionRankedEvidenceLines(ranked: AdoptionRankedEvidence
     const sourceFiles = entry.sourceFiles.length > 0 ? ` from ${entry.sourceFiles.slice(0, 2).join(", ")}` : "";
     return `#${entry.rank} ${entry.kind} ${entry.path} (${entry.score}): ${entry.reason}${sourceFiles}`;
   });
+}
+
+export interface AdoptionRankedEvidenceView {
+  adoptionReadyCount: number;
+  ownerReviewCount: number;
+  topAdoptionReady: AdoptionRankedEvidenceEntry[];
+  topOwnerReview: AdoptionRankedEvidenceEntry[];
+  topRanked: AdoptionRankedEvidenceEntry[];
+}
+
+export interface AdoptionRankedEvidenceRenderOptions {
+  adoptionReadyLimit?: number;
+  ownerReviewLimit?: number;
+  rankedLimit?: number;
+}
+
+export function summarizeAdoptionRankedEvidence(
+  ranked: AdoptionRankedEvidence,
+  options: AdoptionRankedEvidenceRenderOptions = {},
+): AdoptionRankedEvidenceView {
+  const adoptionReadyLimit = Math.max(1, Math.trunc(options.adoptionReadyLimit ?? 5));
+  const ownerReviewLimit = Math.max(1, Math.trunc(options.ownerReviewLimit ?? 5));
+  const rankedLimit = Math.max(1, Math.trunc(options.rankedLimit ?? 10));
+
+  const topRanked = ranked.evidence.slice(0, rankedLimit);
+  const topAdoptionReady = ranked.evidence.filter((entry) => entry.rankTier === "adoption_ready").slice(0, adoptionReadyLimit);
+  const topOwnerReview = ranked.evidence.filter((entry) => entry.rankTier === "owner_review").slice(0, ownerReviewLimit);
+
+  return {
+    adoptionReadyCount: ranked.summary.adoptionReadyCount,
+    ownerReviewCount: ranked.summary.ownerReviewCount,
+    topAdoptionReady,
+    topOwnerReview,
+    topRanked,
+  };
+}
+
+export function renderAdoptionRankedEvidenceSections(
+  ranked: AdoptionRankedEvidence,
+  options: AdoptionRankedEvidenceRenderOptions = {},
+): string[] {
+  const view = summarizeAdoptionRankedEvidence(ranked, options);
+  const lines: string[] = [
+    `Takeover priority: ${view.adoptionReadyCount} adoption-ready, ${view.ownerReviewCount} owner-review candidate(s)`,
+  ];
+
+  if (view.topAdoptionReady.length > 0) {
+    lines.push("Top adoption-ready evidence:");
+    lines.push(...view.topAdoptionReady.map((entry) => `- ${formatAdoptionRankedEvidenceEntry(entry, true)}`));
+  }
+
+  if (view.topOwnerReview.length > 0) {
+    lines.push("Owner-review evidence:");
+    lines.push(...view.topOwnerReview.map((entry) => `- ${formatAdoptionRankedEvidenceEntry(entry, true)}`));
+  }
+
+  if (view.topRanked.length > 0) {
+    lines.push("Top adoption-ranked evidence:");
+    lines.push(...view.topRanked.map((entry) => `- ${formatAdoptionRankedEvidenceEntry(entry)}`));
+  }
+
+  return lines;
 }
 
 export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAssetScore {
@@ -365,6 +466,35 @@ export function scoreEvidenceAsset(input: EvidenceAssetScoreInput): EvidenceAsse
     score: Number(Math.max(0, score).toFixed(4)),
     reasons,
   };
+}
+
+function classifyAdoptionRankTier(entry: UnrankedAdoptionEvidenceEntry): AdoptionRankTier {
+  const boundarySignal = typeof entry.metadata?.boundarySignal === "string"
+    ? (entry.metadata.boundarySignal as AdoptionBoundarySignal)
+    : undefined;
+
+  if (
+    boundarySignal === "governance_document" ||
+    boundarySignal === "protocol_document" ||
+    boundarySignal === "schema_truth_source" ||
+    boundarySignal === "explicit_endpoint" ||
+    boundarySignal === "service_entrypoint" ||
+    boundarySignal === "runtime_manifest"
+  ) {
+    return "adoption_ready";
+  }
+
+  return "owner_review";
+}
+
+function rankTierPriorityBoost(rankTier: AdoptionRankTier): number {
+  return rankTier === "adoption_ready" ? 7 : 0;
+}
+
+function formatAdoptionRankedEvidenceEntry(entry: AdoptionRankedEvidenceEntry, includeRankTier = false): string {
+  const sourceFiles = entry.sourceFiles.length > 0 ? ` from ${entry.sourceFiles.slice(0, 2).join(", ")}` : "";
+  const tier = includeRankTier ? ` [${entry.rankTier}]` : "";
+  return `#${entry.rank}${tier} ${entry.kind} ${entry.path} (${entry.score}): ${entry.reason}${sourceFiles}`;
 }
 
 function collectAdoptionCandidates(graph: EvidenceGraph, taxonomyPacks: DomainTaxonomyPack[]): UnrankedAdoptionEvidenceEntry[] {

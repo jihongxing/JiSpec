@@ -57,11 +57,11 @@ function main(): void {
     assert.equal(suite.task, "P9-T1");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 127);
-    assert.equal(manifest.totalExpectedTests, 557);
+    assert.equal(manifest.totalSuites, 137);
+    assert.equal(manifest.totalExpectedTests, 611);
     const runtime = manifest.areas.find((area) => area.area === "runtime-extended");
-    assert.equal(runtime?.suiteCount, 40);
-    assert.equal(runtime?.expectedTests, 169);
+    assert.equal(runtime?.suiteCount, 43);
+    assert.equal(runtime?.expectedTests, 188);
   }));
 
   printResults(results);

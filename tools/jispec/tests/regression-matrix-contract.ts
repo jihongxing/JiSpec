@@ -77,8 +77,8 @@ async function main(): Promise<void> {
   record("manifest freezes the matrix totals and source contract", () => {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
-    assert.equal(manifest.totalSuites, 134);
-    assert.equal(manifest.totalExpectedTests, 599);
+    assert.equal(manifest.totalSuites, 137);
+    assert.equal(manifest.totalExpectedTests, 611);
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
   });
 
@@ -86,14 +86,14 @@ async function main(): Promise<void> {
     const areaMap = new Map(manifest.areas.map((area) => [area.area, area]));
     assert.deepEqual([...areaMap.keys()], REGRESSION_AREA_ORDER);
     assert.equal(areaMap.get("core-mainline")?.suiteCount, 37);
-    assert.equal(areaMap.get("bootstrap-takeover-hardening")?.suiteCount, 28);
+    assert.equal(areaMap.get("bootstrap-takeover-hardening")?.suiteCount, 29);
     assert.equal(areaMap.get("retakeover-regression-pool")?.suiteCount, 2);
     assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 13);
     assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
-    assert.equal(areaMap.get("change-implement")?.suiteCount, 11);
-    assert.equal(areaMap.get("change-implement")?.expectedTests, 50);
+    assert.equal(areaMap.get("change-implement")?.suiteCount, 13);
+    assert.equal(areaMap.get("change-implement")?.expectedTests, 57);
     assert.equal(areaMap.get("core-mainline")?.expectedTests, 172);
-    assert.equal(areaMap.get("bootstrap-takeover-hardening")?.expectedTests, 113);
+    assert.equal(areaMap.get("bootstrap-takeover-hardening")?.expectedTests, 118);
     assert.equal(areaMap.get("runtime-extended")?.suiteCount, 43);
     assert.equal(areaMap.get("runtime-extended")?.expectedTests, 188);
     assert.ok(manifest.boundaries.v1MainlineAreas.every((area) => area !== "runtime-extended"));

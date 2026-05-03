@@ -1200,8 +1200,7 @@ function registerImplementCommand(program: Command): void {
     .action(async (options: { root: string; sessionId?: string; fromHandoff?: string; fast: boolean; externalPatch?: string; testCommand?: string; maxIterations?: number; maxTokens?: number; maxCost?: number; json: boolean }) => {
       try {
         const { runImplement, renderImplementText, renderImplementJSON, computeImplementExitCode } = await import("./implement/implement-runner");
-
-        const result = await runImplement({
+        const run = () => runImplement({
           root: path.resolve(options.root),
           sessionId: options.sessionId,
           fromHandoff: options.fromHandoff,
@@ -1213,6 +1212,8 @@ function registerImplementCommand(program: Command): void {
           maxCostUSD: options.maxCost,
         });
 
+        const result = options.json ? await withSuppressedConsoleLogs(run) : await run();
+
         const output = options.json ? renderImplementJSON(result) : renderImplementText(result);
         console.log(output);
 
@@ -1223,6 +1224,17 @@ function registerImplementCommand(program: Command): void {
         process.exitCode = 1;
       }
     });
+}
+
+async function withSuppressedConsoleLogs<T>(run: () => Promise<T>): Promise<T> {
+  const originalLog = console.log;
+  console.log = () => {};
+
+  try {
+    return await run();
+  } finally {
+    console.log = originalLog;
+  }
 }
 
 function registerHandoffAdapterCommand(program: Command): void {
