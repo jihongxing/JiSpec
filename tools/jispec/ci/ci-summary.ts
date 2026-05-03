@@ -1,5 +1,12 @@
 import { inferNextAction, selectHighlightedIssues, type VerifyReport } from "./verify-report";
-import { renderGreenfieldControlContext } from "./verify-summary";
+import {
+  renderGreenfieldControlContext,
+  renderMergeStatus,
+  renderVerifyDecisionCommand,
+  renderVerifyDecisionEvidence,
+  renderVerifyDecisionRisk,
+} from "./verify-summary";
+import { renderHumanDecisionSnapshot } from "../human-decision-packet";
 
 /**
  * Render CI summary as plain text for terminal/logs.
@@ -9,6 +16,18 @@ export function renderCiSummaryText(report: VerifyReport): string {
 
   // Verdict
   lines.push(`JiSpec Verify: ${report.verdict}`);
+  lines.push("");
+
+  lines.push("Decision Snapshot:");
+  for (const line of renderHumanDecisionSnapshot({
+    currentState: `${report.verdict} - ${renderMergeStatus(report)}`,
+    risk: renderVerifyDecisionRisk(report),
+    evidence: renderVerifyDecisionEvidence(report),
+    owner: "repo owner / reviewer",
+    nextCommand: renderVerifyDecisionCommand(report),
+  })) {
+    lines.push(`  ${line.replace(/^- /, "")}`);
+  }
   lines.push("");
 
   // Counts
@@ -75,6 +94,17 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
   // Verdict header
   const icon = report.ok ? "✅" : "❌";
   lines.push(`# ${icon} JiSpec Verify: ${report.verdict}`);
+  lines.push("");
+
+  lines.push("## Decision Snapshot");
+  lines.push("");
+  lines.push(...renderHumanDecisionSnapshot({
+    currentState: `${report.verdict} - ${renderMergeStatus(report)}`,
+    risk: renderVerifyDecisionRisk(report),
+    evidence: renderVerifyDecisionEvidence(report),
+    owner: "repo owner / reviewer",
+    nextCommand: renderVerifyDecisionCommand(report),
+  }));
   lines.push("");
 
   // Counts table

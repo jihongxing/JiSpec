@@ -63,6 +63,8 @@ async function main(): Promise<void> {
         brief.includes("Next command: `npm run jispec-cli -- verify`") &&
         brief.includes("## Owner Review Candidates") &&
         brief.includes("## Risk Summary") &&
+        brief.includes("## Evidence Distribution") &&
+        brief.includes("owner review") &&
         (brief.includes("`docs/governance/README.md`") || brief.includes("`api/proto/gateway.proto`")) &&
         brief.includes("## Adopted Contracts") &&
         brief.includes("[.spec/contracts/domain.yaml](../contracts/domain.yaml)") &&
@@ -106,6 +108,7 @@ async function main(): Promise<void> {
         rendered.includes("Owner review:") &&
         rendered.includes("Deferred debt:") &&
         rendered.includes("Risk:") &&
+        rendered.includes("Evidence distribution:") &&
         rendered.includes("Feature gate: accept_candidate") &&
         rendered.includes("Next:"),
       error: `Expected CLI output to include brief summary, got:\n${rendered}`,

@@ -4,6 +4,16 @@ import type { GreenfieldBehaviorDraft, GreenfieldScenarioDraft } from "./behavio
 import type { GreenfieldContextDraft, GreenfieldDomainDraft } from "./domain-draft";
 import type { GreenfieldSliceDraft, GreenfieldSliceQueueDraft } from "./slice-queue";
 import type { GreenfieldInputContract } from "./source-documents";
+import {
+  HUMAN_SUMMARY_COMPANION_NOTE,
+  renderHumanDecisionSnapshot,
+  renderHumanReviewerDecisionCompanion,
+} from "../human-decision-packet";
+import {
+  renderGreenfieldReviewDispositionLabel,
+  renderGreenfieldReviewGateSummary,
+  resolveGreenfieldReviewDisposition,
+} from "./review-workflow";
 
 export type GreenfieldReviewDecisionType =
   | "product_framing"
@@ -235,15 +245,31 @@ function createScenarioDecision(
   scenario: GreenfieldScenarioDraft,
   input: GreenfieldReviewPackDraftInput,
 ): GreenfieldReviewDecision {
+  const confidence =
+    scenario.sourceConfidence === "requirements"
+      ? "high"
+      : scenario.sourceConfidence === "technical_solution"
+        ? "medium"
+        : "low";
+  const evidenceRefs = scenario.requirementIds.length > 0
+    ? scenario.requirementIds.map((requirementId) => requirementEvidence(requirementId, input))
+    : [];
+
+  if (scenario.sourceConfidence === "technical_solution") {
+    evidenceRefs.push(technicalSolutionEvidence(input));
+  }
+
+  if (evidenceRefs.length === 0) {
+    evidenceRefs.push({ source: "generated_asset", ref: `contexts/${scenario.contextId}/behavior/scenarios/${scenario.id}.feature` });
+  }
+
   return {
     decision_id: `REV-BEHAVIOR-${scenario.id}`,
     decision_type: "behavior",
     summary: `Use ${scenario.id} to prove: ${scenario.scenario}.`,
     recommended_action: "Review whether the scenario expresses a real acceptance behavior and not only a generated happy path.",
-    confidence: scenario.sourceConfidence === "requirements" ? "high" : "low",
-    evidence_refs: scenario.requirementIds.length > 0
-      ? scenario.requirementIds.map((requirementId) => requirementEvidence(requirementId, input))
-      : [{ source: "generated_asset", ref: `contexts/${scenario.contextId}/behavior/scenarios/${scenario.id}.feature` }],
+    confidence,
+    evidence_refs: evidenceRefs,
     rejected_alternatives: [
       "Treat unit tests alone as acceptance evidence.",
       "Defer behavior scenarios until after implementation.",
@@ -253,7 +279,7 @@ function createScenarioDecision(
       : [],
     conflicts: [],
     status: "proposed",
-    blocking: scenario.sourceConfidence !== "requirements",
+    blocking: scenario.sourceConfidence === "inferred",
     affected_assets: [
       `contexts/${scenario.contextId}/behavior/scenarios/${scenario.id}.feature`,
     ],
@@ -363,12 +389,57 @@ function renderExecutiveSummary(
     `- Input mode: \`${input.inputContract.mode}\``,
     `- Requirements status: \`${input.inputContract.requirements.status}\``,
     `- Technical solution status: \`${input.inputContract.technicalSolution.status}\``,
+    `- Disposition: blocking / low-confidence / conflict / adopted / rejected / deferred / waived / advisory`,
+    "",
+    ...renderHumanDecisionSnapshot({
+      currentState: `review pack with ${summary.blockingProposed} blocking proposed item(s) and ${summary.conflicts} conflict(s)`,
+      risk: summary.blockingProposed > 0 || summary.conflicts > 0
+        ? "Resolve blocking, low-confidence, and conflict items before implementation handoff."
+        : "No blocking review item is present, but advisory decisions still need a final read-through.",
+      evidence: [
+        `${summary.total} review decision(s)`,
+        `${summary.highConfidence + summary.mediumConfidence} non-low-confidence decision(s)`,
+        ".spec/greenfield/review-pack/review-record.yaml",
+      ],
+      owner: "reviewer",
+      nextCommand: "`npm run jispec-cli -- review adopt|reject|defer|waive`",
+    }),
+    ...renderHumanReviewerDecisionCompanion({
+      subject: `${input.identity.name} review pack`,
+      truthSources: [
+        ".spec/greenfield/review-pack/review-record.yaml",
+        "docs/input/requirements.md",
+        "docs/input/technical-solution.md",
+      ],
+      strongestEvidence: decisions.slice(0, 5).map((decision) => `${decision.decision_id}: ${decision.summary}`),
+      inferredEvidence: decisions
+        .filter((decision) => resolveGreenfieldReviewDisposition(decision) !== "adopted")
+        .slice(0, 5)
+        .map((decision) => `${decision.decision_id} stays in ${renderGreenfieldReviewDispositionLabel(resolveGreenfieldReviewDisposition(decision))}`),
+      drift: [
+        `blocking proposed: ${summary.blockingProposed}`,
+        `conflicts: ${summary.conflicts}`,
+      ],
+      impact: [
+        `${summary.total} review decision(s)`,
+        ".spec/greenfield/review-pack/open-decisions.md",
+      ],
+      nextSteps: [
+        "Review blocking, low-confidence, and conflict decisions before implementation.",
+        "Adopt, reject, defer, or waive the unresolved items in review-record.yaml.",
+      ],
+      maxLines: 120,
+    }),
+    "## Review Gate",
+    "",
+    ...renderGreenfieldReviewGateSummary(decisions, "Adopt, reject, defer, or waive unresolved review decisions before implementation starts."),
     "",
     "## Human Review Gate",
     "",
     "- Review generated domain, contract, behavior, and slice decisions before implementation starts.",
     "- Mark blocking low-confidence or conflict items as adopted, rejected, deferred, or waived in `review-record.yaml`.",
     "- Rejected decisions should trigger regeneration or a correction delta before AI implementation handoff.",
+    `- ${HUMAN_SUMMARY_COMPANION_NOTE}`,
     "",
     "## Decision Inventory",
     "",
@@ -469,12 +540,14 @@ function renderReviewRecordYaml(
 }
 
 function renderDecisionSection(decision: GreenfieldReviewDecision): string[] {
+  const disposition = resolveGreenfieldReviewDisposition(decision);
   return [
     `### ${decision.decision_id}`,
     "",
     decision.summary,
     "",
     `- Type: \`${decision.decision_type}\``,
+    `- Disposition: \`${renderGreenfieldReviewDispositionLabel(disposition)}\``,
     `- Status: \`${decision.status}\``,
     `- Confidence: \`${decision.confidence}\``,
     `- Blocking: \`${decision.blocking}\``,
@@ -495,8 +568,8 @@ function renderDecisionSection(decision: GreenfieldReviewDecision): string[] {
 }
 
 function renderDecisionBullet(decision: GreenfieldReviewDecision): string {
-  const marker = decision.blocking ? "blocking" : "review";
-  return `- \`${decision.decision_id}\` [${marker}, ${decision.confidence}, ${decision.status}]: ${decision.summary}`;
+  const disposition = renderGreenfieldReviewDispositionLabel(resolveGreenfieldReviewDisposition(decision));
+  return `- \`${decision.decision_id}\` [${disposition}, ${decision.confidence}, ${decision.status}]: ${decision.summary}`;
 }
 
 function renderEvidenceRefs(refs: GreenfieldReviewEvidenceRef[]): string {
@@ -552,6 +625,19 @@ function requirementEvidence(
     ref: requirementId,
     excerpt: anchor?.excerpt,
     path: anchor ? "docs/input/requirements.md" : undefined,
+    line: anchor?.line,
+    paragraph_id: anchor?.paragraphId,
+    checksum: anchor?.checksum,
+  };
+}
+
+function technicalSolutionEvidence(input: GreenfieldReviewPackDraftInput): GreenfieldReviewEvidenceRef {
+  const anchor = input.inputContract.technicalSolution.anchors?.find((entry) => entry.kind === "heading") ?? input.inputContract.technicalSolution.anchors?.[0];
+  return {
+    source: "technical_solution",
+    ref: "docs/input/technical-solution.md",
+    excerpt: anchor?.excerpt ?? firstHeading(input.technicalSolutionContent),
+    path: anchor ? "docs/input/technical-solution.md" : undefined,
     line: anchor?.line,
     paragraph_id: anchor?.paragraphId,
     checksum: anchor?.checksum,

@@ -2,6 +2,7 @@ import {
   getBootstrapAdoptSummaryRelativePath,
   type BootstrapTakeoverReport,
   type BootstrapTakeoverDecisionRecord,
+  renderEvidenceDistributionSummary,
 } from "./takeover";
 import {
   HUMAN_SUMMARY_COMPANION_NOTE,
@@ -72,6 +73,10 @@ export function buildBootstrapAdoptSummary(report: BootstrapTakeoverReport): Boo
     `- Edited draft artifacts: ${report.decisions.filter((decision) => decision.edited).length}`,
     `- Correction load: ${renderCorrectionLoad(report.decisions)}`,
     "",
+    "## Evidence Distribution",
+    "",
+    `- ${renderEvidenceDistributionSummary(report.evidenceDistribution)}`,
+    "",
     "## Correction Loop",
     "",
     `- Hotspots: ${renderCorrectionHotspots(report.decisions)}`,
@@ -87,6 +92,11 @@ export function buildBootstrapAdoptSummary(report: BootstrapTakeoverReport): Boo
     "## Deferred Spec Debt",
     "",
     ...renderDeferredSpecDebt(report.decisions),
+    "",
+    "## Spec Debt Ledger",
+    "",
+    "- Ledger: `.spec/spec-debt/ledger.yaml`.",
+    "- Deferred records should keep owner, reason, affected assets, and repayment hint aligned with the ledger contract.",
     "",
     "## Rejected Drafts",
     "",
@@ -164,7 +174,8 @@ function renderRejectedDrafts(decisions: BootstrapTakeoverDecisionRecord[]): str
 
   return rejected.map((decision) => {
     const note = decision.note ? `; note: ${decision.note}` : "";
-    return `- \`${decision.artifactKind}\`${note}`;
+    const target = decision.targetPath ? ` -> ${linkPath(decision.targetPath)}` : "";
+    return `- \`${decision.artifactKind}\`${target}${note}`;
   });
 }
 
@@ -235,7 +246,7 @@ function renderNextVerifyStep(report: BootstrapTakeoverReport): string[] {
   const lines = ["- Run `npm run jispec-cli -- verify` after reviewing this adopt summary."];
 
   if (report.specDebtPaths.length > 0) {
-    lines.push("- Treat deferred spec debt as known historical debt; do not confuse it with a new blocking issue.");
+    lines.push("- Treat deferred spec debt as known historical debt in `.spec/spec-debt/ledger.yaml`; do not confuse it with a new blocking issue.");
   }
   if (report.adoptedArtifactPaths.length > 0) {
     lines.push("- If verify reports missing adopted contracts, treat that as a blocking takeover regression.");

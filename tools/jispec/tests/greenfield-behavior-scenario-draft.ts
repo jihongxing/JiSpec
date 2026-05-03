@@ -33,9 +33,15 @@ async function main(): Promise<void> {
     const catalogJourneyPath = path.join(root, "contexts", "catalog", "behavior", "journeys.md");
     const validCheckoutPath = path.join(root, "contexts", "ordering", "behavior", "scenarios", "SCN-ORDER-CHECKOUT-VALID.feature");
     const outOfStockPath = path.join(root, "contexts", "ordering", "behavior", "scenarios", "SCN-ORDER-CHECKOUT-OUT-OF-STOCK.feature");
+    const technicalBoundaryPath = path.join(root, "contexts", "ordering", "behavior", "scenarios", "SCN-ORDER-TECHNICAL-BOUNDARY.feature");
+    const catalogTechnicalBoundaryPath = path.join(root, "contexts", "catalog", "behavior", "scenarios", "SCN-CATALOG-TECHNICAL-OWNERSHIP.feature");
     const catalogAvailablePath = path.join(root, "contexts", "catalog", "behavior", "scenarios", "SCN-CATALOG-PRODUCT-AVAILABLE.feature");
+    const orderingJourney = fs.readFileSync(orderingJourneyPath, "utf-8");
+    const catalogJourney = fs.readFileSync(catalogJourneyPath, "utf-8");
     const validCheckout = fs.readFileSync(validCheckoutPath, "utf-8");
     const outOfStock = fs.readFileSync(outOfStockPath, "utf-8");
+    const technicalBoundary = fs.readFileSync(technicalBoundaryPath, "utf-8");
+    const catalogTechnicalBoundary = fs.readFileSync(catalogTechnicalBoundaryPath, "utf-8");
     const catalogAvailable = fs.readFileSync(catalogAvailablePath, "utf-8");
     const baseline = yaml.load(fs.readFileSync(path.join(root, ".spec", "baselines", "current.yaml"), "utf-8")) as { scenarios?: string[] };
 
@@ -46,11 +52,19 @@ async function main(): Promise<void> {
         initResult.nextTask === "greenfield-initialization-mvp-complete" &&
         initResult.writtenFiles.some((filePath) => filePath.endsWith("contexts/ordering/behavior/journeys.md")) &&
         initResult.writtenFiles.some((filePath) => filePath.endsWith("SCN-ORDER-CHECKOUT-VALID.feature")) &&
+        initResult.writtenFiles.some((filePath) => filePath.endsWith("SCN-ORDER-TECHNICAL-BOUNDARY.feature")) &&
+        initResult.writtenFiles.some((filePath) => filePath.endsWith("SCN-CATALOG-TECHNICAL-OWNERSHIP.feature")) &&
         fs.existsSync(orderingJourneyPath) &&
         fs.existsSync(catalogJourneyPath) &&
         fs.existsSync(validCheckoutPath) &&
         fs.existsSync(outOfStockPath) &&
-        fs.existsSync(catalogAvailablePath),
+        fs.existsSync(technicalBoundaryPath) &&
+        fs.existsSync(catalogTechnicalBoundaryPath) &&
+        fs.existsSync(catalogAvailablePath) &&
+        orderingJourney.includes("Source confidence: `technical_solution`") &&
+        catalogJourney.includes("Source confidence: `technical_solution`") &&
+        technicalBoundary.includes("@SCN-ORDER-TECHNICAL-BOUNDARY") &&
+        catalogTechnicalBoundary.includes("@SCN-CATALOG-TECHNICAL-OWNERSHIP"),
       error: `Expected journeys and feature files, got result=${JSON.stringify(initResult)}.`,
     });
 
@@ -94,6 +108,8 @@ async function main(): Promise<void> {
       passed:
         baseline.scenarios?.includes("SCN-ORDER-CHECKOUT-VALID") === true &&
         baseline.scenarios?.includes("SCN-ORDER-CHECKOUT-OUT-OF-STOCK") === true &&
+        baseline.scenarios?.includes("SCN-ORDER-TECHNICAL-BOUNDARY") === true &&
+        baseline.scenarios?.includes("SCN-CATALOG-TECHNICAL-OWNERSHIP") === true &&
         baseline.scenarios?.includes("SCN-CATALOG-PRODUCT-AVAILABLE") === true,
       error: `Expected baseline scenario IDs, got ${JSON.stringify(baseline)}.`,
     });

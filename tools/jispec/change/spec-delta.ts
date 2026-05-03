@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import type { ClassifiedPath } from "./git-diff-classifier";
 import {
   analyzeGreenfieldBlastRadius,
   buildBlastRadiusGraphPayload,
@@ -31,6 +32,7 @@ export interface SpecDeltaOptions {
   createdAt?: string;
   sliceId?: string;
   contextId?: string;
+  changedPaths?: ClassifiedPath[];
 }
 
 export interface SpecDeltaReferences {
@@ -120,6 +122,12 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
   const blastRadius = analyzeGreenfieldBlastRadius(root, options);
   const references = buildReferences(root, baseline, options, blastRadius);
   const changeId = generateChangeId(options.summary, createdAt);
+  const changedPaths = options.changedPaths && options.changedPaths.length > 0
+    ? options.changedPaths
+    : blastRadius.affectedAssetPaths.map((assetPath) => ({
+        path: assetPath,
+        kind: "contract" as const,
+      }));
   const dirtyAnalysis = enrichDirtyAnalysisWithProvenanceDrift(analyzeDirtyPropagation(root, {
     changeId,
     summary: options.summary,
@@ -192,6 +200,10 @@ export function draftSpecDelta(options: SpecDeltaOptions): SpecDeltaDraftResult 
       changeType,
       contextId: options.contextId,
       sliceId: options.sliceId,
+      changedPaths,
+      contractRefs: blastRadius.references.contracts,
+      testRefs: blastRadius.references.tests,
+      scopeHints: blastRadius.warnings,
     }),
     references,
     blastRadius,

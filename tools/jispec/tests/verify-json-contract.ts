@@ -33,6 +33,17 @@ async function main(): Promise<void> {
         generated_at: FIXED_GENERATED_AT,
         issues: [],
         metadata: {
+          externalGraphAdvisoryOnly: true,
+          externalGraphEvidenceCount: 0,
+          externalGraphExecution: {
+            commandExecuted: false,
+            networkUsed: false,
+            sourceUploaded: false,
+          },
+          externalGraphImportOnly: true,
+          externalGraphImportPath: ".spec/integrations/external-graph.json",
+          externalGraphImportStatus: "not_available_yet",
+          externalGraphWarningCount: 0,
           factsContractVersion: "1.0",
           impactAdvisoryOnly: true,
           impactGraphFreshness: "not_available_yet",

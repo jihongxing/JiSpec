@@ -12,7 +12,9 @@ import {
 import {
   getBootstrapTakeoverBriefRelativePath,
   type BootstrapTakeoverDecisionRecord,
+  type BootstrapEvidenceDistribution,
   type BootstrapTakeoverReport,
+  renderEvidenceDistributionSummary,
 } from "./takeover";
 import {
   HUMAN_SUMMARY_COMPANION_NOTE,
@@ -31,6 +33,7 @@ export interface BootstrapTakeoverBriefSummary {
   strongestEvidence: string[];
   excludedFileCount: number;
   riskSummary: string[];
+  evidenceDistribution: BootstrapEvidenceDistribution;
   featureRecommendation?: FeatureRecommendation;
   featureConfidenceReason?: string;
   nextActions: string[];
@@ -87,6 +90,7 @@ export function buildBootstrapTakeoverBrief(input: BootstrapTakeoverBriefInput):
     strongestEvidence: strongestEvidence.map((entry) => entry.path),
     excludedFileCount: excludedSummary.totalExcludedFileCount,
     riskSummary,
+    evidenceDistribution: input.report.evidenceDistribution,
     featureRecommendation: featureConfidence.recommendation,
     featureConfidenceReason: featureConfidence.confidenceReasons[0],
     nextActions,
@@ -104,6 +108,7 @@ export function buildBootstrapTakeoverBrief(input: BootstrapTakeoverBriefInput):
       featureConfidence,
       ownerReviewCandidates,
       riskSummary,
+      evidenceDistribution: input.report.evidenceDistribution,
       nextActions,
     }),
   };
@@ -119,6 +124,7 @@ export function renderTakeoverBriefSummary(summary: BootstrapTakeoverBriefSummar
   );
   lines.push(`Deferred debt: ${summary.deferredSpecDebt.length > 0 ? summary.deferredSpecDebt.slice(0, 3).join(", ") : "none"}`);
   lines.push(`Risk: ${summary.riskSummary.length > 0 ? summary.riskSummary.join("; ") : "none"}`);
+  lines.push(`Evidence distribution: ${renderEvidenceDistributionSummary(summary.evidenceDistribution)}`);
   if (summary.nextActions.length > 0) {
     lines.push(`Next: ${summary.nextActions[0]}`);
   }
@@ -134,6 +140,7 @@ function renderTakeoverBriefMarkdown(input: {
   featureConfidence: ParsedFeatureConfidenceSummary;
   ownerReviewCandidates: string[];
   riskSummary: string[];
+  evidenceDistribution: BootstrapEvidenceDistribution;
   nextActions: string[];
 }): string {
   const lines: string[] = [
@@ -146,7 +153,7 @@ function renderTakeoverBriefMarkdown(input: {
     `- Evidence strength: ${inlineCode(input.report.qualitySummary?.evidenceStrength ?? "unknown")}`,
     `- Adopted contracts: ${input.report.adoptedArtifactPaths.length}`,
     `- Deferred spec debt: ${input.report.specDebtPaths.length}`,
-    `- Rejected artifacts: ${input.report.rejectedArtifactKinds.length > 0 ? input.report.rejectedArtifactKinds.map(inlineCode).join(", ") : "none"}`,
+    `- Rejected artifacts: ${input.report.rejectedArtifactKinds.length > 0 ? input.report.rejectedArtifactKinds.map((artifactKind) => `${inlineCode(artifactKind)} -> ${inlineCode(`rejected:${artifactKind}`)}`).join(", ") : "none"}`,
     `- Machine report: ${markdownLink("bootstrap-takeover.json", ".spec/handoffs/bootstrap-takeover.json")}`,
     "",
     ...renderHumanDecisionSnapshot({
@@ -208,6 +215,10 @@ function renderTakeoverBriefMarkdown(input: {
     "## Risk Summary",
     "",
     ...renderRiskSummary(input.riskSummary, input.featureConfidence),
+    "",
+    "## Evidence Distribution",
+    "",
+    `- ${renderEvidenceDistributionSummary(input.evidenceDistribution)}`,
     "",
     "## Feature Confidence Gate",
     "",

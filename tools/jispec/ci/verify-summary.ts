@@ -108,7 +108,7 @@ export function writeCiVerifySummary(outputDir: string, report: VerifyReport): s
   return summaryPath;
 }
 
-function renderMergeStatus(report: VerifyReport): string {
+export function renderMergeStatus(report: VerifyReport): string {
   if (report.counts.blocking > 0) {
     return "Blocked until blocking issues are fixed or explicitly waived.";
   }
@@ -121,7 +121,7 @@ function renderMergeStatus(report: VerifyReport): string {
   return "Review required before merge.";
 }
 
-function renderVerifyDecisionRisk(report: VerifyReport): string {
+export function renderVerifyDecisionRisk(report: VerifyReport): string {
   if (report.counts.blocking > 0) {
     return `${report.counts.blocking} blocking issue(s) must be fixed, waived, or explicitly deferred before merge.`;
   }
@@ -131,7 +131,7 @@ function renderVerifyDecisionRisk(report: VerifyReport): string {
   return "no verify risk recorded";
 }
 
-function renderVerifyDecisionEvidence(report: VerifyReport): string[] {
+export function renderVerifyDecisionEvidence(report: VerifyReport): string[] {
   const evidence: string[] = ["`.jispec-ci/verify-report.json` or `.spec/handoffs/verify-summary.md`"];
   if (report.factsContractVersion) {
     evidence.push(`facts contract \`${report.factsContractVersion}\``);
@@ -149,7 +149,7 @@ function renderVerifyDecisionEvidence(report: VerifyReport): string[] {
   return evidence;
 }
 
-function renderVerifyDecisionCommand(report: VerifyReport): string {
+export function renderVerifyDecisionCommand(report: VerifyReport): string {
   if (report.counts.blocking > 0) {
     return "`npm run jispec-cli -- verify` after fixing blockers or recording explicit governance decisions";
   }
@@ -215,15 +215,48 @@ function renderImpactGraphContext(report: VerifyReport): string[] {
   const graphPath = typeof modes.impactGraphPath === "string"
     ? modes.impactGraphPath
     : ".spec/deltas/<changeId>/impact-graph.json";
+  const freshnessReason = typeof modes.impactGraphFreshnessReason === "string"
+    ? modes.impactGraphFreshnessReason
+    : undefined;
+  const changedFiles = stringArray(modes.impactGraphChangedFiles);
+  const contractRefs = stringArray(modes.impactGraphContractRefs);
+  const scopeHints = stringArray(modes.impactGraphScopeHints);
+  const missingVerificationHints = stringArray(modes.impactGraphMissingVerificationHints);
+  const nextReplayCommand = typeof modes.impactGraphNextReplayCommand === "string"
+    ? modes.impactGraphNextReplayCommand
+    : undefined;
+
   return [
     `- Freshness: \`${freshness}\`.`,
     `- Graph: \`${graphPath}\`.`,
+    `- Changed files: ${summarizeStringList(changedFiles)}.`,
+    `- Contract refs: ${summarizeStringList(contractRefs)}.`,
+    `- Scope hints: ${summarizeStringList(scopeHints)}.`,
+    `- Missing verification hints: ${summarizeStringList(missingVerificationHints)}.`,
+    ...(freshnessReason ? [`- Freshness reason: ${freshnessReason}.`] : []),
+    ...(nextReplayCommand ? [`- Replay command: \`${nextReplayCommand}\`.`] : []),
     "- Impact graph context is advisory and does not replace deterministic verify issues.",
   ];
 }
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function summarizeStringList(values: string[], limit = 4): string {
+  if (values.length === 0) {
+    return "none recorded";
+  }
+
+  const sample = values.slice(0, limit).join(", ");
+  const hidden = values.length - Math.min(values.length, limit);
+  return hidden > 0 ? `${values.length} item(s): ${sample} (+${hidden} more)` : `${values.length} item(s): ${sample}`;
 }
 
 function renderAdvisoryAndDebt(report: VerifyReport): string[] {

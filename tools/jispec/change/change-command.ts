@@ -12,7 +12,8 @@ import {
 import { computeImplementExitCode, runImplement, type ImplementRunResult } from "../implement/implement-runner";
 import { draftSpecDelta, isSpecDeltaChangeType, type SpecDeltaChangeType } from "./spec-delta";
 import { resolveChangeCommandMode, type ChangeDefaultModeResolution } from "./orchestration-config";
-import type { ChangeImpactSummary } from "./impact-summary";
+import { summarizeChangeImpact, type ChangeImpactSummary } from "./impact-summary";
+import { renderHumanDecisionSnapshot } from "../human-decision-packet";
 
 export type ChangeCommandMode = ChangeSessionOrchestrationMode;
 
@@ -119,6 +120,7 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
   const laneDecision = computeLaneDecision(classification, lane);
   const nextCommands = buildNextCommandHints(root, laneDecision.lane, sliceId);
   const createdAt = new Date().toISOString();
+  const sessionId = generateSessionId();
   const specDelta = draftSpecDelta({
     root,
     summary,
@@ -126,6 +128,7 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     createdAt,
     sliceId,
     contextId,
+    changedPaths: classification.changedPaths,
   });
   if (specDelta) {
     nextCommands.unshift({
@@ -141,10 +144,10 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
       description: "Review the change-scoped AI implementation handoff before assigning an implementer.",
     });
   }
-  const impactSummary = buildImpactSummary(root, sliceId, specDelta);
+  const impactSummary = buildImpactSummary(root, classification.changedPaths, sessionId, sliceId, specDelta);
 
   const session: ChangeSession = {
-    id: generateSessionId(),
+    id: sessionId,
     createdAt,
     summary,
     orchestrationMode: effectiveMode,
@@ -239,21 +242,79 @@ function findOpenDraftSessionId(root: string): string | undefined {
 
 function buildImpactSummary(
   root: string,
+  changedPaths: Array<{ path: string; kind: string }>,
+  changeId: string,
   sliceId?: string,
   specDelta?: ReturnType<typeof draftSpecDelta>,
-): ChangeImpactSummary | string[] | undefined {
+): ChangeImpactSummary | undefined {
   if (specDelta) {
-    return specDelta.impactSummary;
+    return {
+      ...specDelta.impactSummary,
+      changedFiles: stableUnique([
+        ...specDelta.impactSummary.changedFiles,
+        ...changedPaths.map((entry) => entry.path),
+      ]),
+      changedKinds: { ...specDelta.impactSummary.changedKinds },
+      contractRefs: stableUnique([
+        ...specDelta.impactSummary.contractRefs,
+        ...specDelta.references.contracts,
+      ]),
+      testRefs: stableUnique([
+        ...specDelta.impactSummary.testRefs,
+        ...specDelta.references.tests,
+      ]),
+      scopeHints: stableUnique([
+        ...specDelta.impactSummary.scopeHints,
+        ...changedPathScopeHints(changedPaths, sliceId),
+      ]),
+      impactedContracts: stableUnique([
+        ...specDelta.impactSummary.impactedContracts,
+        ...specDelta.references.contracts,
+      ]),
+      impactedFiles: stableUnique([
+        ...specDelta.impactSummary.impactedFiles,
+        ...changedPaths.map((entry) => entry.path),
+      ]),
+    };
   }
 
-  if (!sliceId) {
-    return undefined;
-  }
+  return summarizeChangeImpact({
+    root,
+    changeId,
+    changedPaths,
+    summary: sliceId ? `Slice ${sliceId}` : undefined,
+    sliceId,
+    scopeHints: changedPathScopeHints(changedPaths, sliceId),
+  });
+}
 
-  return [
-    `Slice: ${sliceId}`,
-    "Impact analysis not yet implemented in this version",
-  ];
+function changedPathScopeHints(
+  changedPaths: Array<{ path: string; kind: string }>,
+  sliceId?: string,
+): string[] {
+  const hints: string[] = [];
+  const kinds = new Set(changedPaths.map((entry) => entry.kind));
+
+  if (kinds.has("contract") || kinds.has("api_surface") || kinds.has("behavior_surface") || kinds.has("domain_core")) {
+    hints.push("contract-sensitive change");
+  }
+  if (kinds.size === 1 && kinds.has("docs_only")) {
+    hints.push("docs-only change");
+  }
+  if (kinds.size === 1 && kinds.has("test_only")) {
+    hints.push("test-only change");
+  }
+  if (kinds.has("config")) {
+    hints.push("config-sensitive change");
+  }
+  if (sliceId) {
+    hints.push(`slice ${sliceId}`);
+  }
+  return hints;
+}
+
+function stableUnique(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.length > 0)));
 }
 
 function relativePath(root: string, target: string): string {
@@ -426,26 +487,32 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
   }
 
   const impactSummary = session.impactSummary;
-  if (Array.isArray(impactSummary)) {
-    if (impactSummary.length > 0) {
-      lines.push("Impact:");
-      for (const impact of impactSummary) {
-        lines.push(`- ${impact}`);
-      }
-      lines.push("");
-    }
-  } else if (impactSummary) {
+  if (impactSummary) {
     lines.push("Impact:");
     lines.push(`- Impact graph: ${impactSummary.artifacts.impactGraphPath}`);
     lines.push(`- Impact report: ${impactSummary.artifacts.impactReportPath}`);
     lines.push(`- Verify focus: ${impactSummary.artifacts.verifyFocusPath}`);
     lines.push(`- Impact graph freshness: ${impactSummary.freshness.status}`);
+    lines.push(`- Changed files: ${impactSummary.changedFiles.length}`);
+    if (impactSummary.changedFiles.length > 0) {
+      lines.push(`- Changed file sample: ${impactSummary.changedFiles.slice(0, 4).join(", ")}`);
+    }
+    lines.push(`- Contract refs: ${impactSummary.contractRefs.length}`);
+    if (impactSummary.contractRefs.length > 0) {
+      lines.push(`- Contract sample: ${impactSummary.contractRefs.slice(0, 4).join(", ")}`);
+    }
+    lines.push(`- Scope hints: ${impactSummary.scopeHints.length}`);
+    if (impactSummary.scopeHints.length > 0) {
+      lines.push(`- Scope sample: ${impactSummary.scopeHints.slice(0, 4).join("; ")}`);
+    }
     lines.push(`- Impacted contracts: ${impactSummary.impactedContracts.length}`);
     lines.push(`- Impacted files: ${impactSummary.impactedFiles.length}`);
     lines.push(`- Advisory only: ${impactSummary.advisoryOnly}`);
     lines.push(`- Next replay command: ${impactSummary.nextReplayCommand}`);
     lines.push("");
   }
+
+  lines.push(...renderHumanDecisionSnapshot(buildChangeDecisionSnapshot(result)));
 
   if (session.specDelta) {
     lines.push("Spec Delta:");
@@ -531,6 +598,40 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
   }
 
   return lines.join("\n");
+}
+
+function buildChangeDecisionSnapshot(result: ChangeCommandResult) {
+  const impactSummary = result.session.impactSummary;
+  const execution = result.execution;
+  const nextCommand =
+    execution.implement?.decisionNextCommand ??
+    execution.implement?.postVerifyCommand ??
+    result.session.nextCommands[0]?.command ??
+    "npm run jispec-cli -- verify";
+
+  return {
+    currentState:
+      execution.state === "implemented"
+        ? "change session implemented and returned to verify"
+        : execution.state === "awaiting_adopt"
+          ? `execute mode paused for adopt session ${execution.openDraftSessionId ?? "unknown"}`
+          : "change session recorded and awaiting downstream mediation",
+    risk: impactSummary
+      ? [
+          `impact freshness ${impactSummary.freshness.status}`,
+          ...impactSummary.missingVerificationHints.slice(0, 2),
+        ].join("; ")
+      : "impact summary unavailable",
+    evidence: [
+      `changed paths: ${result.session.changedPaths.length}`,
+      impactSummary ? `contracts: ${impactSummary.contractRefs.length}` : "contracts: 0",
+      impactSummary ? `verify focus: ${impactSummary.artifacts.verifyFocusPath}` : "verify focus unavailable",
+    ],
+    owner:
+      execution.implement?.decisionNextActionOwner ??
+      (execution.state === "planned" ? "human_or_external_tool" : "reviewer"),
+    nextCommand,
+  };
 }
 
 export function renderChangeCommandJSON(result: ChangeCommandResult): string {

@@ -32,7 +32,10 @@ function main(): void {
       warnings?: unknown[];
       schemas?: unknown[];
       tests?: unknown[];
-      sourceFiles?: unknown[];
+      sourceFiles?: Array<{
+        provenanceLabel?: string;
+        ownerReviewPosture?: string;
+      }>;
     };
 
     results.push({
@@ -40,8 +43,10 @@ function main(): void {
       passed:
         typeof graph.repoRoot === "string" &&
         typeof graph.generatedAt === "string" &&
-        Array.isArray(graph.warnings),
-      error: "Expected repoRoot, generatedAt, and warnings in evidence graph.",
+        Array.isArray(graph.warnings) &&
+        Array.isArray(graph.sourceFiles) &&
+        graph.sourceFiles.some((entry) => typeof entry.provenanceLabel === "string" && typeof entry.ownerReviewPosture === "string"),
+      error: "Expected repoRoot, generatedAt, warnings, and provenance-bearing source files in evidence graph.",
     });
 
     results.push({
@@ -61,6 +66,7 @@ function main(): void {
         fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("# Bootstrap Summary") &&
         fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("## Decision Snapshot") &&
         fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("Current state:") &&
+        fs.readFileSync(summaryPath, "utf-8").includes("Provenance:") &&
         fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("Next command: `npm run jispec-cli -- bootstrap draft --root .`") &&
         fs.readFileSync(bootstrapSummaryPath, "utf-8").includes("Machine consumers should use `evidence-graph.json`"),
       error: "Expected discover to write bootstrap-summary.md while preserving evidence-summary.txt compatibility.",

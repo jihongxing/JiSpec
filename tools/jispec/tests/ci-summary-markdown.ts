@@ -102,6 +102,11 @@ async function main(): Promise<void> {
 
     const markdown = renderCiSummaryMarkdown(report);
     assert.ok(markdown.startsWith("# ❌ JiSpec Verify: FAIL_BLOCKING"));
+    assert.ok(markdown.includes("## Decision Snapshot"));
+    assert.ok(markdown.includes("Current state: FAIL_BLOCKING - Blocked until blocking issues are fixed or explicitly waived."));
+    assert.ok(markdown.includes("Risk: 2 blocking issue(s) must be fixed, waived, or explicitly deferred before merge."));
+    assert.ok(markdown.includes("Owner: repo owner / reviewer"));
+    assert.ok(markdown.includes("Next command: `npm run jispec-cli -- verify` after fixing blockers or recording explicit governance decisions"));
     assert.ok(markdown.includes("| Blocking | 2 |"));
     assert.ok(markdown.includes("Facts contract: `1.0`"));
     assert.ok(markdown.includes("Matched policy rules: `bootstrap-debt-observe`, `core-contracts`"));
@@ -126,6 +131,8 @@ async function main(): Promise<void> {
 
     const text = renderCiSummaryText(report);
     assert.ok(text.includes("JiSpec Verify: FAIL_BLOCKING"));
+    assert.ok(text.includes("Decision Snapshot:"));
+    assert.ok(text.includes("Current state: FAIL_BLOCKING - Blocked until blocking issues are fixed or explicitly waived."));
     assert.ok(text.includes("Facts Contract: 1.0"));
     assert.ok(text.includes("Matched Policy Rules: bootstrap-debt-observe, core-contracts"));
     assert.ok(text.includes("Next Action: Fix 2 blocking issue(s) before merging."));

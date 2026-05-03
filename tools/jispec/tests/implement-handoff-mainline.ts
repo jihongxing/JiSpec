@@ -66,6 +66,14 @@ async function main(): Promise<void> {
           provenanceNote: "test fixture",
         },
       ],
+      evidenceDistribution: {
+        extracted: 2,
+        inferred: 0,
+        ambiguous: 0,
+        ownerReview: 0,
+        unknown: 0,
+        total: 2,
+      },
       baselineHandoff: {
         expectedContractPaths: [".spec/contracts/domain.yaml", ".spec/contracts/api_spec.json"],
         deferredSpecDebtPaths: [".spec/spec-debt/bootstrap-takeover/feature.json"],
@@ -134,8 +142,10 @@ async function main(): Promise<void> {
     assert.equal(result.handoffPacket?.decisionPacket.nextAction, result.decisionPacket?.nextAction);
     assert.equal(result.handoffPacket?.decisionPacket.nextActionDetail.failedCheck, "budget");
     assert.ok(result.handoffPacket?.decisionPacket.implementationBoundary.note.includes("does not generate or own business-code implementation"));
-    assert.match(formatHandoffPacket(result.handoffPacket), /Decision snapshot:/);
+    assert.match(formatHandoffPacket(result.handoffPacket), /Decision Snapshot:/);
     assert.match(formatHandoffPacket(result.handoffPacket), /Current state: needs_external_patch at budget/);
+    assert.match(formatHandoffPacket(result.handoffPacket), /Risk: Implementation mediation stopped because the configured budget was exhausted\./);
+    assert.match(formatHandoffPacket(result.handoffPacket), /Evidence: scope=not_applicable, test=failed, verify=not_run/);
     assert.match(formatHandoffPacket(result.handoffPacket), /Owner: human_or_external_tool/);
     assert.match(formatHandoffPacket(result.handoffPacket), /Next command: npm run jispec-cli -- implement --session-id change-handoff --external-patch <path>/);
     assert.ok(result.handoffPacket?.discipline);

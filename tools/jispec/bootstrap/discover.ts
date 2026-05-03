@@ -31,6 +31,10 @@ import {
   renderAdoptionRankedEvidenceLines,
 } from "./evidence-ranking";
 import {
+  inferEvidenceProvenanceDescriptor,
+  normalizeEvidenceProvenanceLabel,
+} from "../provenance/evidence-provenance";
+import {
   HUMAN_SUMMARY_COMPANION_NOTE,
   renderHumanDecisionSnapshot,
 } from "../human-decision-packet";
@@ -127,6 +131,13 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
     `Excluded files: ${result.graph.excludedSummary?.totalExcludedFileCount ?? 0}`,
     `Warnings: ${result.warningCount}`,
   ];
+
+  const provenanceSummary = summarizeProvenanceSignals(result.graph);
+  if (provenanceSummary.total > 0) {
+    lines.push(
+      `Provenance: ${provenanceSummary.extracted} extracted, ${provenanceSummary.inferred} inferred, ${provenanceSummary.ambiguous} ambiguous, ${provenanceSummary.ownerReview} owner review, ${provenanceSummary.unknown} unknown`,
+    );
+  }
 
   const topRoutes = result.graph.routes
     .filter((route) => getEvidenceConfidenceScore(route) >= 0.5)
@@ -321,7 +332,20 @@ function collectSchemaEvidence(root: string, files: string[]): EvidenceSchema[] 
     }
 
     seen.add(repoPath);
-    schemas.push({ path: repoPath, format, signal, confidenceScore, provenanceNote });
+    schemas.push({
+      path: repoPath,
+      format,
+      signal,
+      confidenceScore,
+      provenanceNote,
+      ...inferEvidenceProvenanceDescriptor({
+        confidence: confidenceScore,
+        evidenceKind: "schema",
+        sourcePath: repoPath,
+        ownerReviewRequired: signal === "schema_directory" || confidenceScore < 0.8,
+        ambiguous: signal === "schema_directory" && confidenceScore < 0.8,
+      }),
+    });
   }
 
   return schemas;
@@ -349,6 +373,12 @@ function collectTestEvidence(root: string, files: string[]): EvidenceTest[] {
       signal: detected.signal,
       confidenceScore: detected.confidenceScore,
       provenanceNote: detected.provenanceNote,
+      ...inferEvidenceProvenanceDescriptor({
+        confidence: detected.confidenceScore,
+        evidenceKind: "test",
+        sourcePath: repoPath,
+        ownerReviewRequired: detected.signal === "script_test",
+      }),
     });
   }
 
@@ -377,6 +407,13 @@ function collectMigrationEvidence(root: string, files: string[]): EvidenceMigrat
       signal: signal.signal,
       confidenceScore: signal.confidenceScore,
       provenanceNote: signal.provenanceNote,
+      ...inferEvidenceProvenanceDescriptor({
+        confidence: signal.confidenceScore,
+        evidenceKind: "migration",
+        sourcePath: repoPath,
+        ownerReviewRequired: signal.signal === "migration_filename",
+        ambiguous: signal.signal === "migration_filename",
+      }),
     });
   }
 
@@ -405,6 +442,11 @@ function collectRouteEvidence(root: string, files: string[]): EvidenceRoute[] {
           signal: "http_signature",
           confidenceScore: 0.96,
           provenanceNote: `Detected HTTP route signature in ${repoPath}.`,
+          ...inferEvidenceProvenanceDescriptor({
+            confidence: 0.96,
+            evidenceKind: "route",
+            sourcePath: repoPath,
+          }),
         };
         const key = `${route.path}|${route.method ?? ""}|${repoPath}`;
         if (seen.has(key)) {
@@ -431,6 +473,13 @@ function collectRouteEvidence(root: string, files: string[]): EvidenceRoute[] {
       signal: "route_candidate",
       confidenceScore: 0.34,
       provenanceNote: `Route-like source file discovered without an explicit HTTP signature: ${repoPath}.`,
+      ...inferEvidenceProvenanceDescriptor({
+        confidence: 0.34,
+        evidenceKind: "route",
+        sourcePath: repoPath,
+        ownerReviewRequired: true,
+        ambiguous: true,
+      }),
     });
   }
 
@@ -454,6 +503,12 @@ function collectDocumentEvidence(root: string, files: string[]): EvidenceDocumen
       kind: detected.kind,
       confidenceScore: detected.confidenceScore,
       provenanceNote: detected.provenanceNote,
+      ...inferEvidenceProvenanceDescriptor({
+        confidence: detected.confidenceScore,
+        evidenceKind: "document",
+        sourcePath: repoPath,
+        ownerReviewRequired: detected.kind === "contract" || detected.kind === "context",
+      }),
     });
   }
 
@@ -477,6 +532,12 @@ function collectManifestEvidence(root: string, files: string[]): EvidenceManifes
       kind: detected.kind,
       confidenceScore: detected.confidenceScore,
       provenanceNote: detected.provenanceNote,
+      ...inferEvidenceProvenanceDescriptor({
+        confidence: detected.confidenceScore,
+        evidenceKind: "manifest",
+        sourcePath: repoPath,
+        ownerReviewRequired: detected.kind === "requirements",
+      }),
     });
   }
 
@@ -486,9 +547,18 @@ function collectManifestEvidence(root: string, files: string[]): EvidenceManifes
 function collectSourceFileInventory(root: string, files: string[]): EvidenceSourceFile[] {
   return files.map((absolutePath) => {
     const repoPath = normalizeRepoPath(root, absolutePath);
+    const category = classifySourceFile(repoPath, absolutePath);
     return {
       path: repoPath,
-      category: classifySourceFile(repoPath, absolutePath),
+      category,
+      provenanceNote: `Inventory classified as ${category} source file.`,
+      ...inferEvidenceProvenanceDescriptor({
+        confidence: sourceFileConfidenceForCategory(category),
+        evidenceKind: "source",
+        sourcePath: repoPath,
+        ownerReviewRequired: sourceFileRequiresOwnerReview(category),
+        ambiguous: category === "other",
+      }),
     };
   });
 }
@@ -1076,4 +1146,128 @@ function applyHeuristicWarnings(graph: EvidenceGraph, fileCount: number): void {
   if (summary.testCount > 0 && summary.highConfidenceTestCount === 0) {
     graph.warnings.push("Only low-confidence test assets were found; behavior drafts may rely on repository-wide heuristics.");
   }
+}
+
+function summarizeProvenanceSignals(graph: EvidenceGraph): {
+  total: number;
+  extracted: number;
+  inferred: number;
+  ambiguous: number;
+  ownerReview: number;
+  unknown: number;
+} {
+  const counters = {
+    total: 0,
+    extracted: 0,
+    inferred: 0,
+    ambiguous: 0,
+    ownerReview: 0,
+    unknown: 0,
+  };
+
+  for (const signal of collectProvenanceSignals(graph)) {
+    counters.total += 1;
+    const label = resolveProvenanceLabel(signal);
+    switch (label) {
+      case "EXTRACTED":
+        counters.extracted += 1;
+        break;
+      case "INFERRED":
+        counters.inferred += 1;
+        break;
+      case "AMBIGUOUS":
+        counters.ambiguous += 1;
+        break;
+      case "OWNER_REVIEW":
+        counters.ownerReview += 1;
+        break;
+      default:
+        counters.unknown += 1;
+        break;
+    }
+  }
+
+  return counters;
+}
+
+function collectProvenanceSignals(graph: EvidenceGraph): Array<{
+  provenanceLabel?: unknown;
+  confidenceScore?: number;
+  ownerReviewPosture?: unknown;
+}> {
+  return [
+    ...graph.routes,
+    ...graph.tests,
+    ...graph.schemas,
+    ...graph.migrations,
+    ...graph.documents,
+    ...graph.manifests,
+    ...graph.sourceFiles,
+  ];
+}
+
+function resolveProvenanceLabel(signal: {
+  provenanceLabel?: unknown;
+  confidenceScore?: number;
+  ownerReviewPosture?: unknown;
+}): ReturnType<typeof normalizeEvidenceProvenanceLabel> {
+  const normalized = normalizeEvidenceProvenanceLabel(signal.provenanceLabel);
+  if (normalized !== "UNKNOWN") {
+    return normalized;
+  }
+
+  const confidence = typeof signal.confidenceScore === "number" && Number.isFinite(signal.confidenceScore)
+    ? Math.max(0, Math.min(1, signal.confidenceScore))
+    : undefined;
+  const posture = typeof signal.ownerReviewPosture === "string" ? signal.ownerReviewPosture.toLowerCase() : "";
+
+  if (posture === "required") {
+    return confidence !== undefined && confidence < 0.5 ? "AMBIGUOUS" : "OWNER_REVIEW";
+  }
+  if (confidence === undefined) {
+    return "UNKNOWN";
+  }
+  if (confidence >= 0.9) {
+    return "EXTRACTED";
+  }
+  if (confidence >= 0.5) {
+    return "INFERRED";
+  }
+  return "AMBIGUOUS";
+}
+
+function sourceFileConfidenceForCategory(category: EvidenceSourceFile["category"]): number {
+  switch (category) {
+    case "manifest":
+      return 0.97;
+    case "schema":
+      return 0.94;
+    case "document":
+      return 0.92;
+    case "migration":
+      return 0.91;
+    case "route":
+      return 0.88;
+    case "test":
+      return 0.84;
+    case "entrypoint":
+      return 0.82;
+    case "sdk":
+      return 0.82;
+    case "interface":
+    case "trait":
+      return 0.78;
+    case "controller":
+      return 0.76;
+    case "service":
+      return 0.74;
+    case "feature":
+      return 0.72;
+    default:
+      return 0.46;
+  }
+}
+
+function sourceFileRequiresOwnerReview(category: EvidenceSourceFile["category"]): boolean {
+  return category === "controller" || category === "service" || category === "interface" || category === "trait" || category === "other";
 }

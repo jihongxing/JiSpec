@@ -70,6 +70,7 @@ export function renderGreenfieldInitText(result: GreenfieldInitResult): string {
     `Input status: ${result.inputContract.status}`,
     `Force: ${result.force ? "yes" : "no"}`,
     `Change handoff: ${result.changeMainlineHandoffPath ?? "not written"}`,
+    `Next command: npm run jispec-cli -- bootstrap draft --root ${result.root}`,
     `Next task: ${result.nextTask}`,
   ];
 

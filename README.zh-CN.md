@@ -629,6 +629,8 @@ Package/bin 命令面：
   [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
 - 北极星下一阶段开发任务：
   [docs/north-star-next-development-plan.md](docs/north-star-next-development-plan.md)
+- 第二层扩充与引导式契约创建实施计划：
+  [docs/second-layer-guided-contract-implementation-plan.md](docs/second-layer-guided-contract-implementation-plan.md)
 - 北极星最终验收套件：
   [docs/north-star-acceptance.md](docs/north-star-acceptance.md)
 - V1 后发布门禁：

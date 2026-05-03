@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { renderVerifySummaryMarkdown } from "../ci/verify-summary";
 import { runChangeCommand } from "../change/change-command";
 import { summarizeChangeImpact, classifyImpactFreshness } from "../change/impact-summary";
@@ -26,8 +27,10 @@ async function main(): Promise<void> {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-p9-impact-missing-"));
     try {
       const summary = summarizeChangeImpact({ root, changeId: "chg-missing", generatedAt: "2026-05-02T00:00:00.000Z" });
+      assert.equal(summary.version, 2);
       assert.equal(summary.freshness.status, "not_available_yet");
       assert.equal(summary.advisoryOnly, true);
+      assert.equal(summary.changedFiles.length, 0);
       assert.equal(classifyImpactFreshness(root, ".spec/deltas/chg-missing/impact-graph.json").status, "not_available_yet");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -53,10 +56,14 @@ async function main(): Promise<void> {
       assert.equal(typeof impact, "object");
       assert.equal(Array.isArray(impact), false);
       assert.ok(impact && !Array.isArray(impact));
+      assert.equal(impact.version, 2);
       assert.equal(impact.changeId, change.session.specDelta?.changeId);
       assert.match(impact.artifacts.impactGraphPath, /\.spec\/deltas\/.+\/impact-graph\.json$/);
       assert.match(impact.artifacts.impactReportPath, /\.spec\/deltas\/.+\/impact-report\.md$/);
       assert.match(impact.artifacts.verifyFocusPath, /\.spec\/deltas\/.+\/verify-focus\.yaml$/);
+      assert.ok(impact.changedFiles.length > 0);
+      assert.ok(impact.contractRefs.length > 0);
+      assert.ok(impact.scopeHints.length > 0);
       assert.equal(impact.freshness.status, "fresh");
       assert.equal(impact.advisoryOnly, true);
     } finally {
@@ -79,8 +86,13 @@ async function main(): Promise<void> {
       assert.ok(impact && !Array.isArray(impact));
       assert.ok(impact.impactedContracts.length >= 1);
       assert.ok(impact.impactedFiles.length >= 1);
+      assert.ok(impact.changedFiles.length >= 1);
+      assert.ok(impact.contractRefs.length >= 1);
+      assert.ok(impact.scopeHints.length >= 1);
       assert.ok(impact.nextReplayCommand.includes("npm run jispec-cli -- change"));
       assert.ok(change.text.includes("Impact graph freshness: fresh"));
+      assert.ok(change.text.includes("Changed files:"));
+      assert.ok(change.text.includes("## Decision Snapshot"));
     } finally {
       cleanupFixture(fixture);
     }
@@ -102,7 +114,7 @@ async function main(): Promise<void> {
     }
   }));
 
-  results.push(await recordAsync("verify and Markdown summary expose impact freshness as advisory context", async () => {
+    results.push(await recordAsync("verify and Markdown summary expose impact freshness as advisory context", async () => {
     const fixture = createGreenfieldFixture();
     try {
       await runChangeCommand({
@@ -116,14 +128,72 @@ async function main(): Promise<void> {
       const verify = await runVerify({ root: fixture.root, generatedAt: "2026-05-02T00:00:00.000Z" });
       assert.equal(verify.metadata?.impactGraphFreshness, "fresh");
       assert.equal(verify.metadata?.impactAdvisoryOnly, true);
+      assert.ok(Array.isArray(verify.metadata?.impactGraphChangedFiles));
+      assert.ok((verify.metadata?.impactGraphChangedFiles as string[]).length > 0);
+      assert.ok(Array.isArray(verify.metadata?.impactGraphContractRefs));
+      assert.ok((verify.metadata?.impactGraphContractRefs as string[]).length > 0);
+      assert.ok(Array.isArray(verify.metadata?.impactGraphScopeHints));
+      assert.ok((verify.metadata?.impactGraphScopeHints as string[]).some((hint) => hint.includes("contract-sensitive") || hint.includes("contracts:")));
+      assert.ok(Array.isArray(verify.metadata?.impactGraphMissingVerificationHints));
+      assert.ok(typeof verify.metadata?.impactGraphNextReplayCommand === "string");
 
       const report = buildVerifyReport(verify, { repoRoot: fixture.root, provider: "local" });
       const summary = renderVerifySummaryMarkdown(report);
       assert.ok(summary.includes("## Impact Graph"));
+      assert.ok(summary.includes("## Decision Snapshot"));
+      assert.ok(summary.includes("Current state:"));
+      assert.ok(summary.includes("Risk:"));
+      assert.ok(summary.includes("Evidence:"));
+      assert.ok(summary.includes("Owner:"));
+      assert.ok(summary.includes("Next command:"));
       assert.ok(summary.includes("Freshness: `fresh`"));
+      assert.ok(summary.includes("Changed files:"));
+      assert.ok(summary.includes("Contract refs:"));
+      assert.ok(summary.includes("Scope hints:"));
+      assert.ok(summary.includes("Missing verification hints:"));
+      assert.ok(summary.includes("Replay command:"));
       assert.ok(summary.includes("advisory"));
     } finally {
       cleanupFixture(fixture);
+    }
+  }));
+
+  results.push(await recordAsync("scenario fixtures cover api-surface, docs-only, and stale impact regressions", async () => {
+    const apiFixture = createGreenfieldFixture();
+    const docsFixture = createGreenfieldFixture();
+    try {
+      fs.appendFileSync(path.join(apiFixture.root, "src", "routes", "orders.ts"), "\nexport const routeBoundary = true;\n", "utf-8");
+
+      const apiChange = await runChangeCommand({
+        root: apiFixture.root,
+        summary: "Adjust ordering contract boundary",
+        mode: "prompt",
+        changeType: "add",
+      });
+      const apiImpact = apiChange.session.impactSummary;
+      assert.ok(apiImpact && !Array.isArray(apiImpact));
+      assert.equal(apiChange.session.laneDecision.lane, "strict");
+      assert.ok(apiImpact.changedKinds.api_surface > 0);
+      assert.ok(apiImpact.scopeHints.some((hint) => hint.includes("contract-sensitive change")));
+      assert.ok(apiImpact.contractRefs.length >= 0);
+      assert.ok(apiChange.text.includes("Impact graph freshness:"));
+
+      fs.appendFileSync(path.join(docsFixture.root, "README.md"), "\nAdditional governance notes.\n", "utf-8");
+      const docsChange = await runChangeCommand({
+        root: docsFixture.root,
+        summary: "Update governance docs",
+        mode: "prompt",
+        changeType: "modify",
+      });
+      const docsImpact = docsChange.session.impactSummary;
+      assert.ok(docsImpact && !Array.isArray(docsImpact));
+      assert.equal(docsChange.session.laneDecision.lane, "fast");
+      assert.equal(docsImpact.changedKinds.docs_only, 1);
+      assert.ok(docsImpact.scopeHints.some((hint) => hint.includes("docs-only change")));
+      assert.ok(docsChange.text.includes("docs-only change"));
+    } finally {
+      cleanupFixture(apiFixture);
+      cleanupFixture(docsFixture);
     }
   }));
 
@@ -150,12 +220,41 @@ function createGreenfieldFixture(): { root: string; sourceRoot: string } {
   fs.writeFileSync(requirementsPath, buildRequirements(), "utf-8");
   fs.writeFileSync(solutionPath, buildTechnicalSolution(), "utf-8");
   runGreenfieldInit({ root, requirements: requirementsPath, technicalSolution: solutionPath });
+  fs.writeFileSync(path.join(root, "README.md"), "# P9 Impact Fixture\n", "utf-8");
+  fs.mkdirSync(path.join(root, "src", "routes"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "src", "routes", "orders.ts"),
+    'export const createOrder = () => "created";\n',
+    "utf-8",
+  );
+  initializeGitRepository(root);
   return { root, sourceRoot };
 }
 
 function cleanupFixture(fixture: { root: string; sourceRoot: string }): void {
   fs.rmSync(fixture.root, { recursive: true, force: true });
   fs.rmSync(fixture.sourceRoot, { recursive: true, force: true });
+}
+
+function initializeGitRepository(root: string): void {
+  const commands: Array<{ program: string; args: string[]; label: string }> = [
+    { program: "git", args: ["init"], label: "git init" },
+    { program: "git", args: ["config", "user.email", "p9-impact@example.com"], label: "git config user.email" },
+    { program: "git", args: ["config", "user.name", "JiSpec P9 Impact"], label: "git config user.name" },
+    { program: "git", args: ["add", "."], label: "git add ." },
+    { program: "git", args: ["commit", "-m", "Initial P9 impact fixture"], label: "git commit" },
+  ];
+
+  for (const command of commands) {
+    const result = spawnSync(command.program, command.args, {
+      cwd: root,
+      encoding: "utf-8",
+    });
+
+    if (result.status !== 0) {
+      throw new Error(`Failed to initialize git repository at step '${command.label}': ${result.stderr}`);
+    }
+  }
 }
 
 function buildRequirements(): string {

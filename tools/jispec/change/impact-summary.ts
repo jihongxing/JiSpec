@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { normalizeEvidencePath } from "../bootstrap/evidence-graph";
 
 export type ImpactGraphFreshnessStatus = "fresh" | "stale" | "not_available_yet" | "invalid";
 
@@ -19,9 +20,14 @@ export interface ChangeImpactArtifacts {
 }
 
 export interface ChangeImpactSummary {
-  version: 1;
+  version: 2;
   changeId: string;
   artifacts: ChangeImpactArtifacts;
+  changedFiles: string[];
+  changedKinds: Record<string, number>;
+  contractRefs: string[];
+  testRefs: string[];
+  scopeHints: string[];
   impactedContracts: string[];
   impactedFiles: string[];
   missingVerificationHints: string[];
@@ -38,6 +44,10 @@ export interface ChangeImpactSummaryInput {
   changeType?: string;
   contextId?: string;
   sliceId?: string;
+  changedPaths?: Array<{ path: string; kind: string }>;
+  contractRefs?: string[];
+  testRefs?: string[];
+  scopeHints?: string[];
 }
 
 export function summarizeChangeImpact(input: ChangeImpactSummaryInput): ChangeImpactSummary {
@@ -45,17 +55,46 @@ export function summarizeChangeImpact(input: ChangeImpactSummaryInput): ChangeIm
   const freshness = classifyImpactFreshness(input.root, artifacts.impactGraphPath, input.generatedAt);
   const verifyFocus = readVerifyFocus(input.root, artifacts.verifyFocusPath);
   const verificationFocus = objectValue(verifyFocus.verification_focus);
+  const changedPaths = normalizeChangedPaths(input.changedPaths);
+  const changedFiles = stableUnique(changedPaths.map((entry) => entry.path));
+  const changedKinds = summarizeChangedKinds(changedPaths);
+  const contractRefs = stableUnique([
+    ...stringArray(input.contractRefs),
+    ...stringArray(verificationFocus.contracts ?? verifyFocus.contracts),
+  ]);
+  const testRefs = stableUnique([
+    ...stringArray(input.testRefs),
+    ...stringArray(verificationFocus.tests ?? verifyFocus.tests),
+  ]);
+  const impactedFiles = stableUnique([
+    ...changedFiles,
+    ...stringArray(verificationFocus.asset_paths ?? verifyFocus.asset_paths),
+    ...stringArray(objectValue(verifyFocus.dirty_propagation).dirty_asset_paths),
+  ]);
+  const scopeHints = stableUnique([
+    ...stringArray(input.scopeHints),
+    ...buildScopeHints({
+      changedFiles,
+      changedKinds,
+      contractRefs,
+      testRefs,
+      freshness,
+      verificationFocus,
+    }),
+  ]);
 
   return {
-    version: 1,
+    version: 2,
     changeId: input.changeId,
     artifacts,
-    impactedContracts: stringArray(verificationFocus.contracts ?? verifyFocus.contracts),
-    impactedFiles: stableUnique([
-      ...stringArray(verificationFocus.asset_paths ?? verifyFocus.asset_paths),
-      ...stringArray(objectValue(verifyFocus.dirty_propagation).dirty_asset_paths),
-    ]),
-    missingVerificationHints: buildMissingVerificationHints(freshness, verificationFocus),
+    changedFiles,
+    changedKinds,
+    contractRefs,
+    testRefs,
+    scopeHints,
+    impactedContracts: contractRefs,
+    impactedFiles,
+    missingVerificationHints: buildMissingVerificationHints(freshness, verificationFocus, changedFiles, contractRefs, testRefs),
     freshness,
     nextReplayCommand: buildNextReplayCommand(input),
     advisoryOnly: true,
@@ -121,18 +160,78 @@ function readVerifyFocus(rootInput: string, relativePath: string): Record<string
 function buildMissingVerificationHints(
   freshness: ImpactGraphFreshness,
   verificationFocus: Record<string, unknown>,
+  changedFiles: string[],
+  contractRefs: string[],
+  testRefs: string[],
 ): string[] {
   const hints: string[] = [];
   if (freshness.status !== "fresh") {
     hints.push(`Impact graph freshness is ${freshness.status}: ${freshness.reason}`);
   }
-  if (stringArray(verificationFocus.contracts).length === 0) {
+  if (contractRefs.length === 0 && stringArray(verificationFocus.contracts).length === 0) {
     hints.push("No impacted contracts are listed in verify-focus.yaml.");
   }
-  if (stringArray(verificationFocus.tests).length === 0) {
+  if (testRefs.length === 0 && stringArray(verificationFocus.tests).length === 0) {
     hints.push("No impacted tests are listed in verify-focus.yaml.");
   }
+  if (changedFiles.length === 0) {
+    hints.push("No changed files were supplied for this impact summary.");
+  }
   return hints;
+}
+
+function buildScopeHints(input: {
+  changedFiles: string[];
+  changedKinds: Record<string, number>;
+  contractRefs: string[];
+  testRefs: string[];
+  freshness: ImpactGraphFreshness;
+  verificationFocus: Record<string, unknown>;
+}): string[] {
+  const hints: string[] = [];
+  if (input.changedKinds.contract > 0 || input.changedKinds.api_surface > 0 || input.changedKinds.behavior_surface > 0 || input.changedKinds.domain_core > 0) {
+    hints.push("contract-sensitive change");
+  }
+  if (input.changedKinds.docs_only > 0 && input.changedFiles.length === input.changedKinds.docs_only) {
+    hints.push("docs-only change");
+  }
+  if (input.changedKinds.test_only > 0 && input.changedFiles.length === input.changedKinds.test_only) {
+    hints.push("test-only change");
+  }
+  if (input.changedKinds.config > 0) {
+    hints.push("config-sensitive change");
+  }
+  if (input.contractRefs.length > 0) {
+    hints.push(`contracts: ${input.contractRefs.slice(0, 4).join(", ")}`);
+  }
+  if (input.testRefs.length > 0) {
+    hints.push(`tests: ${input.testRefs.slice(0, 4).join(", ")}`);
+  }
+  if (input.freshness.status !== "fresh") {
+    hints.push(`impact graph ${input.freshness.status}`);
+  }
+  if (stringArray(input.verificationFocus.asset_paths).length > 0) {
+    hints.push("verification focus available");
+  }
+  return hints;
+}
+
+function summarizeChangedKinds(changedPaths: Array<{ path: string; kind: string }>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const entry of changedPaths) {
+    counts[entry.kind] = (counts[entry.kind] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function normalizeChangedPaths(changedPaths: ChangeImpactSummaryInput["changedPaths"]): Array<{ path: string; kind: string }> {
+  if (!Array.isArray(changedPaths)) {
+    return [];
+  }
+  return changedPaths
+    .filter((entry): entry is { path: string; kind: string } => Boolean(entry && typeof entry.path === "string" && typeof entry.kind === "string"))
+    .map((entry) => ({ path: normalizeEvidencePath(entry.path), kind: entry.kind }))
+    .sort((left, right) => `${left.kind}|${left.path}`.localeCompare(`${right.kind}|${right.path}`));
 }
 
 function buildNextReplayCommand(input: ChangeImpactSummaryInput): string {

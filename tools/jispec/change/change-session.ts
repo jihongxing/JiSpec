@@ -31,7 +31,7 @@ export interface ChangeSession {
   contextId?: string;
   baseRef?: string;
   nextCommands: ChangeSessionCommandHint[];
-  impactSummary?: ChangeImpactSummary | string[];
+  impactSummary?: ChangeImpactSummary;
 }
 
 /**

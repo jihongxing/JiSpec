@@ -8,6 +8,7 @@ import {
   selectHighlightedIssues,
 } from "../ci/verify-report";
 import { renderVerifySummaryMarkdown } from "../ci/verify-summary";
+import { renderHumanDecisionSnapshot, renderHumanDecisionSnapshotText } from "../human-decision-packet";
 import { createVerifyRunResult, type VerifyIssue } from "../verify/verdict";
 
 const FIXED_GENERATED_AT = "2026-04-27T00:00:00.000Z";
@@ -151,6 +152,24 @@ async function main(): Promise<void> {
     assert.ok(summary.includes("Waiver lifecycle: 2 active, 1 expired, 0 revoked, 0 invalid."));
     assert.ok(summary.includes("Known debt items: 1"));
     assert.ok(summary.includes("This Markdown file is a human-readable companion summary, not a machine API."));
+    const snapshot = {
+      currentState: "FAIL_BLOCKING - Blocked until blocking issues are fixed or explicitly waived.",
+      risk: "2 blocking issue(s) must be fixed, waived, or explicitly deferred before merge.",
+      evidence: [
+        "`.jispec-ci/verify-report.json` or `.spec/handoffs/verify-summary.md`",
+        "facts contract `1.0`",
+        "2 matched policy rule(s)",
+        "1 matched waiver(s)",
+      ],
+      owner: "repo owner / reviewer",
+      nextCommand: "`npm run jispec-cli -- verify` after fixing blockers or recording explicit governance decisions",
+    };
+    assert.deepEqual(
+      renderHumanDecisionSnapshot(snapshot)
+        .filter((line) => line.startsWith("- "))
+        .map((line) => line.replace(/^-\s*/, "")),
+      renderHumanDecisionSnapshotText(snapshot),
+    );
     console.log("✓ Test 4: verify summary has a stable human-readable decision shape");
     passed++;
   } catch (error) {

@@ -3,6 +3,7 @@ import type { ContractGraph } from "./contract-graph";
 import type { GreenfieldEvidenceGraph } from "./evidence-graph";
 import type { GreenfieldReviewPackDraft } from "./review-pack";
 import type { GreenfieldSliceDraft, GreenfieldSliceQueueDraft } from "./slice-queue";
+import { renderGreenfieldReviewGateSummary } from "./review-workflow";
 
 export interface GreenfieldAiImplementHandoffInput {
   identity: {
@@ -68,13 +69,18 @@ function renderSliceHandoff(
     "",
     "## Gate Status",
     "",
+    ...renderGreenfieldReviewGateSummary(
+      input.reviewPackDraft.decisions,
+      "Adopt, reject, defer, or waive unresolved review decisions before implementation starts.",
+    ),
+    "",
     ...(blockingReviewDecisionIds.length > 0
       ? [
-          "Do not start implementation until these review decisions are adopted, rejected into correction, deferred, or waived:",
+          "Blocking review decisions:",
           "",
           ...blockingReviewDecisionIds.map((decisionId) => `- \`${decisionId}\``),
         ]
-      : ["Review gate has no blocking or low-confidence proposed decisions for the first handoff."]),
+      : ["- No blocking review decisions remain for the first handoff."]),
     "",
     "## Target Slice",
     "",

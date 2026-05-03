@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { main as runCliMain } from "../cli";
+import { renderGreenfieldInitText } from "../greenfield/init";
 import { loadGreenfieldSourceDocuments } from "../greenfield/source-documents";
 import { runGreenfieldInit } from "../greenfield/init";
 
@@ -33,6 +34,13 @@ async function main(): Promise<void> {
       passed:
         strictContract.status === "passed" &&
         strictContract.mode === "strict" &&
+        strictContract.contractVersion === 1 &&
+        strictContract.guidance.supportedModes.includes("strict") &&
+        strictContract.guidance.supportedModes.includes("requirements-only") &&
+        strictContract.guidance.supportedModes.length === 2 &&
+        strictContract.guidance.requirements.required === true &&
+        strictContract.guidance.technicalSolution.optional === true &&
+        strictContract.guidance.jiSpecResponsibilities.some((item) => item.includes("anchors")) &&
         strictContract.requirements.status === "strong" &&
         strictContract.technicalSolution.status === "strong" &&
         strictContract.requirements.requirementIds?.includes("REQ-ORD-001") === true &&
@@ -64,10 +72,13 @@ async function main(): Promise<void> {
         requirementsOnly.status === "input_contract_ready" &&
         requirementsOnly.inputContract.status === "warning" &&
         requirementsOnly.inputContract.mode === "requirements-only" &&
+        requirementsOnly.inputContract.contractVersion === 1 &&
+        requirementsOnly.inputContract.guidance.supportedModes.includes("requirements-only") &&
         requirementsOnly.inputContract.technicalSolution.status === "missing" &&
         requirementsOnly.writtenFiles.some((filePath) => filePath.endsWith("jiproject/project.yaml")) &&
         requirementsOnly.inputContract.warnings.some((warning) => warning.includes("technical solution is missing")) &&
-        requirementsOnly.inputContract.openDecisions.length > 0,
+        requirementsOnly.inputContract.openDecisions.length > 0 &&
+        renderGreenfieldInitText(requirementsOnly).includes("Next command: npm run jispec-cli -- bootstrap draft --root"),
       error: `Expected requirements-only warning contract, got ${JSON.stringify(requirementsOnly)}.`,
     });
 

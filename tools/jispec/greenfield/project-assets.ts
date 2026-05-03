@@ -54,6 +54,7 @@ interface WriteAssetOptions {
 
 const REQUIREMENTS_TARGET = "docs/input/requirements.md";
 const TECHNICAL_SOLUTION_TARGET = "docs/input/technical-solution.md";
+const OPEN_QUESTIONS_TARGET = ".spec/greenfield/open-questions.yaml";
 const BUNDLED_SCHEMA_FILES = [
   "agent-output.schema.json",
   "context.schema.json",
@@ -67,6 +68,30 @@ const BUNDLED_AGENT_FILES = [
   "agents.yaml",
   "pipeline.yaml",
 ] as const;
+
+interface GreenfieldOpenQuestionRecord {
+  id: string;
+  source: "source_documents" | "contracts" | "behavior" | "slices";
+  scope: string;
+  confidence: "high" | "medium" | "low";
+  blocking: boolean;
+  summary: string;
+  related_assets: string[];
+}
+
+interface GreenfieldOpenQuestionsArtifact {
+  relativePath: string;
+  records: GreenfieldOpenQuestionRecord[];
+  summary: {
+    total: number;
+    blocking: number;
+    sourceDocuments: number;
+    contracts: number;
+    behavior: number;
+    slices: number;
+  };
+  content: string;
+}
 
 export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOptions): GreenfieldProjectAssetResult {
   const root = path.resolve(options.root);
@@ -131,6 +156,7 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
   });
   const behaviorDraft = draftGreenfieldBehavior({
     requirementsContent,
+    technicalSolutionContent,
     requirementIds: options.inputContract.requirements.requirementIds ?? [],
     domainDraft,
   });
@@ -172,6 +198,12 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
     reviewPackDraft,
     aiImplementHandoff,
   });
+  const openQuestionsArtifact = buildOpenQuestionsArtifact({
+    inputContract: options.inputContract,
+    apiContractDraft,
+    behaviorDraft,
+    sliceQueueDraft,
+  });
   writeAsset({
     root,
     relativePath: "jiproject/project.yaml",
@@ -203,14 +235,14 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
   writeAsset({
     root,
     relativePath: ".spec/greenfield/source-documents.yaml",
-    content: renderSourceDocumentsManifest(options.inputContract),
+    content: renderSourceDocumentsManifest(options.inputContract, openQuestionsArtifact),
     force,
     result,
   });
   writeAsset({
     root,
     relativePath: ".spec/greenfield/initialization-summary.md",
-    content: renderInitializationSummary(identity, options.inputContract, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, evidenceGraph, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff),
+    content: renderInitializationSummary(identity, options.inputContract, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, evidenceGraph, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff, openQuestionsArtifact),
     force,
     result,
   });
@@ -223,8 +255,15 @@ export function writeGreenfieldProjectAssets(options: GreenfieldProjectAssetOpti
   });
   writeAsset({
     root,
+    relativePath: openQuestionsArtifact.relativePath,
+    content: openQuestionsArtifact.content,
+    force,
+    result,
+  });
+  writeAsset({
+    root,
     relativePath: ".spec/baselines/current.yaml",
-    content: renderCurrentBaseline(identity, options.inputContract, domainDraft, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff),
+    content: renderCurrentBaseline(identity, options.inputContract, domainDraft, apiContractDraft, behaviorDraft, sliceQueueDraft, verifyGateDraft, reviewPackDraft, aiImplementHandoff, changeMainlineHandoff, openQuestionsArtifact),
     force,
     result,
   });
@@ -333,6 +372,14 @@ function renderProjectYaml(identity: { id: string; name: string }, inputContract
     version: "0.1.0",
     delivery_model: "greenfield-initialization",
     input_mode: inputContract.mode,
+    input_contract: {
+      version: inputContract.contractVersion,
+      supported_modes: inputContract.guidance.supportedModes,
+      requirements: inputContract.guidance.requirements,
+      technical_solution: inputContract.guidance.technicalSolution,
+      ji_spec_responsibilities: inputContract.guidance.jiSpecResponsibilities,
+      user_responsibilities: inputContract.guidance.userResponsibilities,
+    },
     source_documents: {
       requirements: REQUIREMENTS_TARGET,
       technical_solution: TECHNICAL_SOLUTION_TARGET,
@@ -415,8 +462,19 @@ function renderConstraintsYaml(inputContract: GreenfieldInputContract): string {
   });
 }
 
-function renderSourceDocumentsManifest(inputContract: GreenfieldInputContract): string {
+function renderSourceDocumentsManifest(
+  inputContract: GreenfieldInputContract,
+  openQuestionsArtifact: GreenfieldOpenQuestionsArtifact,
+): string {
   return dumpYaml({
+    input_contract: {
+      version: inputContract.contractVersion,
+      supported_modes: inputContract.guidance.supportedModes,
+      requirements: inputContract.guidance.requirements,
+      technical_solution: inputContract.guidance.technicalSolution,
+      ji_spec_responsibilities: inputContract.guidance.jiSpecResponsibilities,
+      user_responsibilities: inputContract.guidance.userResponsibilities,
+    },
     source_documents: {
       requirements: {
         path: REQUIREMENTS_TARGET,
@@ -457,6 +515,16 @@ function renderSourceDocumentsManifest(inputContract: GreenfieldInputContract): 
     blocking_issues: inputContract.blockingIssues,
     warnings: inputContract.warnings,
     open_decisions: inputContract.openDecisions,
+    open_questions: {
+      path: openQuestionsArtifact.relativePath,
+      generated_at: new Date().toISOString(),
+      total: openQuestionsArtifact.summary.total,
+      blocking: openQuestionsArtifact.summary.blocking,
+      source_documents: openQuestionsArtifact.summary.sourceDocuments,
+      contracts: openQuestionsArtifact.summary.contracts,
+      behavior: openQuestionsArtifact.summary.behavior,
+      slices: openQuestionsArtifact.summary.slices,
+    },
     generated_at: new Date().toISOString(),
   });
 }
@@ -472,6 +540,7 @@ function renderInitializationSummary(
   reviewPackDraft: GreenfieldReviewPackDraft,
   aiImplementHandoff: GreenfieldAiImplementHandoff,
   changeMainlineHandoff: GreenfieldChangeMainlineHandoff,
+  openQuestionsArtifact: GreenfieldOpenQuestionsArtifact,
 ): string {
   return [
     `# ${identity.name} Greenfield Initialization`,
@@ -506,6 +575,7 @@ function renderInitializationSummary(
     "- `.spec/greenfield/ai-implement-handoff.md`",
     "- `.spec/greenfield/change-mainline-handoff.json`",
     "- `.spec/greenfield/change-mainline-handoff.md`",
+    `- \`${openQuestionsArtifact.relativePath}\``,
     "- `schemas/*.json`",
     "- `.spec/greenfield/source-documents.yaml`",
     "- `.spec/baselines/current.yaml`",
@@ -523,6 +593,16 @@ function renderInitializationSummary(
     ...(apiContractDraft.openQuestions.length > 0
       ? apiContractDraft.openQuestions.map((question) => `- ${question}`)
       : ["- No API contract open questions recorded."]),
+    "",
+    "## Open Questions Artifact",
+    "",
+    `- Path: \`${openQuestionsArtifact.relativePath}\``,
+    `- Open questions: ${openQuestionsArtifact.summary.total}`,
+    `- Blocking: ${openQuestionsArtifact.summary.blocking}`,
+    `- Source documents: ${openQuestionsArtifact.summary.sourceDocuments}`,
+    `- Contracts: ${openQuestionsArtifact.summary.contracts}`,
+    `- Behavior: ${openQuestionsArtifact.summary.behavior}`,
+    `- Slices: ${openQuestionsArtifact.summary.slices}`,
     "",
     "## Behavior Open Decisions",
     "",
@@ -634,6 +714,118 @@ function renderOpenDecisions(
   ].join("\n");
 }
 
+function buildOpenQuestionsArtifact(input: {
+  inputContract: GreenfieldInputContract;
+  apiContractDraft: GreenfieldApiContractDraft;
+  behaviorDraft: GreenfieldBehaviorDraft;
+  sliceQueueDraft: GreenfieldSliceQueueDraft;
+}): GreenfieldOpenQuestionsArtifact {
+  const records: GreenfieldOpenQuestionRecord[] = [];
+  let sourceDocuments = 0;
+  let contracts = 0;
+  let behavior = 0;
+  let slices = 0;
+
+  for (const [index, summary] of input.inputContract.openDecisions.entries()) {
+    records.push({
+      id: `OQ-SRC-${String(index + 1).padStart(3, "0")}`,
+      source: "source_documents",
+      scope: "input_contract",
+      confidence: input.inputContract.requirements.status === "strong" ? "high" : "medium",
+      blocking: false,
+      summary,
+      related_assets: [
+        ".spec/greenfield/source-documents.yaml",
+        "jiproject/project.yaml",
+      ],
+    });
+    sourceDocuments += 1;
+  }
+
+  for (const contextContract of input.apiContractDraft.contextContracts) {
+    for (const contract of contextContract.contracts) {
+      for (const question of contract.openQuestions) {
+        records.push({
+          id: `OQ-CON-${String(contracts + 1).padStart(3, "0")}`,
+          source: "contracts",
+          scope: `${contextContract.contextId}.${contract.id}`,
+          confidence: contract.sourceConfidence === "technical_solution" ? "high" : contract.sourceConfidence === "requirements" ? "medium" : "low",
+          blocking: false,
+          summary: question,
+          related_assets: [
+            `contexts/${contextContract.contextId}/design/contracts.yaml`,
+          ],
+        });
+        contracts += 1;
+      }
+    }
+  }
+
+  for (const [index, decision] of input.behaviorDraft.openDecisions.entries()) {
+    records.push({
+      id: `OQ-BEH-${String(index + 1).padStart(3, "0")}`,
+      source: "behavior",
+      scope: "behavior_draft",
+      confidence: input.inputContract.technicalSolution.status === "missing" ? "low" : "medium",
+      blocking: false,
+      summary: decision,
+      related_assets: input.behaviorDraft.contextBehaviors.map((contextBehavior) => `contexts/${contextBehavior.contextId}/behavior/journeys.md`),
+    });
+    behavior += 1;
+  }
+
+  for (const [index, decision] of input.sliceQueueDraft.openDecisions.entries()) {
+    records.push({
+      id: `OQ-SLC-${String(index + 1).padStart(3, "0")}`,
+      source: "slices",
+      scope: "slice_plan",
+      confidence: "medium",
+      blocking: false,
+      summary: decision,
+      related_assets: [
+        ".spec/greenfield/initialization-summary.md",
+        ".spec/greenfield/change-mainline-handoff.md",
+      ],
+    });
+    slices += 1;
+  }
+
+  const summary = {
+    total: records.length,
+    blocking: records.filter((record) => record.blocking).length,
+    sourceDocuments,
+    contracts,
+    behavior,
+    slices,
+  };
+
+  return {
+    relativePath: OPEN_QUESTIONS_TARGET,
+    records,
+    summary,
+    content: renderOpenQuestionsYaml(records, summary),
+  };
+}
+
+function renderOpenQuestionsYaml(
+  records: GreenfieldOpenQuestionRecord[],
+  summary: GreenfieldOpenQuestionsArtifact["summary"],
+): string {
+  return dumpYaml({
+    version: 1,
+    generated_at: new Date().toISOString(),
+    summary: {
+      total: summary.total,
+      blocking: summary.blocking,
+      source_documents: summary.sourceDocuments,
+      contracts: summary.contracts,
+      behavior: summary.behavior,
+      slices: summary.slices,
+    },
+    open_questions: records,
+  });
+}
+
 function renderCurrentBaseline(
   identity: { id: string; name: string },
   inputContract: GreenfieldInputContract,
@@ -645,6 +837,7 @@ function renderCurrentBaseline(
   reviewPackDraft: GreenfieldReviewPackDraft,
   aiImplementHandoff: GreenfieldAiImplementHandoff,
   changeMainlineHandoff: GreenfieldChangeMainlineHandoff,
+  openQuestionsArtifact: GreenfieldOpenQuestionsArtifact,
 ): string {
   return dumpYaml({
     baseline_id: `${identity.id}-current`,
@@ -684,6 +877,12 @@ function renderCurrentBaseline(
       change_summary: changeMainlineHandoff.change_intent?.summary,
       next_commands: changeMainlineHandoff.next_commands,
     },
+    open_questions: {
+      path: openQuestionsArtifact.relativePath,
+      ids: openQuestionsArtifact.records.map((question) => question.id),
+      total: openQuestionsArtifact.summary.total,
+      blocking_count: openQuestionsArtifact.summary.blocking,
+    },
     verify_policy: {
       path: ".spec/policy.yaml",
       rule_ids: verifyGateDraft.policy.rules.map((rule) => rule.id),
@@ -716,6 +915,7 @@ function renderCurrentBaseline(
       ".spec/greenfield/ai-implement-handoff.md",
       ".spec/greenfield/change-mainline-handoff.json",
       ".spec/greenfield/change-mainline-handoff.md",
+      OPEN_QUESTIONS_TARGET,
       ".github/workflows/jispec-verify.yml",
       ...domainDraft.contexts.map((context) => `contexts/${context.id}/context.yaml`),
       ...apiContractDraft.contextContracts.map((contextContract) => `contexts/${contextContract.contextId}/design/contracts.yaml`),

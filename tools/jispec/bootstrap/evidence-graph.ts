@@ -1,3 +1,5 @@
+import type { EvidenceOwnerReviewPosture, EvidenceProvenanceLabel } from "../provenance/evidence-provenance";
+
 export interface EvidenceSourceRef {
   path: string;
   kind: "route" | "test" | "schema" | "migration" | "document" | "manifest" | "feature" | "source";
@@ -6,6 +8,8 @@ export interface EvidenceSourceRef {
 export interface EvidenceSignal {
   confidenceScore?: number;
   provenanceNote?: string;
+  provenanceLabel?: EvidenceProvenanceLabel;
+  ownerReviewPosture?: EvidenceOwnerReviewPosture;
 }
 
 export interface EvidenceRoute extends EvidenceSignal {
@@ -58,7 +62,7 @@ export interface EvidenceManifest extends EvidenceSignal {
     | "rush";
 }
 
-export interface EvidenceSourceFile {
+export interface EvidenceSourceFile extends EvidenceSignal {
   path: string;
   category:
     | "route"

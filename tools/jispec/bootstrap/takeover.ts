@@ -9,6 +9,7 @@ import {
 } from "./draft";
 import { normalizeEvidencePath } from "./evidence-graph";
 import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
+import { inferEvidenceProvenanceDescriptor, type EvidenceProvenanceLabel } from "../provenance/evidence-provenance";
 
 const BOOTSTRAP_TAKEOVER_REPORT_PATH = ".spec/handoffs/bootstrap-takeover.json";
 const BOOTSTRAP_TAKEOVER_BRIEF_PATH = ".spec/handoffs/takeover-brief.md";
@@ -23,6 +24,15 @@ export interface BootstrapTakeoverDecisionRecord {
   sourceFiles: string[];
   confidenceScore: number;
   provenanceNote: string;
+}
+
+export interface BootstrapEvidenceDistribution {
+  extracted: number;
+  inferred: number;
+  ambiguous: number;
+  ownerReview: number;
+  unknown: number;
+  total: number;
 }
 
 export interface BootstrapBaselineHandoff {
@@ -48,6 +58,7 @@ export interface BootstrapTakeoverReport {
   specDebtPaths: string[];
   rejectedArtifactKinds: DraftArtifactKind[];
   decisions: BootstrapTakeoverDecisionRecord[];
+  evidenceDistribution: BootstrapEvidenceDistribution;
   baselineHandoff: BootstrapBaselineHandoff;
   replay?: ReplayMetadata;
 }
@@ -122,6 +133,8 @@ export function buildBootstrapTakeoverReport(input: BootstrapTakeoverReportInput
       record.targetPath = getContractRelativePath(decision.artifactKind);
     } else if (decision.kind === "skip_as_spec_debt") {
       record.targetPath = normalizeEvidencePath(`.spec/spec-debt/${input.manifest.sessionId}/${decision.artifactKind}.json`);
+    } else {
+      record.targetPath = `rejected:${decision.artifactKind}`;
     }
 
     decisions.push(record);
@@ -132,6 +145,7 @@ export function buildBootstrapTakeoverReport(input: BootstrapTakeoverReportInput
   const adoptedArtifactPaths = [...input.adoptedArtifactPaths].sort((left, right) => left.localeCompare(right));
   const specDebtPaths = [...input.specDebtPaths].sort((left, right) => left.localeCompare(right));
   const rejectedArtifactKinds = [...input.rejectedArtifactKinds].sort((left, right) => left.localeCompare(right));
+  const evidenceDistribution = summarizeEvidenceDistribution(decisions);
 
   return {
     version: 1,
@@ -150,6 +164,7 @@ export function buildBootstrapTakeoverReport(input: BootstrapTakeoverReportInput
     specDebtPaths,
     rejectedArtifactKinds,
     decisions,
+    evidenceDistribution,
     baselineHandoff: {
       expectedContractPaths: adoptedArtifactPaths,
       deferredSpecDebtPaths: specDebtPaths,
@@ -237,10 +252,68 @@ export function loadBootstrapTakeoverReport(rootInput: string): BootstrapTakeove
     specDebtPaths: [...parsed.specDebtPaths].sort((left, right) => left.localeCompare(right)),
     rejectedArtifactKinds: [...parsed.rejectedArtifactKinds].sort((left, right) => left.localeCompare(right)),
     decisions: [...parsed.decisions].sort((left, right) => left.artifactKind.localeCompare(right.artifactKind)),
+    evidenceDistribution: parsed.evidenceDistribution ?? summarizeEvidenceDistribution(parsed.decisions),
     baselineHandoff: {
       expectedContractPaths: [...parsed.baselineHandoff.expectedContractPaths].sort((left, right) => left.localeCompare(right)),
       deferredSpecDebtPaths: [...parsed.baselineHandoff.deferredSpecDebtPaths].sort((left, right) => left.localeCompare(right)),
       rejectedArtifactKinds: [...parsed.baselineHandoff.rejectedArtifactKinds].sort((left, right) => left.localeCompare(right)),
     },
   };
+}
+
+export function renderEvidenceDistributionSummary(distribution: BootstrapEvidenceDistribution): string {
+  return [
+    `extracted ${distribution.extracted}`,
+    `inferred ${distribution.inferred}`,
+    `ambiguous ${distribution.ambiguous}`,
+    `owner review ${distribution.ownerReview}`,
+    `unknown ${distribution.unknown}`,
+  ].join(", ");
+}
+
+function summarizeEvidenceDistribution(decisions: BootstrapTakeoverDecisionRecord[]): BootstrapEvidenceDistribution {
+  const distribution: BootstrapEvidenceDistribution = {
+    extracted: 0,
+    inferred: 0,
+    ambiguous: 0,
+    ownerReview: 0,
+    unknown: 0,
+    total: 0,
+  };
+
+  for (const decision of decisions) {
+    const sourcePath = decision.sourceFiles[0] ?? decision.targetPath ?? decision.artifactKind;
+    const descriptor = inferEvidenceProvenanceDescriptor({
+      confidence: decision.confidenceScore,
+      evidenceKind: decision.artifactKind,
+      sourcePath,
+      ownerReviewRequired: decision.edited || decision.finalState !== "adopted",
+      ambiguous: decision.finalState !== "adopted" && decision.confidenceScore < 0.8,
+    });
+
+    distribution.total += 1;
+    incrementDistribution(distribution, descriptor.provenanceLabel);
+  }
+
+  return distribution;
+}
+
+function incrementDistribution(distribution: BootstrapEvidenceDistribution, label: EvidenceProvenanceLabel): void {
+  if (label === "EXTRACTED") {
+    distribution.extracted += 1;
+    return;
+  }
+  if (label === "INFERRED") {
+    distribution.inferred += 1;
+    return;
+  }
+  if (label === "AMBIGUOUS") {
+    distribution.ambiguous += 1;
+    return;
+  }
+  if (label === "OWNER_REVIEW") {
+    distribution.ownerReview += 1;
+    return;
+  }
+  distribution.unknown += 1;
 }

@@ -9,6 +9,15 @@ export type GreenfieldReviewAction = "adopt" | "reject" | "defer" | "waive";
 export type GreenfieldReviewLanguage = "zh-CN" | "en-US";
 export type GreenfieldReviewStatus = "proposed" | "adopted" | "rejected" | "deferred" | "waived";
 export type GreenfieldReviewConfidence = "high" | "medium" | "low";
+export type GreenfieldReviewDisposition =
+  | "blocking"
+  | "low-confidence"
+  | "conflict"
+  | "adopted"
+  | "rejected"
+  | "deferred"
+  | "waived"
+  | "advisory";
 
 export interface GreenfieldReviewEvidenceRef {
   source?: string;
@@ -126,6 +135,18 @@ export interface GreenfieldReviewBriefResult {
   blockingCount: number;
   lowConfidenceCount: number;
   rejectedCount: number;
+}
+
+export interface GreenfieldReviewGateSummary {
+  blocking: number;
+  lowConfidence: number;
+  conflict: number;
+  rejected: number;
+  deferred: number;
+  waived: number;
+  adopted: number;
+  advisory: number;
+  blockingDecisionIds: string[];
 }
 
 const REVIEW_RECORD_PATH = ".spec/greenfield/review-pack/review-record.yaml";
@@ -308,7 +329,7 @@ export function renderGreenfieldReviewListText(result: GreenfieldReviewListResul
       lines.push("- None");
     } else {
       lines.push(...decisions.map((decision) =>
-        `- ${decision.decision_id} [${decision.status}, ${decision.confidence}]: ${decision.summary}`,
+        `- ${decision.decision_id} [${renderGreenfieldReviewDispositionLabel(resolveGreenfieldReviewDisposition(decision))}, ${decision.status}, ${decision.confidence}]: ${decision.summary}`,
       ));
     }
     lines.push("");
@@ -358,6 +379,122 @@ export function renderGreenfieldReviewBriefText(result: GreenfieldReviewBriefRes
     `Low confidence proposed: ${result.lowConfidenceCount}`,
     `Rejected: ${result.rejectedCount}`,
   ].join("\n");
+}
+
+export function resolveGreenfieldReviewDisposition(decision: GreenfieldReviewDecision): GreenfieldReviewDisposition {
+  if (decision.status === "adopted") {
+    return "adopted";
+  }
+  if (decision.status === "deferred") {
+    return "deferred";
+  }
+  if (decision.status === "waived") {
+    return "waived";
+  }
+  if (decision.status === "rejected") {
+    return "rejected";
+  }
+  if (decision.blocking) {
+    return "blocking";
+  }
+  if (decision.conflicts.length > 0) {
+    return "conflict";
+  }
+  if (decision.confidence === "low") {
+    return "low-confidence";
+  }
+  return "advisory";
+}
+
+export function renderGreenfieldReviewDispositionLabel(disposition: GreenfieldReviewDisposition): string {
+  switch (disposition) {
+    case "blocking":
+      return "blocking";
+    case "low-confidence":
+      return "low-confidence";
+    case "conflict":
+      return "conflict";
+    case "adopted":
+      return "adopted";
+    case "rejected":
+      return "rejected";
+    case "deferred":
+      return "deferred";
+    case "waived":
+      return "waived";
+    case "advisory":
+      return "advisory";
+  }
+}
+
+export function summarizeGreenfieldReviewGate(decisions: GreenfieldReviewDecision[]): GreenfieldReviewGateSummary {
+  const summary = {
+    blocking: 0,
+    lowConfidence: 0,
+    conflict: 0,
+    rejected: 0,
+    deferred: 0,
+    waived: 0,
+    adopted: 0,
+    advisory: 0,
+    blockingDecisionIds: [] as string[],
+  };
+
+  for (const decision of decisions) {
+    const disposition = resolveGreenfieldReviewDisposition(decision);
+    switch (disposition) {
+      case "blocking":
+        summary.blocking += 1;
+        summary.blockingDecisionIds.push(decision.decision_id);
+        break;
+      case "low-confidence":
+        summary.lowConfidence += 1;
+        summary.blockingDecisionIds.push(decision.decision_id);
+        break;
+      case "conflict":
+        summary.conflict += 1;
+        summary.blockingDecisionIds.push(decision.decision_id);
+        break;
+      case "adopted":
+        summary.adopted += 1;
+        break;
+      case "rejected":
+        summary.rejected += 1;
+        summary.blockingDecisionIds.push(decision.decision_id);
+        break;
+      case "deferred":
+        summary.deferred += 1;
+        break;
+      case "waived":
+        summary.waived += 1;
+        break;
+      case "advisory":
+        summary.advisory += 1;
+        break;
+    }
+  }
+
+  summary.blockingDecisionIds.sort((left, right) => left.localeCompare(right));
+  return summary;
+}
+
+export function renderGreenfieldReviewGateSummary(decisions: GreenfieldReviewDecision[], nextAction: string): string[] {
+  const summary = summarizeGreenfieldReviewGate(decisions);
+  const blockingIds = summary.blockingDecisionIds.length > 0
+    ? ` (${summary.blockingDecisionIds.map((decisionId) => `\`${decisionId}\``).join(", ")})`
+    : " none";
+
+  return [
+    `- Blocking review decisions: ${summary.blocking}${blockingIds}`,
+    `- Low-confidence proposed decisions: ${summary.lowConfidence}`,
+    `- Conflict decisions: ${summary.conflict}`,
+    `- Rejected decisions: ${summary.rejected}`,
+    `- Deferred decisions: ${summary.deferred}`,
+    `- Waived decisions: ${summary.waived}`,
+    `- Adopted decisions: ${summary.adopted}`,
+    `- Advisory decisions: ${summary.advisory}`,
+    `- Next action: ${nextAction}`,
+  ];
 }
 
 function loadGreenfieldReviewRecord(rootInput: string): GreenfieldReviewRecord {
@@ -451,22 +588,31 @@ function groupReviewDecisions(decisions: GreenfieldReviewDecision[]): Record<str
   };
 
   for (const decision of decisions) {
-    if (isUnresolvedBlockingDecision(decision)) {
-      groups.blocking.push(decision);
-    } else if (decision.status === "rejected") {
-      groups.rejected.push(decision);
-    } else if (decision.status === "deferred") {
-      groups.deferred.push(decision);
-    } else if (decision.status === "waived") {
-      groups.waived.push(decision);
-    } else if (decision.status === "adopted") {
-      groups.adopted.push(decision);
-    } else if (decision.confidence === "low" && decision.status === "proposed") {
-      groups["low-confidence"].push(decision);
-    } else if (decision.conflicts.length > 0 && decision.status === "proposed") {
-      groups.conflict.push(decision);
-    } else {
-      groups.advisory.push(decision);
+    switch (resolveGreenfieldReviewDisposition(decision)) {
+      case "blocking":
+        groups.blocking.push(decision);
+        break;
+      case "low-confidence":
+        groups["low-confidence"].push(decision);
+        break;
+      case "conflict":
+        groups.conflict.push(decision);
+        break;
+      case "rejected":
+        groups.rejected.push(decision);
+        break;
+      case "deferred":
+        groups.deferred.push(decision);
+        break;
+      case "waived":
+        groups.waived.push(decision);
+        break;
+      case "adopted":
+        groups.adopted.push(decision);
+        break;
+      case "advisory":
+        groups.advisory.push(decision);
+        break;
     }
   }
 
@@ -686,8 +832,8 @@ function renderEvidenceRefs(refs: GreenfieldReviewEvidenceRef[]): string {
 }
 
 function updateGateStatus(record: GreenfieldReviewRecord): void {
-  const groups = groupReviewDecisions(record.decisions);
-  const blocked = groups.blocking.length > 0 || groups["low-confidence"].length > 0 || groups.conflict.length > 0 || groups.rejected.length > 0;
+  const summary = summarizeGreenfieldReviewGate(record.decisions);
+  const blocked = summary.blocking > 0 || summary.lowConfidence > 0 || summary.conflict > 0 || summary.rejected > 0;
   record.gate = {
     ...(record.gate ?? {}),
     status: blocked ? "blocked_on_human_review" : "review_ready",
@@ -729,7 +875,8 @@ function buildTransitionNextCommands(
 }
 
 function isUnresolvedBlockingDecision(decision: GreenfieldReviewDecision): boolean {
-  return decision.status === "proposed" && (decision.blocking || decision.conflicts.length > 0);
+  const disposition = resolveGreenfieldReviewDisposition(decision);
+  return disposition === "blocking" || disposition === "low-confidence" || disposition === "conflict" || disposition === "rejected";
 }
 
 function statusForAction(action: GreenfieldReviewAction): GreenfieldReviewStatus {

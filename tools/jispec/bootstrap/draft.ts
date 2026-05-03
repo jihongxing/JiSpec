@@ -280,6 +280,7 @@ export function renderBootstrapDraftText(result: BootstrapDraftResult): string {
     `Evidence strength: ${result.qualitySummary.evidenceStrength}`,
     `Warnings: ${result.warningCount}`,
     `Manifest: ${result.manifestPath}`,
+    `Next command: npm run jispec-cli -- adopt --interactive --session ${result.sessionId}`,
   ];
 
   if (result.qualitySummary.primaryContextNames.length > 0) {

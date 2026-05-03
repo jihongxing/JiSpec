@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { runBootstrapDiscover } from "../bootstrap/discover";
 import { runBootstrapDraft } from "../bootstrap/draft";
+import { renderBootstrapDraftText } from "../bootstrap/draft";
 
 interface TestResult {
   name: string;
@@ -52,7 +53,8 @@ async function main(): Promise<void> {
         draftResult.qualitySummary.primaryContextNames.includes("ordering") &&
         !draftResult.qualitySummary.primaryContextNames.includes("routes.ts") &&
         !draftResult.qualitySummary.primaryContextNames.includes("schemas") &&
-        !draftResult.qualitySummary.primaryContextNames.includes("tests"),
+        !draftResult.qualitySummary.primaryContextNames.includes("tests") &&
+        renderBootstrapDraftText(draftResult).includes(`Next command: npm run jispec-cli -- adopt --interactive --session ${draftResult.sessionId}`),
       error: "Expected deterministic draft to expose generation metadata and ranked evidence summary.",
     });
 

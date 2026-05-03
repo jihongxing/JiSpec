@@ -43,9 +43,12 @@ function main(): void {
       writeBootstrapFixture(root);
       runBootstrapDiscover({ root });
       const rankedPath = path.join(root, ".spec", "facts", "bootstrap", "adoption-ranked-evidence.json");
+      const graphPath = path.join(root, ".spec", "facts", "bootstrap", "evidence-graph.json");
       const ranked = JSON.parse(fs.readFileSync(rankedPath, "utf-8")) as AdoptionRankedEvidence;
+      const graph = JSON.parse(fs.readFileSync(graphPath, "utf-8")) as { sourceFiles?: Array<Record<string, unknown>> };
       const openapi = ranked.evidence.find((entry) => entry.path === "api/openapi.yaml");
       const weakRoute = ranked.evidence.find((entry) => entry.path === "src/routes/weak-route.ts");
+      const sourceFile = graph.sourceFiles?.find((entry) => entry.path === "src/routes/weak-route.ts");
 
       assert.equal(openapi?.provenanceLabel, "EXTRACTED");
       assert.equal(openapi?.evidenceKind, "schema");
@@ -53,6 +56,8 @@ function main(): void {
       assert.equal(openapi?.ownerReviewPosture, "not_required");
       assert.equal(weakRoute?.provenanceLabel, "AMBIGUOUS");
       assert.equal(weakRoute?.ownerReviewPosture, "required");
+      assert.equal(sourceFile?.provenanceLabel, "INFERRED");
+      assert.equal(sourceFile?.ownerReviewPosture, "recommended");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -110,8 +115,8 @@ function main(): void {
     assert.equal(suite.task, "P9-T2");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 127);
-    assert.equal(manifest.totalExpectedTests, 557);
+    assert.equal(manifest.totalSuites, 134);
+    assert.equal(manifest.totalExpectedTests, 599);
   }));
 
   printResults(results);

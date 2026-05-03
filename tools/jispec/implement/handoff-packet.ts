@@ -948,7 +948,7 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   lines.push("");
 
   lines.push("=== Decision Packet ===");
-  lines.push("Decision snapshot:");
+  lines.push("Decision Snapshot:");
   lines.push(...renderHumanDecisionSnapshotText({
     currentState: `${packet.decisionPacket.state} at ${packet.decisionPacket.stopPoint}`,
     risk: packet.decisionPacket.summary,

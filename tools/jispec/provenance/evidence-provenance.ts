@@ -18,6 +18,8 @@ export interface EvidenceProvenanceInput {
   sourcePath: string;
   ownerReviewRequired?: boolean;
   ambiguous?: boolean;
+  provenanceLabel?: unknown;
+  ownerReviewPosture?: unknown;
 }
 
 export interface EvidenceProvenanceDescriptor {
@@ -36,10 +38,55 @@ const KNOWN_LABELS = new Set<EvidenceProvenanceLabel>([
   "UNKNOWN",
 ]);
 
+const LABEL_ALIASES: Record<string, EvidenceProvenanceLabel> = {
+  extracted: "EXTRACTED",
+  extract: "EXTRACTED",
+  inferred: "INFERRED",
+  infer: "INFERRED",
+  ambiguous: "AMBIGUOUS",
+  weak: "AMBIGUOUS",
+  uncertain: "AMBIGUOUS",
+  owner_review: "OWNER_REVIEW",
+  ownerreview: "OWNER_REVIEW",
+  review_required: "OWNER_REVIEW",
+  review: "OWNER_REVIEW",
+  unknown: "UNKNOWN",
+};
+
+const OWNER_REVIEW_POSTURE_ALIASES: Record<string, EvidenceOwnerReviewPosture> = {
+  not_required: "not_required",
+  notrequired: "not_required",
+  optional: "not_required",
+  recommended: "recommended",
+  suggested: "recommended",
+  review: "recommended",
+  required: "required",
+  mandatory: "required",
+  blocking: "required",
+};
+
 export function normalizeEvidenceProvenanceLabel(value: unknown): EvidenceProvenanceLabel {
-  return typeof value === "string" && KNOWN_LABELS.has(value as EvidenceProvenanceLabel)
-    ? value as EvidenceProvenanceLabel
-    : "UNKNOWN";
+  const token = normalizeLooseToken(value);
+  if (!token) {
+    return "UNKNOWN";
+  }
+
+  const alias = LABEL_ALIASES[token];
+  if (alias) {
+    return alias;
+  }
+
+  const canonical = token.toUpperCase().replace(/[^A-Z_]/g, "_").replace(/_+/g, "_") as EvidenceProvenanceLabel;
+  return KNOWN_LABELS.has(canonical) ? canonical : "UNKNOWN";
+}
+
+export function normalizeEvidenceOwnerReviewPosture(value: unknown): EvidenceOwnerReviewPosture {
+  const token = normalizeLooseToken(value);
+  if (!token) {
+    return "required";
+  }
+
+  return OWNER_REVIEW_POSTURE_ALIASES[token] ?? "required";
 }
 
 export function inferEvidenceProvenance(input: EvidenceProvenanceInput): {
@@ -49,8 +96,13 @@ export function inferEvidenceProvenance(input: EvidenceProvenanceInput): {
   const normalizedPath = input.sourcePath ? normalizeEvidencePath(input.sourcePath) : "";
   const confidence = normalizeConfidence(input.confidence);
   const ambiguous = input.ambiguous === true;
-  const ownerReviewPosture = inferOwnerReviewPosture(confidence, input.ownerReviewRequired === true, ambiguous);
-  const label = inferLabel(confidence, ownerReviewPosture, ambiguous, normalizedPath);
+  const explicitLabel = normalizeEvidenceProvenanceLabel(input.provenanceLabel);
+  const ownerReviewPosture = input.ownerReviewPosture !== undefined
+    ? normalizeEvidenceOwnerReviewPosture(input.ownerReviewPosture)
+    : inferOwnerReviewPosture(confidence, input.ownerReviewRequired === true, ambiguous);
+  const label = explicitLabel !== "UNKNOWN"
+    ? explicitLabel
+    : inferLabel(confidence, ownerReviewPosture, ambiguous, normalizedPath);
 
   return {
     label,
@@ -73,6 +125,20 @@ function normalizeConfidence(value: unknown): number | null {
     return null;
   }
   return Number(Math.max(0, Math.min(1, value)).toFixed(4));
+}
+
+function normalizeLooseToken(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const token = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_")
+    .replace(/__+/g, "_");
+
+  return token.length > 0 ? token : undefined;
 }
 
 function inferOwnerReviewPosture(

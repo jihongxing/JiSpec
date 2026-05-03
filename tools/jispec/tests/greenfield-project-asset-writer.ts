@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import * as yaml from "js-yaml";
 import { main as runCliMain } from "../cli";
-import { runGreenfieldInit } from "../greenfield/init";
+import { renderGreenfieldInitText, runGreenfieldInit } from "../greenfield/init";
+import { runGreenfieldReviewTransition } from "../greenfield/review-workflow";
 
 interface TestResult {
   name: string;
@@ -16,6 +18,25 @@ interface ProjectYaml {
   name?: string;
   delivery_model?: string;
   input_mode?: string;
+  input_contract?: {
+    version?: number;
+    supported_modes?: string[];
+    requirements?: {
+      required?: boolean;
+      description?: string;
+    };
+    technical_solution?: {
+      optional?: boolean;
+      description?: string;
+    };
+    ji_spec_responsibilities?: string[];
+    user_responsibilities?: string[];
+  };
+  open_questions?: {
+    path?: string;
+    total?: number;
+    blocking?: number;
+  };
   source_documents?: {
     requirements?: string;
     technical_solution?: string;
@@ -48,6 +69,19 @@ async function main(): Promise<void> {
     const projectPath = path.join(root, "jiproject", "project.yaml");
     const project = yaml.load(fs.readFileSync(projectPath, "utf-8")) as ProjectYaml;
     const manifestPath = path.join(root, ".spec", "greenfield", "source-documents.yaml");
+    const manifest = yaml.load(fs.readFileSync(manifestPath, "utf-8")) as {
+      input_contract?: {
+        version?: number;
+        supported_modes?: string[];
+      };
+      input_mode?: string;
+      input_status?: string;
+      open_questions?: {
+        path?: string;
+        total?: number;
+        blocking?: number;
+      };
+    };
 
     results.push({
       name: "initializer writes project-level Greenfield assets",
@@ -60,10 +94,22 @@ async function main(): Promise<void> {
         fs.existsSync(path.join(root, "jiproject", "constraints.yaml")) &&
         fs.existsSync(path.join(root, ".spec", "baselines", "current.yaml")) &&
         fs.existsSync(manifestPath) &&
+        fs.existsSync(path.join(root, ".spec", "greenfield", "open-questions.yaml")) &&
         project.id === "commerce-platform" &&
         project.name === "Commerce Platform" &&
         project.delivery_model === "greenfield-initialization" &&
         project.input_mode === "strict" &&
+        project.input_contract?.version === 1 &&
+        project.input_contract?.supported_modes?.includes("strict") === true &&
+        project.input_contract?.requirements?.required === true &&
+        project.input_contract?.technical_solution?.optional === true &&
+        manifest.input_contract?.version === 1 &&
+        manifest.input_contract?.supported_modes?.includes("strict") === true &&
+        manifest.input_mode === "strict" &&
+        manifest.input_status === "passed" &&
+        manifest.open_questions?.path === ".spec/greenfield/open-questions.yaml" &&
+        manifest.open_questions?.total !== undefined &&
+        manifest.open_questions?.total > 0 &&
         project.source_documents?.requirements === "docs/input/requirements.md" &&
         project.source_documents?.technical_solution === "docs/input/technical-solution.md" &&
         project.source_quality?.requirements === "strong" &&
@@ -116,15 +162,21 @@ async function main(): Promise<void> {
     const requirementsOnlyProject = yaml.load(
       fs.readFileSync(path.join(requirementsOnlyRoot, "jiproject", "project.yaml"), "utf-8"),
     ) as ProjectYaml;
+    const requirementsOnlyManifest = yaml.load(
+      fs.readFileSync(path.join(requirementsOnlyRoot, ".spec", "greenfield", "source-documents.yaml"), "utf-8"),
+    ) as ProjectYaml;
 
     results.push({
       name: "requirements-only mode writes a technical solution placeholder",
       passed:
         requirementsOnlyResult.status === "input_contract_ready" &&
         requirementsOnlyProject.input_mode === "requirements-only" &&
+        requirementsOnlyProject.input_contract?.version === 1 &&
         requirementsOnlyProject.source_quality?.technical_solution === "missing" &&
         fs.existsSync(placeholderPath) &&
-        fs.readFileSync(placeholderPath, "utf-8").includes("Technical Solution Placeholder"),
+        fs.readFileSync(placeholderPath, "utf-8").includes("Technical Solution Placeholder") &&
+        requirementsOnlyManifest.open_questions?.path === ".spec/greenfield/open-questions.yaml" &&
+        requirementsOnlyManifest.open_questions?.total !== undefined,
       error: `Expected placeholder technical solution for requirements-only mode, got result=${JSON.stringify(requirementsOnlyResult)}, project=${JSON.stringify(requirementsOnlyProject)}.`,
     });
     fs.rmSync(requirementsOnlyRoot, { recursive: true, force: true });
@@ -149,7 +201,9 @@ async function main(): Promise<void> {
         cliOutput.code === 0 &&
         cliOutput.stdout.includes('"writtenFiles"') &&
         fs.existsSync(path.join(cliRoot, "jiproject", "project.yaml")) &&
-        fs.existsSync(path.join(cliRoot, ".spec", "greenfield", "source-documents.yaml")),
+        fs.existsSync(path.join(cliRoot, ".spec", "greenfield", "source-documents.yaml")) &&
+        renderGreenfieldInitText(initResult).includes("Next command: npm run jispec-cli -- bootstrap draft --root") &&
+        await verifyGuidedBootstrapFlow(root),
       error: `Expected CLI to write project assets, got code=${cliOutput.code}, stdout=${cliOutput.stdout}, stderr=${cliOutput.stderr}.`,
     });
     fs.rmSync(cliRoot, { recursive: true, force: true });
@@ -214,6 +268,114 @@ async function runCliAndCapture(argv: string[]): Promise<{ code: number; stdout:
     console.log = previousLog;
     console.error = previousError;
     process.exitCode = previousExitCode;
+  }
+}
+
+function runCliProcess(args: string[], input?: string): { status: number | null; stdout: string; stderr: string } {
+  const repoRoot = process.cwd();
+  const cliPath = path.join(repoRoot, "tools", "jispec", "cli.ts");
+  const result = spawnSync(process.execPath, ["--import", "tsx", cliPath, ...args], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    input,
+  });
+
+  return {
+    status: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+  };
+}
+
+async function verifyGuidedBootstrapFlow(guidedRoot: string): Promise<boolean> {
+  const discover = await runCliAndCapture([
+      "node",
+      "jispec-cli",
+      "bootstrap",
+      "discover",
+      "--root",
+      guidedRoot,
+      "--json",
+    ]);
+  if (discover.code !== 0) {
+    return false;
+  }
+
+  const draft = await runCliAndCapture([
+      "node",
+      "jispec-cli",
+      "bootstrap",
+      "draft",
+      "--root",
+      guidedRoot,
+      "--json",
+    ]);
+    if (draft.code !== 0) {
+      return false;
+    }
+
+    const draftPayload = JSON.parse(draft.stdout) as { sessionId?: string };
+    if (!draftPayload.sessionId) {
+      return false;
+    }
+
+    const adopt = runCliProcess([
+      "adopt",
+      "--root",
+      guidedRoot,
+      "--session",
+      draftPayload.sessionId,
+      "--interactive",
+    ], "accept\n\nskip_as_spec_debt\n\nreject\n\n");
+    if (adopt.status !== 0) {
+      return false;
+    }
+
+    resolveBlockingReviewItems(guidedRoot);
+
+    const verify = await runCliAndCapture([
+      "node",
+      "jispec-cli",
+      "verify",
+      "--root",
+      guidedRoot,
+      "--json",
+    ]);
+    if (verify.code !== 0) {
+      return false;
+    }
+
+    const verifyPayload = JSON.parse(verify.stdout) as { verdict?: string };
+    return (
+      adopt.stdout.includes("npm run jispec-cli -- verify") &&
+      verifyPayload.verdict !== "FAIL_BLOCKING" &&
+      fs.existsSync(path.join(guidedRoot, ".spec", "sessions", draftPayload.sessionId, "manifest.json")) &&
+      fs.existsSync(path.join(guidedRoot, ".spec", "handoffs", "adopt-summary.md")) &&
+      fs.existsSync(path.join(guidedRoot, ".spec", "handoffs", "verify-summary.md"))
+    );
+}
+
+function resolveBlockingReviewItems(root: string): void {
+  const recordPath = path.join(root, ".spec", "greenfield", "review-pack", "review-record.yaml");
+  if (!fs.existsSync(recordPath)) {
+    return;
+  }
+
+  const record = yaml.load(fs.readFileSync(recordPath, "utf-8")) as {
+    decisions?: Array<{ decision_id?: string; status?: string; blocking?: boolean }>;
+  };
+
+  for (const decision of record.decisions ?? []) {
+    if (decision.blocking === true && decision.status === "proposed" && decision.decision_id) {
+      runGreenfieldReviewTransition({
+        root,
+        decisionId: decision.decision_id,
+        action: "adopt",
+        actor: "reviewer",
+        reason: "Resolve blocking review item before verify.",
+        now: new Date().toISOString(),
+      });
+    }
   }
 }
 

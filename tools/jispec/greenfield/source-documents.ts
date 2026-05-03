@@ -7,6 +7,20 @@ export type GreenfieldInputContractStatus = "passed" | "failed" | "warning";
 export type GreenfieldRequirementsStatus = "strong" | "usable" | "weak" | "missing";
 export type GreenfieldTechnicalSolutionStatus = "strong" | "usable" | "missing";
 
+export interface GreenfieldInputContractGuidance {
+  supportedModes: GreenfieldInputMode[];
+  requirements: {
+    required: true;
+    description: string;
+  };
+  technicalSolution: {
+    optional: true;
+    description: string;
+  };
+  jiSpecResponsibilities: string[];
+  userResponsibilities: string[];
+}
+
 export interface GreenfieldSourceDocumentOptions {
   requirements?: string;
   technicalSolution?: string;
@@ -34,6 +48,8 @@ export interface GreenfieldSourceAnchor {
 }
 
 export interface GreenfieldInputContract {
+  contractVersion: 1;
+  guidance: GreenfieldInputContractGuidance;
   status: GreenfieldInputContractStatus;
   mode: GreenfieldInputMode;
   requirements: GreenfieldLoadedSourceDocument;
@@ -76,6 +92,27 @@ export function loadGreenfieldSourceDocuments(options: GreenfieldSourceDocumentO
     blockingIssues.length > 0 ? "failed" : warnings.length > 0 || openDecisions.length > 0 ? "warning" : "passed";
 
   return {
+    contractVersion: 1,
+    guidance: {
+      supportedModes: ["strict", "requirements-only"],
+      requirements: {
+        required: true,
+        description: "Users must provide a product requirements document before Greenfield initialization can proceed.",
+      },
+      technicalSolution: {
+        optional: true,
+        description: "Users may provide a technical solution; JiSpec can still infer drafts when only requirements are available.",
+      },
+      jiSpecResponsibilities: [
+        "Normalize source documents into stable checksums and anchors.",
+        "Draft domain, API, and behavior contracts from the available source documents.",
+        "Surface warnings, blocking issues, and open decisions without hiding uncertainty.",
+      ],
+      userResponsibilities: [
+        "Provide a requirements document for every initialization.",
+        "Provide a technical solution when the intended architecture or boundaries are already known.",
+      ],
+    },
     status: inputStatus,
     mode,
     requirements: buildLoadedDocument("product_requirements", requirements, requirementsStatus, extractRequirementIds(requirements.content)),

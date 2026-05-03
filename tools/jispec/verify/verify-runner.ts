@@ -213,6 +213,13 @@ function buildImpactGraphMetadata(root: string): Record<string, unknown> {
     return {
       impactGraphFreshness: impactSummary.freshness.status,
       impactGraphPath: impactSummary.artifacts.impactGraphPath,
+      impactGraphFreshnessReason: impactSummary.freshness.reason,
+      impactGraphFreshnessGeneratedAt: impactSummary.freshness.generatedAt,
+      impactGraphChangedFiles: impactSummary.changedFiles,
+      impactGraphContractRefs: impactSummary.contractRefs,
+      impactGraphScopeHints: impactSummary.scopeHints,
+      impactGraphMissingVerificationHints: impactSummary.missingVerificationHints,
+      impactGraphNextReplayCommand: impactSummary.nextReplayCommand,
       impactAdvisoryOnly: impactSummary.advisoryOnly,
     };
   }

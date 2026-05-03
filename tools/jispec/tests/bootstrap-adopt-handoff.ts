@@ -100,6 +100,7 @@ async function main(): Promise<void> {
         report.rejectedArtifactKinds?.includes("feature") === true &&
         report.decisions?.some((entry) => entry.artifactKind === "api" && entry.finalState === "spec_debt") === true &&
         report.decisions?.some((entry) => entry.artifactKind === "domain" && entry.edited === true) === true &&
+        report.decisions?.some((entry) => entry.artifactKind === "feature" && entry.finalState === "rejected" && entry.targetPath === "rejected:feature") === true &&
         manifest.decisionLog?.some((entry) => entry.artifactKind === "domain" && entry.targetPath === ".spec/contracts/domain.yaml" && entry.edited === true) === true,
       error: "Expected takeover report and session manifest to preserve final adoption outcomes per artifact.",
     });
@@ -126,6 +127,11 @@ async function main(): Promise<void> {
         adoptSummary.includes("Current state:") &&
         adoptSummary.includes("Risk: Correction load") &&
         adoptSummary.includes("Evidence:") &&
+        adoptSummary.includes("## Evidence Distribution") &&
+        adoptSummary.includes("## Spec Debt Ledger") &&
+        adoptSummary.includes(".spec/spec-debt/ledger.yaml") &&
+        adoptSummary.includes("owner, reason, affected assets, and repayment hint") &&
+        adoptSummary.includes("owner review") &&
         adoptSummary.includes("Owner: reviewer") &&
         adoptSummary.includes("Next command: `npm run jispec-cli -- verify`") &&
         adoptSummary.includes("This Markdown file is a human-readable companion summary, not a machine API.") &&
@@ -135,8 +141,11 @@ async function main(): Promise<void> {
         adoptSummary.includes(`.spec/spec-debt/${draftResult.sessionId}/api.json`) &&
         adoptSummary.includes("api needs endpoint review") &&
         adoptSummary.includes("`feature`") &&
+        adoptSummary.includes("rejected:feature") &&
         adoptSummary.includes("feature language can wait") &&
         adoptSummary.includes("npm run jispec-cli -- verify") &&
+        adoptSummary.includes("Treat deferred spec debt as known historical debt in `.spec/spec-debt/ledger.yaml`") &&
+        adoptText.includes("Next command: npm run jispec-cli -- verify") &&
         adoptText.includes("Adopt summary: .spec/handoffs/adopt-summary.md"),
       error: "Expected adopt summary to capture human review decisions and the next verify step.",
     });

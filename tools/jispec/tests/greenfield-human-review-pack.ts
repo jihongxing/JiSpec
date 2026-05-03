@@ -69,6 +69,8 @@ async function main(): Promise<void> {
         const openDecisionsPath = path.join(root, ".spec", "greenfield", "review-pack", "open-decisions.md");
         const reviewRecordPath = path.join(root, ".spec", "greenfield", "review-pack", "review-record.yaml");
         const handoffPath = path.join(root, ".spec", "greenfield", "ai-implement-handoff.md");
+        const executiveSummary = fs.readFileSync(executiveSummaryPath, "utf-8");
+        const handoff = fs.readFileSync(handoffPath, "utf-8");
         const record = yaml.load(fs.readFileSync(reviewRecordPath, "utf-8")) as ReviewRecord;
         const baseline = yaml.load(fs.readFileSync(path.join(root, ".spec", "baselines", "current.yaml"), "utf-8")) as BaselineYaml;
         const summary = fs.readFileSync(path.join(root, ".spec", "greenfield", "initialization-summary.md"), "utf-8");
@@ -92,6 +94,11 @@ async function main(): Promise<void> {
         assert.ok(record.decisions?.some((decision) => decision.decision_id === "REV-DOMAIN-EXCLUDED-REFUNDS"));
         assert.ok(record.decisions?.some((decision) => decision.decision_type === "contract"));
         assert.ok(record.decisions?.some((decision) => decision.decision_type === "behavior"));
+        assert.ok(record.decisions?.some((decision) =>
+          decision.decision_id === "REV-BEHAVIOR-SCN-ORDER-TECHNICAL-BOUNDARY" &&
+          decision.confidence === "medium" &&
+          decision.blocking === false,
+        ));
         assert.ok(record.decisions?.some((decision) => decision.decision_type === "slice_plan"));
         assert.equal(baseline.review_pack?.path, ".spec/greenfield/review-pack/review-record.yaml");
         assert.equal(baseline.ai_implement_handoff?.path, ".spec/greenfield/ai-implement-handoff.md");
@@ -103,6 +110,10 @@ async function main(): Promise<void> {
         assert.ok(baseline.assets?.includes(".spec/greenfield/ai-implement-handoff.md"));
         assert.match(summary, /## Initialization Review Pack/);
         assert.match(summary, /## AI Implement Handoff/);
+        assert.match(executiveSummary, /## Decision Snapshot/);
+        assert.match(executiveSummary, /## Review Gate/);
+        assert.match(executiveSummary, /Disposition:/);
+        assert.match(handoff, /Blocking review decisions:/);
         assert.match(fs.readFileSync(domainReviewPath, "utf-8"), /Rejected alternatives/);
         assert.match(fs.readFileSync(contractReviewPath, "utf-8"), /Evidence:/);
         assert.match(fs.readFileSync(handoffPath, "utf-8"), /## Dirty Subgraph/);

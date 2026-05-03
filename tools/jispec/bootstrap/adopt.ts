@@ -154,12 +154,7 @@ export async function runBootstrapAdopt(options: BootstrapAdoptOptions): Promise
         decision: decision.kind,
         note: decision.note,
         edited: decision.kind === "edit",
-        targetPath:
-          decision.kind === "accept" || decision.kind === "edit"
-            ? getContractRelativePath(decision.artifactKind)
-            : decision.kind === "skip_as_spec_debt"
-              ? `.spec/spec-debt/${session.manifest.sessionId}/${decision.artifactKind}.json`
-              : undefined,
+        targetPath: targetPathForAdoptDecision(session.manifest.sessionId, decision),
         sourceFiles: session.artifacts.find((artifact) => artifact.kind === decision.artifactKind)?.sourceFiles,
         confidenceScore: session.artifacts.find((artifact) => artifact.kind === decision.artifactKind)?.confidenceScore,
         provenanceNote: session.artifacts.find((artifact) => artifact.kind === decision.artifactKind)?.provenanceNote,
@@ -220,7 +215,8 @@ export function renderBootstrapAdoptText(result: BootstrapAdoptResult): string {
   }
 
   if (result.rejectedArtifactKinds.length > 0) {
-    lines.push(`Rejected artifacts: ${result.rejectedArtifactKinds.join(", ")}`);
+    lines.push("Rejected artifacts:");
+    lines.push(...result.rejectedArtifactKinds.map((artifactKind) => `- \`${artifactKind}\` -> rejected:${artifactKind}`));
   }
 
   if (result.takeoverReportPath) {
@@ -238,6 +234,8 @@ export function renderBootstrapAdoptText(result: BootstrapAdoptResult): string {
   if (result.adoptSummaryPath) {
     lines.push(`Adopt summary: ${result.adoptSummaryPath}`);
   }
+
+  lines.push("Next command: npm run jispec-cli -- verify");
 
   if (result.writtenFiles.length > 0) {
     lines.push("Written files:");

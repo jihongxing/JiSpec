@@ -234,9 +234,17 @@ async function main(): Promise<void> {
         verifySummary.includes("Policy overlay:") &&
         verifySummary.includes("`greenfield-no-blocking-verify-issues`") &&
         verifySummary.includes("This Markdown file is a human-readable companion summary, not a machine API.") &&
+        ciSummary.includes("## Decision Snapshot") &&
+        ciSummary.includes("Current state:") &&
+        ciSummary.includes("Risk:") &&
+        ciSummary.includes("Evidence:") &&
+        ciSummary.includes("Owner:") &&
+        ciSummary.includes("Next command:") &&
         ciSummary.includes("## Greenfield Control Context") &&
         ciSummary.includes("Contract graph / spec delta:") &&
         ciSummary.includes("Next action vocabulary stays shared with verify summary") &&
+        ciText.includes("Decision Snapshot:") &&
+        ciText.includes("Current state:") &&
         ciText.includes("Greenfield Control Context:") &&
         ciText.includes("Contract graph / spec delta:"),
       error: `Expected aligned Greenfield summary language, got verify=${verifySummary}, ci=${ciSummary}, text=${ciText}.`,
