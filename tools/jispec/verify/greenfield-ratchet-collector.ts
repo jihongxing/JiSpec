@@ -9,6 +9,7 @@ import {
   collectStaticImplementationFacts,
   hasStaticFactMapping,
   isGovernedStaticFact,
+  isGovernedStaticPath,
   type StaticImplementationFact,
 } from "../greenfield/static-collector";
 import type { VerifyIssue, VerifyIssueSeverity } from "./verdict";
@@ -147,6 +148,9 @@ function collectCodeDriftIssues(
   const manifest = collectStaticImplementationFacts(root);
 
   for (const surface of manifest.unresolved_surfaces) {
+    if (!isGovernedStaticPath(surface.path) || surface.metadata?.advisory_only === true) {
+      continue;
+    }
     issues.push({
       kind: "semantic",
       severity: "advisory",

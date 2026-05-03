@@ -85,7 +85,7 @@ export const TEST_SUITES: TestSuite[] = [
   core({ name: 'Greenfield Baseline Snapshot', file: 'greenfield-baseline-snapshot.ts', expectedTests: 9, task: 'P2-T5' }),
   core({ name: 'Release Drift Trend', file: 'release-drift-trend.ts', expectedTests: 4, task: 'P3-T2' }),
   core({ name: 'Greenfield Evidence Graph', file: 'greenfield-evidence-graph.ts', expectedTests: 6 }),
-  core({ name: 'Greenfield Two-Way Ratchet Verify', file: 'greenfield-two-way-ratchet-verify.ts', expectedTests: 6 }),
+  core({ name: 'Greenfield Two-Way Ratchet Verify', file: 'greenfield-two-way-ratchet-verify.ts', expectedTests: 7 }),
   core({ name: 'Greenfield Blast Radius Tracking', file: 'greenfield-blast-radius-tracking.ts', expectedTests: 5 }),
   core({ name: 'Greenfield Spec Debt Ledger', file: 'greenfield-spec-debt-ledger.ts', expectedTests: 4 }),
   core({ name: 'Greenfield Deterministic Contract Graph', file: 'greenfield-deterministic-contract-graph.ts', expectedTests: 5 }),

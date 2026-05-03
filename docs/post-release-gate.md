@@ -27,3 +27,9 @@ npm run ci:verify
 - 触碰产品主线的 PR checklist 验证
 
 小型纯文档变更可以运行更窄的检查，但 release candidate 发布前必须通过完整 gate。
+
+当前仓库若出现 `WARN_ADVISORY` 但仍通过 release gate，可结合这份 companion 一起解释 advisory posture：
+
+- [docs/release-advisory-triage.md](docs/release-advisory-triage.md)
+
+截至 2026-05-04，仓库自身的 `WARN_ADVISORY` 已收敛到单个 `BOOTSTRAP_SPEC_DEBT_PENDING` 历史治理债务；此前 `132` 个扫描边界噪音已完成收口。

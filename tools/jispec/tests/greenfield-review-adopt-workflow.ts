@@ -227,6 +227,9 @@ async function main(): Promise<void> {
     results.push(await recordAsync("wrong-thing review signals catch uncovered requirements, unexplained contexts, CRUD contracts, and missing failure paths", async () => {
       const root = createInitializedRoot(requirementsPath, technicalSolutionPath);
       try {
+        const baselineVerify = await runVerify({ root, generatedAt: "2026-04-29T00:00:00.000Z" });
+        assert.ok(!baselineVerify.issues.some((issue) => issue.code === "GREENFIELD_REVIEW_SIGNAL_CONTEXT_UNEXPLAINED"));
+
         const graphPath = path.join(root, ".spec", "evidence", "evidence-graph.json");
         const graph = JSON.parse(fs.readFileSync(graphPath, "utf-8")) as {
           summary?: { requirementCoverage?: { uncovered?: string[] } };

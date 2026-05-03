@@ -825,10 +825,15 @@ function extractTechnicalContextCandidates(content: string): string[] {
       candidates.add(candidate);
     }
   }
-  for (const match of content.matchAll(/`([a-z][a-z0-9-]*)`/gi)) {
-    const contextId = normalizeContextId(match[1] ?? "");
-    if (contextId && !isTechnicalWord(contextId)) {
-      candidates.add(contextId);
+  for (const line of content.split(/\r?\n/)) {
+    if (!/\bcontexts?\b/i.test(line)) {
+      continue;
+    }
+    for (const match of line.matchAll(/`([a-z][a-z0-9-]*)`/gi)) {
+      const contextId = normalizeContextId(match[1] ?? "");
+      if (contextId && !isTechnicalWord(contextId)) {
+        candidates.add(contextId);
+      }
     }
   }
   return Array.from(candidates).sort();

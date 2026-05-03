@@ -78,7 +78,7 @@ async function main(): Promise<void> {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
     assert.equal(manifest.totalSuites, 138);
-    assert.equal(manifest.totalExpectedTests, 619);
+    assert.equal(manifest.totalExpectedTests, 620);
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
   });
 
@@ -92,7 +92,7 @@ async function main(): Promise<void> {
     assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
     assert.equal(areaMap.get("change-implement")?.suiteCount, 13);
     assert.equal(areaMap.get("change-implement")?.expectedTests, 58);
-    assert.equal(areaMap.get("core-mainline")?.expectedTests, 179);
+    assert.equal(areaMap.get("core-mainline")?.expectedTests, 180);
     assert.equal(areaMap.get("bootstrap-takeover-hardening")?.expectedTests, 118);
     assert.equal(areaMap.get("runtime-extended")?.suiteCount, 43);
     assert.equal(areaMap.get("runtime-extended")?.expectedTests, 188);

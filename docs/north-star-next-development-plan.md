@@ -87,7 +87,7 @@ governance productization -> adoption packaging -> ecosystem integration -> ente
 - `W7-T1` 已完成：`node --import tsx ./tools/jispec/tests/change-default-mode-config.ts`、`node --import tsx ./tools/jispec/tests/doctor-v1-readiness.ts`、`node --import tsx ./tools/jispec/tests/change-dual-mode.ts`、`node --import tsx ./tools/jispec/tests/v1-mainline-golden-path.ts` 通过，execute-default readiness、hand-off replay 和 stop point 语义已收口。
 - `W7-T2` 已完成：`node --import tsx ./tools/jispec/tests/implement-mainline-lane.ts`、`node --import tsx ./tools/jispec/tests/implement-patch-mediation.ts`、`node --import tsx ./tools/jispec/tests/console-governance-dashboard.ts`、`node --import tsx ./tools/jispec/tests/console-ui-smoke.ts` 通过，governance actionability、audit readiness 和 owner action 输出已收口。
 - `W8-T1` 已完成：`npm run jispec -- north-star acceptance --json` 达到 `9/9`，并已补齐 `policy_waiver`、`external_patch_mediation`、`pilot_package` 的本地证据与 decision packet。
-- `W8-T2` 已尝试：`npm run post-release:gate` 当前仍被 `verify --json` 的 blocking drift 阻断，`npm run jispec-cli -- doctor pilot --json` 已通过；在 `verify` 重新转绿前，`W8-T2` 只能保持阻塞态。
+- `W8-T2` 已完成：`npm run post-release:gate`、`npm run jispec-cli -- doctor pilot --json` 已通过；当前 release gate 保持可发布状态，`verify` 仍为 `WARN_ADVISORY`，但 3 个真实治理能力缺口和 `132` 个扫描边界噪音 advisory 已全部收口，当前只剩 `1` 个 `BOOTSTRAP_SPEC_DEBT_PENDING` 历史治理债务，详见 `docs/release-advisory-triage.md`。
 - 可追溯性设计调整方案见 `docs/provenance-traceability-adjustment-plan.md`，后续先按语义块和快照层收敛，再回收这批 blocking drift。
 - 需求渐进演进工作流已完成 `Phase 0-4`，并补上“生命周期迁移解释”叙述层；对应设计与迁移语义见 `docs/requirement-evolution-workflow.md`。这意味着 `release compare`、release summary 和 `north-star acceptance` 已能把 source snapshot、lifecycle registry、adopted change 与 requirement transition 解释成可读证据链，而不再只输出原始 drift 字段。
 

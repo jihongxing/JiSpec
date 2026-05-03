@@ -104,6 +104,16 @@ const GOVERNED_FACT_KINDS: StaticCollectorFactKind[] = [
   "migration",
   "type_definition",
 ];
+const REPO_INTERNAL_ADVISORY_PREFIXES = [
+  "tools/jispec/",
+  "examples/",
+  "templates/",
+  "scripts/",
+  ".jispec-ci/",
+];
+const REPO_INTERNAL_ADVISORY_PATHS = [
+  "tsconfig.json",
+];
 
 export function collectStaticImplementationFacts(
   rootInput: string,
@@ -174,7 +184,15 @@ export function staticCollectorManifestPath(): string {
 }
 
 export function isGovernedStaticFact(fact: StaticImplementationFact): boolean {
-  return GOVERNED_FACT_KINDS.includes(fact.kind);
+  return GOVERNED_FACT_KINDS.includes(fact.kind) && isGovernedStaticPath(fact.path) && fact.metadata?.advisory_only !== true;
+}
+
+export function isGovernedStaticPath(relativePath: string): boolean {
+  const normalized = normalizePath(relativePath);
+  if (REPO_INTERNAL_ADVISORY_PATHS.includes(normalized)) {
+    return false;
+  }
+  return !REPO_INTERNAL_ADVISORY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
 export function hasStaticFactMapping(fact: StaticImplementationFact): boolean {
@@ -638,7 +656,7 @@ function finalizeFact(
     slice_ids: stableUnique(anchors.sliceIds),
     confidence,
     source: "static_collector",
-    metadata: draft.metadata ? sortMetadata(draft.metadata) : undefined,
+    metadata: decorateStaticMetadata(draft.path, draft.metadata),
   };
 }
 
@@ -1173,6 +1191,21 @@ function sortMetadata(metadata: Record<string, unknown>): Record<string, unknown
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => [key, Array.isArray(value) ? stableUnknownArray(value) : value]),
   );
+}
+
+function decorateStaticMetadata(pathValue: string, metadata?: Record<string, unknown>): Record<string, unknown> | undefined {
+  const advisoryOnly = !isGovernedStaticPath(pathValue);
+  if (!metadata && !advisoryOnly) {
+    return undefined;
+  }
+
+  return sortMetadata({
+    ...(metadata ?? {}),
+    ...(advisoryOnly ? {
+      advisory_only: true,
+      governance_scope: "repo_internal_supporting_path",
+    } : {}),
+  });
 }
 
 function stableUnknownArray(values: unknown[]): unknown[] {
