@@ -70,21 +70,28 @@ export const TEST_SUITES: TestSuite[] = [
   core({ name: 'Semantic Validation', file: 'semantic-validation-negative.ts', expectedTests: 5 }),
   core({ name: 'CLI Help Surface', file: 'cli-help-surface.ts', expectedTests: 3 }),
   core({ name: 'CLI Legacy Surface Hint', file: 'cli-legacy-surface-hint.ts', expectedTests: 2 }),
-  core({ name: 'Greenfield Command Surface', file: 'greenfield-command-surface.ts', expectedTests: 3 }),
+  core({ name: 'Greenfield Command Surface', file: 'greenfield-command-surface.ts', expectedTests: 4 }),
   core({ name: 'Onboarding First Run', file: 'onboarding-first-run.ts', expectedTests: 7, task: 'P4-T4/M7-T4' }),
   core({ name: 'Greenfield Source Document Loader', file: 'greenfield-source-document-loader.ts', expectedTests: 5 }),
   core({ name: 'Greenfield Project Asset Writer', file: 'greenfield-project-asset-writer.ts', expectedTests: 5 }),
+  core({ name: 'Greenfield Source Refresh', file: 'greenfield-source-refresh.ts', expectedTests: 3 }),
+  core({ name: 'P11 Source Diff', file: 'p11-source-diff.ts', expectedTests: 6, task: 'P11-T1' }),
+  core({ name: 'P11 Decision Packet Language', file: 'p11-decision-packet-language.ts', expectedTests: 6, task: 'P11-T2' }),
+  core({ name: 'P11 Source Lifecycle Split', file: 'p11-source-lifecycle-split.ts', expectedTests: 3, task: 'P11-T3' }),
+  core({ name: 'P11 Source Lifecycle Merge', file: 'p11-source-lifecycle-merge.ts', expectedTests: 3, task: 'P11-T3' }),
+  core({ name: 'P11 Source Lifecycle Deprecate', file: 'p11-source-lifecycle-deprecate.ts', expectedTests: 3, task: 'P11-T3' }),
+  core({ name: 'P11 Source Lifecycle Replace', file: 'p11-source-lifecycle-replace.ts', expectedTests: 3, task: 'P11-T3' }),
   core({ name: 'Greenfield Domain And Context Draft', file: 'greenfield-domain-context-draft.ts', expectedTests: 5 }),
   core({ name: 'Greenfield API Contract Draft', file: 'greenfield-api-contract-draft.ts', expectedTests: 6 }),
   core({ name: 'Greenfield Behavior Scenario Draft', file: 'greenfield-behavior-scenario-draft.ts', expectedTests: 5 }),
   core({ name: 'Greenfield Initial Slice Queue', file: 'greenfield-initial-slice-queue.ts', expectedTests: 5, task: 'P3-T1' }),
   core({ name: 'Greenfield Verify Policy And CI Gate', file: 'greenfield-verify-policy-ci-gate.ts', expectedTests: 6, task: 'P3-T2' }),
-  core({ name: 'Greenfield Empty Directory Acceptance Demo', file: 'greenfield-empty-directory-acceptance-demo.ts', expectedTests: 6, task: 'P3-T1' }),
-  core({ name: 'Greenfield Spec Delta Model', file: 'greenfield-spec-delta-model.ts', expectedTests: 6 }),
+  core({ name: 'Greenfield Empty Directory Acceptance Demo', file: 'greenfield-empty-directory-acceptance-demo.ts', expectedTests: 7, task: 'P3-T1' }),
+  core({ name: 'Greenfield Spec Delta Model', file: 'greenfield-spec-delta-model.ts', expectedTests: 8 }),
   core({ name: 'Greenfield Baseline Snapshot', file: 'greenfield-baseline-snapshot.ts', expectedTests: 9, task: 'P2-T5' }),
   core({ name: 'Release Drift Trend', file: 'release-drift-trend.ts', expectedTests: 4, task: 'P3-T2' }),
   core({ name: 'Greenfield Evidence Graph', file: 'greenfield-evidence-graph.ts', expectedTests: 6 }),
-  core({ name: 'Greenfield Two-Way Ratchet Verify', file: 'greenfield-two-way-ratchet-verify.ts', expectedTests: 6 }),
+  core({ name: 'Greenfield Two-Way Ratchet Verify', file: 'greenfield-two-way-ratchet-verify.ts', expectedTests: 7 }),
   core({ name: 'Greenfield Blast Radius Tracking', file: 'greenfield-blast-radius-tracking.ts', expectedTests: 5 }),
   core({ name: 'Greenfield Spec Debt Ledger', file: 'greenfield-spec-debt-ledger.ts', expectedTests: 4 }),
   core({ name: 'Greenfield Deterministic Contract Graph', file: 'greenfield-deterministic-contract-graph.ts', expectedTests: 5 }),
@@ -101,7 +108,7 @@ export const TEST_SUITES: TestSuite[] = [
   core({ name: 'Verify Report Contract', file: 'verify-report-contract.ts', expectedTests: 4, task: 'P1-T5' }),
   core({ name: 'Verify Issue Fingerprint Stability', file: 'verify-issue-fingerprint-stability.ts', expectedTests: 2 }),
   core({ name: 'V1 Mainline Golden Path', file: 'v1-mainline-golden-path.ts', expectedTests: 4 }),
-  core({ name: 'Doctor V1 Readiness', file: 'doctor-v1-readiness.ts', expectedTests: 7, task: 'P2-T3/N6/P1-T1' }),
+  core({ name: 'Doctor Mainline Readiness', file: 'doctor-mainline-readiness.ts', expectedTests: 7, task: 'P2-T3/N6/P1-T1' }),
   core({ name: 'V1 Sample Repo Smoke', file: 'v1-sample-repo-smoke.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Discover Smoke', file: 'bootstrap-discover-smoke.ts', expectedTests: 4, task: 'P1-T6' }),
   bootstrap({ name: 'Bootstrap Discover Empty Repo', file: 'bootstrap-discover-empty-repo.ts', expectedTests: 2 }),
@@ -156,7 +163,7 @@ export const TEST_SUITES: TestSuite[] = [
   changeImplement({ name: 'Implement Handoff Adapters', file: 'implement-handoff-adapters.ts', expectedTests: 5, task: 'P7-T1' }),
   changeImplement({ name: 'Implement Stall Budget', file: 'implement-stall-budget.ts', expectedTests: 4, task: 'P2-T2' }),
   changeImplement({ name: 'Implement CLI Parity', file: 'implement-cli-parity.ts', expectedTests: 3, task: 'P2-T4' }),
-  changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 6, task: 'P9-T3' }),
+  changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 7, task: 'P9-T3' }),
   changeImplement({ name: 'P10 Agent Discipline Artifacts', file: 'agent-discipline-artifacts.ts', expectedTests: 10, task: 'P10-T1/P10-T2/P10-T3/P10-T4' }),
   changeImplement({ name: 'P10 Agent Discipline Implement', file: 'agent-discipline-implement.ts', expectedTests: 4, task: 'P10-T5/P10-T6/P10-T7' }),
   changeImplement({ name: 'P10 Agent Discipline Verify CI', file: 'agent-discipline-verify-ci.ts', expectedTests: 3, task: 'P10-T8' }),
@@ -190,6 +197,12 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Console UI Smoke', file: 'console-ui-smoke.ts', expectedTests: 4, task: 'P5-T1' }),
   runtime({ name: 'Console Governance Actions', file: 'console-governance-actions.ts', expectedTests: 5, task: 'P2-T4' }),
   runtime({ name: 'Console Governance Export', file: 'console-governance-export.ts', expectedTests: 2, task: 'P3-T3' }),
+  runtime({ name: 'P12 Console Source Evolution', file: 'p12-console-source-evolution.ts', expectedTests: 4, task: 'P12-T1' }),
+  runtime({ name: 'P12 Multi-Repo Owner Loop', file: 'p12-multi-repo-owner-loop.ts', expectedTests: 6, task: 'P12-T2' }),
+  runtime({ name: 'P12 Doctor Global Profile', file: 'p12-doctor-global.ts', expectedTests: 5, task: 'P12-T3' }),
+  runtime({ name: 'P13 Release Global Context', file: 'p13-release-global-context.ts', expectedTests: 4, task: 'P13-T1' }),
+  runtime({ name: 'P13 Global Closure Acceptance', file: 'p13-global-closure-acceptance.ts', expectedTests: 3, task: 'P13-T2' }),
+  runtime({ name: 'P13 Deferred Surface Promotion', file: 'p13-deferred-surface-promotion.ts', expectedTests: 3, task: 'P13-T3' }),
   runtime({ name: 'Console Multi-Repo Governance', file: 'console-multi-repo-governance.ts', expectedTests: 5, task: 'P5-T3/M7-T1' }),
   runtime({ name: 'P9 Multi-Repo Contract Drift Hints', file: 'p9-multi-repo-contract-drift-hints.ts', expectedTests: 6, task: 'P9-T5' }),
   runtime({ name: 'Privacy Redaction', file: 'privacy-redaction.ts', expectedTests: 7, task: 'P6-T2/M7-T3' }),
@@ -233,7 +246,7 @@ interface RegressionMatrixManifest {
       expectedTests: number;
       allowedRegressionArea: 'runtime-extended';
       allowedDoctorProfiles: ['runtime'];
-      forbiddenDoctorProfiles: ['v1', 'pilot'];
+      forbiddenDoctorProfiles: ['v1', 'pilot', 'global'];
       diagnosticsOnly: true;
       suites: string[];
     };
@@ -295,8 +308,8 @@ export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
   }
 
   for (const contract of getDeferredSurfaceContracts()) {
-    if (!contract.forbiddenDoctorProfiles.includes('pilot')) {
-      issues.push(`Deferred surface contract ${contract.id} does not forbid doctor pilot gating`);
+    if (!contract.forbiddenDoctorProfiles.includes('pilot') || !contract.forbiddenDoctorProfiles.includes('global')) {
+      issues.push(`Deferred surface contract ${contract.id} does not forbid doctor pilot/global gating`);
     }
   }
 
@@ -328,7 +341,7 @@ export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
         expectedTests: deferredExpectedTests,
         allowedRegressionArea: 'runtime-extended',
         allowedDoctorProfiles: ['runtime'],
-        forbiddenDoctorProfiles: ['v1', 'pilot'],
+        forbiddenDoctorProfiles: ['v1', 'pilot', 'global'],
         diagnosticsOnly: true,
         suites: deferredSuites,
       },

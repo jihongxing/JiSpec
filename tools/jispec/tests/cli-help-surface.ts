@@ -41,6 +41,8 @@ function main(): void {
     assertIncludes(help, "jispec-cli init --requirements <path> [--technical-solution <path>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli first-run [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change <summary> [--mode prompt|execute] [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli source refresh [--change <id|latest>] [--json]", "primary surface");
+    assertIncludes(help, "jispec-cli source diff [--change <id|latest>] [--json]", "primary surface");
     assertIncludes(help, "jispec-cli change default-mode show|set|reset [--json]", "primary surface");
     assertIncludes(help, "jispec-cli spec-debt repay|cancel|owner-review <id> [--json]", "primary surface");
     assertIncludes(help, "jispec-cli release snapshot --version <version> [--json]", "primary surface");
@@ -60,10 +62,11 @@ function main(): void {
     assertIncludes(help, "jispec-cli bootstrap draft [--json]", "primary surface");
     assertIncludes(help, "jispec-cli adopt --interactive [--json]", "primary surface");
     assertIncludes(help, "jispec-cli policy approval status|record [--json]", "primary surface");
-    assertIncludes(help, "jispec-cli doctor v1", "primary surface");
+    assertIncludes(help, "jispec-cli doctor mainline", "primary surface");
+    assertIncludes(help, "jispec-cli doctor global", "primary surface");
     assertIncludes(help, "jispec-cli doctor runtime", "primary surface");
     assertIncludes(help, "npm run ci:verify", "primary surface");
-    console.log("✓ Test 2: primary surface lists init, verify, change, console governance actions, export, spec-debt, implement, bootstrap commands, adopt, doctor v1, doctor runtime, and ci:verify");
+    console.log("✓ Test 2: primary surface lists init, verify, change, source refresh, source diff, console governance actions, export, spec-debt, implement, bootstrap commands, adopt, doctor mainline, doctor global, doctor runtime, and ci:verify");
     passed++;
 
     assertIncludes(help, "jispec-cli slice ...", "legacy surface");

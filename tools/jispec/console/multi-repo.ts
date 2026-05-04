@@ -27,8 +27,15 @@ export interface MultiRepoGovernanceRepoPosture {
   unmatchedActiveWaivers: string[];
   openSpecDebt: number;
   bootstrapSpecDebt: number;
+  sourceEvolutionChangeId: string;
+  sourceEvolutionBlockingOpenItems: number;
+  sourceEvolutionExpiredExceptions: number;
+  sourceEvolutionRepresentativeArtifact: string;
+  lastAdoptedSourceChange: string;
+  lifecycleDeltaCounts: Record<string, number>;
   releaseDriftStatus: string;
   releaseDriftTrendComparisons: number;
+  approvalWorkflowStatus: string;
   latestAuditActor: string;
   contractRefs: MultiRepoContractRef[];
   risk: {
@@ -50,6 +57,7 @@ export interface MultiRepoGovernanceRepoGroupEntry extends RepoGroupRepo {
 
 export interface CrossRepoContractDriftHint {
   kind: "cross_repo_contract_drift";
+  id: string;
   upstreamRepoId: string;
   downstreamRepoId: string;
   contractRef: string;
@@ -57,14 +65,51 @@ export interface CrossRepoContractDriftHint {
   downstreamHash: string;
   severity: "owner_action";
   suggestedCommand: string;
+  ownerActionId: string;
+  evidence: {
+    upstreamSnapshotPath: string;
+    downstreamSnapshotPath: string;
+    downstreamRepoPath: string;
+    downstreamSourceEvolutionChangeId: string;
+    downstreamReleaseDriftStatus: string;
+  };
   blockingGateReplacement: false;
 }
 
+export type MultiRepoOwnerActionCommandKind =
+  | "change"
+  | "source_refresh"
+  | "release_compare"
+  | "export_governance";
+
+export interface MultiRepoOwnerActionCommand {
+  kind: MultiRepoOwnerActionCommandKind;
+  command: string;
+  rationale: string;
+  writesLocalArtifacts: string[];
+}
+
 export interface MultiRepoOwnerAction {
-  kind: "cross_repo_contract_drift";
+  id: string;
+  kind: "cross_repo_contract_drift_owner_action";
+  status: "ready" | "needs_input";
   repoId: string;
+  repoName: string;
+  owner: string;
+  repoPath: string;
+  upstreamRepoId: string;
+  downstreamRepoId: string;
+  contractRef: string;
   message: string;
+  summary: string;
+  risk: "medium";
+  primaryCommand: MultiRepoOwnerActionCommand;
+  followupCommands: MultiRepoOwnerActionCommand[];
+  sourceArtifacts: string[];
+  affectedContracts: string[];
+  relatedHintId: string;
   suggestedCommand: string;
+  blockingGateReplacement: false;
 }
 
 export interface MultiRepoGovernanceMissingSnapshot {
@@ -107,6 +152,8 @@ export interface MultiRepoGovernanceAggregate {
     totalBootstrapSpecDebt: number;
     releaseDriftHotspotCount: number;
     totalReleaseDriftComparisons: number;
+    contractDriftHintCount: number;
+    ownerActionCount: number;
     latestAuditActors: string[];
   };
   repoGroup: {
@@ -206,6 +253,7 @@ export function renderMultiRepoGovernanceAggregateText(aggregate: MultiRepoGover
     `Release drift hotspots: ${aggregate.summary.releaseDriftHotspotCount}`,
     `Repo group: ${aggregate.repoGroup.status}`,
     `Contract drift hints: ${aggregate.contractDriftHints.length}`,
+    `Owner actions: ${aggregate.ownerActions.length}`,
     "",
     "## Repo Group",
     "",
@@ -214,6 +262,10 @@ export function renderMultiRepoGovernanceAggregateText(aggregate: MultiRepoGover
     "## Cross-Repo Contract Drift Hints",
     "",
     ...formatContractDriftHints(aggregate.contractDriftHints),
+    "",
+    "## Owner Actions",
+    "",
+    ...formatOwnerActions(aggregate.ownerActions),
     "",
     "## Highest Risk Repos",
     "",
@@ -266,7 +318,8 @@ function buildAggregate(
       comparisons: repo.releaseDriftTrendComparisons,
     }));
 
-  const contractDriftHints = buildContractDriftHints(repoGroup, repos);
+  const contractDriftHints = buildContractDriftHints(root, repoGroup, repos);
+  const ownerActions = buildOwnerActions(contractDriftHints, repoGroup, repos);
   return {
     schemaVersion: 1,
     kind: "jispec-multi-repo-governance-aggregate",
@@ -301,6 +354,8 @@ function buildAggregate(
       totalBootstrapSpecDebt: sum(repos.map((repo) => repo.bootstrapSpecDebt)),
       releaseDriftHotspotCount: releaseDrift.length,
       totalReleaseDriftComparisons: sum(repos.map((repo) => repo.releaseDriftTrendComparisons)),
+      contractDriftHintCount: contractDriftHints.length,
+      ownerActionCount: ownerActions.length,
       latestAuditActors: stableUnique(repos.map((repo) => repo.latestAuditActor).filter((actor) => !isMissing(actor))),
     },
     repos,
@@ -339,7 +394,7 @@ function buildAggregate(
     },
     repoGroup,
     contractDriftHints,
-    ownerActions: buildOwnerActions(contractDriftHints),
+    ownerActions,
     singleRepoGateReplacement: false,
   };
 }
@@ -362,8 +417,15 @@ function buildRepoPosture(snapshot: MultiRepoGovernanceSnapshot, snapshotPath: s
     unmatchedActiveWaivers: stringArrayHint(hints.unmatchedActiveWaivers),
     openSpecDebt: numberHint(hints.openSpecDebt),
     bootstrapSpecDebt: numberHint(hints.bootstrapSpecDebt),
+    sourceEvolutionChangeId: stringHint(hints.sourceEvolutionChangeId),
+    sourceEvolutionBlockingOpenItems: numberHint(hints.sourceEvolutionBlockingOpenItems),
+    sourceEvolutionExpiredExceptions: numberHint(hints.sourceEvolutionExpiredExceptions),
+    sourceEvolutionRepresentativeArtifact: stringHint(hints.sourceEvolutionRepresentativeArtifact),
+    lastAdoptedSourceChange: stringHint(hints.lastAdoptedSourceChange),
+    lifecycleDeltaCounts: countRecordHint(hints.lifecycleDeltaCounts),
     releaseDriftStatus: stringHint(hints.releaseDriftStatus),
     releaseDriftTrendComparisons: numberHint(hints.releaseDriftTrendComparisons),
+    approvalWorkflowStatus: stringHint(hints.approvalWorkflowStatus),
     latestAuditActor: stringHint(hints.latestAuditActor),
     contractRefs: contractRefArrayHint(hints.contractRefs),
   };
@@ -396,6 +458,7 @@ function buildRepoGroupSummary(
 }
 
 function buildContractDriftHints(
+  root: string,
   repoGroup: MultiRepoGovernanceAggregate["repoGroup"],
   repos: MultiRepoGovernanceRepoPosture[],
 ): CrossRepoContractDriftHint[] {
@@ -427,15 +490,25 @@ function buildContractDriftHints(
         continue;
       }
       seen.add(key);
+      const ownerActionId = `owner-action:${downstream.id}:${parsed.contractRef}`;
       hints.push({
         kind: "cross_repo_contract_drift",
+        id: `hint:${parsed.repoId}:${parsed.contractRef}->${downstream.id}`,
         upstreamRepoId: parsed.repoId,
         downstreamRepoId: downstream.id,
         contractRef: parsed.contractRef,
         upstreamHash: upstreamContract.hash,
         downstreamHash: downstreamContract.hash,
         severity: "owner_action",
-        suggestedCommand: buildCrossRepoSuggestedCommand(parsed.repoId, downstream.id, parsed.contractRef),
+        suggestedCommand: buildCrossRepoSuggestedCommand(downstreamPosture, downstream.path, parsed.repoId, parsed.contractRef),
+        ownerActionId,
+        evidence: {
+          upstreamSnapshotPath: upstream.snapshotPath,
+          downstreamSnapshotPath: downstreamPosture.snapshotPath,
+          downstreamRepoPath: normalizePath(path.resolve(root, downstream.path)),
+          downstreamSourceEvolutionChangeId: downstreamPosture.sourceEvolutionChangeId,
+          downstreamReleaseDriftStatus: downstreamPosture.releaseDriftStatus,
+        },
         blockingGateReplacement: false,
       });
     }
@@ -448,13 +521,52 @@ function buildContractDriftHints(
   );
 }
 
-function buildOwnerActions(hints: CrossRepoContractDriftHint[]): MultiRepoOwnerAction[] {
-  return hints.map((hint) => ({
-    kind: "cross_repo_contract_drift",
-    repoId: hint.downstreamRepoId,
-    message: `${hint.downstreamRepoId} may need to reconcile ${hint.contractRef} from ${hint.upstreamRepoId}.`,
-    suggestedCommand: hint.suggestedCommand,
-  }));
+function buildOwnerActions(
+  hints: CrossRepoContractDriftHint[],
+  repoGroup: MultiRepoGovernanceAggregate["repoGroup"],
+  repos: MultiRepoGovernanceRepoPosture[],
+): MultiRepoOwnerAction[] {
+  const repoById = new Map(repos.map((repo) => [repo.repoId, repo]));
+  const repoGroupById = new Map(repoGroup.repos.map((repo) => [repo.id, repo]));
+  return hints.map((hint) => {
+    const downstream = repoById.get(hint.downstreamRepoId);
+    const repoEntry = repoGroupById.get(hint.downstreamRepoId);
+    const repoPath = normalizeRepoPath(repoEntry?.path ?? downstream?.repoRoot ?? hint.downstreamRepoId);
+    const repoName = repoEntry?.repoName ?? downstream?.repoName ?? hint.downstreamRepoId;
+    const owner = repoEntry?.owner ?? `${hint.downstreamRepoId} owner`;
+    const primaryCommand = buildOwnerPrimaryCommand(downstream, repoPath, `Reconcile ${hint.contractRef} from ${hint.upstreamRepoId}`);
+    const exportCommand = buildExportGovernanceCommand(repoPath, hint.downstreamRepoId, repoName);
+    return {
+      id: hint.ownerActionId,
+      kind: "cross_repo_contract_drift_owner_action",
+      status: primaryCommand.kind === "release_compare" ? "needs_input" : "ready",
+      repoId: hint.downstreamRepoId,
+      repoName,
+      owner,
+      repoPath,
+      upstreamRepoId: hint.upstreamRepoId,
+      downstreamRepoId: hint.downstreamRepoId,
+      contractRef: hint.contractRef,
+      message: `${repoName} should reconcile ${hint.contractRef} from ${hint.upstreamRepoId}.`,
+      summary: buildOwnerActionSummary(downstream, hint),
+      risk: "medium",
+      primaryCommand,
+      followupCommands: [exportCommand],
+      sourceArtifacts: stableUnique([
+        ".spec/console/multi-repo-governance.json",
+        hint.evidence.upstreamSnapshotPath,
+        hint.evidence.downstreamSnapshotPath,
+        repoGroup.sourcePath,
+      ]),
+      affectedContracts: [
+        `${hint.upstreamRepoId}:${hint.contractRef}`,
+        `${hint.downstreamRepoId}:${hint.contractRef}`,
+      ],
+      relatedHintId: hint.id,
+      suggestedCommand: primaryCommand.command,
+      blockingGateReplacement: false,
+    };
+  });
 }
 
 function parseRepoContractRef(value: string): { repoId: string; contractRef: string } | undefined {
@@ -472,8 +584,87 @@ function findContractRef(repo: MultiRepoGovernanceRepoPosture, contractRef: stri
   return repo.contractRefs.find((candidate) => normalizePath(candidate.ref) === normalizePath(contractRef));
 }
 
-function buildCrossRepoSuggestedCommand(upstreamRepoId: string, downstreamRepoId: string, contractRef: string): string {
-  return `jispec console aggregate-governance --review-drift ${upstreamRepoId}:${contractRef}->${downstreamRepoId}:${contractRef}`;
+function buildCrossRepoSuggestedCommand(
+  downstream: MultiRepoGovernanceRepoPosture,
+  downstreamRepoPath: string,
+  upstreamRepoId: string,
+  contractRef: string,
+): string {
+  return buildOwnerPrimaryCommand(
+    downstream,
+    normalizeRepoPath(downstreamRepoPath),
+    `Reconcile ${contractRef} from ${upstreamRepoId}`,
+  ).command;
+}
+
+function buildOwnerPrimaryCommand(
+  downstream: MultiRepoGovernanceRepoPosture | undefined,
+  repoPath: string,
+  changeSummary: string,
+): MultiRepoOwnerActionCommand {
+  if (downstream && !isMissing(downstream.sourceEvolutionChangeId)) {
+    return {
+      kind: "source_refresh",
+      command: `npm run jispec-cli -- source refresh --root ${repoPath} --change ${downstream.sourceEvolutionChangeId}`,
+      rationale: "The downstream repo already has an active source evolution change, so refresh its source diff before deciding how to reconcile the cross-repo drift.",
+      writesLocalArtifacts: [
+        ".spec/deltas/<change-id>/source-evolution.json",
+        ".spec/deltas/<change-id>/source-evolution.md",
+      ],
+    };
+  }
+
+  if (downstream && isReleaseDriftHotspot(downstream.releaseDriftStatus)) {
+    return {
+      kind: "release_compare",
+      command: `npm run jispec-cli -- release compare --root ${repoPath} --from <ref> --to <ref>`,
+      rationale: "The downstream repo already reports release drift, so compare its current release baseline before reconciling the cross-repo contract.",
+      writesLocalArtifacts: [
+        ".spec/releases/compare/<from>-to-<to>/compare-report.json",
+        ".spec/releases/compare/<from>-to-<to>/compare-report.md",
+        ".spec/releases/drift-trend.json",
+        ".spec/releases/drift-trend.md",
+        ".spec/audit/events.jsonl",
+      ],
+    };
+  }
+
+  return {
+    kind: "change",
+    command: `npm run jispec-cli -- change "${escapeCommandDoubleQuotes(changeSummary)}" --root ${repoPath} --mode prompt`,
+    rationale: "Open a local downstream change so the team can reconcile the drifted contract through the normal single-repo change loop.",
+    writesLocalArtifacts: [
+      ".jispec/change-session.json",
+      ".spec/deltas/<change-id>/delta.yaml",
+      ".spec/deltas/<change-id>/impact-graph.json",
+      ".spec/deltas/<change-id>/verify-focus.yaml",
+    ],
+  };
+}
+
+function buildExportGovernanceCommand(repoPath: string, repoId: string, repoName: string): MultiRepoOwnerActionCommand {
+  return {
+    kind: "export_governance",
+    command: `npm run jispec-cli -- console export-governance --root ${repoPath} --repo-id ${repoId} --repo-name "${escapeCommandDoubleQuotes(repoName)}"`,
+    rationale: "Re-export the repo governance snapshot after the local remediation so the aggregate can be refreshed from current local truth.",
+    writesLocalArtifacts: [
+      ".spec/console/governance-snapshot.json",
+      ".spec/console/governance-snapshot.md",
+    ],
+  };
+}
+
+function buildOwnerActionSummary(
+  downstream: MultiRepoGovernanceRepoPosture | undefined,
+  hint: CrossRepoContractDriftHint,
+): string {
+  if (downstream && !isMissing(downstream.sourceEvolutionChangeId)) {
+    return `${downstream.repoId} already has active source evolution ${downstream.sourceEvolutionChangeId}; refresh it before reconciling ${hint.contractRef}.`;
+  }
+  if (downstream && isReleaseDriftHotspot(downstream.releaseDriftStatus)) {
+    return `${downstream.repoId} already reports release drift ${downstream.releaseDriftStatus}; compare its release baseline before reconciling ${hint.contractRef}.`;
+  }
+  return `${hint.downstreamRepoId} should open a local change to reconcile ${hint.contractRef} from ${hint.upstreamRepoId}.`;
 }
 
 function scoreRepoRisk(repo: Omit<MultiRepoGovernanceRepoPosture, "risk">): MultiRepoGovernanceRepoPosture["risk"] {
@@ -616,6 +807,19 @@ function stringArrayHint(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).filter(Boolean).sort((left, right) => left.localeCompare(right)) : [];
 }
 
+function countRecordHint(value: unknown): Record<string, number> {
+  if (!isRecord(value)) {
+    return {};
+  }
+  const counts: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(value).sort(([left], [right]) => left.localeCompare(right))) {
+    if (typeof entry === "number" && Number.isFinite(entry)) {
+      counts[key] = entry;
+    }
+  }
+  return counts;
+}
+
 function contractRefArrayHint(value: unknown): MultiRepoContractRef[] {
   if (!Array.isArray(value)) {
     return [];
@@ -680,8 +884,18 @@ function formatContractDriftHints(hints: CrossRepoContractDriftHint[]): string[]
     return ["- None"];
   }
   return hints.map((hint) =>
-    `- ${hint.upstreamRepoId} -> ${hint.downstreamRepoId} ${hint.contractRef}: ${hint.upstreamHash} != ${hint.downstreamHash}; ${hint.suggestedCommand}`,
+    `- ${hint.upstreamRepoId} -> ${hint.downstreamRepoId} ${hint.contractRef}: ${hint.upstreamHash} != ${hint.downstreamHash}; next ${hint.downstreamRepoId}; ${hint.suggestedCommand}`,
   );
+}
+
+function formatOwnerActions(actions: MultiRepoOwnerAction[]): string[] {
+  if (actions.length === 0) {
+    return ["- None"];
+  }
+  return actions.map((action) => {
+    const followup = action.followupCommands.map((command) => command.command).join(" -> ");
+    return `- ${action.repoName} (${action.repoId}): ${action.primaryCommand.kind} -> ${action.primaryCommand.command}${followup ? `; then ${followup}` : ""}`;
+  });
 }
 
 function formatList(values: string[]): string {
@@ -714,6 +928,15 @@ function formatMissingSnapshots(missingSnapshots: MultiRepoGovernanceMissingSnap
     return ["- None"];
   }
   return missingSnapshots.map((entry) => `- ${entry.inputPath}: ${entry.reason}`);
+}
+
+function normalizeRepoPath(repoPath: string): string {
+  const normalized = normalizePath(repoPath);
+  return /\s/.test(normalized) ? `"${normalized}"` : normalized;
+}
+
+function escapeCommandDoubleQuotes(value: string): string {
+  return value.replace(/"/g, '\\"');
 }
 
 function normalizePath(filePath: string): string {

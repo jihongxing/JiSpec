@@ -25,6 +25,12 @@ import {
   renderHumanDecisionSnapshot,
 } from "../human-decision-packet";
 import { splitDecisionCompanionSections } from "../companion/decision-sections";
+import type {
+  CrossRepoContractDriftHint,
+  MultiRepoGovernanceAggregate,
+  MultiRepoGovernanceRepoPosture,
+  MultiRepoOwnerAction,
+} from "../console/multi-repo";
 
 export interface ReleaseSnapshotOptions {
   root: string;
@@ -84,11 +90,86 @@ export interface ReleaseCompareResult {
   diffs: BaselineDiff[];
   graphDiff: MerkleContractDagDiff;
   driftSummary: ReleaseDriftSummary;
+  globalContext: ReleaseCompareGlobalContext;
   comparedAt: string;
   driftTrendJsonPath: string;
   driftTrendMarkdownPath: string;
   driftTrend: ReleaseDriftTrendSummary;
   replay: ReplayMetadata;
+}
+
+export type ReleaseCompareGlobalContextStatus = "available" | "not_available_yet";
+
+export interface ReleaseCompareGlobalContext {
+  kind: "release_compare_global_context";
+  status: ReleaseCompareGlobalContextStatus;
+  summary: string;
+  boundary: {
+    declaredArtifactConsumer: true;
+    consumesRequirementEvolutionArtifacts: true;
+    consumesMultiRepoAggregateArtifact: boolean;
+    scansSourceCode: false;
+    runsVerify: false;
+    replacesCliGate: false;
+    markdownIsMachineApi: false;
+  };
+  details: {
+    aggregatePath?: string;
+    aggregateGeneratedAt?: string;
+    lifecycleRegistryDelta: {
+      fromPath?: string;
+      toPath?: string;
+      fromVersion?: number;
+      toVersion?: number;
+      changed: boolean;
+    };
+    sourceEvolutionArtifacts: {
+      fromSourceEvolutionPath?: string;
+      toSourceEvolutionPath?: string;
+      fromSourceReviewPath?: string;
+      toSourceReviewPath?: string;
+      fromActiveSnapshotId?: string;
+      toActiveSnapshotId?: string;
+      fromLastAdoptedChangeId?: string | null;
+      toLastAdoptedChangeId?: string | null;
+    };
+    representativeArtifacts: string[];
+    repoPosture?: ReleaseCompareRepoPostureContext;
+    relevantContractDriftHints: CrossRepoContractDriftHint[];
+    relevantOwnerActions: MultiRepoOwnerAction[];
+    ownerReviewRecommendations: ReleaseCompareOwnerReviewRecommendation[];
+  };
+}
+
+export interface ReleaseCompareRepoPostureContext {
+  repoId: string;
+  repoName: string;
+  repoRoot: string;
+  snapshotPath: string;
+  sourceEvolutionChangeId: string;
+  sourceEvolutionBlockingOpenItems: number;
+  sourceEvolutionExpiredExceptions: number;
+  sourceEvolutionRepresentativeArtifact: string;
+  lastAdoptedSourceChange: string;
+  lifecycleDeltaCounts: Record<string, number>;
+  releaseDriftStatus: string;
+  releaseDriftTrendComparisons: number;
+}
+
+export interface ReleaseCompareOwnerReviewRecommendation {
+  id: string;
+  severity: "owner_review";
+  reason:
+    | "source_evolution_blocking_open_items"
+    | "source_evolution_expired_exceptions"
+    | "cross_repo_contract_drift"
+    | "owner_action_ready";
+  summary: string;
+  suggestedCommand?: string;
+  relatedHintId?: string;
+  relatedOwnerActionId?: string;
+  sourceEvolutionChangeId?: string;
+  representativeArtifact?: string;
 }
 
 export interface BaselineDiff {
@@ -105,6 +186,7 @@ export interface ReleaseBaselineSummary {
   contractGraph: BaselineSurfaceSummary;
   staticCollector: BaselineSurfaceSummary;
   policy: BaselineSurfaceSummary;
+  requirementEvolution: BaselineSurfaceSummary;
 }
 
 export interface BaselineSurfaceSummary {
@@ -120,10 +202,16 @@ export interface ReleaseDriftSummary {
   staticCollector: DriftSurfaceSummary;
   behavior: DriftSurfaceSummary;
   policy: DriftSurfaceSummary;
+  requirementEvolution: DriftSurfaceSummary;
 }
 
 export interface DriftSurfaceSummary {
-  kind: "contract_graph_drift" | "static_collector_drift" | "behavior_drift" | "policy_drift";
+  kind:
+    | "contract_graph_drift"
+    | "static_collector_drift"
+    | "behavior_drift"
+    | "policy_drift"
+    | "requirement_evolution_drift";
   status: DriftStatus;
   summary: string;
   details: Record<string, unknown>;
@@ -179,6 +267,32 @@ interface PolicySnapshot {
   content_hash?: string;
   facts_contract?: string;
   rule_ids: string[];
+}
+
+interface RequirementEvolutionStateSnapshot {
+  tracked: boolean;
+  activeSnapshotId?: string;
+  lifecycleRegistryPath?: string;
+  lifecycleRegistryVersion?: number;
+  lastAdoptedChangeId?: string | null;
+  sourceEvolutionPath?: string;
+  sourceReviewPath?: string;
+  proposedSnapshotPath?: string;
+  appliedDeltas: string[];
+}
+
+interface SourceEvolutionArtifactSummary {
+  sourceEvolutionPath?: string;
+  sourceReviewPath?: string;
+  addedRequirements: string[];
+  modifiedRequirements: string[];
+  deprecatedRequirements: string[];
+  deprecatedWithoutSuccessor: string[];
+  splitMappings: string[];
+  mergeMappings: string[];
+  replacedMappings: string[];
+  reanchoredAnchors: string[];
+  totalItems: number;
 }
 
 type BaselineDocument = Record<string, unknown>;
@@ -380,6 +494,7 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     toLock: toGraph.lock,
   });
   const driftSummary = summarizeReleaseDrift({
+    root,
     fromBaseline,
     toBaseline,
     diffs,
@@ -388,6 +503,10 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     toStaticCollector: resolveComparableStaticCollector(root, options.to, toBaseline),
     fromPolicy: resolveComparablePolicy(root, options.from, fromBaseline),
     toPolicy: resolveComparablePolicy(root, options.to, toBaseline),
+  });
+  const globalContext = buildReleaseCompareGlobalContext({
+    root,
+    driftSummary,
   });
   const compareReportDir = resolveCompareReportDir(root, options.from, options.to);
   const compareReportJsonPath = path.join(compareReportDir, "compare-report.json");
@@ -410,6 +529,7 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     diffs,
     graphDiff,
     driftSummary,
+    globalContext,
     comparedAt,
     driftTrendJsonPath: normalizePath(driftTrendJsonPath),
     driftTrendMarkdownPath: normalizePath(driftTrendMarkdownPath),
@@ -449,6 +569,9 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
       to: options.to,
       identical: result.identical,
       driftStatus: result.driftSummary.overallStatus,
+      globalContextStatus: result.globalContext.status,
+      ownerReviewRecommendationCount: result.globalContext.details.ownerReviewRecommendations.length,
+      relevantContractDriftHintCount: result.globalContext.details.relevantContractDriftHints.length,
       driftTrendPath: normalizePath(path.relative(root, driftTrendJsonPath)),
       diffCount: result.diffs.length,
     },
@@ -481,6 +604,7 @@ export function renderReleaseSnapshotText(result: ReleaseSnapshotResult): string
     `- Contract graph: ${result.summary.contractGraph.summary}`,
     `- Static collector: ${result.summary.staticCollector.summary}`,
     `- Policy: ${result.summary.policy.summary}`,
+    `- Requirement evolution: ${result.summary.requirementEvolution.summary}`,
     "",
     "Counts:",
     `- requirements: ${result.counts.requirementIds}`,
@@ -530,17 +654,26 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   lines.push(`Static collector drift: ${result.driftSummary.staticCollector.status} - ${result.driftSummary.staticCollector.summary}`);
   lines.push(`Behavior drift: ${result.driftSummary.behavior.status} - ${result.driftSummary.behavior.summary}`);
   lines.push(`Policy drift: ${result.driftSummary.policy.status} - ${result.driftSummary.policy.summary}`);
+  lines.push(
+    `Requirement evolution drift: ${result.driftSummary.requirementEvolution.status} - ${result.driftSummary.requirementEvolution.summary}`,
+  );
+
+  lines.push("", "## Requirement Evolution");
+  lines.push(...renderRequirementEvolutionDriftLines(result.driftSummary.requirementEvolution));
+
+  lines.push("", "## Global Closure Context");
+  lines.push(...renderReleaseCompareGlobalContextLines(result.globalContext));
 
   lines.push("", "## Drift Trend");
   lines.push(`Comparisons: ${result.driftTrend.compareCount}`);
   lines.push(`Changed comparisons: ${result.driftTrend.changedCompareCount}`);
   lines.push(`Latest trend status: ${result.driftTrend.latest?.overallStatus ?? "not_available_yet"}`);
   lines.push(`Contract graph changed: ${result.driftTrend.surfaces.contractGraph.changed}`);
-  lines.push("", "## Replay / Provenance");
-  lines.push(...renderReplayMarkdown(result.replay));
   lines.push(`Static collector changed: ${result.driftTrend.surfaces.staticCollector.changed}`);
   lines.push(`Behavior changed: ${result.driftTrend.surfaces.behavior.changed}`);
   lines.push(`Policy changed: ${result.driftTrend.surfaces.policy.changed}`);
+  lines.push("", "## Replay / Provenance");
+  lines.push(...renderReplayMarkdown(result.replay));
 
   if (result.graphDiff.changedNodeContent.length > 0) {
     lines.push("", "Changed node content:");
@@ -1094,6 +1227,688 @@ interface ComparablePolicy {
   ruleIds: string[];
 }
 
+function summarizeRequirementEvolutionState(baseline: BaselineDocument): BaselineSurfaceSummary {
+  const state = readRequirementEvolutionState(baseline);
+  if (!state.tracked) {
+    return {
+      status: "not_tracked",
+      summary: "not tracked",
+      details: {},
+    };
+  }
+
+  return {
+    status: "tracked",
+    summary: [
+      state.activeSnapshotId ? `snapshot ${state.activeSnapshotId}` : undefined,
+      state.lifecycleRegistryVersion !== undefined ? `lifecycle v${state.lifecycleRegistryVersion}` : undefined,
+      state.lastAdoptedChangeId ? `last adopted ${state.lastAdoptedChangeId}` : "no adopted change recorded yet",
+    ].filter((entry): entry is string => Boolean(entry)).join(", "),
+    details: {
+      active_snapshot_id: state.activeSnapshotId,
+      lifecycle_registry_path: state.lifecycleRegistryPath,
+      lifecycle_registry_version: state.lifecycleRegistryVersion,
+      last_adopted_change_id: state.lastAdoptedChangeId ?? null,
+      source_evolution_path: state.sourceEvolutionPath,
+      source_review_path: state.sourceReviewPath,
+      proposed_snapshot_path: state.proposedSnapshotPath,
+      applied_deltas: state.appliedDeltas,
+    },
+  };
+}
+
+function summarizeRequirementEvolutionDrift(
+  root: string,
+  fromBaseline: BaselineDocument,
+  toBaseline: BaselineDocument,
+  diffs: BaselineDiff[],
+): DriftSurfaceSummary {
+  const fromState = readRequirementEvolutionState(fromBaseline);
+  const toState = readRequirementEvolutionState(toBaseline);
+  const requirementDiff = diffs.find((diff) => diff.field === "requirement_ids");
+  const addedRequirements = stableUnique([
+    ...(requirementDiff?.added ?? []),
+  ]);
+  const removedRequirements = stableUnique([
+    ...(requirementDiff?.removed ?? []),
+  ]);
+  const artifact = readSourceEvolutionArtifactSummary(root, toBaseline);
+  const modifiedRequirements = artifact.modifiedRequirements;
+  const replacedMappings = artifact.replacedMappings;
+  const splitMappings = artifact.splitMappings;
+  const mergeMappings = artifact.mergeMappings;
+  const deprecatedWithoutSuccessor = stableUnique([
+    ...artifact.deprecatedWithoutSuccessor,
+    ...removedRequirements.filter((requirementId) =>
+      !replacedMappings.some((mapping) => mapping.startsWith(`${requirementId} -> `)) &&
+      !splitMappings.some((mapping) => mapping.startsWith(`${requirementId} -> `)),
+    ),
+  ]);
+  const appliedDeltasAdded = toState.appliedDeltas.filter((changeId) => !fromState.appliedDeltas.includes(changeId));
+  const tracked = fromState.tracked ||
+    toState.tracked ||
+    addedRequirements.length > 0 ||
+    removedRequirements.length > 0 ||
+    artifact.totalItems > 0;
+
+  if (!tracked) {
+    return {
+      kind: "requirement_evolution_drift",
+      status: "not_tracked",
+      summary: "Requirement evolution artifacts are not tracked for either baseline.",
+      details: {},
+    };
+  }
+
+  const changed = addedRequirements.length > 0 ||
+    removedRequirements.length > 0 ||
+    modifiedRequirements.length > 0 ||
+    replacedMappings.length > 0 ||
+    splitMappings.length > 0 ||
+    mergeMappings.length > 0 ||
+    artifact.reanchoredAnchors.length > 0 ||
+    !sameNullableString(fromState.activeSnapshotId, toState.activeSnapshotId) ||
+    !sameNullableNumber(fromState.lifecycleRegistryVersion, toState.lifecycleRegistryVersion) ||
+    !sameNullableString(fromState.lastAdoptedChangeId ?? undefined, toState.lastAdoptedChangeId ?? undefined) ||
+    appliedDeltasAdded.length > 0;
+
+  const summary = changed
+    ? buildRequirementEvolutionChangedSummary({
+        fromState,
+        toState,
+        addedRequirements,
+        modifiedRequirements,
+        replacedMappings,
+        splitMappings,
+        mergeMappings,
+        deprecatedWithoutSuccessor,
+        appliedDeltasAdded,
+      })
+    : "Requirement lifecycle registry, source snapshot, and adopted deltas are unchanged.";
+
+  return {
+    kind: "requirement_evolution_drift",
+    status: changed ? "changed" : "unchanged",
+    summary,
+    details: {
+      from_active_snapshot_id: fromState.activeSnapshotId,
+      to_active_snapshot_id: toState.activeSnapshotId,
+      from_lifecycle_registry_path: fromState.lifecycleRegistryPath,
+      to_lifecycle_registry_path: toState.lifecycleRegistryPath,
+      from_lifecycle_registry_version: fromState.lifecycleRegistryVersion,
+      to_lifecycle_registry_version: toState.lifecycleRegistryVersion,
+      from_last_adopted_change_id: fromState.lastAdoptedChangeId ?? null,
+      to_last_adopted_change_id: toState.lastAdoptedChangeId ?? null,
+      from_source_evolution_path: fromState.sourceEvolutionPath,
+      to_source_evolution_path: toState.sourceEvolutionPath,
+      from_source_review_path: fromState.sourceReviewPath,
+      to_source_review_path: toState.sourceReviewPath,
+      added_requirements: addedRequirements,
+      removed_requirements: removedRequirements,
+      modified_requirements: modifiedRequirements,
+      replaced_mappings: replacedMappings,
+      split_mappings: splitMappings,
+      merge_mappings: mergeMappings,
+      deprecated_without_successor: deprecatedWithoutSuccessor,
+      reanchored_anchors: artifact.reanchoredAnchors,
+      applied_deltas_added: appliedDeltasAdded,
+      applied_deltas_current: toState.appliedDeltas,
+      source_evolution_item_count: artifact.totalItems,
+    },
+  };
+}
+
+function buildReleaseCompareGlobalContext(input: {
+  root: string;
+  driftSummary: ReleaseDriftSummary;
+}): ReleaseCompareGlobalContext {
+  const requirementDetails = input.driftSummary.requirementEvolution.details;
+  const lifecycleRegistryDelta = {
+    fromPath: stringValue(requirementDetails.from_lifecycle_registry_path),
+    toPath: stringValue(requirementDetails.to_lifecycle_registry_path),
+    fromVersion: numberValue(requirementDetails.from_lifecycle_registry_version),
+    toVersion: numberValue(requirementDetails.to_lifecycle_registry_version),
+    changed:
+      !sameNullableString(
+        stringValue(requirementDetails.from_lifecycle_registry_path),
+        stringValue(requirementDetails.to_lifecycle_registry_path),
+      ) ||
+      !sameNullableNumber(
+        numberValue(requirementDetails.from_lifecycle_registry_version),
+        numberValue(requirementDetails.to_lifecycle_registry_version),
+      ),
+  };
+  const sourceEvolutionArtifacts = {
+    fromSourceEvolutionPath: stringValue(requirementDetails.from_source_evolution_path),
+    toSourceEvolutionPath: stringValue(requirementDetails.to_source_evolution_path),
+    fromSourceReviewPath: stringValue(requirementDetails.from_source_review_path),
+    toSourceReviewPath: stringValue(requirementDetails.to_source_review_path),
+    fromActiveSnapshotId: stringValue(requirementDetails.from_active_snapshot_id),
+    toActiveSnapshotId: stringValue(requirementDetails.to_active_snapshot_id),
+    fromLastAdoptedChangeId: nullableStringValue(requirementDetails.from_last_adopted_change_id) ?? null,
+    toLastAdoptedChangeId: nullableStringValue(requirementDetails.to_last_adopted_change_id) ?? null,
+  };
+  const aggregatePath = path.join(input.root, ".spec", "console", "multi-repo-governance.json");
+  const aggregate = readMultiRepoGovernanceAggregate(aggregatePath);
+  const boundary = {
+    declaredArtifactConsumer: true as const,
+    consumesRequirementEvolutionArtifacts: true as const,
+    consumesMultiRepoAggregateArtifact: Boolean(aggregate),
+    scansSourceCode: false as const,
+    runsVerify: false as const,
+    replacesCliGate: false as const,
+    markdownIsMachineApi: false as const,
+  };
+
+  if (!aggregate) {
+    return {
+      kind: "release_compare_global_context",
+      status: "not_available_yet",
+      summary: "Multi-repo governance aggregate is not available; release compare stays a local artifact consumer with requirement evolution context only.",
+      boundary,
+      details: {
+        aggregatePath: fs.existsSync(aggregatePath) ? normalizePath(aggregatePath) : normalizePath(path.relative(input.root, aggregatePath)),
+        lifecycleRegistryDelta,
+        sourceEvolutionArtifacts,
+        representativeArtifacts: collectRepresentativeArtifacts(undefined, lifecycleRegistryDelta, sourceEvolutionArtifacts),
+        relevantContractDriftHints: [],
+        relevantOwnerActions: [],
+        ownerReviewRecommendations: [],
+      },
+    };
+  }
+
+  const repoPosture = findLocalRepoPosture(aggregate, input.root);
+  const representativeArtifacts = collectRepresentativeArtifacts(repoPosture, lifecycleRegistryDelta, sourceEvolutionArtifacts);
+  const relevantContractDriftHints = rankRelevantContractDriftHints(
+    aggregate.contractDriftHints.filter((hint) => matchesRootPath(hint.evidence.downstreamRepoPath, input.root)),
+    representativeArtifacts,
+  );
+  const relevantOwnerActions = rankRelevantOwnerActions(
+    aggregate.ownerActions.filter((action) => matchesRootPath(action.repoPath, input.root)),
+    representativeArtifacts,
+  );
+  const ownerReviewRecommendations = buildReleaseCompareOwnerReviewRecommendations({
+    driftSummary: input.driftSummary,
+    repoPosture,
+    relevantContractDriftHints,
+    relevantOwnerActions,
+  });
+
+  return {
+    kind: "release_compare_global_context",
+    status: "available",
+    summary: buildReleaseCompareGlobalContextSummary({
+      repoPosture,
+      relevantContractDriftHints,
+      relevantOwnerActions,
+      ownerReviewRecommendations,
+    }),
+    boundary,
+    details: {
+      aggregatePath: normalizePath(path.relative(input.root, aggregatePath)),
+      aggregateGeneratedAt: aggregate.generatedAt,
+      lifecycleRegistryDelta,
+      sourceEvolutionArtifacts,
+      representativeArtifacts,
+      repoPosture: repoPosture
+        ? {
+            repoId: repoPosture.repoId,
+            repoName: repoPosture.repoName,
+            repoRoot: repoPosture.repoRoot,
+            snapshotPath: repoPosture.snapshotPath,
+            sourceEvolutionChangeId: repoPosture.sourceEvolutionChangeId,
+            sourceEvolutionBlockingOpenItems: repoPosture.sourceEvolutionBlockingOpenItems,
+            sourceEvolutionExpiredExceptions: repoPosture.sourceEvolutionExpiredExceptions,
+            sourceEvolutionRepresentativeArtifact: repoPosture.sourceEvolutionRepresentativeArtifact,
+            lastAdoptedSourceChange: repoPosture.lastAdoptedSourceChange,
+            lifecycleDeltaCounts: repoPosture.lifecycleDeltaCounts,
+            releaseDriftStatus: repoPosture.releaseDriftStatus,
+            releaseDriftTrendComparisons: repoPosture.releaseDriftTrendComparisons,
+          }
+        : undefined,
+      relevantContractDriftHints,
+      relevantOwnerActions,
+      ownerReviewRecommendations,
+    },
+  };
+}
+
+function buildReleaseCompareGlobalContextSummary(input: {
+  repoPosture?: MultiRepoGovernanceRepoPosture;
+  relevantContractDriftHints: CrossRepoContractDriftHint[];
+  relevantOwnerActions: MultiRepoOwnerAction[];
+  ownerReviewRecommendations: ReleaseCompareOwnerReviewRecommendation[];
+}): string {
+  const clauses = [
+    input.repoPosture ? `aggregate posture matched for ${input.repoPosture.repoName}` : "aggregate present without a matched local repo posture",
+    `${input.relevantContractDriftHints.length} relevant contract drift hint(s)`,
+    `${input.relevantOwnerActions.length} owner action(s)`,
+    `${input.ownerReviewRecommendations.length} owner-review recommendation(s)`,
+  ];
+  return `Release compare consumed aggregate governance context: ${clauses.join("; ")}.`;
+}
+
+function collectRepresentativeArtifacts(
+  repoPosture: MultiRepoGovernanceRepoPosture | undefined,
+  lifecycleRegistryDelta: ReleaseCompareGlobalContext["details"]["lifecycleRegistryDelta"],
+  sourceEvolutionArtifacts: ReleaseCompareGlobalContext["details"]["sourceEvolutionArtifacts"],
+): string[] {
+  return stableUnique([
+    repoPosture?.sourceEvolutionRepresentativeArtifact,
+    lifecycleRegistryDelta.toPath,
+    sourceEvolutionArtifacts.toSourceEvolutionPath,
+    sourceEvolutionArtifacts.toSourceReviewPath,
+    lifecycleRegistryDelta.fromPath,
+    sourceEvolutionArtifacts.fromSourceEvolutionPath,
+    sourceEvolutionArtifacts.fromSourceReviewPath,
+  ].filter((value): value is string => Boolean(value) && value !== "not_available_yet"));
+}
+
+function rankRelevantContractDriftHints(
+  hints: CrossRepoContractDriftHint[],
+  representativeArtifacts: string[],
+): CrossRepoContractDriftHint[] {
+  return [...hints].sort((left, right) =>
+    compareArtifactPriority(left.contractRef, right.contractRef, representativeArtifacts) ||
+    left.contractRef.localeCompare(right.contractRef) ||
+    left.upstreamRepoId.localeCompare(right.upstreamRepoId) ||
+    left.downstreamRepoId.localeCompare(right.downstreamRepoId),
+  );
+}
+
+function rankRelevantOwnerActions(
+  actions: MultiRepoOwnerAction[],
+  representativeArtifacts: string[],
+): MultiRepoOwnerAction[] {
+  return [...actions].sort((left, right) =>
+    compareArtifactPriority(
+      left.affectedContracts[0] ?? left.sourceArtifacts[0],
+      right.affectedContracts[0] ?? right.sourceArtifacts[0],
+      representativeArtifacts,
+    ) ||
+    (left.affectedContracts[0] ?? left.id).localeCompare(right.affectedContracts[0] ?? right.id),
+  );
+}
+
+function compareArtifactPriority(
+  left: string | undefined,
+  right: string | undefined,
+  representativeArtifacts: string[],
+): number {
+  const rank = (value: string | undefined): number => {
+    if (!value) {
+      return 2;
+    }
+    const index = representativeArtifacts.indexOf(value);
+    return index === -1 ? 1 : index;
+  };
+  return rank(left) - rank(right);
+}
+
+function buildReleaseCompareOwnerReviewRecommendations(input: {
+  driftSummary: ReleaseDriftSummary;
+  repoPosture?: MultiRepoGovernanceRepoPosture;
+  relevantContractDriftHints: CrossRepoContractDriftHint[];
+  relevantOwnerActions: MultiRepoOwnerAction[];
+}): ReleaseCompareOwnerReviewRecommendation[] {
+  if (input.driftSummary.overallStatus !== "changed") {
+    return [];
+  }
+
+  const recommendations: ReleaseCompareOwnerReviewRecommendation[] = [];
+  const repo = input.repoPosture;
+  if (repo && repo.sourceEvolutionBlockingOpenItems > 0) {
+    recommendations.push({
+      id: "source-evolution-blocking-open-items",
+      severity: "owner_review",
+      reason: "source_evolution_blocking_open_items",
+      summary: `Release drift changed while source evolution still has ${repo.sourceEvolutionBlockingOpenItems} blocking open item(s).`,
+      sourceEvolutionChangeId: repo.sourceEvolutionChangeId,
+      representativeArtifact: repo.sourceEvolutionRepresentativeArtifact,
+      suggestedCommand: input.relevantOwnerActions[0]?.primaryCommand.command ?? input.relevantContractDriftHints[0]?.suggestedCommand,
+      relatedOwnerActionId: input.relevantOwnerActions[0]?.id,
+      relatedHintId: input.relevantContractDriftHints[0]?.id,
+    });
+  }
+  if (repo && repo.sourceEvolutionExpiredExceptions > 0) {
+    recommendations.push({
+      id: "source-evolution-expired-exceptions",
+      severity: "owner_review",
+      reason: "source_evolution_expired_exceptions",
+      summary: `Release drift changed while source evolution carries ${repo.sourceEvolutionExpiredExceptions} expired exception(s).`,
+      sourceEvolutionChangeId: repo.sourceEvolutionChangeId,
+      representativeArtifact: repo.sourceEvolutionRepresentativeArtifact,
+      suggestedCommand: input.relevantOwnerActions[0]?.primaryCommand.command ?? input.relevantContractDriftHints[0]?.suggestedCommand,
+      relatedOwnerActionId: input.relevantOwnerActions[0]?.id,
+      relatedHintId: input.relevantContractDriftHints[0]?.id,
+    });
+  }
+  if (input.relevantContractDriftHints.length > 0) {
+    const hint = input.relevantContractDriftHints[0];
+    recommendations.push({
+      id: "cross-repo-contract-drift",
+      severity: "owner_review",
+      reason: "cross_repo_contract_drift",
+      summary: `Cross-repo contract drift on ${hint.contractRef} overlaps this release drift and should be owner-reviewed before promotion.`,
+      suggestedCommand: hint.suggestedCommand,
+      relatedHintId: hint.id,
+      relatedOwnerActionId: hint.ownerActionId,
+      representativeArtifact: hint.contractRef,
+    });
+  }
+  if (input.relevantOwnerActions.length > 0) {
+    const action = input.relevantOwnerActions[0];
+    recommendations.push({
+      id: "owner-action-ready",
+      severity: "owner_review",
+      reason: "owner_action_ready",
+      summary: `An owner action is already prepared for ${action.contractRef}; release triage should review it with the source evolution state.`,
+      suggestedCommand: action.primaryCommand.command,
+      relatedOwnerActionId: action.id,
+      representativeArtifact: action.contractRef,
+    });
+  }
+
+  return recommendations;
+}
+
+function findLocalRepoPosture(
+  aggregate: MultiRepoGovernanceAggregate,
+  root: string,
+): MultiRepoGovernanceRepoPosture | undefined {
+  const normalizedRoot = normalizePath(root);
+  return aggregate.repos.find((repo) =>
+    matchesRootPath(repo.repoRoot, normalizedRoot) ||
+    matchesRootPath(repo.snapshotPath, path.join(root, ".spec", "console", "governance-snapshot.json")),
+  );
+}
+
+function readMultiRepoGovernanceAggregate(aggregatePath: string): MultiRepoGovernanceAggregate | undefined {
+  const parsed = readJsonObject(aggregatePath);
+  if (!parsed) {
+    return undefined;
+  }
+  if (parsed.schemaVersion !== 1 || parsed.kind !== "jispec-multi-repo-governance-aggregate") {
+    return undefined;
+  }
+  return parsed as unknown as MultiRepoGovernanceAggregate;
+}
+
+function buildRequirementEvolutionChangedSummary(input: {
+  fromState: RequirementEvolutionStateSnapshot;
+  toState: RequirementEvolutionStateSnapshot;
+  addedRequirements: string[];
+  modifiedRequirements: string[];
+  replacedMappings: string[];
+  splitMappings: string[];
+  mergeMappings: string[];
+  deprecatedWithoutSuccessor: string[];
+  appliedDeltasAdded: string[];
+}): string {
+  const clauses = [
+    input.toState.activeSnapshotId && !sameNullableString(input.fromState.activeSnapshotId, input.toState.activeSnapshotId)
+      ? `active source snapshot ${input.fromState.activeSnapshotId ?? "unknown"} -> ${input.toState.activeSnapshotId}`
+      : undefined,
+    input.toState.lifecycleRegistryVersion !== undefined &&
+        !sameNullableNumber(input.fromState.lifecycleRegistryVersion, input.toState.lifecycleRegistryVersion)
+      ? `lifecycle registry v${input.fromState.lifecycleRegistryVersion ?? "?"} -> v${input.toState.lifecycleRegistryVersion}`
+      : undefined,
+    input.toState.lastAdoptedChangeId &&
+        !sameNullableString(input.fromState.lastAdoptedChangeId ?? undefined, input.toState.lastAdoptedChangeId)
+      ? `adopted change ${input.fromState.lastAdoptedChangeId ?? "none"} -> ${input.toState.lastAdoptedChangeId}`
+      : undefined,
+    input.addedRequirements.length > 0 ? `${input.addedRequirements.length} added requirement(s)` : undefined,
+    input.modifiedRequirements.length > 0 ? `${input.modifiedRequirements.length} modified requirement(s)` : undefined,
+    input.replacedMappings.length > 0 ? `${input.replacedMappings.length} replaced requirement mapping(s)` : undefined,
+    input.splitMappings.length > 0 ? `${input.splitMappings.length} split transition(s)` : undefined,
+    input.mergeMappings.length > 0 ? `${input.mergeMappings.length} merge transition(s)` : undefined,
+    input.deprecatedWithoutSuccessor.length > 0
+      ? `${input.deprecatedWithoutSuccessor.length} deprecated requirement(s) without successor`
+      : undefined,
+    input.appliedDeltasAdded.length > 0 ? `${input.appliedDeltasAdded.length} adopted delta(s)` : undefined,
+  ].filter((entry): entry is string => Boolean(entry));
+
+  return clauses.length > 0
+    ? `Governed requirement evolution changed: ${clauses.join("; ")}.`
+    : "Governed requirement evolution changed.";
+}
+
+function readRequirementEvolutionState(baseline: BaselineDocument): RequirementEvolutionStateSnapshot {
+  const sourceSnapshot = isRecord(baseline.source_snapshot) ? baseline.source_snapshot : {};
+  const lifecycle = isRecord(baseline.requirement_lifecycle) ? baseline.requirement_lifecycle : {};
+  const sourceEvolution = isRecord(baseline.source_evolution) ? baseline.source_evolution : {};
+  const activeSnapshotId = stringValue(sourceSnapshot.active_snapshot_id) ?? stringValue(lifecycle.active_snapshot_id);
+  const lifecycleRegistryPath = stringValue(sourceSnapshot.lifecycle_registry_path) ?? stringValue(lifecycle.path);
+  const lifecycleRegistryVersion = numberValue(sourceSnapshot.lifecycle_registry_version) ?? numberValue(lifecycle.registry_version);
+  const lastAdoptedChangeId = stringValue(sourceSnapshot.last_adopted_change_id)
+    ?? stringValue(lifecycle.last_adopted_change_id)
+    ?? stringValue(sourceEvolution.last_adopted_change_id)
+    ?? null;
+
+  return {
+    tracked: Boolean(
+      activeSnapshotId ||
+      lifecycleRegistryPath ||
+      lifecycleRegistryVersion !== undefined ||
+      lastAdoptedChangeId ||
+      stringValue(sourceEvolution.source_evolution_path) ||
+      stringValue(sourceEvolution.source_review_path) ||
+      stringArray(baseline.applied_deltas).length > 0
+    ),
+    activeSnapshotId,
+    lifecycleRegistryPath,
+    lifecycleRegistryVersion,
+    lastAdoptedChangeId,
+    sourceEvolutionPath: stringValue(sourceEvolution.source_evolution_path),
+    sourceReviewPath: stringValue(sourceEvolution.source_review_path),
+    proposedSnapshotPath: stringValue(sourceEvolution.proposed_snapshot_path),
+    appliedDeltas: stringArray(baseline.applied_deltas),
+  };
+}
+
+function readSourceEvolutionArtifactSummary(root: string, baseline: BaselineDocument): SourceEvolutionArtifactSummary {
+  const state = readRequirementEvolutionState(baseline);
+  if (!state.sourceEvolutionPath) {
+    return {
+      sourceEvolutionPath: undefined,
+      sourceReviewPath: state.sourceReviewPath,
+      addedRequirements: [],
+      modifiedRequirements: [],
+      deprecatedRequirements: [],
+      deprecatedWithoutSuccessor: [],
+      splitMappings: [],
+      mergeMappings: [],
+      replacedMappings: [],
+      reanchoredAnchors: [],
+      totalItems: 0,
+    };
+  }
+
+  const diffPath = resolveArtifactPath(root, state.sourceEvolutionPath, undefined);
+  const reviewPath = resolveArtifactPath(root, state.sourceReviewPath, undefined);
+  const diff = diffPath ? readJsonObject(diffPath) : undefined;
+  const items = Array.isArray(diff?.items) ? diff.items.filter(isRecord) : [];
+  const review = reviewPath ? readYamlArtifactObject(reviewPath) ?? {} : {};
+  const decisions = Array.isArray(review.items) ? review.items.filter(isRecord) : [];
+
+  const decisionsByEvolutionId = new Map(decisions.map((entry) => [
+    stringValue(entry.evolution_id) ?? "",
+    stringArray(entry.maps_to),
+  ]));
+  const addedRequirements: string[] = [];
+  const modifiedRequirements: string[] = [];
+  const deprecatedRequirements: string[] = [];
+  const deprecatedWithoutSuccessor: string[] = [];
+  const splitMappings: string[] = [];
+  const mergeMappings: string[] = [];
+  const replacedMappings: string[] = [];
+  const reanchoredAnchors: string[] = [];
+
+  for (const item of items) {
+    const evolutionKind = stringValue(item.evolution_kind);
+    const anchorId = stringValue(item.anchor_id);
+    const predecessorIds = stringArray(item.predecessor_ids);
+    const successorIds = stringArray(item.successor_ids);
+    const decisionMappings = decisionsByEvolutionId.get(stringValue(item.evolution_id) ?? "") ?? [];
+    switch (evolutionKind) {
+      case "added":
+        if (anchorId) {
+          addedRequirements.push(anchorId);
+        }
+        break;
+      case "modified":
+        if (anchorId) {
+          modifiedRequirements.push(anchorId);
+        }
+        break;
+      case "deprecated": {
+        if (!anchorId) {
+          break;
+        }
+        deprecatedRequirements.push(anchorId);
+        const successors = stableUnique(decisionMappings.length > 0 ? decisionMappings : successorIds);
+        if (successors.length > 0) {
+          replacedMappings.push(`${anchorId} -> ${successors.join(", ")}`);
+        } else {
+          deprecatedWithoutSuccessor.push(anchorId);
+        }
+        break;
+      }
+      case "split":
+        if (predecessorIds.length > 0 && successorIds.length > 0) {
+          splitMappings.push(`${predecessorIds.join(", ")} -> ${successorIds.join(", ")}`);
+        }
+        break;
+      case "merged":
+        if (predecessorIds.length > 0 && successorIds.length > 0) {
+          mergeMappings.push(`${predecessorIds.join(", ")} -> ${successorIds.join(", ")}`);
+        }
+        break;
+      case "reanchored":
+        if (anchorId) {
+          reanchoredAnchors.push(anchorId);
+        }
+        break;
+    }
+  }
+
+  return {
+    sourceEvolutionPath: diffPath ? normalizePath(path.relative(root, diffPath)) : state.sourceEvolutionPath,
+    sourceReviewPath: reviewPath ? normalizePath(path.relative(root, reviewPath)) : state.sourceReviewPath,
+    addedRequirements: stableUnique(addedRequirements),
+    modifiedRequirements: stableUnique(modifiedRequirements),
+    deprecatedRequirements: stableUnique(deprecatedRequirements),
+    deprecatedWithoutSuccessor: stableUnique(deprecatedWithoutSuccessor),
+    splitMappings: stableUnique(splitMappings),
+    mergeMappings: stableUnique(mergeMappings),
+    replacedMappings: stableUnique(replacedMappings),
+    reanchoredAnchors: stableUnique(reanchoredAnchors),
+    totalItems: items.length,
+  };
+}
+
+function renderRequirementEvolutionDriftLines(summary: DriftSurfaceSummary): string[] {
+  if (summary.kind !== "requirement_evolution_drift") {
+    return [`Status: ${summary.status}`, `Summary: ${summary.summary}`];
+  }
+
+  const details = summary.details;
+  const lines = [
+    `Status: ${summary.status}`,
+    `Summary: ${summary.summary}`,
+    `Lifecycle registry: ${formatTransition(
+      stringValue(details.from_lifecycle_registry_path),
+      stringValue(details.to_lifecycle_registry_path),
+      formatVersion(numberValue(details.from_lifecycle_registry_version)),
+      formatVersion(numberValue(details.to_lifecycle_registry_version)),
+    )}`,
+    `Active source snapshot: ${formatTransition(
+      stringValue(details.from_active_snapshot_id),
+      stringValue(details.to_active_snapshot_id),
+    )}`,
+    `Last adopted source change: ${formatTransition(
+      nullableStringValue(details.from_last_adopted_change_id),
+      nullableStringValue(details.to_last_adopted_change_id),
+    )}`,
+    `Source evolution artifact: ${formatTransition(
+      stringValue(details.from_source_evolution_path),
+      stringValue(details.to_source_evolution_path),
+    )}`,
+    `Source review artifact: ${formatTransition(
+      stringValue(details.from_source_review_path),
+      stringValue(details.to_source_review_path),
+    )}`,
+  ];
+
+  pushNamedList(lines, "Added requirements", stringArray(details.added_requirements));
+  pushNamedList(lines, "Removed requirements", stringArray(details.removed_requirements));
+  pushNamedList(lines, "Modified requirements", stringArray(details.modified_requirements));
+  pushNamedList(lines, "Replaced requirements", stringArray(details.replaced_mappings));
+  pushNamedList(lines, "Split transitions", stringArray(details.split_mappings));
+  pushNamedList(lines, "Merge transitions", stringArray(details.merge_mappings));
+  pushNamedList(lines, "Deprecated without successor", stringArray(details.deprecated_without_successor));
+  pushNamedList(lines, "Advisory re-anchors", stringArray(details.reanchored_anchors));
+  pushNamedList(lines, "Adopted deltas added", stringArray(details.applied_deltas_added));
+  return lines;
+}
+
+function renderRequirementEvolutionStateLines(summary: BaselineSurfaceSummary): string[] {
+  const details = summary.details;
+  if (summary.status === "not_tracked") {
+    return ["- Requirement evolution is not tracked in this baseline."];
+  }
+
+  return [
+    `- Summary: ${summary.summary}`,
+    `- Active source snapshot: \`${stringValue(details.active_snapshot_id) ?? "unknown"}\``,
+    `- Lifecycle registry: \`${stringValue(details.lifecycle_registry_path) ?? "unknown"}\` (${formatVersion(numberValue(details.lifecycle_registry_version))})`,
+    `- Last adopted source change: \`${nullableStringValue(details.last_adopted_change_id) ?? "none"}\``,
+    `- Source evolution artifact: \`${stringValue(details.source_evolution_path) ?? "not recorded"}\``,
+    `- Source review artifact: \`${stringValue(details.source_review_path) ?? "not recorded"}\``,
+    `- Applied deltas: ${renderInlineList(stringArray(details.applied_deltas))}`,
+  ];
+}
+
+function renderReleaseCompareGlobalContextLines(summary: ReleaseCompareGlobalContext): string[] {
+  const lines = [
+    `Status: ${summary.status}`,
+    `Summary: ${summary.summary}`,
+    `Declared artifact consumer: ${summary.boundary.declaredArtifactConsumer ? "yes" : "no"}`,
+    `Consumes aggregate artifact: ${summary.boundary.consumesMultiRepoAggregateArtifact ? "yes" : "no"}`,
+    `Scans source code: ${summary.boundary.scansSourceCode ? "yes" : "no"}`,
+    `Replaces CLI gate: ${summary.boundary.replacesCliGate ? "yes" : "no"}`,
+    `Aggregate artifact: ${summary.details.aggregatePath ?? "not recorded"}`,
+  ];
+  if (summary.details.aggregateGeneratedAt) {
+    lines.push(`Aggregate generated at: ${summary.details.aggregateGeneratedAt}`);
+  }
+  const repo = summary.details.repoPosture;
+  if (repo) {
+    lines.push(`Local repo posture: ${repo.repoName} (${repo.repoId})`);
+    lines.push(`Source evolution change: ${repo.sourceEvolutionChangeId}`);
+    lines.push(`Blocking open items: ${repo.sourceEvolutionBlockingOpenItems}`);
+    lines.push(`Expired exceptions: ${repo.sourceEvolutionExpiredExceptions}`);
+    lines.push(`Representative artifact: ${repo.sourceEvolutionRepresentativeArtifact}`);
+    lines.push(`Release drift trend comparisons: ${repo.releaseDriftTrendComparisons}`);
+  }
+  lines.push(`Lifecycle registry delta: ${formatTransition(
+    summary.details.lifecycleRegistryDelta.fromPath,
+    summary.details.lifecycleRegistryDelta.toPath,
+    formatVersion(summary.details.lifecycleRegistryDelta.fromVersion),
+    formatVersion(summary.details.lifecycleRegistryDelta.toVersion),
+  )}`);
+  pushNamedList(lines, "Representative artifacts", summary.details.representativeArtifacts);
+  pushNamedList(lines, "Relevant contract drift hints", summary.details.relevantContractDriftHints.map((hint) =>
+    `${hint.contractRef} (${hint.upstreamRepoId} -> ${hint.downstreamRepoId})`
+  ));
+  pushNamedList(lines, "Owner actions", summary.details.relevantOwnerActions.map((action) =>
+    `${action.repoName}: ${action.summary}`
+  ));
+  pushNamedList(lines, "Owner-review recommendations", summary.details.ownerReviewRecommendations.map((entry) => entry.summary));
+  return lines;
+}
+
 function summarizeReleaseBaseline(baseline: BaselineDocument): ReleaseBaselineSummary {
   const graphRecord = isRecord(baseline.contract_graph) ? baseline.contract_graph : undefined;
   const staticRecord = isRecord(baseline.static_collector_manifest) ? baseline.static_collector_manifest : undefined;
@@ -1104,6 +1919,7 @@ function summarizeReleaseBaseline(baseline: BaselineDocument): ReleaseBaselineSu
       : undefined;
   const policyAvailable = policyRecord ? Boolean(policyRecord.available ?? true) : false;
   const policyRuleIds = stringArray(policyRecord?.rule_ids);
+  const requirementEvolution = summarizeRequirementEvolutionState(baseline);
 
   return {
     schemaVersion: 1,
@@ -1157,10 +1973,12 @@ function summarizeReleaseBaseline(baseline: BaselineDocument): ReleaseBaselineSu
           summary: "not tracked",
           details: policyRecord ? { path: stringValue(policyRecord.path), available: false } : {},
         },
+    requirementEvolution,
   };
 }
 
 function summarizeReleaseDrift(input: {
+  root: string;
   fromBaseline: BaselineDocument;
   toBaseline: BaselineDocument;
   diffs: BaselineDiff[];
@@ -1174,7 +1992,13 @@ function summarizeReleaseDrift(input: {
   const staticCollector = summarizeStaticCollectorDrift(input.fromStaticCollector, input.toStaticCollector);
   const behavior = summarizeBehaviorDrift(input.fromBaseline, input.toBaseline, input.diffs, input.graphDiff);
   const policy = summarizePolicyDrift(input.fromPolicy, input.toPolicy);
-  const statuses = [contractGraph.status, staticCollector.status, behavior.status, policy.status];
+  const requirementEvolution = summarizeRequirementEvolutionDrift(
+    input.root,
+    input.fromBaseline,
+    input.toBaseline,
+    input.diffs,
+  );
+  const statuses = [contractGraph.status, staticCollector.status, behavior.status, policy.status, requirementEvolution.status];
   const overallStatus: DriftStatus = statuses.includes("changed")
     ? "changed"
     : statuses.every((status) => status === "unchanged")
@@ -1188,6 +2012,7 @@ function summarizeReleaseDrift(input: {
     staticCollector,
     behavior,
     policy,
+    requirementEvolution,
   };
 }
 
@@ -1461,6 +2286,7 @@ function renderReleaseSummary(root: string, baseline: BaselineDocument, summary 
         `contract graph ${summary.contractGraph.status}`,
         `static collector ${summary.staticCollector.status}`,
         `policy ${summary.policy.status}`,
+        `requirement evolution ${summary.requirementEvolution.status}`,
       ],
       owner: replay?.actor ? `release owner \`${replay.actor}\`` : "release owner",
       nextCommand: `\`npm run jispec-cli -- release compare --from ${version} --to current\``,
@@ -1476,6 +2302,7 @@ function renderReleaseSummary(root: string, baseline: BaselineDocument, summary 
         `contract graph: ${summary.contractGraph.summary}`,
         `static collector: ${summary.staticCollector.summary}`,
         `policy: ${summary.policy.summary}`,
+        `requirement evolution: ${summary.requirementEvolution.summary}`,
       ],
       inferredEvidence: [
         `requirements: ${counts.requirementIds}`,
@@ -1515,6 +2342,11 @@ function renderReleaseSummary(root: string, baseline: BaselineDocument, summary 
     `- Contract graph: ${summary.contractGraph.summary}`,
     `- Static collector: ${summary.staticCollector.summary}`,
     `- Policy: ${summary.policy.summary}`,
+    `- Requirement evolution: ${summary.requirementEvolution.summary}`,
+    "",
+    "## Requirement Evolution State",
+    "",
+    ...renderRequirementEvolutionStateLines(summary.requirementEvolution),
     "",
     "## Spec Debt",
     "",
@@ -1584,6 +2416,60 @@ function renderList(values: string[]): string[] {
   return values.length > 0 ? values.map((value) => `- \`${value}\``) : ["- None recorded."];
 }
 
+function renderInlineList(values: string[]): string {
+  return values.length > 0 ? values.map((value) => `\`${value}\``).join(", ") : "none recorded";
+}
+
+function pushNamedList(lines: string[], label: string, values: string[]): void {
+  if (values.length === 0) {
+    return;
+  }
+  lines.push(`${label}: ${values.map((value) => `\`${value}\``).join(", ")}`);
+}
+
+function formatTransition(
+  fromValue: string | undefined,
+  toValue: string | undefined,
+  fromSuffix?: string,
+  toSuffix?: string,
+): string {
+  const fromText = formatValueWithSuffix(fromValue, fromSuffix);
+  const toText = formatValueWithSuffix(toValue, toSuffix);
+  return fromText === toText ? fromText : `${fromText} -> ${toText}`;
+}
+
+function formatValueWithSuffix(value: string | undefined, suffix?: string): string {
+  const base = value ?? "not recorded";
+  return suffix ? `${base} ${suffix}` : base;
+}
+
+function formatVersion(value: number | undefined): string {
+  return value !== undefined ? `v${value}` : "unknown version";
+}
+
+function nullableStringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function sameNullableString(left: string | undefined, right: string | undefined): boolean {
+  return (left ?? null) === (right ?? null);
+}
+
+function sameNullableNumber(left: number | undefined, right: number | undefined): boolean {
+  return (left ?? null) === (right ?? null);
+}
+
+function matchesRootPath(candidate: string | undefined, root: string): boolean {
+  if (!candidate) {
+    return false;
+  }
+  return normalizePath(candidate) === normalizePath(root);
+}
+
+function stableUnique(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0))).sort((left, right) => left.localeCompare(right));
+}
+
 function normalizeVersion(value: string): string {
   const normalized = value
     .trim()
@@ -1638,6 +2524,15 @@ function dumpYaml(value: unknown): string {
 function readJsonObject(filePath: string): Record<string, unknown> | undefined {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readYamlArtifactObject(filePath: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = yaml.load(fs.readFileSync(filePath, "utf-8"));
     return isRecord(parsed) ? parsed : undefined;
   } catch {
     return undefined;

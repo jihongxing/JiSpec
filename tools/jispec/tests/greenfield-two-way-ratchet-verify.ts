@@ -169,6 +169,35 @@ async function main(): Promise<void> {
         fs.rmSync(root, { recursive: true, force: true });
       }
     }));
+
+    results.push(await recordAsync("repo-internal tooling and fixture paths stay outside governed ratchet noise", async () => {
+      const root = createInitializedRoot(requirementsPath, technicalSolutionPath);
+      try {
+        writeText(root, "tools/jispec/runtime-graphql.ts", [
+          "const typeDefs = `type Query { ping: String }`;",
+          "export { typeDefs };",
+        ].join("\n"));
+        writeText(root, "tools/jispec/tests/runtime-fixture.ts", [
+          "import { Router } from 'express';",
+          "export const router = Router();",
+          "router.post('/fixture', (_req, res) => res.status(202).send({ ok: true }));",
+        ].join("\n"));
+        writeText(root, "examples/minimal/src/routes.ts", [
+          "import { Router } from 'express';",
+          "export const router = Router();",
+          "router.post('/example-orders', (_req, res) => res.status(202).send({ ok: true }));",
+        ].join("\n"));
+
+        const verify = await runVerify({ root, generatedAt: "2026-04-29T00:00:00.000Z" });
+
+        assert.equal(verify.verdict, "PASS");
+        assert.ok(!verify.issues.some((issue) => issue.path === "tools/jispec/runtime-graphql.ts"));
+        assert.ok(!verify.issues.some((issue) => issue.path === "tools/jispec/tests/runtime-fixture.ts"));
+        assert.ok(!verify.issues.some((issue) => issue.path === "examples/minimal/src/routes.ts"));
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    }));
   } catch (error) {
     results.push({
       name: "greenfield two-way ratchet verify execution",
@@ -213,6 +242,12 @@ function createInitializedRoot(requirementsPath: string, technicalSolutionPath: 
   assert.equal(init.status, "input_contract_ready");
   assert.equal(init.nextTask, "greenfield-initialization-mvp-complete");
   return root;
+}
+
+function writeText(root: string, relativePath: string, content: string): void {
+  const target = path.join(root, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, `${content}\n`, "utf-8");
 }
 
 async function recordAsync(name: string, run: () => Promise<void>): Promise<TestResult> {

@@ -1,0 +1,33 @@
+id: catalog-product-availability-v1
+title: Product Availability MVP
+context_id: catalog
+priority: medium
+lifecycle:
+  state: test-defined
+  created_at: '2026-05-03T09:17:21.732Z'
+  updated_at: '2026-05-03T09:17:21.732Z'
+goal: Expose products that are available for sale.
+scope:
+  includes:
+    - available product read model
+    - product saleability contract
+  excludes:
+    - catalog administration UI
+    - pricing promotions
+source_refs:
+  requirement_ids:
+    - REQ-CAT-001
+  design_refs:
+    - CTR-CATALOG-001
+owners:
+  product: pm-catalog
+  engineering: tl-catalog
+gates:
+  requirements_ready: true
+  design_ready: true
+  behavior_ready: true
+  test_ready: true
+  implementation_ready: false
+  verification_ready: false
+  accepted: false
+dependencies: []

@@ -56,6 +56,23 @@ export interface VerifyArtifactPaths {
   verifySummaryPath: string;
 }
 
+interface ReleaseCompareSnapshot {
+  reportPath: string;
+  reportMarkdownPath?: string;
+  overallStatus?: string;
+  globalContextStatus?: string;
+  aggregatePath?: string;
+  aggregateGeneratedAt?: string;
+  ownerReviewRecommendationCount: number;
+  relevantContractDriftHintCount: number;
+  relevantOwnerActionCount: number;
+  representativeArtifacts: string[];
+  representativeArtifact?: string;
+  sourceEvolutionChangeId?: string;
+  summary?: string;
+  replayCommand?: string;
+}
+
 /**
  * Build a verify report from a verify run result.
  */
@@ -81,6 +98,7 @@ export function buildVerifyReport(
     fingerprint: computeIssueFingerprint(issue),
   }));
   const latestDiscipline = findLatestDisciplineReport(context.repoRoot);
+  const latestReleaseCompare = readLatestReleaseCompareSnapshot(context.repoRoot);
   const modes = {
     ...(result.metadata ?? {}),
     ...(latestDiscipline ? {
@@ -89,6 +107,28 @@ export function buildVerifyReport(
         completionStatus: latestDiscipline.report.completion.status,
         mode: latestDiscipline.report.mode,
       },
+    } : {}),
+    ...(latestReleaseCompare ? {
+      releaseCompareReportPath: latestReleaseCompare.reportPath,
+      ...(latestReleaseCompare.reportMarkdownPath ? { releaseCompareReportMarkdownPath: latestReleaseCompare.reportMarkdownPath } : {}),
+      ...(latestReleaseCompare.overallStatus ? { releaseCompareOverallStatus: latestReleaseCompare.overallStatus } : {}),
+      ...(latestReleaseCompare.globalContextStatus ? { releaseCompareGlobalContextStatus: latestReleaseCompare.globalContextStatus } : {}),
+      ...(latestReleaseCompare.aggregatePath ? { releaseCompareAggregatePath: latestReleaseCompare.aggregatePath } : {}),
+      ...(latestReleaseCompare.aggregateGeneratedAt ? { releaseCompareAggregateGeneratedAt: latestReleaseCompare.aggregateGeneratedAt } : {}),
+      releaseCompareOwnerReviewRecommendationCount: latestReleaseCompare.ownerReviewRecommendationCount,
+      releaseCompareRelevantContractDriftHintCount: latestReleaseCompare.relevantContractDriftHintCount,
+      releaseCompareRelevantOwnerActionCount: latestReleaseCompare.relevantOwnerActionCount,
+      ...(latestReleaseCompare.representativeArtifacts.length > 0
+        ? { releaseCompareRepresentativeArtifacts: latestReleaseCompare.representativeArtifacts }
+        : {}),
+      ...(latestReleaseCompare.representativeArtifact
+        ? { releaseCompareRepresentativeArtifact: latestReleaseCompare.representativeArtifact }
+        : {}),
+      ...(latestReleaseCompare.sourceEvolutionChangeId
+        ? { releaseCompareSourceEvolutionChangeId: latestReleaseCompare.sourceEvolutionChangeId }
+        : {}),
+      ...(latestReleaseCompare.summary ? { releaseCompareSummary: latestReleaseCompare.summary } : {}),
+      ...(latestReleaseCompare.replayCommand ? { releaseCompareReplayCommand: latestReleaseCompare.replayCommand } : {}),
     } : {}),
   };
 
@@ -247,4 +287,126 @@ function buildVerifyReportLinks(
   }
 
   return links;
+}
+
+function readLatestReleaseCompareSnapshot(rootInput: string): ReleaseCompareSnapshot | undefined {
+  const root = path.resolve(rootInput);
+  const latestFromTrend = readLatestReleaseComparePathFromTrend(root);
+  const reportPath = latestFromTrend?.reportPath ?? findLatestReleaseCompareReportPath(root);
+  if (!reportPath) {
+    return undefined;
+  }
+
+  const report = readJsonObject(reportPath);
+  if (!report) {
+    return undefined;
+  }
+
+  const driftSummary = recordValue(report.driftSummary);
+  const globalContext = recordValue(report.globalContext);
+  const globalContextDetails = recordValue(globalContext?.details);
+  const repoPosture = recordValue(globalContextDetails?.repoPosture);
+  const replay = recordValue(report.replay);
+  const replayCommands = recordValue(replay?.commands);
+  const representativeArtifacts = stringArray(globalContextDetails?.representativeArtifacts);
+  const reportMarkdownPath = latestFromTrend?.reportMarkdownPath
+    ?? relativeArtifactPath(root, stringValue(report.compareReportMarkdownPath));
+
+  return {
+    reportPath: relativeArtifactPath(root, reportPath) ?? normalizePath(reportPath),
+    ...(reportMarkdownPath ? { reportMarkdownPath } : {}),
+    overallStatus: stringValue(driftSummary?.overallStatus) ?? stringValue(driftSummary?.overall_status),
+    globalContextStatus: stringValue(globalContext?.status),
+    aggregatePath: stringValue(globalContextDetails?.aggregatePath),
+    aggregateGeneratedAt: stringValue(globalContextDetails?.aggregateGeneratedAt),
+    ownerReviewRecommendationCount: arrayLength(globalContextDetails?.ownerReviewRecommendations),
+    relevantContractDriftHintCount: arrayLength(globalContextDetails?.relevantContractDriftHints),
+    relevantOwnerActionCount: arrayLength(globalContextDetails?.relevantOwnerActions),
+    representativeArtifacts,
+    representativeArtifact: representativeArtifacts[0],
+    sourceEvolutionChangeId: stringValue(repoPosture?.sourceEvolutionChangeId),
+    summary: stringValue(globalContext?.summary),
+    replayCommand: stringValue(replayCommands?.rerun),
+  };
+}
+
+function readLatestReleaseComparePathFromTrend(root: string): {
+  reportPath?: string;
+  reportMarkdownPath?: string;
+} | undefined {
+  const trendPath = path.join(root, ".spec", "releases", "drift-trend.json");
+  const trend = readJsonObject(trendPath);
+  const latest = recordValue(trend?.latest);
+  if (!latest) {
+    return undefined;
+  }
+
+  const reportPath = absoluteArtifactPath(root, stringValue(latest.reportPath));
+  const reportMarkdownPath = relativeArtifactPath(root, stringValue(latest.markdownPath));
+  return {
+    ...(reportPath ? { reportPath } : {}),
+    ...(reportMarkdownPath ? { reportMarkdownPath } : {}),
+  };
+}
+
+function findLatestReleaseCompareReportPath(root: string): string | undefined {
+  const compareRoot = path.join(root, ".spec", "releases", "compare");
+  if (!fs.existsSync(compareRoot)) {
+    return undefined;
+  }
+
+  return fs.readdirSync(compareRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(compareRoot, entry.name, "compare-report.json"))
+    .filter((candidate) => fs.existsSync(candidate))
+    .sort((left, right) => {
+      const delta = fs.statSync(right).mtimeMs - fs.statSync(left).mtimeMs;
+      return delta !== 0 ? delta : right.localeCompare(left);
+    })[0];
+}
+
+function readJsonObject(filePath: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return recordValue(parsed);
+  } catch {
+    return undefined;
+  }
+}
+
+function absoluteArtifactPath(root: string, filePath: string | undefined): string | undefined {
+  if (!filePath) {
+    return undefined;
+  }
+  const resolved = path.isAbsolute(filePath) ? filePath : path.join(root, filePath);
+  return fs.existsSync(resolved) ? resolved : undefined;
+}
+
+function relativeArtifactPath(root: string, filePath: string | undefined): string | undefined {
+  const resolved = absoluteArtifactPath(root, filePath);
+  return resolved ? normalizePath(path.relative(root, resolved)) : undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+}
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function normalizePath(filePath: string): string {
+  return filePath.replace(/\\/g, "/");
 }

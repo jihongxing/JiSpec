@@ -9,3 +9,11 @@ node --import tsx scripts/run-greenfield-empty-directory-demo.ts --root .tmp/gre
 ```
 
 The demo uses `requirements.md` and `technical-solution.md` in this directory, initializes the target, runs JiSpec verify, and reports the first generated slice.
+
+It writes the Greenfield review packet at:
+
+- `.spec/greenfield/initialization-summary.md`
+- `.spec/greenfield/change-mainline-handoff.md`
+- `.spec/greenfield/change-mainline-handoff.json`
+
+Use the summary and Markdown handoff as the human review packet. The JSON handoff remains the machine source of truth for the first `change` intent.

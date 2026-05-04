@@ -31,6 +31,9 @@ The final North Star acceptance package lives in `tools/jispec/north-star/accept
 | Verify waivers | `.spec/waivers/*.json` | `waiver create\|revoke` | JSON | local contract | Auditable waiver lifecycle records |
 | Verify baseline | `.spec/baselines/verify-baseline.json` | `verify --write-baseline` | JSON | local contract | Historical verify issue baseline |
 | Current Greenfield baseline | `.spec/baselines/current.yaml` | Greenfield init and explicit baseline adoption | YAML | local contract | Current requirements, contexts, contracts, scenarios, slices, assets, and handoff refs |
+| Greenfield source evolution | `.spec/deltas/<change-id>/source-evolution.json` | `source refresh` | JSON | local contract | Machine-readable source evolution summary for a change, including added/modified/deprecated/split/merged/reanchored items |
+| Greenfield source review | `.spec/deltas/<change-id>/source-review.yaml` | `source review adopt\|reject\|defer\|waive` | YAML | local contract | Machine-readable source review decisions with owner, reason, status, successor mapping, and optional expiration |
+| Requirement lifecycle registry | `.spec/requirements/lifecycle.yaml` | `source adopt` | YAML | local contract | Active requirement lifecycle registry, including modified/deprecated/split/merged/replaced state |
 | Greenfield spec debt ledger | `.spec/spec-debt/ledger.yaml` | Greenfield review workflow | YAML | local contract | Open, expired, repaid, and cancelled spec debt |
 | Bootstrap spec debt records | `.spec/spec-debt/<session-id>/*.json` | `adopt --interactive` | JSON | local contract | Deferred takeover draft decisions and source evidence |
 | Release baseline | `.spec/baselines/releases/<version>.yaml` | `release snapshot` | YAML | local contract | Frozen release baseline with graph, static collector, policy snapshot, and tracked assets |
@@ -40,7 +43,7 @@ The final North Star acceptance package lives in `tools/jispec/north-star/accept
 | Release drift trend summary | `.spec/releases/drift-trend.md` | `release compare` | Markdown | human companion | Render human release drift trend summary |
 | Multi-repo governance snapshot | `.spec/console/governance-snapshot.json` | `console export-governance` | JSON | local contract | Exported repo-level governance snapshot intended for future multi-repo aggregation; declares snapshot contract version 1 and aggregate compatibility version 1 |
 | Multi-repo governance snapshot summary | `.spec/console/governance-snapshot.md` | `console export-governance` | Markdown | human companion | Render the exported repo-level governance snapshot summary |
-| Multi-repo governance aggregate | `.spec/console/multi-repo-governance.json` | `console aggregate-governance` | JSON | source of truth | Aggregate-level multi-repo governance source of truth; missing repo snapshots stay explicit instead of being inferred |
+| Multi-repo governance aggregate | `.spec/console/multi-repo-governance.json` | `console aggregate-governance` | JSON | source of truth | Aggregate-level multi-repo governance source of truth; includes passive `contractDriftHints`, richer `ownerActions`, and explicit missing repo snapshots |
 | Multi-repo governance aggregate summary | `.spec/console/multi-repo-governance.md` | `console aggregate-governance` | Markdown | human-readable companion | Reviewer summary for the aggregate; Console may display it but gates must not parse it |
 | Retakeover metrics | `.spec/handoffs/retakeover-metrics.json` | retakeover regression | JSON | local contract | Single-repository takeover quality scorecard, risk notes, feature overclaim risk, and next action |
 | Retakeover pool metrics | `.spec/handoffs/retakeover-pool-metrics.json` | retakeover regression pool | JSON | local contract | Pool-level takeover quality trend across real and synthetic retakeover fixtures |
@@ -61,6 +64,7 @@ Console snapshot groups declared artifacts into governance objects. These are di
 | Policy posture | `.spec/policy.yaml` | `not_available_yet` | Show local policy presence, facts contract, team owner/reviewers, required reviewers, waiver expiration posture, release compare posture, release behavior drift posture, execute-default posture, and rule count |
 | Waiver lifecycle | `.spec/waivers/*.json`, `.jispec-ci/verify-report.json` | `not_available_yet` | Show active/revoked/expired/invalid waivers and latest matched/unmatched waiver posture |
 | Spec debt ledger | `.spec/spec-debt/ledger.yaml`, `.spec/spec-debt/<session-id>/*.json` | `not_available_yet` | Show known Greenfield and bootstrap spec debt records |
+| Source evolution governance | `.spec/baselines/current.yaml`, `.spec/deltas/<change-id>/source-evolution.json`, `.spec/deltas/<change-id>/source-review.yaml`, `.spec/requirements/lifecycle.yaml` | `not_available_yet` | Show the active source evolution change, open review counts, deferred or expired exceptions, lifecycle delta counts, and source-adopt readiness |
 | Contract drift | `.spec/releases/compare/<from>-to-<to>/compare-report.json`, `.spec/releases/drift-trend.json` | `not_available_yet` | Show latest machine-readable release compare drift summary and historical drift trend, including contract graph, static collector, behavior, and policy drift |
 | Multi-repo export | `.spec/console/governance-snapshot.json` | `not_available_yet` | Show the exported repo-level governance snapshot for future multi-repo aggregation |
 | Multi-repo aggregate | `.spec/console/multi-repo-governance.json` | `not_available_yet` | Show aggregate governance posture from the source of truth JSON; `.spec/console/multi-repo-governance.md` is a human-readable companion only |
@@ -96,6 +100,7 @@ P2-T3 adds a local read-only dashboard shell over the Console snapshot. M6-T1 th
 The drill-down questions remain:
 
 - Can this repo merge right now?
+- Is source evolution blocking progress?
 - Which waivers need attention?
 - Which spec debt blocks takeover or release?
 - Which contract drift needs owner review?
@@ -112,14 +117,23 @@ P2-T4 adds a read-only action planner for the governance dashboard. It generates
 - revoke or renew waiver
 - repay spec debt
 - mark spec debt owner review
+- source review adopt, defer, or waive
+- source adopt
 - migrate policy
 - compare release drift
 
-`jispec-cli console actions` does not execute commands and does not write artifacts. It only tells a human which local CLI command to run. The write path remains explicit and auditable through commands such as `waiver renew`, `waiver revoke`, `spec-debt repay`, `spec-debt cancel`, `spec-debt owner-review`, `policy migrate`, and `release compare`.
+`jispec-cli console actions` does not execute commands and does not write artifacts. It only tells a human which local CLI command to run. The write path remains explicit and auditable through commands such as `waiver renew`, `waiver revoke`, `spec-debt repay`, `spec-debt cancel`, `spec-debt owner-review`, `source review adopt`, `source review defer`, `source review waive`, `source adopt`, `policy migrate`, and `release compare`.
 
 `jispec-cli console export-governance` writes a local repo-level governance snapshot for future multi-repo aggregation. It does not upload source, does not run verify, and does not replace any CLI gate.
 
 `jispec-cli console aggregate-governance` consumes those exported snapshots only. The aggregate JSON includes loaded snapshot counts plus explicit `missingSnapshots` entries for requested snapshot paths that do not exist. Missing governance facts inside a loaded snapshot use `not_available_yet`; missing explicit snapshot files use `snapshot_not_found`.
+
+When `.spec/console/repo-group.yaml` declares upstream/downstream contract refs, the same aggregate may also emit:
+
+- passive `contractDriftHints` that preserve evidence and linked repo ownership context
+- richer `ownerActions` with one repo-local primary command plus a follow-up `console export-governance`
+
+Those owner actions are advisory planning artifacts only. They never replace a single-repo gate, and they must not be interpreted as mergeable or blocking state by themselves.
 
 ## Non-Goals
 

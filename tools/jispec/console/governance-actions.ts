@@ -10,6 +10,10 @@ export type ConsoleGovernanceActionKind =
   | "repay_spec_debt"
   | "cancel_spec_debt"
   | "mark_spec_debt_owner_review"
+  | "source_review_adopt"
+  | "source_review_defer"
+  | "source_review_waive"
+  | "source_adopt"
   | "compare_release_drift"
   | "record_policy_approval"
   | "review_cross_repo_contract_drift";
@@ -96,6 +100,7 @@ export function buildConsoleGovernanceActionPlanFromSnapshot(
       ...buildPolicyActions(snapshot),
       ...buildWaiverActions(snapshot),
       ...buildSpecDebtActions(snapshot),
+      ...buildSourceEvolutionActions(snapshot),
       ...buildReleaseDriftActions(snapshot),
       ...buildApprovalActions(snapshot),
     ],
@@ -132,6 +137,7 @@ export function renderConsoleGovernanceActionPlanText(plan: ConsoleGovernanceAct
       evidence: action.sourceArtifacts,
       owner: action.owner,
       nextCommand: action.recommendedCommand,
+      affectedArtifact: action.targetRefs[0] ?? action.sourceArtifacts[0],
     }).map((entry) => `- ${entry}`));
     lines.push(`Kind: ${action.kind}`);
     lines.push(`Owner: ${action.owner}`);
@@ -162,22 +168,22 @@ export function renderConsoleGovernanceActionPlanJSON(plan: ConsoleGovernanceAct
 export function buildCrossRepoDriftActions(
   aggregate: MultiRepoGovernanceAggregate,
 ): ConsoleGovernanceActionPacket[] {
-  return aggregate.contractDriftHints.map((hint) => action({
+  return aggregate.ownerActions.map((ownerAction) => action({
     kind: "review_cross_repo_contract_drift",
-    status: "needs_input",
-    title: `Review cross-repo drift for ${hint.contractRef}`,
-    reason: `${hint.downstreamRepoId} has ${hint.downstreamHash}, while upstream ${hint.upstreamRepoId} has ${hint.upstreamHash}.`,
-    command: hint.suggestedCommand,
-    owner: `${hint.downstreamRepoId} owner`,
+    status: ownerAction.status,
+    title: `Review cross-repo drift for ${ownerAction.contractRef}`,
+    reason: ownerAction.summary,
+    command: ownerAction.suggestedCommand,
+    owner: ownerAction.owner,
     risk: {
       level: "medium",
       summary: "Cross-repo contract drift is an owner-action hint and does not replace any single-repo verify gate.",
     },
     sourceObject: "multi_repo_export",
-    sourceArtifacts: [".spec/console/multi-repo-governance.json"],
-    affectedContracts: [`${hint.upstreamRepoId}:${hint.contractRef}`, `${hint.downstreamRepoId}:${hint.contractRef}`],
-    targetRefs: [`cross-repo-drift:${hint.upstreamRepoId}:${hint.contractRef}->${hint.downstreamRepoId}`],
-    commandWrites: [],
+    sourceArtifacts: ownerAction.sourceArtifacts,
+    affectedContracts: ownerAction.affectedContracts,
+    targetRefs: [`cross-repo-drift:${ownerAction.upstreamRepoId}:${ownerAction.contractRef}->${ownerAction.downstreamRepoId}`],
+    commandWrites: ownerAction.primaryCommand.writesLocalArtifacts,
   }));
 }
 
@@ -341,6 +347,128 @@ function buildSpecDebtActions(snapshot: ConsoleLocalSnapshot): ConsoleGovernance
   return actions;
 }
 
+function buildSourceEvolutionActions(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceActionPacket[] {
+  const sourceEvolution = governanceObject(snapshot, "source_evolution_governance");
+  const summary = sourceEvolution?.summary ?? {};
+  const activeChangeId = stringValue(summary.activeChangeId);
+  const sourceEvolutionPath = stringValue(summary.sourceEvolutionPath);
+  const sourceReviewPath = stringValue(summary.sourceReviewPath);
+  const decisions = Array.isArray(summary.decisions) ? summary.decisions.filter(isRecord) : [];
+  const actions: ConsoleGovernanceActionPacket[] = [];
+
+  if (!sourceEvolution || summary.state !== "available" || !activeChangeId || activeChangeId === "not_available_yet") {
+    return actions;
+  }
+
+  const proposed = decisions
+    .filter((decision) => stringValue(decision.status) === "proposed")
+    .sort((left, right) => sourceEvolutionDecisionPriority(left) - sourceEvolutionDecisionPriority(right));
+  const primary = proposed[0];
+
+  if (primary) {
+    const itemId = stringValue(primary.itemId) ?? stringValue(primary.evolutionId) ?? "unknown-item";
+    const owner = stringValue(primary.owner) ?? "source reviewer";
+    const affectedContracts = affectedContractsFromSourceDecision(primary);
+    const targetRef = sourceDecisionTargetRef(primary);
+    const evidenceArtifacts = stableUnique([
+      sourceEvolutionPath ?? ".spec/deltas/<change-id>/source-evolution.json",
+      sourceReviewPath ?? ".spec/deltas/<change-id>/source-review.yaml",
+      stringValue(primary.path) ?? "",
+    ]);
+    const severity = stringValue(primary.severity) ?? "blocking";
+
+    actions.push(action({
+      kind: "source_review_adopt",
+      status: "ready",
+      title: `Adopt source review item ${itemId}`,
+      reason: stringValue(primary.summary) ?? "Source evolution still needs an explicit adopt decision.",
+      command: `npm run jispec-cli -- source review adopt ${itemId} --change ${activeChangeId} --actor <actor>`,
+      owner,
+      risk: {
+        level: severity === "blocking" ? "high" : "medium",
+        summary: severity === "blocking"
+          ? "Blocking source evolution remains proposed until a reviewer records a decision."
+          : "Advisory source evolution still needs an explicit decision before the change is fully closed.",
+      },
+      sourceObject: "source_evolution_governance",
+      sourceArtifacts: evidenceArtifacts,
+      affectedContracts,
+      targetRefs: [targetRef],
+      commandWrites: [".spec/deltas/<change-id>/source-review.yaml", ".spec/audit/events.jsonl"],
+    }));
+    actions.push(action({
+      kind: "source_review_defer",
+      status: "needs_input",
+      title: `Defer source review item ${itemId}`,
+      reason: "Use defer only when a named owner will repay the requirement lifecycle follow-up.",
+      command: `npm run jispec-cli -- source review defer ${itemId} --change ${activeChangeId} --actor <actor> --owner <owner> --reason "<reason>"`,
+      owner,
+      risk: {
+        level: severity === "blocking" ? "high" : "medium",
+        summary: "Deferring source evolution keeps the exception visible, but it should remain short-lived and owner-backed.",
+      },
+      sourceObject: "source_evolution_governance",
+      sourceArtifacts: evidenceArtifacts,
+      affectedContracts,
+      targetRefs: [targetRef],
+      commandWrites: [".spec/deltas/<change-id>/source-review.yaml", ".spec/audit/events.jsonl"],
+    }));
+    actions.push(action({
+      kind: "source_review_waive",
+      status: "needs_input",
+      title: `Waive source review item ${itemId}`,
+      reason: "Use waive only when the reviewer accepts a visible source evolution exception.",
+      command: `npm run jispec-cli -- source review waive ${itemId} --change ${activeChangeId} --actor <actor> --owner <owner> --reason "<reason>"`,
+      owner,
+      risk: {
+        level: severity === "blocking" ? "high" : "medium",
+        summary: "Waiving source evolution records an explicit exception and should not replace eventual contract cleanup silently.",
+      },
+      sourceObject: "source_evolution_governance",
+      sourceArtifacts: evidenceArtifacts,
+      affectedContracts,
+      targetRefs: [targetRef],
+      commandWrites: [".spec/deltas/<change-id>/source-review.yaml", ".spec/audit/events.jsonl"],
+    }));
+  }
+
+  if (summary.canAdoptSource === true) {
+    actions.push(action({
+      kind: "source_adopt",
+      status: "ready",
+      title: `Promote source evolution ${activeChangeId}`,
+      reason: "All blocking source review items are reviewed; the active truth can now be promoted explicitly.",
+      command: `npm run jispec-cli -- source adopt --change ${activeChangeId} --actor <actor> --reason "<reason>"`,
+      owner: "source owner",
+      risk: {
+        level: "medium",
+        summary: "Source adopt updates the active source snapshot, lifecycle registry, and current baseline together.",
+      },
+      sourceObject: "source_evolution_governance",
+      sourceArtifacts: stableUnique([
+        sourceEvolutionPath ?? ".spec/deltas/<change-id>/source-evolution.json",
+        sourceReviewPath ?? ".spec/deltas/<change-id>/source-review.yaml",
+        stringValue(summary.lifecyclePath) ?? ".spec/requirements/lifecycle.yaml",
+      ]),
+      affectedContracts: stableUnique([
+        stringValue(summary.lifecyclePath) ?? ".spec/requirements/lifecycle.yaml",
+        sourceEvolutionPath ?? ".spec/deltas/<change-id>/source-evolution.json",
+        sourceReviewPath ?? ".spec/deltas/<change-id>/source-review.yaml",
+      ]),
+      targetRefs: [sourceEvolutionRepresentativeArtifact(summary)],
+      commandWrites: [
+        ".spec/greenfield/source-documents.active.yaml",
+        ".spec/greenfield/source-documents.yaml",
+        ".spec/requirements/lifecycle.yaml",
+        ".spec/baselines/current.yaml",
+        ".spec/audit/events.jsonl",
+      ],
+    }));
+  }
+
+  return actions;
+}
+
 function buildReleaseDriftActions(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceActionPacket[] {
   const drift = governanceObject(snapshot, "contract_drift");
   if (!drift || drift.status === "not_available_yet" || drift.summary.state === "not_available_yet") {
@@ -449,6 +577,18 @@ function buildReviewerInstructions(input: Pick<ConsoleGovernanceActionPacket, "k
   if (input.kind === "revoke_waiver") {
     return ["Confirm the waiver is stale, expired, or unmatched.", "Run the recommended local CLI command explicitly.", "Rerun verify after revocation."];
   }
+  if (input.kind === "source_review_adopt") {
+    return ["Review the source evolution item and its lifecycle impact.", "Run the recommended local CLI command explicitly.", "Use source adopt only after the remaining blocking items are closed."];
+  }
+  if (input.kind === "source_review_defer") {
+    return ["Name the repayment owner.", "Record a clear defer reason and optional expiration.", "Run the recommended local CLI command explicitly."];
+  }
+  if (input.kind === "source_review_waive") {
+    return ["Confirm the exception is intentional and visible.", "Record owner and waiver reason.", "Run the recommended local CLI command explicitly."];
+  }
+  if (input.kind === "source_adopt") {
+    return ["Confirm the reviewed change should become active truth.", "Run the recommended local CLI command explicitly.", "Rerun verify after adoption."];
+  }
   if (input.kind === "repay_spec_debt") {
     return ["Confirm the contract work is complete.", "Run the recommended local CLI command explicitly.", "Rerun verify or Console dashboard."];
   }
@@ -465,7 +605,11 @@ function buildReviewerInstructions(input: Pick<ConsoleGovernanceActionPacket, "k
     return ["Review the current governance subject.", "Run the recommended local CLI command explicitly.", "Confirm the resulting approval audit event."];
   }
   if (input.kind === "review_cross_repo_contract_drift") {
-    return ["Review upstream and downstream contract ownership.", "Run the suggested command explicitly if you want to refresh the aggregate.", "Do not treat this action as a replacement for either repo's verify gate."];
+    return [
+      "Review upstream and downstream contract ownership.",
+      "Run the suggested local command explicitly in the named repo, then re-export governance for that repo.",
+      "Do not treat this action as a replacement for either repo's verify gate.",
+    ];
   }
   return ["Run the recommended local CLI command explicitly.", "Review the resulting audit event."];
 }
@@ -514,6 +658,49 @@ function approvalRiskLevel(kind: string, stale: boolean, profile: string | undef
     return "medium";
   }
   return "medium";
+}
+
+function sourceEvolutionDecisionPriority(decision: Record<string, unknown>): number {
+  const severity = stringValue(decision.severity);
+  const pathValue = stringValue(decision.path) ?? "";
+  if (severity === "blocking" && pathValue.includes("requirements")) {
+    return 0;
+  }
+  if (severity === "blocking") {
+    return 1;
+  }
+  if (pathValue.includes("technical-solution")) {
+    return 2;
+  }
+  return 3;
+}
+
+function sourceDecisionTargetRef(decision: Record<string, unknown>): string {
+  const pathValue = stringValue(decision.path) ?? "source-evolution";
+  const anchor = stringValue(decision.anchorId);
+  return anchor ? `${pathValue}:${anchor}` : pathValue;
+}
+
+function affectedContractsFromSourceDecision(decision: Record<string, unknown>): string[] {
+  const pathValue = stringValue(decision.path);
+  const anchor = stringValue(decision.anchorId);
+  const mapsTo = Array.isArray(decision.mapsTo) ? decision.mapsTo.map(String) : [];
+  const values = [
+    pathValue ? `path:${pathValue}` : undefined,
+    anchor ? `requirement:${anchor}` : undefined,
+    ...mapsTo.map((value) => `successor:${value}`),
+  ].filter((value): value is string => Boolean(value));
+  return values.length > 0 ? values : ["source-evolution:unknown-affected-contract"];
+}
+
+function sourceEvolutionRepresentativeArtifact(summary: Record<string, unknown>): string {
+  return stringValue(summary.activeRepresentativeItem)
+    ?? stringValue(summary.sourceEvolutionPath)
+    ?? ".spec/requirements/lifecycle.yaml";
+}
+
+function stableUnique(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
 }
 
 function expiresWithinDays(value: string | undefined, days: number): boolean {

@@ -42,6 +42,26 @@ interface BaselineYaml {
     facts_contract?: string;
     rule_ids?: string[];
   };
+  source_snapshot?: {
+    active_manifest_path?: string;
+    compatibility_manifest_path?: string;
+    active_snapshot_id?: string;
+    lifecycle_registry_path?: string;
+    lifecycle_registry_version?: number;
+    last_adopted_change_id?: string | null;
+  };
+  requirement_lifecycle?: {
+    path?: string;
+    registry_version?: number;
+    active_snapshot_id?: string;
+    last_adopted_change_id?: string | null;
+  };
+  source_evolution?: {
+    source_evolution_path?: string;
+    source_review_path?: string;
+    proposed_snapshot_path?: string;
+    last_adopted_change_id?: string | null;
+  };
   requirement_ids?: string[];
   slices?: string[];
   assets?: string[];
@@ -107,6 +127,8 @@ async function main(): Promise<void> {
       assert.ok(fs.existsSync(currentBaselinePath));
       assert.equal(currentBaseline.requirement_ids?.includes("REQ-ORD-001"), true);
       assert.equal(currentBaseline.slices?.includes("ordering-checkout-v1"), true);
+      assert.equal(currentBaseline.source_snapshot?.lifecycle_registry_path, ".spec/requirements/lifecycle.yaml");
+      assert.equal(currentBaseline.requirement_lifecycle?.registry_version, 1);
     }));
 
     const snapshot = createReleaseSnapshot({
@@ -130,6 +152,8 @@ async function main(): Promise<void> {
       assert.equal(releaseBaseline.release_version, "v1");
       assert.equal(releaseBaseline.frozen_at, "2026-04-29T00:00:00.000Z");
       assert.equal(releaseBaseline.source_baseline, ".spec/baselines/current.yaml");
+      assert.equal(releaseBaseline.source_snapshot?.lifecycle_registry_path, ".spec/requirements/lifecycle.yaml");
+      assert.equal(releaseBaseline.requirement_lifecycle?.registry_version, 1);
       assert.deepEqual(releaseBaseline.requirement_ids, currentBaseline.requirement_ids);
       assert.equal(releaseBaseline.contract_graph?.graph_kind, "merkle-contract-dag");
       assert.equal(releaseBaseline.contract_graph?.graph_path, ".spec/releases/v1/contract-graph.json");
@@ -152,6 +176,7 @@ async function main(): Promise<void> {
       assert.equal(snapshot.summary.contractGraph.status, "tracked");
       assert.equal(snapshot.summary.staticCollector.status, "tracked");
       assert.equal(snapshot.summary.policy.status, "tracked");
+      assert.equal(snapshot.summary.requirementEvolution.status, "tracked");
       assert.ok(fs.existsSync(releaseGraphPath));
       assert.ok(fs.existsSync(releaseGraphLockPath));
       assert.ok(fs.existsSync(staticCollectorManifestPath));
@@ -176,8 +201,11 @@ async function main(): Promise<void> {
       assert.match(releaseSummary, /Owner: release owner/);
       assert.match(releaseSummary, /Next command: `npm run jispec-cli -- release compare --from v1 --to current`/);
       assert.match(releaseSummary, /## Baseline Summary/);
+      assert.match(releaseSummary, /## Requirement Evolution State/);
       assert.match(releaseSummary, /## Contract Graph/);
       assert.match(releaseSummary, /## Static Collector/);
+      assert.match(releaseSummary, /Last adopted source change: `none`/);
+      assert.match(releaseSummary, /Lifecycle registry: `.spec\/requirements\/lifecycle.yaml` \(v1\)/);
       assert.match(releaseSummary, /This Markdown file is a human-readable companion summary, not a machine API/);
       assert.match(releaseSummary, /ordering-checkout-v1/);
     }));
@@ -202,9 +230,11 @@ async function main(): Promise<void> {
       assert.equal(identicalCompare.driftSummary.staticCollector.status, "unchanged");
       assert.equal(identicalCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(identicalCompare.driftSummary.policy.status, "unchanged");
+      assert.equal(identicalCompare.driftSummary.requirementEvolution.status, "unchanged");
       assert.ok(fs.existsSync(identicalCompare.compareReportJsonPath));
       assert.ok(fs.existsSync(identicalCompare.compareReportMarkdownPath));
       assert.ok(identicalCompare.diffs.every((diff) => diff.added.length === 0 && diff.removed.length === 0));
+      assert.match(fs.readFileSync(identicalCompare.compareReportMarkdownPath, "utf-8"), /## Requirement Evolution/);
     }));
 
     const currentGraphPath = path.join(root, ".spec", "evidence", "contract-graph.json");
@@ -230,6 +260,7 @@ async function main(): Promise<void> {
       assert.equal(merkleCompare.driftSummary.staticCollector.status, "unchanged");
       assert.equal(merkleCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(merkleCompare.driftSummary.policy.status, "unchanged");
+      assert.equal(merkleCompare.driftSummary.requirementEvolution.status, "unchanged");
       assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /## Drift Summary/);
       assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /Contract graph drift: changed/);
       assert.match(fs.readFileSync(merkleCompare.compareReportMarkdownPath, "utf-8"), /Changed node content/);
@@ -253,6 +284,7 @@ async function main(): Promise<void> {
       assert.equal(policyOnlyCompare.driftSummary.staticCollector.status, "unchanged");
       assert.equal(policyOnlyCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(policyOnlyCompare.driftSummary.policy.status, "changed");
+      assert.equal(policyOnlyCompare.driftSummary.requirementEvolution.status, "unchanged");
     }));
 
     const additionalRoutePath = path.join(root, "src", "routes", "refunds.ts");
@@ -281,6 +313,7 @@ async function main(): Promise<void> {
       assert.equal(governanceCompare.driftSummary.behavior.status, "unchanged");
       assert.equal(governanceCompare.driftSummary.policy.kind, "policy_drift");
       assert.equal(governanceCompare.driftSummary.policy.status, "changed");
+      assert.equal(governanceCompare.driftSummary.requirementEvolution.status, "unchanged");
       assert.notDeepEqual(
         governanceCompare.driftSummary.policy.details.from_rule_ids,
         governanceCompare.driftSummary.policy.details.to_rule_ids,
@@ -298,10 +331,89 @@ async function main(): Promise<void> {
       contextId: "ordering",
       sliceId: "ordering-checkout-v1",
     });
+    const changeId = change.session.specDelta?.changeId ?? "missing-change-id";
+    const sourceEvolutionPath = path.join(root, ".spec", "deltas", changeId, "source-evolution.json");
+    const sourceReviewPath = path.join(root, ".spec", "deltas", changeId, "source-review.yaml");
+    fs.mkdirSync(path.dirname(sourceEvolutionPath), { recursive: true });
+    fs.writeFileSync(sourceEvolutionPath, `${JSON.stringify({
+      version: 1,
+      active_manifest_path: ".spec/greenfield/source-documents.active.yaml",
+      target_manifest_path: `.spec/deltas/${changeId}/source-documents.proposed.yaml`,
+      target_origin: "proposed_snapshot",
+      generated_at: "2026-05-01T00:00:00.000Z",
+      compatibility_mode: "active",
+      summary: {
+        changed: true,
+        total: 1,
+        added: 1,
+        modified: 0,
+        deprecated: 0,
+        split: 0,
+        merged: 0,
+        reanchored: 0,
+      },
+      items: [
+        {
+          evolution_id: "added:req-ord-005",
+          evolution_kind: "added",
+          source_document: "requirements",
+          severity: "blocking",
+          path: "docs/input/requirements.md",
+          anchor_id: "REQ-ORD-005",
+          anchor_kind: "requirement",
+          contract_level: "required",
+          current_line: 42,
+          current_checksum: "checksum-req-ord-005",
+          current_excerpt: "Refund intake must be tracked.",
+          summary: "Requirement REQ-ORD-005 is present in the target source snapshot but not in the active source snapshot.",
+        },
+      ],
+    }, null, 2)}\n`, "utf-8");
+    fs.writeFileSync(sourceReviewPath, yaml.dump({
+      version: 1,
+      change_id: changeId,
+      generated_at: "2026-05-01T00:00:00.000Z",
+      updated_at: "2026-05-01T00:00:00.000Z",
+      source_evolution_path: `.spec/deltas/${changeId}/source-evolution.json`,
+      proposed_snapshot_path: `.spec/deltas/${changeId}/source-documents.proposed.yaml`,
+      items: [
+        {
+          item_id: "added:req-ord-005",
+          evolution_id: "added:req-ord-005",
+          evolution_kind: "added",
+          source_document: "requirements",
+          status: "adopted",
+          severity: "blocking",
+          summary: "Requirement REQ-ORD-005 is present in the target source snapshot but not in the active source snapshot.",
+          updated_at: "2026-05-01T00:00:00.000Z",
+          maps_to: [],
+        },
+      ],
+    }, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf-8");
     const evolvedBaseline: BaselineYaml = {
       ...currentBaseline,
       requirement_ids: [...(currentBaseline.requirement_ids ?? []), "REQ-ORD-005"],
-      applied_deltas: [change.session.specDelta?.changeId ?? "missing-change-id"],
+      source_snapshot: {
+        ...(currentBaseline.source_snapshot ?? {}),
+        active_snapshot_id: "snapshot-ordering-v2",
+        lifecycle_registry_path: ".spec/requirements/lifecycle.yaml",
+        lifecycle_registry_version: 2,
+        last_adopted_change_id: changeId,
+      },
+      requirement_lifecycle: {
+        ...(currentBaseline.requirement_lifecycle ?? {}),
+        path: ".spec/requirements/lifecycle.yaml",
+        registry_version: 2,
+        active_snapshot_id: "snapshot-ordering-v2",
+        last_adopted_change_id: changeId,
+      },
+      source_evolution: {
+        source_evolution_path: `.spec/deltas/${changeId}/source-evolution.json`,
+        source_review_path: `.spec/deltas/${changeId}/source-review.yaml`,
+        proposed_snapshot_path: `.spec/deltas/${changeId}/source-documents.proposed.yaml`,
+        last_adopted_change_id: changeId,
+      },
+      applied_deltas: [changeId],
     };
     fs.writeFileSync(currentBaselinePath, yaml.dump(evolvedBaseline, { lineWidth: 100, noRefs: true }), "utf-8");
     const diffCompare = compareReleaseBaselines({ root, from: "v1", to: "current" });
@@ -311,6 +423,16 @@ async function main(): Promise<void> {
       assert.equal(diffCompare.identical, false);
       assert.deepEqual(requirementDiff?.added, ["REQ-ORD-005"]);
       assert.deepEqual(requirementDiff?.removed, []);
+      assert.equal(diffCompare.driftSummary.requirementEvolution.kind, "requirement_evolution_drift");
+      assert.equal(diffCompare.driftSummary.requirementEvolution.status, "changed");
+      assert.deepEqual(diffCompare.driftSummary.requirementEvolution.details.added_requirements, ["REQ-ORD-005"]);
+      assert.deepEqual(diffCompare.driftSummary.requirementEvolution.details.applied_deltas_added, [changeId]);
+      const markdown = fs.readFileSync(diffCompare.compareReportMarkdownPath, "utf-8");
+      assert.match(markdown, /Requirement evolution drift: changed/);
+      assert.match(markdown, /## Requirement Evolution/);
+      assert.match(markdown, /Lifecycle registry: \.spec\/requirements\/lifecycle\.yaml v1 -> \.spec\/requirements\/lifecycle\.yaml v2/);
+      assert.match(markdown, /Added requirements: `REQ-ORD-005`/);
+      assert.match(markdown, new RegExp(`Last adopted source change: not recorded -> ${changeId}`));
     }));
 
     const cliRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-greenfield-baseline-cli-"));

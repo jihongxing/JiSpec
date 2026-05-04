@@ -130,11 +130,15 @@ async function main(): Promise<void> {
       assert.equal(verify.metadata?.impactAdvisoryOnly, true);
       assert.ok(Array.isArray(verify.metadata?.impactGraphChangedFiles));
       assert.ok((verify.metadata?.impactGraphChangedFiles as string[]).length > 0);
+      assert.ok(Array.isArray(verify.metadata?.impactGraphImpactedFiles));
+      assert.ok((verify.metadata?.impactGraphImpactedFiles as string[]).length > 0);
       assert.ok(Array.isArray(verify.metadata?.impactGraphContractRefs));
       assert.ok((verify.metadata?.impactGraphContractRefs as string[]).length > 0);
       assert.ok(Array.isArray(verify.metadata?.impactGraphScopeHints));
       assert.ok((verify.metadata?.impactGraphScopeHints as string[]).some((hint) => hint.includes("contract-sensitive") || hint.includes("contracts:")));
       assert.ok(Array.isArray(verify.metadata?.impactGraphMissingVerificationHints));
+      assert.ok(typeof verify.metadata?.impactReportPath === "string");
+      assert.ok(typeof verify.metadata?.verifyFocusPath === "string");
       assert.ok(typeof verify.metadata?.impactGraphNextReplayCommand === "string");
 
       const report = buildVerifyReport(verify, { repoRoot: fixture.root, provider: "local" });
@@ -144,6 +148,13 @@ async function main(): Promise<void> {
       assert.ok(summary.includes("Current state:"));
       assert.ok(summary.includes("Risk:"));
       assert.ok(summary.includes("Evidence:"));
+      assert.ok(summary.includes("impact graph `"));
+      assert.ok(summary.includes("impact report `"));
+      assert.ok(summary.includes("verify focus `"));
+      assert.ok(summary.includes("impact freshness `fresh`"));
+      assert.ok(summary.includes("Affected artifact: "));
+      assert.ok(summary.includes("(verify focus: "));
+      assert.ok(summary.includes("contracts.yaml"));
       assert.ok(summary.includes("Owner:"));
       assert.ok(summary.includes("Next command:"));
       assert.ok(summary.includes("Freshness: `fresh`"));
@@ -201,12 +212,12 @@ async function main(): Promise<void> {
     const suite = TEST_SUITES.find((candidate) => candidate.file === "p9-change-impact-summary.ts");
     assert.ok(suite);
     assert.equal(suite.area, "change-implement");
-    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.expectedTests, 7);
     assert.equal(suite.task, "P9-T3");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 137);
-    assert.equal(manifest.totalExpectedTests, 611);
+    assert.equal(manifest.totalSuites, 150);
+    assert.equal(manifest.totalExpectedTests, 669);
   }));
 
   printResults(results);

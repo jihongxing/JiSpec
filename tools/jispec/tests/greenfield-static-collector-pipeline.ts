@@ -80,6 +80,23 @@ async function main(): Promise<void> {
         fact.metadata?.advisory_only === true
       ));
     }));
+
+    results.push(record("repo-internal fixtures are marked advisory-only and stay outside governed scope", () => {
+      assert.ok(manifest.facts.some((fact) =>
+        fact.id === "route:POST /fixture" &&
+        fact.path === "tools/jispec/tests/runtime-fixture.ts" &&
+        fact.metadata?.advisory_only === true
+      ));
+      assert.ok(manifest.facts.some((fact) =>
+        fact.id === "route:POST /example-orders" &&
+        fact.path === "examples/minimal/src/routes.ts" &&
+        fact.metadata?.advisory_only === true
+      ));
+      assert.ok(manifest.unresolved_surfaces.some((surface) =>
+        surface.id === "unresolved_surface:graphql:tools/jispec/runtime-graphql.ts" &&
+        surface.metadata?.advisory_only === true
+      ));
+    }));
   } catch (error) {
     results.push({
       name: "greenfield static collector pipeline execution",
@@ -158,6 +175,23 @@ function writeFixture(root: string): void {
       verify: "jispec verify",
     },
   }, null, 2));
+
+  writeFile(root, "tools/jispec/tests/runtime-fixture.ts", [
+    "import { Router } from 'express';",
+    "export const router = Router();",
+    "router.post('/fixture', (_req, res) => res.status(202).send({ ok: true }));",
+  ].join("\n"));
+
+  writeFile(root, "tools/jispec/runtime-graphql.ts", [
+    "const typeDefs = `type Query { ping: String }`;",
+    "export { typeDefs };",
+  ].join("\n"));
+
+  writeFile(root, "examples/minimal/src/routes.ts", [
+    "import { Router } from 'express';",
+    "export const router = Router();",
+    "router.post('/example-orders', (_req, res) => res.status(202).send({ ok: true }));",
+  ].join("\n"));
 }
 
 function writeFile(root: string, relativePath: string, content: string): void {

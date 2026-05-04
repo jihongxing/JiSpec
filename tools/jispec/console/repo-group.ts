@@ -9,6 +9,8 @@ export interface RepoGroupRepo {
   id: string;
   role: RepoGroupRole;
   path: string;
+  repoName?: string;
+  owner?: string;
   upstreamContractRefs: string[];
   downstreamContractRefs: string[];
 }
@@ -74,6 +76,8 @@ function parseRepo(value: unknown, index: number): RepoGroupRepo {
     id: requiredString(value.id, `repos[${index}].id`),
     role,
     path: requiredString(value.path, `repos[${index}].path`),
+    repoName: optionalString(value.repoName),
+    owner: optionalString(value.owner),
     upstreamContractRefs: stringArray(value.upstreamContractRefs),
     downstreamContractRefs: stringArray(value.downstreamContractRefs),
   };
@@ -93,6 +97,10 @@ function stringArray(value: unknown): string[] {
       .map((entry) => normalizePath(entry.trim()))
       .filter((entry) => entry.length > 0)
     : [];
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? normalizePath(value.trim()) : undefined;
 }
 
 function normalizePath(value: string): string {

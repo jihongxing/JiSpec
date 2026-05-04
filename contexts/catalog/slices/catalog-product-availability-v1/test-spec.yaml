@@ -1,0 +1,11 @@
+tests:
+  - id: TEST-CATALOG-PRODUCT-AVAILABLE-INTEGRATION
+    type: integration
+    verifies:
+      - SCN-CATALOG-PRODUCT-AVAILABLE
+    target: catalog-product-availability-mvp
+  - id: TEST-CATALOG-TECHNICAL-OWNERSHIP-INTEGRATION
+    type: integration
+    verifies:
+      - SCN-CATALOG-TECHNICAL-OWNERSHIP
+    target: catalog-product-availability-mvp

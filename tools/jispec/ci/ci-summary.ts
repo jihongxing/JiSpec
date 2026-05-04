@@ -1,9 +1,12 @@
 import { inferNextAction, selectHighlightedIssues, type VerifyReport } from "./verify-report";
 import {
   renderGreenfieldControlContext,
+  renderReleaseGlobalContext,
+  renderVerifyDecisionAffectedArtifact,
   renderMergeStatus,
   renderVerifyDecisionCommand,
   renderVerifyDecisionEvidence,
+  renderVerifyDecisionReplayCommand,
   renderVerifyDecisionRisk,
 } from "./verify-summary";
 import { renderHumanDecisionSnapshot } from "../human-decision-packet";
@@ -25,6 +28,8 @@ export function renderCiSummaryText(report: VerifyReport): string {
     evidence: renderVerifyDecisionEvidence(report),
     owner: "repo owner / reviewer",
     nextCommand: renderVerifyDecisionCommand(report),
+    affectedArtifact: renderVerifyDecisionAffectedArtifact(report),
+    replayCommand: renderVerifyDecisionReplayCommand(report),
   })) {
     lines.push(`  ${line.replace(/^- /, "")}`);
   }
@@ -48,6 +53,15 @@ export function renderCiSummaryText(report: VerifyReport): string {
   if (greenfieldContext.length > 0) {
     lines.push("Greenfield Control Context:");
     for (const line of greenfieldContext) {
+      lines.push(`  ${line.replace(/^- /, "")}`);
+    }
+    lines.push("");
+  }
+
+  const releaseGlobalContext = renderReleaseGlobalContext(report);
+  if (releaseGlobalContext.length > 0) {
+    lines.push("Release Global Context:");
+    for (const line of releaseGlobalContext) {
       lines.push(`  ${line.replace(/^- /, "")}`);
     }
     lines.push("");
@@ -104,6 +118,8 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
     evidence: renderVerifyDecisionEvidence(report),
     owner: "repo owner / reviewer",
     nextCommand: renderVerifyDecisionCommand(report),
+    affectedArtifact: renderVerifyDecisionAffectedArtifact(report),
+    replayCommand: renderVerifyDecisionReplayCommand(report),
   }));
   lines.push("");
 
@@ -133,6 +149,14 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
     lines.push("## Greenfield Control Context");
     lines.push("");
     lines.push(...greenfieldContext);
+    lines.push("");
+  }
+
+  const releaseGlobalContext = renderReleaseGlobalContext(report);
+  if (releaseGlobalContext.length > 0) {
+    lines.push("## Release Global Context");
+    lines.push("");
+    lines.push(...releaseGlobalContext);
     lines.push("");
   }
 

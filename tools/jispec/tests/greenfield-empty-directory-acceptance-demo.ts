@@ -85,6 +85,22 @@ async function main(): Promise<void> {
       assert.match(summary, /jispec-cli verify --root \. --policy \.spec\/policy\.yaml/);
     }));
 
+    results.push(record("README and guide copy point to the same Greenfield review packet", () => {
+      const repoReadme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf-8");
+      const repoReadmeZh = fs.readFileSync(path.join(repoRoot, "README.zh-CN.md"), "utf-8");
+      const quickstart = fs.readFileSync(path.join(repoRoot, "docs", "quickstart.md"), "utf-8");
+      const walkthrough = fs.readFileSync(path.join(repoRoot, "docs", "greenfield-walkthrough.md"), "utf-8");
+      const exampleReadme = fs.readFileSync(path.join(repoRoot, "examples", "greenfield-empty-directory", "README.md"), "utf-8");
+
+      assert.match(repoReadme, /examples\/greenfield-empty-directory\/README\.md/);
+      assert.match(repoReadmeZh, /examples\/greenfield-empty-directory\/README\.md/);
+      assert.match(quickstart, /examples\/greenfield-empty-directory\/README\.md/);
+      assert.match(walkthrough, /examples\/greenfield-empty-directory\/README\.md/);
+      assert.match(exampleReadme, /\.spec\/greenfield\/initialization-summary\.md/);
+      assert.match(exampleReadme, /\.spec\/greenfield\/change-mainline-handoff\.md/);
+      assert.match(exampleReadme, /\.spec\/greenfield\/change-mainline-handoff\.json/);
+    }));
+
     results.push(record("demo reports a first implementation slice backed by generated files", () => {
       assert.equal(parsed.firstSliceId, "catalog-product-availability-v1");
       assert.equal(parsed.changeHandoffPath, ".spec/greenfield/change-mainline-handoff.json");

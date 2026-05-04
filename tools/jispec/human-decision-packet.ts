@@ -1,4 +1,5 @@
 import {
+  DECISION_SNAPSHOT_FIELD_LABELS,
   splitDecisionCompanionSections,
   type DecisionCompanionSectionsInput,
 } from "./companion/decision-sections";
@@ -9,6 +10,9 @@ export interface HumanDecisionSnapshot {
   evidence: string[];
   owner: string;
   nextCommand: string;
+  affectedArtifact?: string;
+  expiration?: string;
+  replayCommand?: string;
 }
 
 interface HumanDecisionSnapshotField {
@@ -41,11 +45,23 @@ function renderHumanDecisionSnapshotFields(snapshot: HumanDecisionSnapshot): str
 }
 
 function buildHumanDecisionSnapshotFields(snapshot: HumanDecisionSnapshot): HumanDecisionSnapshotField[] {
-  return [
-    { label: "Current state", value: snapshot.currentState },
-    { label: "Risk", value: snapshot.risk },
-    { label: "Evidence", value: snapshot.evidence.length > 0 ? snapshot.evidence.join(", ") : "not recorded" },
-    { label: "Owner", value: snapshot.owner },
-    { label: "Next command", value: snapshot.nextCommand },
+  const fields: HumanDecisionSnapshotField[] = [
+    { label: DECISION_SNAPSHOT_FIELD_LABELS.currentState, value: snapshot.currentState },
+    { label: DECISION_SNAPSHOT_FIELD_LABELS.risk, value: snapshot.risk },
+    { label: DECISION_SNAPSHOT_FIELD_LABELS.evidence, value: snapshot.evidence.length > 0 ? snapshot.evidence.join(", ") : "not recorded" },
+    { label: DECISION_SNAPSHOT_FIELD_LABELS.owner, value: snapshot.owner },
+    { label: DECISION_SNAPSHOT_FIELD_LABELS.nextCommand, value: snapshot.nextCommand },
   ];
+
+  if (snapshot.affectedArtifact?.trim()) {
+    fields.push({ label: DECISION_SNAPSHOT_FIELD_LABELS.affectedArtifact, value: snapshot.affectedArtifact.trim() });
+  }
+  if (snapshot.expiration?.trim()) {
+    fields.push({ label: DECISION_SNAPSHOT_FIELD_LABELS.expiration, value: snapshot.expiration.trim() });
+  }
+  if (snapshot.replayCommand?.trim()) {
+    fields.push({ label: DECISION_SNAPSHOT_FIELD_LABELS.replayCommand, value: snapshot.replayCommand.trim() });
+  }
+
+  return fields;
 }

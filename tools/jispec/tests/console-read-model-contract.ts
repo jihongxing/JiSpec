@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     assert.equal(contract.boundary.replacesCliGate, false);
     assert.equal(contract.boundary.sourceUploadRequired, false);
     assert.equal(contract.boundary.localArtifactsAreSourceOfTruth, true);
-    assert.equal(contract.governanceObjects.length, 11);
+    assert.equal(contract.governanceObjects.length, 12);
   });
 
   record("contract includes required machine-readable read model artifacts and governance sources", () => {
@@ -59,6 +59,9 @@ async function main(): Promise<void> {
       ".spec/waivers/*.json",
       ".spec/baselines/verify-baseline.json",
       ".spec/baselines/current.yaml",
+      ".spec/deltas/<change-id>/source-evolution.json",
+      ".spec/deltas/<change-id>/source-review.yaml",
+      ".spec/requirements/lifecycle.yaml",
       ".spec/spec-debt/ledger.yaml",
       ".spec/spec-debt/<session-id>/*.json",
       ".spec/baselines/releases/<version>.yaml",
@@ -82,6 +85,7 @@ async function main(): Promise<void> {
       "policy_posture",
       "waiver_lifecycle",
       "spec_debt_ledger",
+      "source_evolution_governance",
       "contract_drift",
       "release_baseline",
       "verify_trend",
@@ -155,6 +159,38 @@ async function main(): Promise<void> {
       writeText(fixtureRoot, ".jispec-ci/verify-summary.md", "# CI Verify Summary\n\nPASS\n");
       writeText(fixtureRoot, ".spec/handoffs/verify-summary.md", "# Local Verify Summary\n\nPASS\n");
       writeText(fixtureRoot, ".spec/policy.yaml", "version: 1\nrules: []\n");
+      writeText(fixtureRoot, ".spec/requirements/lifecycle.yaml", "version: 1\nregistry_version: 2\nrequirements: []\n");
+      writeText(fixtureRoot, ".spec/deltas/chg-1/source-evolution.json", JSON.stringify({
+        version: 1,
+        summary: { changed: true, total: 1, added: 0, modified: 1, deprecated: 0, split: 0, merged: 0, reanchored: 0 },
+        items: [
+          {
+            evolution_id: "modified:abc",
+            evolution_kind: "modified",
+            source_document: "requirements",
+            severity: "blocking",
+            path: "docs/input/requirements.md",
+            anchor_id: "REQ-1",
+            summary: "Requirement REQ-1 changed.",
+          },
+        ],
+      }, null, 2));
+      writeText(fixtureRoot, ".spec/deltas/chg-1/source-review.yaml", [
+        "version: 1",
+        "change_id: chg-1",
+        "generated_at: 2026-05-01T00:00:00.000Z",
+        "updated_at: 2026-05-01T00:00:00.000Z",
+        "source_evolution_path: .spec/deltas/chg-1/source-evolution.json",
+        "items:",
+        "  - item_id: modified:abc",
+        "    evolution_id: modified:abc",
+        "    source_document: requirements",
+        "    severity: blocking",
+        "    status: proposed",
+        "    summary: Requirement REQ-1 changed.",
+        "    anchor_id: REQ-1",
+        "",
+      ].join("\n"));
       writeText(fixtureRoot, ".spec/waivers/waiver-1.json", JSON.stringify({ id: "waiver-1", status: "active" }, null, 2));
       writeText(fixtureRoot, ".spec/spec-debt/bootstrap-takeover/feature.json", JSON.stringify({ id: "feature-debt" }, null, 2));
       writeText(fixtureRoot, ".spec/baselines/releases/v1.yaml", "version: v1\n");
@@ -197,6 +233,9 @@ async function main(): Promise<void> {
       assert.ok(availablePaths.every((relativePath) => relativePath.startsWith(".spec/") || relativePath.startsWith(".jispec-ci/") || relativePath.startsWith(".jispec/")));
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "ci-verify-report")?.status, "available");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "verify-policy")?.instances[0]?.data && true, true);
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "greenfield-source-evolution")?.instances[0]?.relativePath, ".spec/deltas/chg-1/source-evolution.json");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "greenfield-source-review")?.instances[0]?.relativePath, ".spec/deltas/chg-1/source-review.yaml");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "greenfield-requirement-lifecycle")?.instances[0]?.relativePath, ".spec/requirements/lifecycle.yaml");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "release-compare-report")?.instances[0]?.relativePath, ".spec/releases/compare/v1-to-v2/compare-report.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "multi-repo-governance-snapshot")?.instances[0]?.relativePath, ".spec/console/governance-snapshot.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "implementation-handoff-packets")?.instances[0]?.relativePath, ".jispec/handoff/change-1.json");
@@ -227,6 +266,59 @@ async function main(): Promise<void> {
         "      fact: verify.issue_count",
         "      op: '>'",
         "      value: 0",
+        "",
+      ].join("\n"));
+      writeText(fixtureRoot, ".spec/baselines/current.yaml", [
+        "version: 1",
+        "source_evolution:",
+        "  last_adopted_change_id: chg-0",
+        "requirement_lifecycle:",
+        "  path: .spec/requirements/lifecycle.yaml",
+        "  last_adopted_change_id: chg-0",
+        "",
+      ].join("\n"));
+      writeText(fixtureRoot, ".spec/requirements/lifecycle.yaml", [
+        "version: 1",
+        "registry_version: 3",
+        "generated_at: 2026-05-01T00:00:00.000Z",
+        "last_adopted_change_id: chg-0",
+        "requirements:",
+        "  - id: REQ-1",
+        "    status: modified",
+        "    supersedes: []",
+        "    replaced_by: []",
+        "    merged_from: []",
+        "",
+      ].join("\n"));
+      writeText(fixtureRoot, ".spec/deltas/chg-2/source-evolution.json", JSON.stringify({
+        version: 1,
+        summary: { changed: true, total: 1, added: 0, modified: 1, deprecated: 0, split: 0, merged: 0, reanchored: 0 },
+        items: [
+          {
+            evolution_id: "modified:def",
+            evolution_kind: "modified",
+            source_document: "requirements",
+            severity: "blocking",
+            path: "docs/input/requirements.md",
+            anchor_id: "REQ-1",
+            summary: "Requirement REQ-1 changed.",
+          },
+        ],
+      }, null, 2));
+      writeText(fixtureRoot, ".spec/deltas/chg-2/source-review.yaml", [
+        "version: 1",
+        "change_id: chg-2",
+        "generated_at: 2026-05-01T00:00:00.000Z",
+        "updated_at: 2026-05-01T00:00:00.000Z",
+        "source_evolution_path: .spec/deltas/chg-2/source-evolution.json",
+        "items:",
+        "  - item_id: modified:def",
+        "    evolution_id: modified:def",
+        "    source_document: requirements",
+        "    severity: blocking",
+        "    status: proposed",
+        "    summary: Requirement REQ-1 changed.",
+        "    anchor_id: REQ-1",
         "",
       ].join("\n"));
       writeText(fixtureRoot, ".spec/waivers/active.json", JSON.stringify({ id: "active", status: "active" }, null, 2));
@@ -282,6 +374,12 @@ async function main(): Promise<void> {
       assert.equal(multiRepo.status, "available");
       assert.equal(multiRepo.summary.repoId, "repo-1");
       assert.equal(multiRepo.summary.releaseDriftStatus, "changed");
+
+      const sourceEvolution = governanceObject(snapshot, "source_evolution_governance");
+      assert.equal(sourceEvolution.status, "available");
+      assert.equal(sourceEvolution.summary.activeChangeId, "chg-2");
+      assert.equal(sourceEvolution.summary.blockingOpenReviewItems, 1);
+      assert.equal((sourceEvolution.summary.lifecycleDeltaCounts as Record<string, unknown>).modified, 1);
 
       const implementation = governanceObject(snapshot, "implementation_mediation_outcomes");
       assert.equal(implementation.status, "partial");

@@ -1,6 +1,6 @@
 # JiSpec 试点就绪检查清单
 
-`jispec doctor pilot` 用来判断某个仓库是否已经适合进入团队试点或客户试点。它和 `doctor v1` 不一样：`doctor v1` 证明 JiSpec 的工程内核健康，`doctor pilot` 证明某个具体仓库已经具备足够的本地产物、治理姿态和分享卫生，可以进入对外采用阶段。
+`jispec doctor pilot` 用来判断某个仓库是否已经适合进入团队试点或客户试点。它和 `doctor mainline` 不一样：`doctor mainline` 证明 JiSpec 的工程内核健康，`doctor pilot` 证明某个具体仓库已经具备足够的本地产物、治理姿态和分享卫生，可以进入对外采用阶段。
 
 ## 检查项
 
@@ -16,7 +16,7 @@
 
 当前仓库已经完成 T0-1 到 T0-5，并补齐 Pilot product package 与 North Star acceptance 的本地入口：首次接管基线、带 owner 的 policy 配置、Console governance snapshot、privacy report、试点门禁、adoption package 和最终验收套件均已落盘或具备可重复命令。
 
-最新 `npm run pilot:ready` 与 `doctor pilot --json` 结果为 `ready: true`、`blockerCount: 0`、7/7 检查通过。`post-release:gate`、`doctor v1`、`doctor runtime`、`doctor pilot` 和 `north-star acceptance` 共同构成当前收口验证面。下面的清单继续作为试点模板和后续仓库接入时的执行顺序保留。
+最新 `npm run pilot:ready` 与 `doctor pilot --json` 结果为 `ready: true`、`blockerCount: 0`、7/7 检查通过。`post-release:gate`、`doctor mainline`、`doctor runtime`、`doctor pilot` 和 `north-star acceptance` 共同构成当前收口验证面。下面的清单继续作为试点模板和后续仓库接入时的执行顺序保留。
 
 1. 首次接管基线
 

@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
-import { collectGreenfieldProvenanceAnchorDrift } from "../greenfield/provenance-drift";
+import { readChangeSession } from "../change/change-session";
+import {
+  collectGreenfieldProvenanceAnchorDrift,
+  collectGreenfieldSourceEvolutionDiff,
+  type GreenfieldSourceEvolutionDiff,
+  type GreenfieldSourceEvolutionItem,
+} from "../greenfield/provenance-drift";
 import type { VerifyIssue } from "./verdict";
 
 type ReviewStatus = "proposed" | "adopted" | "rejected" | "deferred" | "waived";
@@ -26,6 +32,27 @@ interface ReviewDecision {
 
 interface ReviewRecord {
   decisions?: ReviewDecision[];
+}
+
+type SourceReviewStatus = "proposed" | "adopted" | "rejected" | "deferred" | "waived";
+
+interface SourceReviewDecision {
+  item_id?: string;
+  evolution_id?: string;
+  status?: SourceReviewStatus;
+  reason?: string;
+  maps_to?: string[];
+  defer_record?: {
+    expires_at?: string;
+  };
+  waiver_record?: {
+    expires_at?: string;
+  };
+}
+
+interface SourceReviewRecord {
+  items?: SourceReviewDecision[];
+  decisions?: SourceReviewDecision[];
 }
 
 interface GreenfieldReviewGatePolicy {
@@ -67,6 +94,7 @@ export interface GreenfieldReviewPackCounts {
 
 const REVIEW_RECORD_PATH = ".spec/greenfield/review-pack/review-record.yaml";
 const EVIDENCE_GRAPH_PATH = ".spec/evidence/evidence-graph.json";
+const DELTAS_ROOT = ".spec/deltas";
 
 export function collectGreenfieldReviewPackIssues(rootInput: string): VerifyIssue[] {
   const root = path.resolve(rootInput);
@@ -158,6 +186,7 @@ export function collectGreenfieldReviewPackIssues(rootInput: string): VerifyIssu
   }
 
   issues.push(...collectWrongThingSignals(root, record));
+  issues.push(...collectSourceEvolutionSignals(root));
   issues.push(...collectProvenanceDriftSignals(root));
 
   return issues.sort((left, right) =>
@@ -165,17 +194,92 @@ export function collectGreenfieldReviewPackIssues(rootInput: string): VerifyIssu
   );
 }
 
+function collectSourceEvolutionSignals(root: string): VerifyIssue[] {
+  const context = resolveSourceEvolutionContext(root);
+  if (!context.diff || !Array.isArray(context.diff.items) || context.diff.items.length === 0) {
+    return [];
+  }
+
+  const issues: VerifyIssue[] = [];
+  const reviewRecord = context.reviewRecord;
+  const decisions = sourceReviewDecisions(reviewRecord);
+
+  for (const item of context.diff.items) {
+    if (item.evolution_kind === "reanchored") {
+      issues.push(createSourceLayoutIssue(item, context));
+      continue;
+    }
+
+    if (item.severity !== "blocking") {
+      continue;
+    }
+
+    const decision = findSourceReviewDecision(decisions, item);
+    if (!context.declared) {
+      issues.push(createUndeclaredSourceEvolutionIssue(item, context));
+      continue;
+    }
+
+    if (!decision || !isKnownSourceReviewStatus(decision.status ?? "proposed") || decision.status === "proposed") {
+      issues.push(createUnreviewedSourceEvolutionIssue(item, context));
+      continue;
+    }
+
+    if (decision.status === "adopted") {
+      continue;
+    }
+
+    if (decision.status === "rejected") {
+      issues.push(createUnreviewedSourceEvolutionIssue(
+        item,
+        context,
+        `Source evolution ${describeSourceEvolutionSubject(item)} was rejected and needs a corrected delta before verify can pass.`,
+        decision,
+      ));
+      continue;
+    }
+
+    if (decision.status === "deferred" || decision.status === "waived") {
+      const expiresAt = decision.status === "deferred" ? decision.defer_record?.expires_at : decision.waiver_record?.expires_at;
+      if (isExpired(expiresAt)) {
+        issues.push(createSourceEvolutionIssue(
+          "GREENFIELD_SOURCE_EVOLUTION_DEFERRED_EXPIRED",
+          "blocking",
+          item,
+          context,
+          `Source evolution ${describeSourceEvolutionSubject(item)} is ${decision.status} but its expiration date has passed.`,
+          decision,
+        ));
+      } else {
+        issues.push(createSourceEvolutionIssue(
+          "GREENFIELD_SOURCE_EVOLUTION_DEFERRED",
+          "advisory",
+          item,
+          context,
+          `Source evolution ${describeSourceEvolutionSubject(item)} is ${decision.status} and remains open until downstream updates are complete.`,
+          decision,
+        ));
+      }
+    }
+  }
+
+  return issues;
+}
+
 function collectProvenanceDriftSignals(root: string): VerifyIssue[] {
   return collectGreenfieldProvenanceAnchorDrift(root).map((drift) => ({
     kind: "semantic",
-    severity: "blocking",
+    severity: drift.severity,
     code: "GREENFIELD_PROVENANCE_ANCHOR_DRIFT",
     path: drift.path,
-    message: `Provenance anchor ${drift.anchorId} drifted in ${drift.path}: ${drift.reason}.`,
+    message: drift.severity === "advisory"
+      ? `Provenance anchor ${drift.anchorId} moved or reworded in ${drift.path}: ${drift.reason}.`
+      : `Provenance anchor ${drift.anchorId} drifted in ${drift.path}: ${drift.reason}.`,
     details: {
       source_document: drift.sourceDocument,
       anchor_id: drift.anchorId,
       kind: drift.kind,
+      severity: drift.severity,
       expected_line: drift.expectedLine,
       current_line: drift.currentLine,
       paragraph_id: drift.paragraphId,
@@ -194,6 +298,265 @@ export function readGreenfieldReviewPackCounts(rootInput: string): GreenfieldRev
     rejectedCount: issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_REJECTED").length,
     deferredOrWaivedCount: issues.filter((issue) => issue.code === "GREENFIELD_REVIEW_ITEM_DEFERRED_OR_WAIVED").length,
   };
+}
+
+interface SourceEvolutionContext {
+  declared: boolean;
+  changeId?: string;
+  diff?: GreenfieldSourceEvolutionDiff;
+  sourceEvolutionPath?: string;
+  proposedSnapshotPath?: string;
+  sourceReviewPath?: string;
+  reviewRecord?: SourceReviewRecord;
+}
+
+function resolveSourceEvolutionContext(root: string): SourceEvolutionContext {
+  const activeSession = readChangeSession(root);
+  const changeId = activeSession?.specDelta?.changeId;
+  if (typeof changeId === "string" && changeId.length > 0) {
+    const deltaDir = path.join(root, DELTAS_ROOT, changeId);
+    const sourceEvolutionPath = path.join(deltaDir, "source-evolution.json");
+    const proposedSnapshotPath = path.join(deltaDir, "source-documents.proposed.yaml");
+    const sourceReviewPath = path.join(deltaDir, "source-review.yaml");
+    const diff = loadSourceEvolutionDiff(sourceEvolutionPath);
+    if (diff) {
+      return {
+        declared: true,
+        changeId,
+        diff,
+        sourceEvolutionPath: normalizeRelativePath(root, sourceEvolutionPath),
+        proposedSnapshotPath: fs.existsSync(proposedSnapshotPath) ? normalizeRelativePath(root, proposedSnapshotPath) : undefined,
+        sourceReviewPath: normalizeRelativePath(root, sourceReviewPath),
+        reviewRecord: loadSourceReviewRecord(sourceReviewPath),
+      };
+    }
+  }
+
+  return {
+    declared: false,
+    diff: collectGreenfieldSourceEvolutionDiff(root),
+  };
+}
+
+function loadSourceEvolutionDiff(filePath: string): GreenfieldSourceEvolutionDiff | undefined {
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as GreenfieldSourceEvolutionDiff;
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.items)) {
+      return parsed;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function loadSourceReviewRecord(filePath: string): SourceReviewRecord | undefined {
+  if (!fs.existsSync(filePath)) {
+    return undefined;
+  }
+
+  try {
+    const parsed = yaml.load(fs.readFileSync(filePath, "utf-8"));
+    return isRecord(parsed) ? parsed as SourceReviewRecord : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sourceReviewDecisions(record: SourceReviewRecord | undefined): SourceReviewDecision[] {
+  if (!record) {
+    return [];
+  }
+  const items = Array.isArray(record.items) ? record.items : [];
+  const decisions = Array.isArray(record.decisions) ? record.decisions : [];
+  return [...items, ...decisions].filter(isRecord) as SourceReviewDecision[];
+}
+
+function findSourceReviewDecision(
+  decisions: SourceReviewDecision[],
+  item: GreenfieldSourceEvolutionItem,
+): SourceReviewDecision | undefined {
+  const candidates = new Set<string>([
+    item.evolution_id,
+    item.anchor_id,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0));
+  return decisions.find((decision) =>
+    candidates.has(decision.evolution_id ?? "") ||
+    candidates.has(decision.item_id ?? ""),
+  );
+}
+
+function isKnownSourceReviewStatus(status: SourceReviewStatus): boolean {
+  return status === "proposed" || status === "adopted" || status === "rejected" || status === "deferred" || status === "waived";
+}
+
+function createSourceLayoutIssue(
+  item: GreenfieldSourceEvolutionItem,
+  context: SourceEvolutionContext,
+): VerifyIssue {
+  const requirementMove = item.anchor_kind === "requirement" && item.contract_level === "required";
+  const code = requirementMove ? "GREENFIELD_SOURCE_REANCHORABLE_MOVE" : "GREENFIELD_SOURCE_LAYOUT_DRIFT";
+  const message = requirementMove
+    ? `Source requirement ${describeSourceEvolutionSubject(item)} moved without semantic change and can be re-anchored.`
+    : `Source layout drift detected for ${describeSourceEvolutionSubject(item)}; this looks like a re-anchorable move or heading rewrite.`;
+  return createSourceEvolutionIssue(code, "advisory", item, context, message);
+}
+
+function createUndeclaredSourceEvolutionIssue(
+  item: GreenfieldSourceEvolutionItem,
+  context: SourceEvolutionContext,
+): VerifyIssue {
+  const details = describeSourceEvolutionSubject(item);
+  if (item.evolution_kind === "deprecated") {
+    return createSourceEvolutionIssue(
+      "GREENFIELD_SOURCE_REQUIREMENT_REMOVED",
+      "blocking",
+      item,
+      context,
+      `Requirement ${details} was removed from workspace source documents without an explicit source evolution review.`,
+    );
+  }
+
+  if (item.evolution_kind === "split" || item.evolution_kind === "merged") {
+    return createSourceEvolutionIssue(
+      "GREENFIELD_SOURCE_REQUIREMENT_SPLIT_UNMAPPED",
+      "blocking",
+      item,
+      context,
+      `Requirement evolution ${details} changes successor mapping, but no source refresh or review ledger records the mapping yet.`,
+    );
+  }
+
+  if (item.source_document === "technical_solution") {
+    return createSourceEvolutionIssue(
+      "GREENFIELD_SOURCE_BOUNDARY_CHANGED",
+      "blocking",
+      item,
+      context,
+      `Technical boundary source evolution ${details} is present in workspace documents but has not been declared through a source refresh.`,
+    );
+  }
+
+  return createSourceEvolutionIssue(
+    "GREENFIELD_SOURCE_EVOLUTION_UNDECLARED",
+    "blocking",
+    item,
+    context,
+    `Source evolution ${details} changed required source semantics, but no active change delta or source review declares it yet.`,
+  );
+}
+
+function createUnreviewedSourceEvolutionIssue(
+  item: GreenfieldSourceEvolutionItem,
+  context: SourceEvolutionContext,
+  overrideMessage?: string,
+  decision?: SourceReviewDecision,
+): VerifyIssue {
+  const details = describeSourceEvolutionSubject(item);
+  if (item.evolution_kind === "deprecated") {
+    return createSourceEvolutionIssue(
+      "GREENFIELD_SOURCE_REQUIREMENT_REMOVED",
+      "blocking",
+      item,
+      context,
+      overrideMessage ?? `Requirement ${details} is marked as removed in source evolution, but no reviewed lifecycle decision records the replacement or deprecation path.`,
+      decision,
+    );
+  }
+
+  if (item.evolution_kind === "split" || item.evolution_kind === "merged") {
+    return createSourceEvolutionIssue(
+      "GREENFIELD_SOURCE_REQUIREMENT_SPLIT_UNMAPPED",
+      "blocking",
+      item,
+      context,
+      overrideMessage ?? `Requirement evolution ${details} needs reviewed successor mapping before verify can accept the split or merge.`,
+      decision,
+    );
+  }
+
+  if (item.source_document === "technical_solution") {
+    return createSourceEvolutionIssue(
+      "GREENFIELD_SOURCE_BOUNDARY_CHANGED",
+      "blocking",
+      item,
+      context,
+      overrideMessage ?? `Technical boundary source evolution ${details} has been declared, but it is still waiting for explicit review.`,
+      decision,
+    );
+  }
+
+  return createSourceEvolutionIssue(
+    "GREENFIELD_SOURCE_EVOLUTION_UNREVIEWED",
+    "blocking",
+    item,
+    context,
+    overrideMessage ?? `Source evolution ${details} has been declared, but it still needs adopt, defer, waive, or correction before verify can pass.`,
+    decision,
+  );
+}
+
+function createSourceEvolutionIssue(
+  code: string,
+  severity: "blocking" | "advisory",
+  item: GreenfieldSourceEvolutionItem,
+  context: SourceEvolutionContext,
+  message: string,
+  decision?: SourceReviewDecision,
+): VerifyIssue {
+  return {
+    kind: "semantic",
+    severity,
+    code,
+    path: item.path,
+    message,
+    details: {
+      evolution_id: item.evolution_id,
+      evolution_kind: item.evolution_kind,
+      source_document: item.source_document,
+      anchor_id: item.anchor_id,
+      anchor_kind: item.anchor_kind,
+      contract_level: item.contract_level,
+      predecessor_ids: item.predecessor_ids ?? [],
+      successor_ids: item.successor_ids ?? [],
+      expected_line: item.expected_line,
+      current_line: item.current_line,
+      expected_checksum: item.expected_checksum,
+      current_checksum: item.current_checksum,
+      target_origin: context.diff?.target_origin,
+      active_change_id: context.changeId,
+      declared: context.declared,
+      source_evolution_path: context.sourceEvolutionPath,
+      proposed_snapshot_path: context.proposedSnapshotPath,
+      source_review_path: context.sourceReviewPath,
+      review_status: decision?.status,
+      review_reason: decision?.reason,
+      review_maps_to: decision?.maps_to ?? [],
+      defer_expires_at: decision?.defer_record?.expires_at,
+      waiver_expires_at: decision?.waiver_record?.expires_at,
+    },
+  };
+}
+
+function describeSourceEvolutionSubject(item: GreenfieldSourceEvolutionItem): string {
+  if (typeof item.anchor_id === "string" && item.anchor_id.length > 0) {
+    return `${item.anchor_id} (${item.evolution_kind})`;
+  }
+  if (Array.isArray(item.predecessor_ids) && item.predecessor_ids.length > 0) {
+    const successors = Array.isArray(item.successor_ids) && item.successor_ids.length > 0
+      ? ` -> ${item.successor_ids.join(", ")}`
+      : "";
+    return `${item.predecessor_ids.join(", ")}${successors} (${item.evolution_kind})`;
+  }
+  return item.evolution_id;
+}
+
+function normalizeRelativePath(root: string, targetPath: string): string {
+  return path.relative(root, targetPath).replace(/\\/g, "/");
 }
 
 function createReviewIssue(
@@ -462,10 +825,15 @@ function extractTechnicalContextCandidates(content: string): string[] {
       candidates.add(candidate);
     }
   }
-  for (const match of content.matchAll(/`([a-z][a-z0-9-]*)`/gi)) {
-    const contextId = normalizeContextId(match[1] ?? "");
-    if (contextId && !isTechnicalWord(contextId)) {
-      candidates.add(contextId);
+  for (const line of content.split(/\r?\n/)) {
+    if (!/\bcontexts?\b/i.test(line)) {
+      continue;
+    }
+    for (const match of line.matchAll(/`([a-z][a-z0-9-]*)`/gi)) {
+      const contextId = normalizeContextId(match[1] ?? "");
+      if (contextId && !isTechnicalWord(contextId)) {
+        candidates.add(contextId);
+      }
     }
   }
   return Array.from(candidates).sort();

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { runVerify } from "../verify/verify-runner";
+import { runVerify, type VerifySupplementalCollector } from "../verify/verify-runner";
+import { createWaiver } from "../verify/waiver-store";
 import { FIXED_GENERATED_AT, cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
 
 async function main(): Promise<void> {
@@ -44,7 +45,70 @@ async function main(): Promise<void> {
     assert.equal(autoLoadedResult.metadata?.policyPath, ".spec/policy.yaml");
     assert.deepEqual(autoLoadedResult.metadata?.matchedPolicyRules, ["require-domain-contract"]);
     assert.ok(autoLoadedResult.issues.some((issue) => issue.code === "POLICY_REQUIRE_DOMAIN_CONTRACT"));
-    console.log("✓ Test 1: verify auto-loads .spec/policy.yaml and reports matched policy rules in the stable verify contract");
+
+    fs.writeFileSync(
+      policyPath,
+      [
+        "version: 1",
+        "requires:",
+        '  facts_contract: "1.0"',
+        "rules:",
+        "  - id: no-blocking-issues",
+        "    enabled: true",
+        "    action: fail_blocking",
+        '    message: "Repository has blocking verify issues"',
+        "    when:",
+        '      fact: verify.blocking_issue_count',
+        '      op: ">"',
+        "      value: 0",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const waivedBlockingCollector: VerifySupplementalCollector = {
+      source: "policy-waiver-ordering",
+      async collect() {
+        return [
+          {
+            kind: "schema",
+            severity: "blocking",
+            code: "API_CONTRACT_ENDPOINTS_MISSING",
+            path: ".spec/contracts/api_spec.json",
+            message: "API contract must contain at least one endpoint for verify to gate deterministically.",
+          },
+        ];
+      },
+    };
+
+    createWaiver(fixtureRoot, {
+      code: "API_CONTRACT_ENDPOINTS_MISSING",
+      path: ".spec/contracts/api_spec.json",
+      owner: "platform-team",
+      reason: "Policy ordering regression coverage for waived blocking issues.",
+      expiresAt: "2026-05-31T00:00:00.000Z",
+    });
+
+    const waivedBlockingResult = await runVerify({
+      root: fixtureRoot,
+      generatedAt: FIXED_GENERATED_AT,
+      supplementalCollectors: [waivedBlockingCollector],
+    });
+
+    assert.equal(waivedBlockingResult.verdict, "WARN_ADVISORY");
+    assert.equal(waivedBlockingResult.blockingIssueCount, 0);
+    assert.equal(waivedBlockingResult.metadata?.waiversApplied, 1);
+    assert.deepEqual(waivedBlockingResult.metadata?.matchedPolicyRules, []);
+    assert.equal(waivedBlockingResult.issues.some((issue) => issue.code === "POLICY_NO_BLOCKING_ISSUES"), false);
+    assert.equal(
+      waivedBlockingResult.issues.some(
+        (issue) =>
+          issue.code === "API_CONTRACT_ENDPOINTS_MISSING" &&
+          issue.severity === "advisory" &&
+          (issue.details as Record<string, unknown>)?.matched_by === "waiver",
+      ),
+      true,
+    );
+    console.log("✓ Test 1: verify auto-loads .spec/policy.yaml and policy blocking facts respect explicit waivers");
     passed++;
 
     fs.writeFileSync(

@@ -10,6 +10,7 @@ import {
   writeIntegrationPayload,
   type IntegrationPayload,
 } from "../integrations/scm/payload";
+import { buildLocalArtifactRefs } from "../integrations/contract";
 import { inferNextAction, type VerifyReport } from "../ci/verify-report";
 import { renderVerifySummaryMarkdown } from "../ci/verify-summary";
 import type { HandoffPacket } from "../implement/handoff-packet";
@@ -105,6 +106,17 @@ async function main(): Promise<void> {
       assert.ok(payload.sourceArtifacts.includes(".jispec/handoff/change-integration.json"));
       assert.ok(payload.sourceArtifactRefs.some((ref) => ref.path === ".jispec-ci/verify-report.json" && ref.kind === "verify_report" && ref.sourceOfTruth === true));
       assert.ok(payload.sourceArtifactRefs.some((ref) => ref.path === ".jispec/handoff/change-integration.json" && ref.kind === "implementation_handoff" && ref.sourceOfTruth === true));
+      const consoleRefs = buildLocalArtifactRefs([
+        ".spec/console/multi-repo-governance.json",
+        ".spec/console/repo-group.yaml",
+      ]);
+      assert.deepEqual(
+        consoleRefs.map((ref) => ({ path: ref.path, kind: ref.kind })),
+        [
+          { path: ".spec/console/multi-repo-governance.json", kind: "multi_repo_governance" },
+          { path: ".spec/console/repo-group.yaml", kind: "repo_group_config" },
+        ],
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

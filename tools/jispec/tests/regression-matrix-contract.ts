@@ -77,32 +77,32 @@ async function main(): Promise<void> {
   record("manifest freezes the matrix totals and source contract", () => {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
-    assert.equal(manifest.totalSuites, 137);
-    assert.equal(manifest.totalExpectedTests, 611);
+    assert.equal(manifest.totalSuites, 150);
+    assert.equal(manifest.totalExpectedTests, 669);
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
   });
 
   record("area summaries stay partitioned by product boundary", () => {
     const areaMap = new Map(manifest.areas.map((area) => [area.area, area]));
     assert.deepEqual([...areaMap.keys()], REGRESSION_AREA_ORDER);
-    assert.equal(areaMap.get("core-mainline")?.suiteCount, 37);
+    assert.equal(areaMap.get("core-mainline")?.suiteCount, 44);
     assert.equal(areaMap.get("bootstrap-takeover-hardening")?.suiteCount, 29);
     assert.equal(areaMap.get("retakeover-regression-pool")?.suiteCount, 2);
     assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 13);
     assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
     assert.equal(areaMap.get("change-implement")?.suiteCount, 13);
-    assert.equal(areaMap.get("change-implement")?.expectedTests, 57);
-    assert.equal(areaMap.get("core-mainline")?.expectedTests, 172);
+    assert.equal(areaMap.get("change-implement")?.expectedTests, 58);
+    assert.equal(areaMap.get("core-mainline")?.expectedTests, 204);
     assert.equal(areaMap.get("bootstrap-takeover-hardening")?.expectedTests, 118);
-    assert.equal(areaMap.get("runtime-extended")?.suiteCount, 43);
-    assert.equal(areaMap.get("runtime-extended")?.expectedTests, 188);
+    assert.equal(areaMap.get("runtime-extended")?.suiteCount, 49);
+    assert.equal(areaMap.get("runtime-extended")?.expectedTests, 213);
     assert.ok(manifest.boundaries.v1MainlineAreas.every((area) => area !== "runtime-extended"));
     assert.equal(manifest.boundaries.runtimeExtendedArea, "runtime-extended");
     assert.equal(manifest.boundaries.pilotReadiness.doctorProfile, "pilot");
     assert.equal(manifest.boundaries.pilotReadiness.regressionArea, "runtime-extended");
   });
 
-  record("deferred surface contracts stay diagnostic-only and pilot-forbidden", () => {
+  record("deferred surface contracts stay diagnostic-only and pilot/global-forbidden", () => {
     const deferredSuites = getDeferredRegressionSuites();
     const contracts = getDeferredSurfaceContracts();
     assert.equal(deferredSuites.length, 10);
@@ -111,10 +111,10 @@ async function main(): Promise<void> {
     assert.equal(manifest.boundaries.deferredSurfaces.expectedTests, 34);
     assert.equal(manifest.boundaries.deferredSurfaces.allowedRegressionArea, "runtime-extended");
     assert.deepEqual(manifest.boundaries.deferredSurfaces.allowedDoctorProfiles, ["runtime"]);
-    assert.deepEqual(manifest.boundaries.deferredSurfaces.forbiddenDoctorProfiles, ["v1", "pilot"]);
+    assert.deepEqual(manifest.boundaries.deferredSurfaces.forbiddenDoctorProfiles, ["v1", "pilot", "global"]);
     for (const contract of contracts) {
       assert.deepEqual(contract.allowedDoctorProfiles, ["runtime"]);
-      assert.deepEqual(contract.forbiddenDoctorProfiles, ["v1", "pilot"]);
+      assert.deepEqual(contract.forbiddenDoctorProfiles, ["v1", "pilot", "global"]);
       for (const suite of contract.regressionSuites) {
         const registered = TEST_SUITES.find((candidate) => candidate.file === suite);
         assert.ok(registered, `Deferred suite not registered: ${suite}`);
@@ -175,6 +175,7 @@ async function main(): Promise<void> {
     assert.ok(regressionCheck?.details?.some((detail) => detail.includes("Regression manifest v1")));
     assert.ok(regressionCheck?.details?.some((detail) => detail.includes("runtime-extended")));
     assert.ok(regressionCheck?.details?.some((detail) => detail.includes("Pilot readiness boundary")));
+    assert.ok(regressionCheck?.details?.some((detail) => detail.includes("Build: OK")));
     assert.ok(transactionCheck?.details?.some((detail) => detail.includes("stable-snapshot-gates.ts passed")));
   });
 

@@ -32,7 +32,7 @@ const gateSteps: GateStep[] = [
   {
     name: "Doctor V1 readiness",
     command: nodeCommand,
-    args: ["--import", "tsx", "./tools/jispec/tests/doctor-v1-readiness.ts"],
+    args: ["--import", "tsx", "./tools/jispec/tests/doctor-mainline-readiness.ts"],
   },
   {
     name: "Unified regression runner",

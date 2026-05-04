@@ -7,7 +7,7 @@ JiSpec currently ships a local npm/bin surface for the repository control layer.
 ```bash
 npm install
 npm run jispec -- --version
-npm run jispec -- doctor v1
+npm run jispec -- doctor mainline
 ```
 
 The package exposes both `jispec` and `jispec-cli` bin names through `bin/jispec.js`. The bin shim dispatches to the same TypeScript CLI used by the repository scripts, so `npm run jispec -- <command>` and an installed `jispec <command>` share the same command surface.

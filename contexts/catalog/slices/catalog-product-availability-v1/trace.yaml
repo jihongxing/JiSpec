@@ -1,0 +1,29 @@
+links:
+  - from:
+      type: requirement
+      id: REQ-CAT-001
+    to:
+      type: scenario
+      id: SCN-CATALOG-PRODUCT-AVAILABLE
+    relation: verified_by
+  - from:
+      type: scenario
+      id: SCN-CATALOG-PRODUCT-AVAILABLE
+    to:
+      type: test
+      id: TEST-CATALOG-PRODUCT-AVAILABLE-INTEGRATION
+    relation: covered_by
+  - from:
+      type: requirement
+      id: REQ-CAT-001
+    to:
+      type: scenario
+      id: SCN-CATALOG-TECHNICAL-OWNERSHIP
+    relation: verified_by
+  - from:
+      type: scenario
+      id: SCN-CATALOG-TECHNICAL-OWNERSHIP
+    to:
+      type: test
+      id: TEST-CATALOG-TECHNICAL-OWNERSHIP-INTEGRATION
+    relation: covered_by

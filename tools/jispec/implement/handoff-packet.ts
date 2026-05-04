@@ -959,6 +959,8 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
     ],
     owner: packet.decisionPacket.executionStatus.nextActionOwner,
     nextCommand: packet.decisionPacket.nextActionDetail.command ?? "no command recorded",
+    affectedArtifact: packet.nextSteps.filesNeedingAttention[0] ?? packet.contractContext.changedPaths[0],
+    replayCommand: packet.replay.commands.restore,
   }).map((entry) => `  ${entry}`));
   lines.push("");
   lines.push("Reviewer decision companion:");

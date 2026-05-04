@@ -27,7 +27,7 @@ function main(): void {
   runCase(results, "quickstart answers the first three commands and routes users to next guides", () => {
     assert.match(docs.quickstart, /Run These Three Commands/);
     assert.match(docs.quickstart, /npm install/);
-    assert.match(docs.quickstart, /doctor v1/);
+    assert.match(docs.quickstart, /doctor mainline/);
     assert.match(docs.quickstart, /bootstrap discover/);
     assert.match(docs.quickstart, /docs\/takeover-guide\.md/);
     assert.match(docs.quickstart, /docs\/console-governance-guide\.md/);

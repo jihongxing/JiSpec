@@ -26,7 +26,7 @@
 
 产物：
 
-- 一份固定 release gate 清单，覆盖 `typecheck`、V1 golden path、`doctor v1`、regression runner 和 `ci:verify`
+- 一份固定 release gate 清单，覆盖 `typecheck`、V1 golden path、`doctor mainline`、regression runner 和 `ci:verify`
 - 在后续任务文档和 PR checklist 中统一引用这组 gate
 - 固定入口：`npm run post-release:gate`
 
@@ -41,7 +41,7 @@ npm run post-release:gate
 ```text
 npm run typecheck
 node --import tsx ./tools/jispec/tests/v1-mainline-golden-path.ts
-node --import tsx ./tools/jispec/tests/doctor-v1-readiness.ts
+node --import tsx ./tools/jispec/tests/doctor-mainline-readiness.ts
 node --import tsx ./tools/jispec/tests/regression-runner.ts
 npm run ci:verify
 ```
@@ -224,7 +224,7 @@ npm run ci:verify
 
 ### P2-T3 Execute-default mediation 切换预备
 
-状态：已实现，回归锚点为 `change-dual-mode.ts`、`doctor-v1-readiness.ts` 和 `cli-help-surface.ts`。
+状态：已实现，回归锚点为 `change-dual-mode.ts`、`doctor-mainline-readiness.ts` 和 `cli-help-surface.ts`。
 
 产物：
 
@@ -236,7 +236,7 @@ npm run ci:verify
 验收：
 
 - `change-dual-mode.ts` 覆盖默认值、显式 prompt、显式 execute 三类行为
-- `doctor v1` 能报告 execute-default 是否满足切换条件
+- `doctor mainline` 能报告 execute-default 是否满足切换条件
 
 ## P2：Policy、waiver、facts 治理面
 
@@ -351,7 +351,7 @@ npm run ci:verify
 
 验收：
 
-- `doctor v1` 继续不让 deferred surfaces 参与 V1 readiness
+- `doctor mainline` 继续不让 deferred surfaces 参与 V1 readiness
 
 ## 已完成批次记录
 
