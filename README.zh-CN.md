@@ -85,6 +85,8 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 
 Post-v1 北极星推进任务已经把 adopt summary、verify summary、bootstrap summary 命名和 Greenfield verify summary 语言对齐收口。剩余工作不再是“补齐摘要有无”，而是继续把主线摘要质量打磨得更短、更准、更接近 reviewer 的实际决策路径。
 
+现在 Console read model 也把 Greenfield source evolution 升级成了一等治理对象，因此 source review、lifecycle 和 source adopt 的闭环状态可以直接从已声明的本地产物里被看见，而不再藏在原始 delta 文件后面。
+
 理想的输出模型应该变成：
 
 1. `Machine-readable artifacts`
@@ -238,7 +240,7 @@ npm run jispec-cli -- verify --json
 npm run jispec-cli -- policy migrate
 npm run jispec-cli -- release snapshot --version v1
 npm run jispec-cli -- release compare --from v1 --to current
-npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor mainline
 npm run jispec-cli -- doctor runtime
 npm run jispec-cli -- doctor pilot
 npm run jispec-cli -- metrics value-report
@@ -269,7 +271,7 @@ npm run ci:verify
   记录、查看或撤销可审计的 verify waiver。waiver 只会降级匹配到的问题；未匹配的新 blocking issue 仍保持 blocking。
 - `release snapshot|compare`
   冻结 release baseline，并在 compare 时用紧凑摘要区分 contract graph、static collector 和 policy 三类漂移。
-- `doctor v1`
+- `doctor mainline`
   运行 V1 主线 readiness 检查，不让延后的 distributed/collaboration surface 直接阻断结果。
 - `doctor runtime`
   运行 V1 主线 readiness gate 之外的扩展 runtime 与兼容层健康诊断。
@@ -462,7 +464,7 @@ npm run jispec -- first-run --root .
 运行健康检查：
 
 ```bash
-npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor mainline
 npm run jispec-cli -- doctor runtime
 npm run jispec-cli -- doctor pilot
 ```
@@ -548,7 +550,7 @@ npm run jispec-cli -- validate
   让未显式传入 `--mode` 的 `change` 默认进入 execute mediation；显式 CLI mode 仍然最高优先级。
 - `change default-mode show|set|reset`
   通过 CLI 查看、启用、回退或重置项目级默认模式，并把每次切换写入 `.jispec/change-default-mode-history.jsonl`；`set execute` 会在 policy、verify 稳定性和外部 patch mediation readiness 通过前被阻止。
-- `doctor v1`
+- `doctor mainline`
   会用决策包语言报告 execute-default readiness：当前默认模式、mode 来源、blocker、warning、owner action、open bootstrap draft adopt 边界和下一步动作。
 
 - `change`
@@ -598,7 +600,7 @@ npm run check:jispec
 Package/bin 命令面：
 
 - `package.json` 通过 `bin/jispec.js` 暴露 `jispec` 和 `jispec-cli`。
-- 本地开发可以用 `npm run jispec -- --version` 和 `npm run jispec -- doctor v1` 做入口 smoke。
+- 本地开发可以用 `npm run jispec -- --version` 和 `npm run jispec -- doctor mainline` 做入口 smoke。
 - P4 采用资产包括 `examples/minimal-legacy-takeover/`、`examples/minimal-greenfield/`、`.github/workflows/jispec-verify-template.yml` 和 `.gitlab-ci.jispec-template.yml`。
 - 详见 [docs/install.md](docs/install.md)。
 

@@ -34,6 +34,8 @@ function main(): void {
           {
             id: "api",
             role: "upstream",
+            repoName: "Billing API",
+            owner: "contracts-team",
             path: "repos/api",
             upstreamContractRefs: [],
             downstreamContractRefs: ["web:contracts/payment.yaml"],
@@ -41,6 +43,8 @@ function main(): void {
           {
             id: "web",
             role: "downstream",
+            repoName: "Checkout Web",
+            owner: "frontend-team",
             path: "repos/web",
             upstreamContractRefs: ["api:contracts/payment.yaml"],
             downstreamContractRefs: [],
@@ -51,6 +55,8 @@ function main(): void {
       const config = loadRepoGroupConfig(root);
       assert.equal(config.status, "available");
       assert.equal(config.repos.length, 2);
+      assert.equal(config.repos[0].repoName, "Billing API");
+      assert.equal(config.repos[0].owner, "contracts-team");
       assert.equal(config.repos[1].upstreamContractRefs[0], "api:contracts/payment.yaml");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -97,7 +103,7 @@ function main(): void {
     }
   }));
 
-  results.push(record("cross-repo contract drift produces owner action and suggested command only", () => {
+  results.push(record("cross-repo contract drift produces linked owner action packets and repo-local commands only", () => {
     const root = createFixtureRoot();
     try {
       writeRepoGroup(root, {
@@ -105,6 +111,8 @@ function main(): void {
           {
             id: "api",
             role: "upstream",
+            repoName: "Billing API",
+            owner: "contracts-team",
             path: "repos/api",
             upstreamContractRefs: [],
             downstreamContractRefs: ["web:contracts/payment.yaml"],
@@ -112,6 +120,8 @@ function main(): void {
           {
             id: "web",
             role: "downstream",
+            repoName: "Checkout Web",
+            owner: "frontend-team",
             path: "repos/web",
             upstreamContractRefs: ["api:contracts/payment.yaml"],
             downstreamContractRefs: [],
@@ -136,9 +146,21 @@ function main(): void {
       });
 
       assert.equal(result.aggregate.contractDriftHints.length, 1);
+      assert.equal(result.aggregate.ownerActions.length, 1);
+      assert.equal(result.aggregate.summary.ownerActionCount, 1);
       assert.equal(result.aggregate.contractDriftHints[0].severity, "owner_action");
-      assert.match(result.aggregate.contractDriftHints[0].suggestedCommand, /jispec console aggregate-governance/);
+      assert.match(
+        result.aggregate.contractDriftHints[0].suggestedCommand,
+        /npm run jispec-cli -- change "Reconcile contracts\/payment\.yaml from api" --root repos\/web --mode prompt/,
+      );
+      assert.equal(result.aggregate.contractDriftHints[0].ownerActionId, result.aggregate.ownerActions[0].id);
       assert.equal(result.aggregate.contractDriftHints[0].blockingGateReplacement, false);
+      assert.equal(result.aggregate.ownerActions[0].repoName, "Checkout Web");
+      assert.equal(result.aggregate.ownerActions[0].owner, "frontend-team");
+      assert.equal(result.aggregate.ownerActions[0].primaryCommand.kind, "change");
+      assert.match(result.aggregate.ownerActions[0].primaryCommand.command, /npm run jispec-cli -- change/);
+      assert.equal(result.aggregate.ownerActions[0].followupCommands[0]?.kind, "export_governance");
+      assert.match(result.aggregate.ownerActions[0].followupCommands[0]?.command ?? "", /console export-governance/);
       assert.equal(result.aggregate.singleRepoGateReplacement, false);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -153,6 +175,8 @@ function main(): void {
           {
             id: "api",
             role: "upstream",
+            repoName: "Billing API",
+            owner: "contracts-team",
             path: "repos/api",
             upstreamContractRefs: [],
             downstreamContractRefs: ["web:contracts/payment.yaml"],
@@ -160,6 +184,8 @@ function main(): void {
           {
             id: "web",
             role: "downstream",
+            repoName: "Checkout Web",
+            owner: "frontend-team",
             path: "repos/web",
             upstreamContractRefs: ["api:contracts/payment.yaml"],
             downstreamContractRefs: [],
@@ -187,9 +213,12 @@ function main(): void {
       assert.equal(actions.length, 1);
       assert.equal(actions[0].kind, "review_cross_repo_contract_drift");
       assert.equal(actions[0].replacesCliGate, false);
-      assert.match(actions[0].recommendedCommand, /jispec console aggregate-governance/);
+      assert.match(actions[0].recommendedCommand, /npm run jispec-cli -- change/);
+      assert.ok(actions[0].decisionPacket.reviewerInstructions.some((instruction) => instruction.includes("re-export governance")));
+      assert.ok(actions[0].commandWrites.includes(".jispec/change-session.json"));
       assert.equal(dashboardSummary.status, "attention");
       assert.match(dashboardSummary.answer, /cross-repo contract drift/);
+      assert.equal(dashboardSummary.nextActions[0], actions[0].recommendedCommand);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -270,6 +299,12 @@ function snapshot(input: {
       unmatchedActiveWaivers: [],
       openSpecDebt: 0,
       bootstrapSpecDebt: 0,
+      sourceEvolutionChangeId: "not_available_yet",
+      sourceEvolutionBlockingOpenItems: "not_available_yet",
+      sourceEvolutionExpiredExceptions: 0,
+      sourceEvolutionRepresentativeArtifact: "not_available_yet",
+      lastAdoptedSourceChange: "not_available_yet",
+      lifecycleDeltaCounts: {},
       releaseDriftStatus: "unchanged",
       releaseDriftTrendComparisons: 0,
       approvalWorkflowStatus: "not_available_yet",

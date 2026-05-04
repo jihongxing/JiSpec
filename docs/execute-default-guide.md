@@ -17,11 +17,11 @@ Humans and external coding tools still own business-code implementation.
 ## Check Readiness
 
 ```bash
-npm run jispec -- doctor v1
+npm run jispec -- doctor mainline
 npm run jispec -- change default-mode show
 ```
 
-`doctor v1` explains blockers and owner actions. Missing policy, blocking verify results, damaged project config, or incomplete patch mediation should stop execute-default promotion.
+`doctor mainline` explains blockers and owner actions. Missing policy, blocking verify results, damaged project config, or incomplete patch mediation should stop execute-default promotion.
 
 ## Set Or Reset Default Mode
 

@@ -16,6 +16,7 @@ import type { MultiRepoGovernanceAggregate } from "./multi-repo";
 
 export type ConsoleGovernanceQuestionId =
   | "mergeability"
+  | "source_evolution_progress"
   | "waiver_attention"
   | "spec_debt_attention"
   | "contract_drift_review"
@@ -95,6 +96,7 @@ export function buildConsoleGovernanceDashboardFromSnapshot(
 ): ConsoleGovernanceDashboard {
   const questions = [
     buildMergeabilityQuestion(snapshot),
+    buildSourceEvolutionQuestion(snapshot),
     buildWaiverQuestion(snapshot),
     buildSpecDebtQuestion(snapshot),
     buildContractDriftQuestion(snapshot),
@@ -194,7 +196,9 @@ export function buildCrossRepoDriftDashboardSummary(
     evidence: aggregate.contractDriftHints.slice(0, 5).map((hint) =>
       `${hint.upstreamRepoId} -> ${hint.downstreamRepoId}: ${hint.contractRef}`,
     ),
-    nextActions: aggregate.contractDriftHints.slice(0, 5).map((hint) => hint.suggestedCommand),
+    nextActions: (aggregate.ownerActions.length > 0 ? aggregate.ownerActions : aggregate.contractDriftHints)
+      .slice(0, 5)
+      .map((entry) => entry.suggestedCommand),
   });
 }
 
@@ -222,7 +226,7 @@ function buildHeadline(
     return {
       status: "blocked",
       title: "Governance is blocked.",
-      summary: `${blocked.length} governance question(s) are blocked; start with mergeability and release drift.`,
+      summary: `${blocked.length} governance question(s) are blocked; start with mergeability and source evolution governance.`,
       source: evidence.primary,
       mergeability: mergeabilitySignal,
       risk,
@@ -336,6 +340,7 @@ function questionForActionSourceObject(
   const questionIdBySourceObject: Partial<Record<string, ConsoleGovernanceQuestionId>> = {
     waiver_lifecycle: "waiver_attention",
     spec_debt_ledger: "spec_debt_attention",
+    source_evolution_governance: "source_evolution_progress",
     contract_drift: "contract_drift_review",
     implementation_mediation_outcomes: "execute_mediation_status",
     approval_workflow: "approval_workflow_status",
@@ -403,6 +408,9 @@ function ownerForQuestion(id: ConsoleGovernanceQuestionId): string {
   if (id === "waiver_attention") {
     return "waiver owner";
   }
+  if (id === "source_evolution_progress") {
+    return "source reviewer";
+  }
   if (id === "spec_debt_attention") {
     return "spec debt owner";
   }
@@ -424,6 +432,9 @@ function ownerForQuestion(id: ConsoleGovernanceQuestionId): string {
 function fallbackCommandForQuestion(question: ConsoleGovernanceDashboardQuestion): string {
   if (question.id === "mergeability") {
     return "npm run ci:verify";
+  }
+  if (question.id === "source_evolution_progress") {
+    return "npm run jispec-cli -- source review list --change <change-id>";
   }
   if (question.id === "contract_drift_review") {
     return "npm run jispec-cli -- release compare --from <ref> --to <ref>";
@@ -540,6 +551,115 @@ function buildWaiverQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceD
     status: "ok",
     answer: `${active} active waiver(s), with no expired, expiring-soon, or unmatched active waiver signal in the declared artifacts.`,
     evidence: [`Waiver lifecycle: active=${active}, revoked=${revoked}, expired=${expired}`],
+    nextActions: [],
+  });
+}
+
+function buildSourceEvolutionQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
+  const sourceEvolution = governanceObject(snapshot, "source_evolution_governance");
+  const summary = sourceEvolution?.summary ?? {};
+  const activeChangeId = stringValue(summary.activeChangeId);
+  const state = stringValue(summary.currentChangeState);
+  const blockingOpen = numberValue(summary.blockingOpenReviewItems) ?? 0;
+  const open = numberValue(summary.openReviewItems) ?? 0;
+  const expiredDeferred = numberValue(summary.expiredDeferredItems) ?? 0;
+  const expiredWaived = numberValue(summary.expiredWaivedItems) ?? 0;
+  const lastAdopted = stringValue(summary.lastAdoptedSourceChange);
+  const representative = stringValue(summary.activeRepresentativeItem);
+  const canAdoptSource = summary.canAdoptSource === true;
+
+  if (!sourceEvolution || summary.state === "not_available_yet") {
+    return question({
+      id: "source_evolution_progress",
+      label: "Is source evolution blocking progress?",
+      status: "unknown",
+      answer: "No source evolution governance artifact is available yet.",
+      evidence: ["Missing current baseline, lifecycle registry, or source evolution review artifacts"],
+      nextActions: ["Run npm run jispec-cli -- source refresh after opening a change when requirements evolve."],
+    });
+  }
+
+  if (!activeChangeId || activeChangeId === "not_available_yet") {
+    return question({
+      id: "source_evolution_progress",
+      label: "Is source evolution blocking progress?",
+      status: "ok",
+      answer: `No open source evolution change is waiting for review. Last adopted change is ${lastAdopted ?? "not available"} .`,
+      evidence: [
+        `Lifecycle registry: ${stringValue(summary.lifecyclePath) ?? ".spec/requirements/lifecycle.yaml"}`,
+        `Last adopted source change: ${lastAdopted ?? "not_available_yet"}`,
+      ],
+      nextActions: [],
+    });
+  }
+
+  if (expiredDeferred > 0 || expiredWaived > 0) {
+    return question({
+      id: "source_evolution_progress",
+      label: "Is source evolution blocking progress?",
+      status: "blocked",
+      answer: `Yes. Source evolution ${activeChangeId} has ${expiredDeferred + expiredWaived} expired defer/waive decision(s).`,
+      evidence: [
+        `Change ${activeChangeId}: expired deferred=${expiredDeferred}, expired waived=${expiredWaived}`,
+        representative ? `Affected artifact: ${representative}` : "",
+      ],
+      nextActions: ["Refresh the expired source review decision, then rerun source adopt if the change is ready."],
+    });
+  }
+
+  if (blockingOpen > 0) {
+    return question({
+      id: "source_evolution_progress",
+      label: "Is source evolution blocking progress?",
+      status: "blocked",
+      answer: `Yes. Source evolution ${activeChangeId} still has ${blockingOpen} blocking review item(s) open.`,
+      evidence: [
+        `Open source review items: ${open}`,
+        `Blocking open review items: ${blockingOpen}`,
+        representative ? `Affected artifact: ${representative}` : "",
+      ],
+      nextActions: ["Run source review adopt, defer, or waive for the blocking item before treating the change as active truth."],
+    });
+  }
+
+  if (open > 0 || state === "review_open") {
+    return question({
+      id: "source_evolution_progress",
+      label: "Is source evolution blocking progress?",
+      status: "attention",
+      answer: `Source evolution ${activeChangeId} still has ${open} open review item(s).`,
+      evidence: [
+        `Review state: ${state ?? "review_open"}`,
+        representative ? `Affected artifact: ${representative}` : "",
+      ],
+      nextActions: ["Finish the remaining source review decisions, then decide whether to promote the change with source adopt."],
+    });
+  }
+
+  if (canAdoptSource) {
+    return question({
+      id: "source_evolution_progress",
+      label: "Is source evolution blocking progress?",
+      status: "attention",
+      answer: `Source evolution ${activeChangeId} is fully reviewed and ready for source adopt.`,
+      evidence: [
+        `Source evolution path: ${stringValue(summary.sourceEvolutionPath) ?? "not_available_yet"}`,
+        `Source review path: ${stringValue(summary.sourceReviewPath) ?? "not_available_yet"}`,
+        representative ? `Affected artifact: ${representative}` : "",
+      ],
+      nextActions: ["Run npm run jispec-cli -- source adopt --change <change-id> once the reviewer is ready to promote the active truth."],
+    });
+  }
+
+  return question({
+    id: "source_evolution_progress",
+    label: "Is source evolution blocking progress?",
+    status: "ok",
+    answer: `Source evolution ${activeChangeId} is reviewed with no blocking review posture detected.`,
+    evidence: [
+      `Review state: ${state ?? "reviewed"}`,
+      representative ? `Affected artifact: ${representative}` : "",
+    ],
     nextActions: [],
   });
 }

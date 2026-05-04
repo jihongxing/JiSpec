@@ -33,7 +33,7 @@ async function main(): Promise<void> {
 
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const runnerPath = path.join(repoRoot, "tools", "jispec", "tests", "regression-runner.ts");
-  const doctorTestPath = path.join(repoRoot, "tools", "jispec", "tests", "doctor-v1-readiness.ts");
+  const doctorTestPath = path.join(repoRoot, "tools", "jispec", "tests", "doctor-mainline-readiness.ts");
   const stableContractPath = path.join(repoRoot, "docs", "v1-mainline-stable-contract.md");
   const planPath = path.join(repoRoot, "docs", "post-v1-north-star-plan.md");
   const freezeDocPath = path.join(repoRoot, "docs", "collaboration-surface-freeze.md");
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
       assert.equal(contract.status, "deferred");
       assert.equal(contract.allowedRegressionArea, "runtime-extended");
       assert.deepEqual(contract.allowedDoctorProfiles, ["runtime"]);
-      assert.deepEqual(contract.forbiddenDoctorProfiles, ["v1", "pilot"]);
+      assert.deepEqual(contract.forbiddenDoctorProfiles, ["v1", "pilot", "global"]);
       assert.equal(contract.doesBlockV1Readiness, false);
       assert.equal(contract.canOverrideVerify, false);
       assert.equal(contract.productizedInV1, false);
@@ -71,17 +71,17 @@ async function main(): Promise<void> {
     }
   });
 
-  record("doctor v1 excludes deferred runtime checks", () => {
+  record("doctor mainline excludes deferred runtime checks", () => {
     const cliEntry = path.join(repoRoot, "tools", "jispec", "cli.ts");
     const result = spawnSync(
       process.execPath,
-      ["--import", "tsx", cliEntry, "doctor", "v1", "--root", repoRoot, "--json"],
+      ["--import", "tsx", cliEntry, "doctor", "mainline", "--root", repoRoot, "--json"],
       { cwd: repoRoot, encoding: "utf-8" },
     );
 
-    assert.ok([0, 1].includes(result.status ?? -1), `Unexpected doctor v1 status: ${result.status}`);
+    assert.ok([0, 1].includes(result.status ?? -1), `Unexpected doctor mainline status: ${result.status}`);
     const report = JSON.parse(result.stdout) as DoctorReport;
-    assert.equal(report.profile, "v1");
+    assert.equal(report.profile, "mainline");
     const checkNames = new Set((report.checks ?? []).map((check) => check.name));
 
     for (const deferredName of [
@@ -94,8 +94,8 @@ async function main(): Promise<void> {
       "Resource Management",
       "Fault Recovery",
     ]) {
-      assert.ok(!checkNames.has(deferredName), `Deferred check leaked into doctor v1: ${deferredName}`);
-      assert.ok(doctorTest.includes(deferredName), `doctor-v1-readiness.ts no longer guards ${deferredName}`);
+      assert.ok(!checkNames.has(deferredName), `Deferred check leaked into doctor mainline: ${deferredName}`);
+      assert.ok(doctorTest.includes(deferredName), `doctor-mainline-readiness.ts no longer guards ${deferredName}`);
     }
   });
 

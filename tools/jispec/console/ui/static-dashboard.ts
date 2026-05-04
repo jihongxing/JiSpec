@@ -54,6 +54,7 @@ const GOVERNANCE_OBJECT_ORDER = [
   "policy_posture",
   "waiver_lifecycle",
   "spec_debt_ledger",
+  "source_evolution_governance",
   "contract_drift",
   "release_baseline",
   "verify_trend",

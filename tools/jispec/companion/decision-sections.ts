@@ -7,6 +7,17 @@ export const DECISION_COMPANION_SECTION_TITLES = [
   "下一步",
 ] as const;
 
+export const DECISION_SNAPSHOT_FIELD_LABELS = {
+  currentState: "Current state",
+  risk: "Risk",
+  evidence: "Evidence",
+  owner: "Owner",
+  nextCommand: "Next command",
+  affectedArtifact: "Affected artifact",
+  expiration: "Expiration",
+  replayCommand: "Replay command",
+} as const;
+
 export interface DecisionCompanionSectionsInput {
   subject: string;
   truthSources: string[];

@@ -85,6 +85,8 @@ That is technically valuable, and the takeover path now makes the split explicit
 
 The post-V1 north-star task plan has closed the adopt summary, verify summary, bootstrap-summary naming, and Greenfield verify-summary language work. The remaining work is no longer "make summaries exist"; it is to keep making mainline summaries shorter, sharper, and closer to the reviewer's actual decision path.
 
+The Console read model now also treats Greenfield source evolution as a first-class governance object, so review, lifecycle, and source-adopt closure can be surfaced from declared local artifacts instead of hidden behind raw delta files.
+
 The desired output model should become:
 
 1. `Machine-readable artifacts`
@@ -238,7 +240,7 @@ npm run jispec-cli -- verify --json
 npm run jispec-cli -- policy migrate
 npm run jispec-cli -- release snapshot --version v1
 npm run jispec-cli -- release compare --from v1 --to current
-npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor mainline
 npm run jispec-cli -- doctor runtime
 npm run jispec-cli -- doctor pilot
 npm run jispec-cli -- metrics value-report
@@ -269,7 +271,7 @@ What they do:
   Records, inspects, or revokes auditable verify waivers. Waivers downgrade only matching issues; unmatched blocking issues remain blocking.
 - `release snapshot|compare`
   Freezes release baselines and compares baseline refs with a compact drift summary across contract graph, static collector, and policy surfaces.
-- `doctor v1`
+- `doctor mainline`
   Runs the V1 mainline readiness checks without letting deferred distributed or collaboration surfaces block the result.
 - `doctor runtime`
   Runs broader runtime and compatibility health diagnostics outside the V1 mainline readiness gate.
@@ -462,7 +464,7 @@ npm run jispec -- first-run --root .
 Run health checks:
 
 ```bash
-npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor mainline
 npm run jispec-cli -- doctor runtime
 npm run jispec-cli -- doctor pilot
 ```
@@ -539,7 +541,7 @@ Current mode split:
   Makes execute mediation the project default for `change` calls that omit `--mode`; explicit CLI mode remains the highest priority.
 - `change default-mode show|set|reset`
   Lets teams inspect, enable, roll back, or reset the project default through the CLI while recording each transition in `.jispec/change-default-mode-history.jsonl`; `set execute` is blocked until policy, verify stability, and external patch mediation readiness pass.
-- `doctor v1`
+- `doctor mainline`
   Reports execute-default readiness as a decision packet: current default, mode source, blockers, warnings, owner actions, open-bootstrap-draft adopt boundary, and next action.
 
 - `change`
@@ -589,7 +591,7 @@ npm run check:jispec
 Package/bin surface:
 
 - `package.json` exposes `jispec` and `jispec-cli` through `bin/jispec.js`.
-- Local development can smoke-test the package entry with `npm run jispec -- --version` and `npm run jispec -- doctor v1`.
+- Local development can smoke-test the package entry with `npm run jispec -- --version` and `npm run jispec -- doctor mainline`.
 - P4 adoption assets include `examples/minimal-legacy-takeover/`, `examples/minimal-greenfield/`, `.github/workflows/jispec-verify-template.yml`, and `.gitlab-ci.jispec-template.yml`.
 - See [docs/install.md](docs/install.md).
 

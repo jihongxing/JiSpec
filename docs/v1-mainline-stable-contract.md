@@ -30,7 +30,7 @@
 - `ci:verify`
 - `change`
 - `implement`
-- `doctor v1`
+- `doctor mainline`
 
 本文档不覆盖 legacy `slice/context/trace/artifact/agent/pipeline/template/dependency` 兼容命令面的产品语义，它们仍可用，但不属于 V1 主线稳定契约。
 
@@ -62,7 +62,7 @@ npm run jispec-cli -- implement
 npm run jispec-cli -- implement --fast
 npm run jispec-cli -- release snapshot --version v1
 npm run jispec-cli -- release compare --from v1 --to current
-npm run jispec-cli -- doctor v1
+npm run jispec-cli -- doctor mainline
 ```
 
 命令职责固定为：
@@ -91,7 +91,7 @@ npm run jispec-cli -- doctor v1
 | `release snapshot --version <version>` | 冻结当前 baseline，并写出 contract graph、static collector、policy snapshot 和可读摘要 |
 | `release compare --from <ref> --to <ref>` | 比较两个 baseline/ref，写出机器可读 compare report、可读 drift summary，并刷新 release drift trend |
 | `console export-governance` | 导出当前 repo 的治理 snapshot，供未来多 repo Console 汇总使用 |
-| `doctor v1` | 只回答 V1 主线 readiness，不让 deferred surfaces 拖红 |
+| `doctor mainline` | 只回答 V1 主线 readiness，不让 deferred surfaces 拖红 |
 
 ## 3. 退出码契约
 
@@ -123,7 +123,7 @@ npm run jispec-cli -- doctor v1
 | `implement` | outcome 为 `preflight_passed` 或 `patch_verified`，且 post-implement verify 不 blocking | outcome 为 `external_patch_received`、`patch_rejected_out_of_scope`、`budget_exhausted`、`stall_detected`、`verify_blocked`，或命令运行异常 |
 | `implement --fast` | 同 `implement` | 同 `implement` |
 | `implement --from-handoff <path-or-session>` | replay context 已恢复，且本轮 outcome 满足 `implement` 成功条件 | handoff 不存在、不可回放、存在其它 active session、或本轮 outcome 满足 `implement` 失败条件 |
-| `doctor v1` | V1 readiness 为 ready | V1 readiness 不 ready，或 doctor 运行失败 |
+| `doctor mainline` | V1 readiness 为 ready | V1 readiness 不 ready，或 doctor 运行失败 |
 
 额外约定：
 
@@ -287,8 +287,8 @@ P4-T1 固定了未来 JiSpec Console 可以只读读取的本地产物集合；P
 - Console read model 只读取本地 JiSpec artifacts，不替代 `verify`、`ci:verify`、policy evaluation 或 release compare。
 - Console read model 不要求上传源码；缺失 artifact 应显示为 `not available yet`，而不是扫描源码自行推断。
 - JSON、YAML、JSONL 和 lock 文件可作为机器输入；Markdown 只作为 human companion artifact 展示，不作为自动化解析契约。
-- 当前承诺的核心读取面包括 verify report、verify summary、CI summary、policy、waiver records、verify baseline、Greenfield current baseline、spec debt ledger、release baseline、release compare report、release drift trend、retakeover metrics、implementation handoff/patch mediation records 和 audit event ledger。
-- Console governance snapshot 聚合九类对象：policy posture、waiver lifecycle、spec debt ledger、contract drift、release baseline、verify trend、takeover quality trend、implementation mediation outcomes 和 audit events。缺失对象必须显示为 `not_available_yet`。
+- 当前承诺的核心读取面包括 verify report、verify summary、CI summary、policy、waiver records、verify baseline、Greenfield current baseline、source evolution、source review、requirement lifecycle、spec debt ledger、release baseline、release compare report、release drift trend、retakeover metrics、implementation handoff/patch mediation records 和 audit event ledger。
+- Console governance snapshot 聚合 policy posture、waiver lifecycle、spec debt ledger、source evolution governance、contract drift、release baseline、verify trend、takeover quality trend、implementation mediation outcomes、approval workflow、audit events 和 multi-repo export。缺失对象必须显示为 `not_available_yet`。
 - Audit event ledger 使用 `.spec/audit/events.jsonl`，每条事件包含 actor、reason、timestamp、source artifact 和 affected contract；它只提供治理追溯，不参与 blocking gate。
 - `jispec-cli console dashboard` 的第一屏是治理状态，围绕 mergeability、waiver、spec debt、contract drift、execute mediation 和 audit traceability 组织；它不上传源码、不运行 verify、不覆盖 `ci:verify` 结论。
 - `jispec-cli console actions` 只生成本地 CLI 动作建议和决策包，不执行命令、不写 artifact；实际写入仍必须经过 `waiver`、`spec-debt`、`policy`、`release` 等本地 CLI 命令并留下 audit event。
@@ -486,10 +486,10 @@ Policy migration 会把已知 deprecated key 迁到当前结构：
 | --- | --- |
 | `change --mode prompt` | 只记录 change session、lane 和 next commands，不自动执行 implement |
 | `change --mode execute` | 尝试自动进入 `implement -> verify`，但在 strict lane 存在 open bootstrap draft 时必须停在 adopt 边界 |
-| `change.default_mode: execute` | 当前项目默认值；doctor v1 会报告 execute-default mediation readiness，显式 `--mode prompt` 仍可降级 |
+| `change.default_mode: execute` | 当前项目默认值；doctor mainline 会报告 execute-default mediation readiness，显式 `--mode prompt` 仍可降级 |
 | `change default-mode show\|set\|reset` | 受控管理 `change.default_mode`，并为 set/reset 写入 `.jispec/change-default-mode-history.jsonl` |
 
-`doctor v1` 的 `Execute-Default Mediation Readiness` 检查会以人类决策包语言说明当前默认模式、mode 来源、是否建议使用 execute-default、open bootstrap draft adopt 边界、前置条件、blocker、warning 和 owner action。这个 readiness 只判断是否可以把 `change` 默认入口切到 implementation mediation，不表示 JiSpec 会自动生成业务代码。
+`doctor mainline` 的 `Execute-Default Mediation Readiness` 检查会以人类决策包语言说明当前默认模式、mode 来源、是否建议使用 execute-default、open bootstrap draft adopt 边界、前置条件、blocker、warning 和 owner action。这个 readiness 只判断是否可以把 `change` 默认入口切到 implementation mediation，不表示 JiSpec 会自动生成业务代码。
 
 `change default-mode set execute` 在写入配置前会检查四类 blocker：`.spec/policy.yaml` 缺失或无效、当前 `verify --json` blocking、项目 `change.default_mode` 配置损坏、external patch mediation/handoff 面不完整。open bootstrap draft 不阻止切换，但会输出 adopt-boundary warning，并要求 strict-lane 变更先执行 `adopt --interactive --session <id>`。
 
@@ -565,7 +565,7 @@ P4-T2 固定了 collaboration / presence / distributed 的冻结边界，详见 
 
 - distributed execution、collaboration workspace 和 presence awareness 仍是 `deferred` surface。
 - 这些 surface 的回归测试只允许保留在 `runtime-extended` 区域，用于防止已有实验腐化。
-- `doctor runtime` 可以继续诊断这些 surface；`doctor v1` 不得让它们参与 V1 readiness；`doctor pilot` 也不得把它们当作试点 readiness gate。
+- `doctor runtime` 可以继续诊断这些 surface；`doctor mainline` 不得让它们参与 V1 readiness；`doctor pilot` 也不得把它们当作试点 readiness gate。
 - 它们不得替代或覆盖 `verify`、`ci:verify`、policy evaluation、waiver lifecycle、release compare 或 implementation mediation。
 - 任何 future promotion 都必须显式更新冻结契约、稳定契约和主线验收标准。
 
@@ -577,7 +577,7 @@ M7-T5 增加最终本地验收套件 `north-star acceptance`。它写出 `.spec/
 
 - `north-star acceptance` 只读取和写出本地 JiSpec artifacts，不上传源码。
 - LLM 输出不得成为这个套件的 blocking decision source。
-- 它不替代 `verify`、`ci:verify`、`doctor v1`、`doctor runtime`、`doctor pilot` 或 `post-release:gate`；这些 gate 继续保留原有权威性。
+- 它不替代 `verify`、`ci:verify`、`doctor mainline`、`doctor runtime`、`doctor pilot` 或 `post-release:gate`；这些 gate 继续保留原有权威性。
 - Markdown decision packet 是人类 companion；机器消费者读取 JSON artifact。
 
 ## 12. 相关文档

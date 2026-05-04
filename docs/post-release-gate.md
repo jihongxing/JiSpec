@@ -13,7 +13,7 @@ npm run post-release:gate
 ```text
 npm run typecheck
 node --import tsx ./tools/jispec/tests/v1-mainline-golden-path.ts
-node --import tsx ./tools/jispec/tests/doctor-v1-readiness.ts
+node --import tsx ./tools/jispec/tests/doctor-mainline-readiness.ts
 node --import tsx ./tools/jispec/tests/regression-runner.ts
 npm run ci:verify
 ```

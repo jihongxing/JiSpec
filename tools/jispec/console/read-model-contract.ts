@@ -5,6 +5,7 @@ export type ConsoleGovernanceObjectId =
   | "policy_posture"
   | "waiver_lifecycle"
   | "spec_debt_ledger"
+  | "source_evolution_governance"
   | "contract_drift"
   | "release_baseline"
   | "verify_trend"
@@ -144,6 +145,42 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     stability: "local-contract",
     freshness: "project-state",
     readModelUse: "Current Greenfield baseline for requirements, contexts, contracts, scenarios, slices, assets, and handoff refs.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "greenfield-source-evolution",
+    pathPattern: ".spec/deltas/<change-id>/source-evolution.json",
+    producer: "source refresh",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Machine-readable source evolution summary for a change, including lifecycle-oriented added, modified, deprecated, split, merged, and reanchored items.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "greenfield-source-review",
+    pathPattern: ".spec/deltas/<change-id>/source-review.yaml",
+    producer: "source review adopt|reject|defer|waive",
+    format: "yaml",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Machine-readable source review decisions for a change, including adopted, deferred, waived, rejected, and proposed items with owner and expiration fields.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "greenfield-requirement-lifecycle",
+    pathPattern: ".spec/requirements/lifecycle.yaml",
+    producer: "source adopt",
+    format: "yaml",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Requirement lifecycle registry tracking active, modified, deprecated, split, merged, and replaced requirement states after source adoption.",
     machineReadable: true,
     parseMarkdown: false,
     sourceUploadRequired: false,
@@ -369,6 +406,20 @@ export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
     automationInputs: "json_yaml_jsonl_only",
     markdownDisplayOnly: true,
     readModelUse: "Show known Greenfield and bootstrap spec debt records without scanning source files.",
+  },
+  {
+    id: "source_evolution_governance",
+    label: "Source evolution governance",
+    sourceArtifactIds: [
+      "greenfield-current-baseline",
+      "greenfield-source-evolution",
+      "greenfield-source-review",
+      "greenfield-requirement-lifecycle",
+    ],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show active source evolution, review posture, lifecycle deltas, deferred or expired review decisions, and adoption readiness without scanning workspace docs.",
   },
   {
     id: "contract_drift",

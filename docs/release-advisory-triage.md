@@ -11,7 +11,7 @@
 - `npm run typecheck`
 - `npm run ci:verify`
 - `npm run post-release:gate`
-- `npm run jispec-cli -- doctor v1 --json`
+- `npm run jispec-cli -- doctor mainline --json`
 - `npm run jispec-cli -- doctor pilot --json`
 - `npm run jispec -- north-star acceptance --json`
 
@@ -88,7 +88,7 @@
 当前 release 可以使用下面口径：
 
 - 发布通过：`post-release:gate` 已通过
-- 主线能力状态：`north-star acceptance = 9/9`，`doctor v1` / `doctor pilot` 通过
+- 主线能力状态：`north-star acceptance = 9/9`，`doctor mainline` / `doctor pilot` 通过
 - verify 状态：`WARN_ADVISORY`
 - advisory 拆解：`0` 个真实能力缺口，`0` 个扫描边界噪音，`1` 个历史 bootstrap spec debt
 

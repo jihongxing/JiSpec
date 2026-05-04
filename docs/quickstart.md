@@ -8,14 +8,14 @@ From the JiSpec repository root:
 
 ```bash
 npm install
-npm run jispec -- doctor v1
+npm run jispec -- doctor mainline
 npm run jispec -- bootstrap discover --root examples/minimal-legacy-takeover --init-project
 ```
 
 What they do:
 
 - `npm install` prepares the local CLI runtime.
-- `doctor v1` checks whether the control layer is ready.
+- `doctor mainline` checks whether the control layer is ready.
 - `bootstrap discover` scans a repository and writes the first local evidence artifacts.
 
 No cloud account, source upload, or LLM gate is required.

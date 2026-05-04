@@ -24,6 +24,8 @@ export type LocalArtifactRefKind =
   | "spec_debt"
   | "implementation_handoff"
   | "console_governance"
+  | "multi_repo_governance"
+  | "repo_group_config"
   | "local_governance_artifact";
 
 export interface LocalArtifactRef {
@@ -74,6 +76,12 @@ function inferLocalArtifactKind(artifactPath: string): LocalArtifactRefKind {
   }
   if (normalized.startsWith(".jispec/handoff/")) {
     return "implementation_handoff";
+  }
+  if (normalized === ".spec/console/multi-repo-governance.json" || normalized === ".spec/console/multi-repo-governance.md") {
+    return "multi_repo_governance";
+  }
+  if (normalized === ".spec/console/repo-group.yaml") {
+    return "repo_group_config";
   }
   if (normalized.startsWith(".spec/console/")) {
     return "console_governance";

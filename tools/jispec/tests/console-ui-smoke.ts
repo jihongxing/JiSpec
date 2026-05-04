@@ -52,6 +52,7 @@ function main(): void {
       assert.match(html, /Policy posture/i);
       assert.match(html, /Waiver lifecycle/i);
       assert.match(html, /Spec debt ledger/i);
+      assert.match(html, /Source evolution governance/i);
       assert.match(html, /Contract drift/i);
       assert.match(html, /Release baseline/i);
       assert.match(html, /Verify trend/i);
@@ -195,6 +196,31 @@ function writeGovernanceFixture(root: string): void {
         status: "open",
         owner: "domain-owner",
         reason: "review behavior wording",
+      },
+    ],
+  });
+  writeYaml(root, ".spec/baselines/current.yaml", {
+    version: 1,
+    source_evolution: {
+      last_adopted_change_id: "chg-0",
+    },
+    requirement_lifecycle: {
+      path: ".spec/requirements/lifecycle.yaml",
+      last_adopted_change_id: "chg-0",
+    },
+  });
+  writeYaml(root, ".spec/requirements/lifecycle.yaml", {
+    version: 1,
+    registry_version: 2,
+    generated_at: "2026-05-01T00:00:00.000Z",
+    last_adopted_change_id: "chg-0",
+    requirements: [
+      {
+        id: "REQ-ORDER-001",
+        status: "active",
+        supersedes: [],
+        replaced_by: [],
+        merged_from: [],
       },
     ],
   });

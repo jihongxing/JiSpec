@@ -135,7 +135,7 @@ export function runGreenfieldSourceRefresh(options: GreenfieldSourceRefreshOptio
     technicalSolutionPath: technicalSolutionPath && fs.existsSync(technicalSolutionPath) ? normalizePath(technicalSolutionPath) : undefined,
     comparison: compareGreenfieldSourceManifests(resolvedActiveManifest.manifest, proposedManifest),
     proposedSnapshotId: readSnapshotId(proposedManifest),
-    nextCommand: `Review .spec/deltas/${changeId}/source-evolution.md`,
+    nextCommand: `jispec-cli source diff --root ${normalizePath(root)} --change ${changeId}`,
   };
 }
 

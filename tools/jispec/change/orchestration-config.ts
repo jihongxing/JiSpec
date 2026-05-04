@@ -228,7 +228,7 @@ function evaluateProjectConfigPrecondition(resolution: ChangeDefaultModeResoluti
       id: "project_config",
       status: "blocker",
       message: resolution.warnings.join("; "),
-      ownerAction: "Fix jiproject/project.yaml so change.default_mode is either prompt or execute, then rerun doctor v1.",
+      ownerAction: "Fix jiproject/project.yaml so change.default_mode is either prompt or execute, then rerun doctor mainline.",
     };
   }
 

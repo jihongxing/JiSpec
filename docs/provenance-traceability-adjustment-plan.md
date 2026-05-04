@@ -68,7 +68,7 @@
 
 把门禁分成两条线：
 
-- 产品能力线：`verify`、`doctor v1`、`post-release:gate`
+- 产品能力线：`verify`、`doctor mainline`、`post-release:gate`
 - 运维证据线：`agent discipline`、session completion、handoff replay
 
 `AGENT_DISCIPLINE_INCOMPLETE` 不应该和业务文档漂移混成同一种能力失败。

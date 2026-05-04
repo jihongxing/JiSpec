@@ -54,17 +54,23 @@ Add `.spec/console/repo-group.yaml` when a workspace wants to describe known ups
 repos:
   - id: api
     role: upstream
+    repoName: Billing API
+    owner: contracts-team
     path: repos/api
     upstreamContractRefs: []
     downstreamContractRefs:
       - web:contracts/payment.yaml
   - id: web
     role: downstream
+    repoName: Checkout Web
+    owner: frontend-team
     path: repos/web
     upstreamContractRefs:
       - api:contracts/payment.yaml
     downstreamContractRefs: []
 ```
+
+`repoName` and `owner` are optional metadata used to turn passive drift hints into a named owner-action loop.
 
 Repo group entries are local metadata for the aggregate. If a configured repo has not exported `.spec/console/governance-snapshot.json`, the aggregate records that repo as `not_available_yet`.
 
@@ -72,7 +78,29 @@ Repo group entries are local metadata for the aggregate. If a configured repo ha
 
 When both upstream and downstream snapshots expose matching `aggregateHints.contractRefs` with different hashes, the aggregate writes `contractDriftHints` and `ownerActions` to `.spec/console/multi-repo-governance.json` and renders them in `.spec/console/multi-repo-governance.md`.
 
-These hints are owner-review prompts and suggested commands only. They do not replace any single-repo `verify` or `ci:verify` gate, and they cannot make a repo mergeable or non-mergeable by themselves.
+`contractDriftHints` stay as passive evidence objects:
+
+- upstream repo, downstream repo, contract ref, and mismatched hashes
+- linked `ownerActionId`
+- downstream evidence such as snapshot path, repo path, active source change id, and release drift status
+- `blockingGateReplacement: false`
+
+`ownerActions` are the explicit remediation packets:
+
+- one downstream repo owner at a time
+- a primary repo-local command
+- a follow-up `console export-governance` command
+- source artifacts and affected contracts for review
+- `blockingGateReplacement: false`
+
+Primary command selection is intentionally local and deterministic:
+
+- prefer `source refresh` when the downstream repo already has an active source evolution change
+- otherwise prefer `release compare` when the downstream repo already shows release drift
+- otherwise open a normal downstream `change`
+- after any of the above, re-run `console export-governance` in that repo so the aggregate can be refreshed from local truth
+
+These hints and owner actions are review prompts plus suggested commands only. They do not replace any single-repo `verify` or `ci:verify` gate, and they cannot make a repo mergeable or non-mergeable by themselves.
 
 ## What It Shows
 
@@ -83,6 +111,7 @@ These hints are owner-review prompts and suggested commands only. They do not re
 - open Greenfield and bootstrap spec debt
 - release drift hotspots
 - cross-repo contract drift hints
+- cross-repo owner actions
 - latest audit actors
 - missing snapshot inputs
 

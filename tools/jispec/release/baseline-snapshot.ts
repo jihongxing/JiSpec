@@ -25,6 +25,12 @@ import {
   renderHumanDecisionSnapshot,
 } from "../human-decision-packet";
 import { splitDecisionCompanionSections } from "../companion/decision-sections";
+import type {
+  CrossRepoContractDriftHint,
+  MultiRepoGovernanceAggregate,
+  MultiRepoGovernanceRepoPosture,
+  MultiRepoOwnerAction,
+} from "../console/multi-repo";
 
 export interface ReleaseSnapshotOptions {
   root: string;
@@ -84,11 +90,86 @@ export interface ReleaseCompareResult {
   diffs: BaselineDiff[];
   graphDiff: MerkleContractDagDiff;
   driftSummary: ReleaseDriftSummary;
+  globalContext: ReleaseCompareGlobalContext;
   comparedAt: string;
   driftTrendJsonPath: string;
   driftTrendMarkdownPath: string;
   driftTrend: ReleaseDriftTrendSummary;
   replay: ReplayMetadata;
+}
+
+export type ReleaseCompareGlobalContextStatus = "available" | "not_available_yet";
+
+export interface ReleaseCompareGlobalContext {
+  kind: "release_compare_global_context";
+  status: ReleaseCompareGlobalContextStatus;
+  summary: string;
+  boundary: {
+    declaredArtifactConsumer: true;
+    consumesRequirementEvolutionArtifacts: true;
+    consumesMultiRepoAggregateArtifact: boolean;
+    scansSourceCode: false;
+    runsVerify: false;
+    replacesCliGate: false;
+    markdownIsMachineApi: false;
+  };
+  details: {
+    aggregatePath?: string;
+    aggregateGeneratedAt?: string;
+    lifecycleRegistryDelta: {
+      fromPath?: string;
+      toPath?: string;
+      fromVersion?: number;
+      toVersion?: number;
+      changed: boolean;
+    };
+    sourceEvolutionArtifacts: {
+      fromSourceEvolutionPath?: string;
+      toSourceEvolutionPath?: string;
+      fromSourceReviewPath?: string;
+      toSourceReviewPath?: string;
+      fromActiveSnapshotId?: string;
+      toActiveSnapshotId?: string;
+      fromLastAdoptedChangeId?: string | null;
+      toLastAdoptedChangeId?: string | null;
+    };
+    representativeArtifacts: string[];
+    repoPosture?: ReleaseCompareRepoPostureContext;
+    relevantContractDriftHints: CrossRepoContractDriftHint[];
+    relevantOwnerActions: MultiRepoOwnerAction[];
+    ownerReviewRecommendations: ReleaseCompareOwnerReviewRecommendation[];
+  };
+}
+
+export interface ReleaseCompareRepoPostureContext {
+  repoId: string;
+  repoName: string;
+  repoRoot: string;
+  snapshotPath: string;
+  sourceEvolutionChangeId: string;
+  sourceEvolutionBlockingOpenItems: number;
+  sourceEvolutionExpiredExceptions: number;
+  sourceEvolutionRepresentativeArtifact: string;
+  lastAdoptedSourceChange: string;
+  lifecycleDeltaCounts: Record<string, number>;
+  releaseDriftStatus: string;
+  releaseDriftTrendComparisons: number;
+}
+
+export interface ReleaseCompareOwnerReviewRecommendation {
+  id: string;
+  severity: "owner_review";
+  reason:
+    | "source_evolution_blocking_open_items"
+    | "source_evolution_expired_exceptions"
+    | "cross_repo_contract_drift"
+    | "owner_action_ready";
+  summary: string;
+  suggestedCommand?: string;
+  relatedHintId?: string;
+  relatedOwnerActionId?: string;
+  sourceEvolutionChangeId?: string;
+  representativeArtifact?: string;
 }
 
 export interface BaselineDiff {
@@ -423,6 +504,10 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     fromPolicy: resolveComparablePolicy(root, options.from, fromBaseline),
     toPolicy: resolveComparablePolicy(root, options.to, toBaseline),
   });
+  const globalContext = buildReleaseCompareGlobalContext({
+    root,
+    driftSummary,
+  });
   const compareReportDir = resolveCompareReportDir(root, options.from, options.to);
   const compareReportJsonPath = path.join(compareReportDir, "compare-report.json");
   const compareReportMarkdownPath = path.join(compareReportDir, "compare-report.md");
@@ -444,6 +529,7 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
     diffs,
     graphDiff,
     driftSummary,
+    globalContext,
     comparedAt,
     driftTrendJsonPath: normalizePath(driftTrendJsonPath),
     driftTrendMarkdownPath: normalizePath(driftTrendMarkdownPath),
@@ -483,6 +569,9 @@ export function compareReleaseBaselines(options: ReleaseCompareOptions): Release
       to: options.to,
       identical: result.identical,
       driftStatus: result.driftSummary.overallStatus,
+      globalContextStatus: result.globalContext.status,
+      ownerReviewRecommendationCount: result.globalContext.details.ownerReviewRecommendations.length,
+      relevantContractDriftHintCount: result.globalContext.details.relevantContractDriftHints.length,
       driftTrendPath: normalizePath(path.relative(root, driftTrendJsonPath)),
       diffCount: result.diffs.length,
     },
@@ -572,16 +661,19 @@ export function renderReleaseCompareText(result: ReleaseCompareResult): string {
   lines.push("", "## Requirement Evolution");
   lines.push(...renderRequirementEvolutionDriftLines(result.driftSummary.requirementEvolution));
 
+  lines.push("", "## Global Closure Context");
+  lines.push(...renderReleaseCompareGlobalContextLines(result.globalContext));
+
   lines.push("", "## Drift Trend");
   lines.push(`Comparisons: ${result.driftTrend.compareCount}`);
   lines.push(`Changed comparisons: ${result.driftTrend.changedCompareCount}`);
   lines.push(`Latest trend status: ${result.driftTrend.latest?.overallStatus ?? "not_available_yet"}`);
   lines.push(`Contract graph changed: ${result.driftTrend.surfaces.contractGraph.changed}`);
-  lines.push("", "## Replay / Provenance");
-  lines.push(...renderReplayMarkdown(result.replay));
   lines.push(`Static collector changed: ${result.driftTrend.surfaces.staticCollector.changed}`);
   lines.push(`Behavior changed: ${result.driftTrend.surfaces.behavior.changed}`);
   lines.push(`Policy changed: ${result.driftTrend.surfaces.policy.changed}`);
+  lines.push("", "## Replay / Provenance");
+  lines.push(...renderReplayMarkdown(result.replay));
 
   if (result.graphDiff.changedNodeContent.length > 0) {
     lines.push("", "Changed node content:");
@@ -1266,6 +1358,283 @@ function summarizeRequirementEvolutionDrift(
   };
 }
 
+function buildReleaseCompareGlobalContext(input: {
+  root: string;
+  driftSummary: ReleaseDriftSummary;
+}): ReleaseCompareGlobalContext {
+  const requirementDetails = input.driftSummary.requirementEvolution.details;
+  const lifecycleRegistryDelta = {
+    fromPath: stringValue(requirementDetails.from_lifecycle_registry_path),
+    toPath: stringValue(requirementDetails.to_lifecycle_registry_path),
+    fromVersion: numberValue(requirementDetails.from_lifecycle_registry_version),
+    toVersion: numberValue(requirementDetails.to_lifecycle_registry_version),
+    changed:
+      !sameNullableString(
+        stringValue(requirementDetails.from_lifecycle_registry_path),
+        stringValue(requirementDetails.to_lifecycle_registry_path),
+      ) ||
+      !sameNullableNumber(
+        numberValue(requirementDetails.from_lifecycle_registry_version),
+        numberValue(requirementDetails.to_lifecycle_registry_version),
+      ),
+  };
+  const sourceEvolutionArtifacts = {
+    fromSourceEvolutionPath: stringValue(requirementDetails.from_source_evolution_path),
+    toSourceEvolutionPath: stringValue(requirementDetails.to_source_evolution_path),
+    fromSourceReviewPath: stringValue(requirementDetails.from_source_review_path),
+    toSourceReviewPath: stringValue(requirementDetails.to_source_review_path),
+    fromActiveSnapshotId: stringValue(requirementDetails.from_active_snapshot_id),
+    toActiveSnapshotId: stringValue(requirementDetails.to_active_snapshot_id),
+    fromLastAdoptedChangeId: nullableStringValue(requirementDetails.from_last_adopted_change_id) ?? null,
+    toLastAdoptedChangeId: nullableStringValue(requirementDetails.to_last_adopted_change_id) ?? null,
+  };
+  const aggregatePath = path.join(input.root, ".spec", "console", "multi-repo-governance.json");
+  const aggregate = readMultiRepoGovernanceAggregate(aggregatePath);
+  const boundary = {
+    declaredArtifactConsumer: true as const,
+    consumesRequirementEvolutionArtifacts: true as const,
+    consumesMultiRepoAggregateArtifact: Boolean(aggregate),
+    scansSourceCode: false as const,
+    runsVerify: false as const,
+    replacesCliGate: false as const,
+    markdownIsMachineApi: false as const,
+  };
+
+  if (!aggregate) {
+    return {
+      kind: "release_compare_global_context",
+      status: "not_available_yet",
+      summary: "Multi-repo governance aggregate is not available; release compare stays a local artifact consumer with requirement evolution context only.",
+      boundary,
+      details: {
+        aggregatePath: fs.existsSync(aggregatePath) ? normalizePath(aggregatePath) : normalizePath(path.relative(input.root, aggregatePath)),
+        lifecycleRegistryDelta,
+        sourceEvolutionArtifacts,
+        representativeArtifacts: collectRepresentativeArtifacts(undefined, lifecycleRegistryDelta, sourceEvolutionArtifacts),
+        relevantContractDriftHints: [],
+        relevantOwnerActions: [],
+        ownerReviewRecommendations: [],
+      },
+    };
+  }
+
+  const repoPosture = findLocalRepoPosture(aggregate, input.root);
+  const representativeArtifacts = collectRepresentativeArtifacts(repoPosture, lifecycleRegistryDelta, sourceEvolutionArtifacts);
+  const relevantContractDriftHints = rankRelevantContractDriftHints(
+    aggregate.contractDriftHints.filter((hint) => matchesRootPath(hint.evidence.downstreamRepoPath, input.root)),
+    representativeArtifacts,
+  );
+  const relevantOwnerActions = rankRelevantOwnerActions(
+    aggregate.ownerActions.filter((action) => matchesRootPath(action.repoPath, input.root)),
+    representativeArtifacts,
+  );
+  const ownerReviewRecommendations = buildReleaseCompareOwnerReviewRecommendations({
+    driftSummary: input.driftSummary,
+    repoPosture,
+    relevantContractDriftHints,
+    relevantOwnerActions,
+  });
+
+  return {
+    kind: "release_compare_global_context",
+    status: "available",
+    summary: buildReleaseCompareGlobalContextSummary({
+      repoPosture,
+      relevantContractDriftHints,
+      relevantOwnerActions,
+      ownerReviewRecommendations,
+    }),
+    boundary,
+    details: {
+      aggregatePath: normalizePath(path.relative(input.root, aggregatePath)),
+      aggregateGeneratedAt: aggregate.generatedAt,
+      lifecycleRegistryDelta,
+      sourceEvolutionArtifacts,
+      representativeArtifacts,
+      repoPosture: repoPosture
+        ? {
+            repoId: repoPosture.repoId,
+            repoName: repoPosture.repoName,
+            repoRoot: repoPosture.repoRoot,
+            snapshotPath: repoPosture.snapshotPath,
+            sourceEvolutionChangeId: repoPosture.sourceEvolutionChangeId,
+            sourceEvolutionBlockingOpenItems: repoPosture.sourceEvolutionBlockingOpenItems,
+            sourceEvolutionExpiredExceptions: repoPosture.sourceEvolutionExpiredExceptions,
+            sourceEvolutionRepresentativeArtifact: repoPosture.sourceEvolutionRepresentativeArtifact,
+            lastAdoptedSourceChange: repoPosture.lastAdoptedSourceChange,
+            lifecycleDeltaCounts: repoPosture.lifecycleDeltaCounts,
+            releaseDriftStatus: repoPosture.releaseDriftStatus,
+            releaseDriftTrendComparisons: repoPosture.releaseDriftTrendComparisons,
+          }
+        : undefined,
+      relevantContractDriftHints,
+      relevantOwnerActions,
+      ownerReviewRecommendations,
+    },
+  };
+}
+
+function buildReleaseCompareGlobalContextSummary(input: {
+  repoPosture?: MultiRepoGovernanceRepoPosture;
+  relevantContractDriftHints: CrossRepoContractDriftHint[];
+  relevantOwnerActions: MultiRepoOwnerAction[];
+  ownerReviewRecommendations: ReleaseCompareOwnerReviewRecommendation[];
+}): string {
+  const clauses = [
+    input.repoPosture ? `aggregate posture matched for ${input.repoPosture.repoName}` : "aggregate present without a matched local repo posture",
+    `${input.relevantContractDriftHints.length} relevant contract drift hint(s)`,
+    `${input.relevantOwnerActions.length} owner action(s)`,
+    `${input.ownerReviewRecommendations.length} owner-review recommendation(s)`,
+  ];
+  return `Release compare consumed aggregate governance context: ${clauses.join("; ")}.`;
+}
+
+function collectRepresentativeArtifacts(
+  repoPosture: MultiRepoGovernanceRepoPosture | undefined,
+  lifecycleRegistryDelta: ReleaseCompareGlobalContext["details"]["lifecycleRegistryDelta"],
+  sourceEvolutionArtifacts: ReleaseCompareGlobalContext["details"]["sourceEvolutionArtifacts"],
+): string[] {
+  return stableUnique([
+    repoPosture?.sourceEvolutionRepresentativeArtifact,
+    lifecycleRegistryDelta.toPath,
+    sourceEvolutionArtifacts.toSourceEvolutionPath,
+    sourceEvolutionArtifacts.toSourceReviewPath,
+    lifecycleRegistryDelta.fromPath,
+    sourceEvolutionArtifacts.fromSourceEvolutionPath,
+    sourceEvolutionArtifacts.fromSourceReviewPath,
+  ].filter((value): value is string => Boolean(value) && value !== "not_available_yet"));
+}
+
+function rankRelevantContractDriftHints(
+  hints: CrossRepoContractDriftHint[],
+  representativeArtifacts: string[],
+): CrossRepoContractDriftHint[] {
+  return [...hints].sort((left, right) =>
+    compareArtifactPriority(left.contractRef, right.contractRef, representativeArtifacts) ||
+    left.contractRef.localeCompare(right.contractRef) ||
+    left.upstreamRepoId.localeCompare(right.upstreamRepoId) ||
+    left.downstreamRepoId.localeCompare(right.downstreamRepoId),
+  );
+}
+
+function rankRelevantOwnerActions(
+  actions: MultiRepoOwnerAction[],
+  representativeArtifacts: string[],
+): MultiRepoOwnerAction[] {
+  return [...actions].sort((left, right) =>
+    compareArtifactPriority(
+      left.affectedContracts[0] ?? left.sourceArtifacts[0],
+      right.affectedContracts[0] ?? right.sourceArtifacts[0],
+      representativeArtifacts,
+    ) ||
+    (left.affectedContracts[0] ?? left.id).localeCompare(right.affectedContracts[0] ?? right.id),
+  );
+}
+
+function compareArtifactPriority(
+  left: string | undefined,
+  right: string | undefined,
+  representativeArtifacts: string[],
+): number {
+  const rank = (value: string | undefined): number => {
+    if (!value) {
+      return 2;
+    }
+    const index = representativeArtifacts.indexOf(value);
+    return index === -1 ? 1 : index;
+  };
+  return rank(left) - rank(right);
+}
+
+function buildReleaseCompareOwnerReviewRecommendations(input: {
+  driftSummary: ReleaseDriftSummary;
+  repoPosture?: MultiRepoGovernanceRepoPosture;
+  relevantContractDriftHints: CrossRepoContractDriftHint[];
+  relevantOwnerActions: MultiRepoOwnerAction[];
+}): ReleaseCompareOwnerReviewRecommendation[] {
+  if (input.driftSummary.overallStatus !== "changed") {
+    return [];
+  }
+
+  const recommendations: ReleaseCompareOwnerReviewRecommendation[] = [];
+  const repo = input.repoPosture;
+  if (repo && repo.sourceEvolutionBlockingOpenItems > 0) {
+    recommendations.push({
+      id: "source-evolution-blocking-open-items",
+      severity: "owner_review",
+      reason: "source_evolution_blocking_open_items",
+      summary: `Release drift changed while source evolution still has ${repo.sourceEvolutionBlockingOpenItems} blocking open item(s).`,
+      sourceEvolutionChangeId: repo.sourceEvolutionChangeId,
+      representativeArtifact: repo.sourceEvolutionRepresentativeArtifact,
+      suggestedCommand: input.relevantOwnerActions[0]?.primaryCommand.command ?? input.relevantContractDriftHints[0]?.suggestedCommand,
+      relatedOwnerActionId: input.relevantOwnerActions[0]?.id,
+      relatedHintId: input.relevantContractDriftHints[0]?.id,
+    });
+  }
+  if (repo && repo.sourceEvolutionExpiredExceptions > 0) {
+    recommendations.push({
+      id: "source-evolution-expired-exceptions",
+      severity: "owner_review",
+      reason: "source_evolution_expired_exceptions",
+      summary: `Release drift changed while source evolution carries ${repo.sourceEvolutionExpiredExceptions} expired exception(s).`,
+      sourceEvolutionChangeId: repo.sourceEvolutionChangeId,
+      representativeArtifact: repo.sourceEvolutionRepresentativeArtifact,
+      suggestedCommand: input.relevantOwnerActions[0]?.primaryCommand.command ?? input.relevantContractDriftHints[0]?.suggestedCommand,
+      relatedOwnerActionId: input.relevantOwnerActions[0]?.id,
+      relatedHintId: input.relevantContractDriftHints[0]?.id,
+    });
+  }
+  if (input.relevantContractDriftHints.length > 0) {
+    const hint = input.relevantContractDriftHints[0];
+    recommendations.push({
+      id: "cross-repo-contract-drift",
+      severity: "owner_review",
+      reason: "cross_repo_contract_drift",
+      summary: `Cross-repo contract drift on ${hint.contractRef} overlaps this release drift and should be owner-reviewed before promotion.`,
+      suggestedCommand: hint.suggestedCommand,
+      relatedHintId: hint.id,
+      relatedOwnerActionId: hint.ownerActionId,
+      representativeArtifact: hint.contractRef,
+    });
+  }
+  if (input.relevantOwnerActions.length > 0) {
+    const action = input.relevantOwnerActions[0];
+    recommendations.push({
+      id: "owner-action-ready",
+      severity: "owner_review",
+      reason: "owner_action_ready",
+      summary: `An owner action is already prepared for ${action.contractRef}; release triage should review it with the source evolution state.`,
+      suggestedCommand: action.primaryCommand.command,
+      relatedOwnerActionId: action.id,
+      representativeArtifact: action.contractRef,
+    });
+  }
+
+  return recommendations;
+}
+
+function findLocalRepoPosture(
+  aggregate: MultiRepoGovernanceAggregate,
+  root: string,
+): MultiRepoGovernanceRepoPosture | undefined {
+  const normalizedRoot = normalizePath(root);
+  return aggregate.repos.find((repo) =>
+    matchesRootPath(repo.repoRoot, normalizedRoot) ||
+    matchesRootPath(repo.snapshotPath, path.join(root, ".spec", "console", "governance-snapshot.json")),
+  );
+}
+
+function readMultiRepoGovernanceAggregate(aggregatePath: string): MultiRepoGovernanceAggregate | undefined {
+  const parsed = readJsonObject(aggregatePath);
+  if (!parsed) {
+    return undefined;
+  }
+  if (parsed.schemaVersion !== 1 || parsed.kind !== "jispec-multi-repo-governance-aggregate") {
+    return undefined;
+  }
+  return parsed as unknown as MultiRepoGovernanceAggregate;
+}
+
 function buildRequirementEvolutionChangedSummary(input: {
   fromState: RequirementEvolutionStateSnapshot;
   toState: RequirementEvolutionStateSnapshot;
@@ -1499,6 +1868,45 @@ function renderRequirementEvolutionStateLines(summary: BaselineSurfaceSummary): 
     `- Source review artifact: \`${stringValue(details.source_review_path) ?? "not recorded"}\``,
     `- Applied deltas: ${renderInlineList(stringArray(details.applied_deltas))}`,
   ];
+}
+
+function renderReleaseCompareGlobalContextLines(summary: ReleaseCompareGlobalContext): string[] {
+  const lines = [
+    `Status: ${summary.status}`,
+    `Summary: ${summary.summary}`,
+    `Declared artifact consumer: ${summary.boundary.declaredArtifactConsumer ? "yes" : "no"}`,
+    `Consumes aggregate artifact: ${summary.boundary.consumesMultiRepoAggregateArtifact ? "yes" : "no"}`,
+    `Scans source code: ${summary.boundary.scansSourceCode ? "yes" : "no"}`,
+    `Replaces CLI gate: ${summary.boundary.replacesCliGate ? "yes" : "no"}`,
+    `Aggregate artifact: ${summary.details.aggregatePath ?? "not recorded"}`,
+  ];
+  if (summary.details.aggregateGeneratedAt) {
+    lines.push(`Aggregate generated at: ${summary.details.aggregateGeneratedAt}`);
+  }
+  const repo = summary.details.repoPosture;
+  if (repo) {
+    lines.push(`Local repo posture: ${repo.repoName} (${repo.repoId})`);
+    lines.push(`Source evolution change: ${repo.sourceEvolutionChangeId}`);
+    lines.push(`Blocking open items: ${repo.sourceEvolutionBlockingOpenItems}`);
+    lines.push(`Expired exceptions: ${repo.sourceEvolutionExpiredExceptions}`);
+    lines.push(`Representative artifact: ${repo.sourceEvolutionRepresentativeArtifact}`);
+    lines.push(`Release drift trend comparisons: ${repo.releaseDriftTrendComparisons}`);
+  }
+  lines.push(`Lifecycle registry delta: ${formatTransition(
+    summary.details.lifecycleRegistryDelta.fromPath,
+    summary.details.lifecycleRegistryDelta.toPath,
+    formatVersion(summary.details.lifecycleRegistryDelta.fromVersion),
+    formatVersion(summary.details.lifecycleRegistryDelta.toVersion),
+  )}`);
+  pushNamedList(lines, "Representative artifacts", summary.details.representativeArtifacts);
+  pushNamedList(lines, "Relevant contract drift hints", summary.details.relevantContractDriftHints.map((hint) =>
+    `${hint.contractRef} (${hint.upstreamRepoId} -> ${hint.downstreamRepoId})`
+  ));
+  pushNamedList(lines, "Owner actions", summary.details.relevantOwnerActions.map((action) =>
+    `${action.repoName}: ${action.summary}`
+  ));
+  pushNamedList(lines, "Owner-review recommendations", summary.details.ownerReviewRecommendations.map((entry) => entry.summary));
+  return lines;
 }
 
 function summarizeReleaseBaseline(baseline: BaselineDocument): ReleaseBaselineSummary {
@@ -2049,6 +2457,13 @@ function sameNullableString(left: string | undefined, right: string | undefined)
 
 function sameNullableNumber(left: number | undefined, right: number | undefined): boolean {
   return (left ?? null) === (right ?? null);
+}
+
+function matchesRootPath(candidate: string | undefined, root: string): boolean {
+  if (!candidate) {
+    return false;
+  }
+  return normalizePath(candidate) === normalizePath(root);
 }
 
 function stableUnique(values: string[]): string[] {

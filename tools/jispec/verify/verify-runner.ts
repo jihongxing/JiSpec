@@ -216,9 +216,12 @@ function buildImpactGraphMetadata(root: string): Record<string, unknown> {
     return {
       impactGraphFreshness: impactSummary.freshness.status,
       impactGraphPath: impactSummary.artifacts.impactGraphPath,
+      impactReportPath: impactSummary.artifacts.impactReportPath,
+      verifyFocusPath: impactSummary.artifacts.verifyFocusPath,
       impactGraphFreshnessReason: impactSummary.freshness.reason,
       impactGraphFreshnessGeneratedAt: impactSummary.freshness.generatedAt,
       impactGraphChangedFiles: impactSummary.changedFiles,
+      impactGraphImpactedFiles: impactSummary.impactedFiles,
       impactGraphContractRefs: impactSummary.contractRefs,
       impactGraphScopeHints: impactSummary.scopeHints,
       impactGraphMissingVerificationHints: impactSummary.missingVerificationHints,

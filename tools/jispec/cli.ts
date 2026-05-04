@@ -26,7 +26,17 @@ import {
 import { renderVerifyJSON, renderVerifyText, runVerify, type VerifyRunOptions } from "./verify/verify-runner";
 import { buildVerifyReport } from "./ci/verify-report";
 import { writeLocalVerifySummary } from "./ci/verify-summary";
-import { createWaiver, listWaivers, renewWaiver, revokeWaiver, type WaiverCreateOptions, type WaiverCreateResult } from "./verify/waiver-store";
+import { renderHumanDecisionSnapshotText } from "./human-decision-packet";
+import {
+  createWaiver,
+  listWaivers,
+  renewWaiver,
+  revokeWaiver,
+  type VerifyWaiver,
+  type WaiverCreateOptions,
+  type WaiverCreateResult,
+  type WaiverRevokeResult,
+} from "./verify/waiver-store";
 import { runChangeCommand, renderChangeCommandJSON, type ChangeCommandOptions } from "./change/change-command";
 import {
   renderChangeDefaultModeJSON,
@@ -47,6 +57,11 @@ import {
   type ApprovalSubjectKind,
 } from "./policy/approval";
 import { renderGreenfieldInitText, runGreenfieldInit, type GreenfieldInitOptions, type GreenfieldInitResult } from "./greenfield/init";
+import {
+  renderGreenfieldSourceDiffText,
+  runGreenfieldSourceDiff,
+  type GreenfieldSourceDiffResult,
+} from "./greenfield/source-diff";
 import {
   renderGreenfieldSourceRefreshText,
   runGreenfieldSourceRefresh,
@@ -75,6 +90,7 @@ import {
 import {
   markGreenfieldSpecDebtOwnerReview,
   updateGreenfieldSpecDebtStatus,
+  type GreenfieldSpecDebtRecord,
 } from "./greenfield/spec-debt-ledger";
 import {
   compareReleaseBaselines,
@@ -152,6 +168,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli verify [--json]",
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
     "  jispec-cli source refresh [--change <id|latest>] [--json]",
+    "  jispec-cli source diff [--change <id|latest>] [--json]",
     "  jispec-cli source review list|adopt|reject|defer|waive [--change <id|latest>] [--json]",
     "  jispec-cli source adopt [--change <id|latest>] [--json]",
     "  jispec-cli change default-mode show|set|reset [--json]",
@@ -177,7 +194,8 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli adopt --interactive [--json]",
     "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--owner <owner>] [--reviewer <reviewer...>] [--json]",
     "  jispec-cli policy approval status|record [--json]",
-    "  jispec-cli doctor v1",
+    "  jispec-cli doctor mainline",
+    "  jispec-cli doctor global",
     "  jispec-cli doctor runtime",
     "  jispec-cli doctor pilot",
     "  jispec-cli --version",
@@ -198,6 +216,7 @@ function buildLegacySurfaceHelpText(): string {
     "  jispec-cli pipeline ...",
     "  jispec-cli template ...",
     "  jispec-cli dependency ...",
+    "  jispec-cli doctor v1 (legacy alias for doctor mainline)",
     "",
     "Compatibility aliases:",
     "  jispec-cli validate",
@@ -276,14 +295,15 @@ function registerDoctorCommands(program: Command): void {
   const doctor = program.command("doctor").description("Run JiSpec-CLI health checks and readiness diagnostics.");
 
   doctor
-    .command("v1")
-    .description("Check V1 mainline readiness without blocking on deferred distributed or collaboration surfaces.")
+    .command("mainline")
+    .alias("v1")
+    .description("Check mainline readiness without blocking on deferred distributed or collaboration surfaces.")
     .option("--root <path>", "Repository root.", ".")
     .option("--json", "Emit machine-readable JSON output.", false)
     .action(async (options: { root: string; json: boolean }) => {
       try {
         const doctorInstance = new Doctor(path.resolve(options.root));
-        const report = await doctorInstance.checkV1Mainline();
+        const report = await doctorInstance.checkMainlineReadiness();
 
         if (options.json) {
           console.log(Doctor.formatJSON(report));
@@ -294,7 +314,31 @@ function registerDoctorCommands(program: Command): void {
         process.exitCode = report.ready ? 0 : 1;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error(`Doctor v1 check failed: ${message}`);
+        console.error(`Doctor mainline check failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  doctor
+    .command("global")
+    .description("Check broader closure-loop readiness without changing doctor mainline semantics.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action(async (options: { root: string; json: boolean }) => {
+      try {
+        const doctorInstance = new Doctor(path.resolve(options.root));
+        const report = await doctorInstance.checkGlobalReadiness();
+
+        if (options.json) {
+          console.log(Doctor.formatJSON(report));
+        } else {
+          console.log(Doctor.formatText(report));
+        }
+
+        process.exitCode = report.ready ? 0 : 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Doctor global check failed: ${message}`);
         process.exitCode = 1;
       }
     });
@@ -527,7 +571,7 @@ function registerWaiverCommands(program: Command): void {
           expiresAt: options.expiresAt,
         } satisfies WaiverCreateOptions);
 
-        renderWaiverCreateResult(result, options.json);
+        renderWaiverCreateResult(path.resolve(options.root), result, options.json);
         process.exitCode = 0;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -609,10 +653,7 @@ function registerWaiverCommands(program: Command): void {
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
         } else {
-          console.log(`Waiver revoked successfully:`);
-          console.log(`  ID: ${result.waiver.id}`);
-          console.log(`  Revoked by: ${result.waiver.revokedBy}`);
-          console.log(`  Reason: ${result.waiver.revokeReason}`);
+          console.log(renderWaiverRevokeResultText(path.resolve(options.root), result));
         }
         process.exitCode = 0;
       } catch (error) {
@@ -641,10 +682,7 @@ function registerWaiverCommands(program: Command): void {
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
         } else {
-          console.log("Waiver renewed successfully:");
-          console.log(`  ID: ${result.waiver.id}`);
-          console.log(`  Expires: ${result.waiver.expiresAt}`);
-          console.log(`  File: ${result.filePath}`);
+          console.log(renderWaiverRenewResultText(path.resolve(options.root), result));
         }
         process.exitCode = 0;
       } catch (error) {
@@ -958,11 +996,7 @@ function registerSpecDebtCommands(program: Command): void {
         if (options.json) {
           console.log(JSON.stringify({ record }, null, 2));
         } else {
-          console.log("Spec debt owner review recorded:");
-          console.log(`  ID: ${record.id}`);
-          console.log(`  Owner: ${record.owner}`);
-          console.log(`  Requested by: ${record.owner_review?.requested_by}`);
-          console.log(`  Reason: ${record.owner_review?.reason}`);
+          console.log(renderSpecDebtOwnerReviewText(path.resolve(options.root), record));
         }
         process.exitCode = 0;
       } catch (error) {
@@ -993,10 +1027,7 @@ function registerSpecDebtStatusCommand(specDebt: Command, action: "repay" | "can
         if (options.json) {
           console.log(JSON.stringify({ record }, null, 2));
         } else {
-          console.log(`Spec debt ${action === "repay" ? "repaid" : "cancelled"}:`);
-          console.log(`  ID: ${record.id}`);
-          console.log(`  Status: ${record.status}`);
-          console.log(`  Owner: ${record.owner}`);
+          console.log(renderSpecDebtStatusText(path.resolve(options.root), record));
         }
         process.exitCode = 0;
       } catch (error) {
@@ -1092,14 +1123,190 @@ function registerReviewTransitionCommand(review: Command, action: GreenfieldRevi
     });
 }
 
-function renderWaiverCreateResult(result: WaiverCreateResult, json: boolean): void {
+function renderWaiverCreateResult(root: string, result: WaiverCreateResult, json: boolean): void {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else {
-    console.log(`Waiver created successfully:`);
-    console.log(`  ID: ${result.waiver.id}`);
-    console.log(`  File: ${result.filePath}`);
+    console.log(renderWaiverCreateResultText(root, result));
   }
+}
+
+function renderWaiverCreateResultText(root: string, result: WaiverCreateResult): string {
+  return [
+    "Waiver created successfully.",
+    `ID: ${result.waiver.id}`,
+    `File: ${normalizeCliPath(result.filePath)}`,
+    "",
+    ...renderDecisionPacketLines({
+      currentState: `waiver ${result.waiver.id} recorded and active`,
+      risk: "the matching verify issue is now explicitly downgraded until the waiver expires or is revoked.",
+      evidence: buildWaiverEvidence(result.waiver, result.filePath),
+      owner: result.waiver.owner,
+      nextCommand: buildCliVerifyCommand(root),
+      affectedArtifact: result.waiver.issuePath ?? normalizeCliPath(result.filePath),
+      expiration: result.waiver.expiresAt,
+      replayCommand: buildWaiverLifecycleCommand("revoke", root, result.waiver.id),
+    }),
+  ].join("\n");
+}
+
+function renderWaiverRevokeResultText(root: string, result: WaiverRevokeResult): string {
+  return [
+    "Waiver revoked successfully.",
+    `ID: ${result.waiver.id}`,
+    `Revoked by: ${result.waiver.revokedBy ?? "unknown"}`,
+    `File: ${normalizeCliPath(result.filePath)}`,
+    "",
+    ...renderDecisionPacketLines({
+      currentState: `waiver ${result.waiver.id} revoked`,
+      risk: "the matching verify issue will surface again on the next verify run if it still exists.",
+      evidence: buildWaiverEvidence(result.waiver, result.filePath),
+      owner: result.waiver.owner,
+      nextCommand: buildCliVerifyCommand(root),
+      affectedArtifact: result.waiver.issuePath ?? normalizeCliPath(result.filePath),
+      expiration: result.waiver.expiresAt,
+    }),
+  ].join("\n");
+}
+
+function renderWaiverRenewResultText(root: string, result: WaiverCreateResult): string {
+  return [
+    "Waiver renewed successfully.",
+    `ID: ${result.waiver.id}`,
+    `Expires: ${result.waiver.expiresAt ?? "not recorded"}`,
+    `File: ${normalizeCliPath(result.filePath)}`,
+    "",
+    ...renderDecisionPacketLines({
+      currentState: `waiver ${result.waiver.id} renewed and active`,
+      risk: "the matching verify issue stays downgraded, so the exception should remain short-lived and visible.",
+      evidence: buildWaiverEvidence(result.waiver, result.filePath),
+      owner: result.waiver.owner,
+      nextCommand: buildCliVerifyCommand(root),
+      affectedArtifact: result.waiver.issuePath ?? normalizeCliPath(result.filePath),
+      expiration: result.waiver.expiresAt,
+      replayCommand: buildWaiverLifecycleCommand("revoke", root, result.waiver.id),
+    }),
+  ].join("\n");
+}
+
+function renderSpecDebtOwnerReviewText(root: string, record: GreenfieldSpecDebtRecord): string {
+  return [
+    "Spec debt owner review recorded.",
+    `ID: ${record.id}`,
+    `Owner: ${record.owner}`,
+    `Requested by: ${record.owner_review?.requested_by ?? "unknown"}`,
+    "",
+    ...renderDecisionPacketLines({
+      currentState: `owner review requested for open spec debt ${record.id}`,
+      risk: "owner review does not repay the debt; the contract gap remains open until it is repaid or explicitly cancelled.",
+      evidence: buildSpecDebtEvidence(record),
+      owner: record.owner,
+      nextCommand: buildSpecDebtLifecycleCommand("repay", root, record.id),
+      affectedArtifact: summarizeAffectedArtifact(record),
+      expiration: record.expires_at,
+      replayCommand: buildSpecDebtLifecycleCommand("cancel", root, record.id),
+    }),
+  ].join("\n");
+}
+
+function renderSpecDebtStatusText(root: string, record: GreenfieldSpecDebtRecord): string {
+  const resolvedStatus = record.status === "repaid" ? "repaid" : "cancelled";
+  const risk = record.status === "repaid"
+    ? "the debt is marked resolved locally, but verify should be rerun to confirm the blocking surface is actually cleared."
+    : "the debt is removed from scope by cancellation, so the recorded reason should stay auditable and explicit.";
+  return [
+    `Spec debt ${resolvedStatus}.`,
+    `ID: ${record.id}`,
+    `Status: ${record.status}`,
+    `Owner: ${record.owner}`,
+    "",
+    ...renderDecisionPacketLines({
+      currentState: `spec debt ${record.id} marked ${record.status}`,
+      risk,
+      evidence: buildSpecDebtEvidence(record),
+      owner: record.owner,
+      nextCommand: buildCliVerifyCommand(root),
+      affectedArtifact: summarizeAffectedArtifact(record),
+      expiration: record.expires_at,
+    }),
+  ].join("\n");
+}
+
+function renderDecisionPacketLines(snapshot: {
+  currentState: string;
+  risk: string;
+  evidence: string[];
+  owner: string;
+  nextCommand: string;
+  affectedArtifact?: string;
+  expiration?: string;
+  replayCommand?: string;
+}): string[] {
+  return [
+    "Decision packet:",
+    ...renderHumanDecisionSnapshotText(snapshot).map((entry) => `- ${entry}`),
+  ];
+}
+
+function buildWaiverEvidence(waiver: VerifyWaiver, filePath: string): string[] {
+  return compactDecisionEvidence([
+    normalizeCliPath(filePath),
+    buildWaiverMatcherSummary(waiver),
+    `reason: ${waiver.revokeReason ?? waiver.reason}`,
+  ]);
+}
+
+function buildSpecDebtEvidence(record: GreenfieldSpecDebtRecord): string[] {
+  return compactDecisionEvidence([
+    ".spec/spec-debt/ledger.yaml",
+    `kind: ${record.kind}`,
+    `reason: ${record.owner_review?.reason ?? record.reason}`,
+    record.repayment_hint ? `repayment hint: ${record.repayment_hint}` : undefined,
+  ]);
+}
+
+function buildWaiverMatcherSummary(waiver: VerifyWaiver): string {
+  if (waiver.issueFingerprint) {
+    return `matcher: fingerprint ${waiver.issueFingerprint}`;
+  }
+  if (waiver.issueCode && waiver.issuePath) {
+    return `matcher: ${waiver.issueCode} at ${waiver.issuePath}`;
+  }
+  if (waiver.issueCode) {
+    return `matcher: ${waiver.issueCode}`;
+  }
+  if (waiver.ruleId) {
+    return `matcher: rule ${waiver.ruleId}`;
+  }
+  return "matcher: not recorded";
+}
+
+function summarizeAffectedArtifact(record: GreenfieldSpecDebtRecord): string {
+  if (record.affected_assets.length === 0) {
+    return ".spec/spec-debt/ledger.yaml";
+  }
+  const [first, ...rest] = record.affected_assets;
+  return rest.length > 0 ? `${first} (+${rest.length} more)` : first;
+}
+
+function buildCliVerifyCommand(root: string): string {
+  return `npm run jispec-cli -- verify --root ${normalizeCliPath(path.resolve(root))}`;
+}
+
+function buildWaiverLifecycleCommand(action: "revoke", root: string, id: string): string {
+  return `npm run jispec-cli -- waiver ${action} ${id} --root ${normalizeCliPath(path.resolve(root))} --actor <actor> --reason "<reason>"`;
+}
+
+function buildSpecDebtLifecycleCommand(action: "repay" | "cancel", root: string, id: string): string {
+  return `npm run jispec-cli -- spec-debt ${action} ${id} --root ${normalizeCliPath(path.resolve(root))} --actor <actor> --reason "<reason>"`;
+}
+
+function compactDecisionEvidence(values: Array<string | undefined>): string[] {
+  return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function normalizeCliPath(value: string): string {
+  return value.replace(/\\/g, "/");
 }
 
 function registerChangeCommand(program: Command): void {
@@ -1380,6 +1587,15 @@ function renderGreenfieldSourceRefreshResult(result: GreenfieldSourceRefreshResu
   console.log(renderGreenfieldSourceRefreshText(result));
 }
 
+function renderGreenfieldSourceDiffResult(result: GreenfieldSourceDiffResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(renderGreenfieldSourceDiffText(result));
+}
+
 function createGreenfieldInitAction(commandName: string) {
   return (options: {
     root: string;
@@ -1443,6 +1659,24 @@ function registerGreenfieldSourceCommand(program: Command): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`JiSpec source refresh failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  source
+    .command("diff")
+    .description("Show the active-versus-proposed source evolution diff for the current change.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--change <id>", "Target change id or `latest`.", "latest")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { root: string; change: string; json: boolean }) => {
+      try {
+        const result = runGreenfieldSourceDiff(path.resolve(options.root), options.change);
+        renderGreenfieldSourceDiffResult(result, options.json);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec source diff failed: ${message}`);
         process.exitCode = 1;
       }
     });
@@ -1661,7 +1895,7 @@ function shouldPrintLegacySurfaceHint(argv: string[] = process.argv): boolean {
 
 function printLegacySurfaceHint(surface: LegacySurface): void {
   console.log(
-    `[JiSpec] \`${surface}\` is part of the legacy compatibility surface. The current primary entry points are \`jispec-cli verify\` and \`jispec-cli doctor v1\`.`,
+    `[JiSpec] \`${surface}\` is part of the legacy compatibility surface. The current primary entry points are \`jispec-cli verify\` and \`jispec-cli doctor mainline\` (legacy alias: \`doctor v1\`).`,
   );
 }
 

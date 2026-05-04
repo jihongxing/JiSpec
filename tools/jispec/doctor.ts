@@ -15,6 +15,12 @@ import { createFactsContract } from "./facts/facts-contract";
 import { loadVerifyPolicy, policyFileExists } from "./policy/policy-loader";
 import { validatePolicyAgainstFactsContract } from "./policy/policy-schema";
 import { evaluateChangeExecuteDefaultReadiness } from "./change/orchestration-config";
+import { collectConsoleLocalSnapshot, type ConsoleGovernanceObjectSnapshot } from "./console/read-model-snapshot";
+import {
+  assessDeferredSurfacePromotionReadiness,
+  getDeferredSurfaceContracts,
+  getDeferredSurfacePromotionContract,
+} from "./runtime/deferred-surface-contract";
 
 export interface DoctorCheckResult {
   name: string;
@@ -26,7 +32,7 @@ export interface DoctorCheckResult {
   sourceArtifacts?: string[];
 }
 
-export type DoctorProfile = "runtime" | "v1" | "pilot";
+export type DoctorProfile = "runtime" | "mainline" | "pilot" | "global";
 
 export interface DoctorReport {
   checks: DoctorCheckResult[];
@@ -128,10 +134,10 @@ export class Doctor {
   }
 
   /**
-   * Run V1 mainline readiness checks without letting deferred collaboration
+   * Run mainline readiness checks without letting deferred collaboration
    * and distributed experiments block the core product path.
    */
-  async checkV1Mainline(): Promise<DoctorReport> {
+  async checkMainlineReadiness(): Promise<DoctorReport> {
     const checks: DoctorCheckResult[] = [];
 
     checks.push(await this.checkBootstrapMainlineSurface());
@@ -143,7 +149,11 @@ export class Doctor {
     checks.push(await this.checkExecuteDefaultMediationReadiness());
     checks.push(await this.checkV1RegressionCoverage());
 
-    return this.buildReport("v1", checks);
+    return this.buildReport("mainline", checks);
+  }
+
+  async checkV1Mainline(): Promise<DoctorReport> {
+    return this.checkMainlineReadiness();
   }
 
   /**
@@ -163,6 +173,26 @@ export class Doctor {
     checks.push(await this.checkPilotPrivacyReport());
 
     return this.buildReport("pilot", checks);
+  }
+
+  /**
+   * Run broader global-closure readiness checks without changing the
+   * semantics of doctor mainline or pulling deferred runtime experiments into the
+   * default blocking surface.
+   */
+  async checkGlobalReadiness(): Promise<DoctorReport> {
+    const checks: DoctorCheckResult[] = [];
+
+    checks.push(await this.checkGlobalSingleRepoMainlineReadiness());
+    checks.push(await this.checkGlobalSourceEvolutionGovernance());
+    checks.push(await this.checkGlobalConsoleSnapshotAvailability());
+    checks.push(await this.checkGlobalGovernanceExportReadiness());
+    checks.push(await this.checkGlobalMultiRepoAggregateReadiness());
+    checks.push(await this.checkGlobalReleaseCompareReadiness());
+    checks.push(await this.checkGlobalDeferredSurfacePromotionReadiness());
+    checks.push(await this.checkGlobalNorthStarAcceptanceReadiness());
+
+    return this.buildReport("global", checks);
   }
 
   private buildReport(profile: DoctorProfile, checks: DoctorCheckResult[]): DoctorReport {
@@ -600,7 +630,7 @@ export class Doctor {
         details.push(`Pilot readiness boundary: ${pilotReadiness.suiteFile} is regression coverage only; doctor ${pilotReadiness.doctorProfile} owns the commercial readiness gate`);
       }
 
-      details.push("Profile boundary: doctor v1 gates the V1 mainline; doctor runtime diagnoses extended runtime surfaces; doctor pilot gates commercial pilot readiness.");
+      details.push("Profile boundary: doctor mainline gates the mainline; doctor runtime diagnoses extended runtime surfaces; doctor pilot gates commercial pilot readiness; doctor global gates broader closure-loop rollout.");
 
       let allManifestFilesExist = true;
       for (const suite of manifest.suites) {
@@ -1313,6 +1343,377 @@ export class Doctor {
     return pilotPass("Pilot Privacy Report", "Privacy report available", details, [reportPath]);
   }
 
+  private async checkGlobalSingleRepoMainlineReadiness(): Promise<DoctorCheckResult> {
+    const mainlineReport = await this.checkMainlineReadiness();
+    const blockerCount = mainlineReport.readinessSummary?.blockerCount ?? mainlineReport.failedChecks;
+    const failedChecks = mainlineReport.checks.filter((check) => check.status === "fail");
+    const firstBlocker = failedChecks[0];
+    const details = [
+      `doctor mainline ready: ${mainlineReport.ready ? "yes" : "no"}`,
+      `doctor mainline blocker count: ${blockerCount}`,
+      ...failedChecks.slice(0, 3).map((check) => `Blocker: ${check.name} - ${check.summary}`),
+    ];
+
+    if (mainlineReport.ready) {
+      return doctorPass(
+        "Single-Repo Mainline Readiness",
+        "doctor mainline ready",
+        [
+          ...details,
+          "Global closure reuses the proven single-repo mainline instead of redefining mainline readiness.",
+        ],
+        [],
+      );
+    }
+
+    return doctorFail(
+      "Single-Repo Mainline Readiness",
+      "doctor mainline is not ready",
+      details,
+      "Resolve the mainline blockers before treating this repo as globally ready.",
+      firstBlocker?.nextCommand ?? "npm run jispec -- doctor mainline --root .",
+      stableUnique(failedChecks.flatMap((check) => check.sourceArtifacts ?? [])),
+    );
+  }
+
+  private async checkGlobalSourceEvolutionGovernance(): Promise<DoctorCheckResult> {
+    const snapshot = collectConsoleLocalSnapshot(this.root);
+    const sourceEvolution = findGovernanceObject(snapshot.governance.objects, "source_evolution_governance");
+    const summary = sourceEvolution?.summary ?? {};
+    const details = [
+      `Governance object status: ${sourceEvolution?.status ?? "not_available_yet"}`,
+      `Lifecycle path: ${stringValue(summary.lifecyclePath) ?? ".spec/requirements/lifecycle.yaml"}`,
+      `Active change: ${stringValue(summary.activeChangeId) ?? "not_available_yet"}`,
+      `Current change state: ${stringValue(summary.currentChangeState) ?? "not_available_yet"}`,
+      `Open review items: ${numberValue(summary.openReviewItems) ?? 0}`,
+      `Blocking open review items: ${numberValue(summary.blockingOpenReviewItems) ?? 0}`,
+    ];
+
+    if (!sourceEvolution || sourceEvolution.status !== "available") {
+      return doctorFail(
+        "Source Evolution Governance Artifact Health",
+        "Source evolution governance is incomplete",
+        details,
+        "Produce a stable lifecycle and source-review artifact set before relying on global closure diagnostics.",
+        "npm run jispec -- source refresh --root . --change latest",
+        stableUnique(sourceEvolution?.sourcePaths ?? [
+          ".spec/baselines/current.yaml",
+          ".spec/requirements/lifecycle.yaml",
+          ".spec/deltas/<change-id>/source-evolution.json",
+          ".spec/deltas/<change-id>/source-review.yaml",
+        ]),
+      );
+    }
+
+    return doctorPass(
+      "Source Evolution Governance Artifact Health",
+      "Source evolution governance available",
+      details,
+      stableUnique(sourceEvolution.sourcePaths),
+    );
+  }
+
+  private async checkGlobalConsoleSnapshotAvailability(): Promise<DoctorCheckResult> {
+    const snapshot = collectConsoleLocalSnapshot(this.root);
+    const details = [
+      `Artifacts: available=${snapshot.summary.availableArtifacts}, missing=${snapshot.summary.missingArtifacts}, invalid=${snapshot.summary.invalidArtifacts}, unreadable=${snapshot.summary.unreadableArtifacts}`,
+      `Governance objects: available=${snapshot.governance.summary.availableObjects}, partial=${snapshot.governance.summary.partialObjects}, missing=${snapshot.governance.summary.missingObjects}, invalid=${snapshot.governance.summary.invalidObjects}`,
+      "Boundary: reads only declared JiSpec artifacts and does not synthesize gate state from source code.",
+    ];
+
+    if (
+      snapshot.summary.invalidArtifacts > 0 ||
+      snapshot.summary.unreadableArtifacts > 0 ||
+      snapshot.governance.summary.invalidObjects > 0 ||
+      snapshot.governance.summary.availableObjects === 0
+    ) {
+      return doctorFail(
+        "Console Snapshot Availability",
+        "Console read-model snapshot is not healthy enough for global rollout",
+        details,
+        "Repair missing or invalid local governance artifacts before using Console as a broader closure surface.",
+        "npm run jispec -- console dashboard --root .",
+        snapshot.artifacts
+          .filter((artifact) => artifact.status !== "not_available_yet")
+          .flatMap((artifact) => artifact.instances.map((instance) => instance.relativePath)),
+      );
+    }
+
+    return doctorPass("Console Snapshot Availability", "Console read-model snapshot available", details);
+  }
+
+  private async checkGlobalGovernanceExportReadiness(): Promise<DoctorCheckResult> {
+    const snapshotPath = ".spec/console/governance-snapshot.json";
+    const snapshot = readJsonFile(path.join(this.root, snapshotPath));
+
+    if (!snapshot) {
+      return doctorFail(
+        "Governance Export Readiness",
+        "Governance export snapshot missing",
+        ["No repo-level governance export snapshot was found."],
+        "Export a repo-level governance snapshot so global closure can consume local Console truth without rescanning source.",
+        "npm run jispec -- console export-governance --root .",
+        [snapshotPath],
+      );
+    }
+
+    const boundary = isRecord(snapshot.boundary) ? snapshot.boundary : {};
+    const contract = isRecord(snapshot.contract) ? snapshot.contract : {};
+    const details = [
+      `Kind: ${String(snapshot.kind ?? "not_declared")}`,
+      `Schema version: ${String(snapshot.schemaVersion ?? "not_declared")}`,
+      `Repo: ${String(isRecord(snapshot.repo) ? snapshot.repo.id ?? "not_declared" : "not_declared")}`,
+      `Exported at: ${String(snapshot.exportedAt ?? "not_declared")}`,
+      `Snapshot contract: ${String(contract.snapshotContractVersion ?? "legacy")}`,
+    ];
+    const valid =
+      snapshot.kind === "jispec-multi-repo-governance-snapshot" &&
+      snapshot.schemaVersion === 1 &&
+      boundary.readOnlySnapshot === true &&
+      boundary.sourceUploadRequired === false &&
+      boundary.scansSourceCode === false &&
+      boundary.runsVerify === false &&
+      boundary.replacesCliGate === false &&
+      contract.snapshotContractVersion === 1 &&
+      contract.compatibleAggregateVersion === 1;
+
+    if (!valid) {
+      return doctorFail(
+        "Governance Export Readiness",
+        "Governance export contract is incomplete",
+        details,
+        "Regenerate the exported governance snapshot until it carries the current local-only aggregate contract.",
+        "npm run jispec -- console export-governance --root .",
+        [snapshotPath],
+      );
+    }
+
+    return doctorPass("Governance Export Readiness", "Governance export snapshot ready", details, [snapshotPath]);
+  }
+
+  private async checkGlobalMultiRepoAggregateReadiness(): Promise<DoctorCheckResult> {
+    const aggregatePath = ".spec/console/multi-repo-governance.json";
+    const aggregate = readJsonFile(path.join(this.root, aggregatePath));
+
+    if (!aggregate) {
+      return doctorFail(
+        "Multi-Repo Aggregate Contract Readiness",
+        "Multi-repo aggregate missing",
+        ["No aggregate multi-repo governance artifact was found."],
+        "Materialize a local multi-repo aggregate before treating cross-repo drift and owner-action loops as globally ready.",
+        "npm run jispec -- console aggregate-governance --dir . --root .",
+        [aggregatePath],
+      );
+    }
+
+    const boundary = isRecord(aggregate.boundary) ? aggregate.boundary : {};
+    const summary = isRecord(aggregate.summary) ? aggregate.summary : {};
+    const details = [
+      `Kind: ${String(aggregate.kind ?? "not_declared")}`,
+      `Schema version: ${String(aggregate.schemaVersion ?? "not_declared")}`,
+      `Repo count: ${String(summary.repoCount ?? "not_declared")}`,
+      `Contract drift hints: ${String(summary.contractDriftHintCount ?? "not_declared")}`,
+      `Owner actions: ${String(summary.ownerActionCount ?? "not_declared")}`,
+      `Missing snapshots: ${String(summary.missingSnapshotCount ?? "not_declared")}`,
+    ];
+    const valid =
+      aggregate.kind === "jispec-multi-repo-governance-aggregate" &&
+      aggregate.schemaVersion === 1 &&
+      boundary.consumesExportedSnapshotsOnly === true &&
+      boundary.scansSourceCode === false &&
+      boundary.runsVerify === false &&
+      boundary.replacesCliGate === false &&
+      Array.isArray(aggregate.contractDriftHints) &&
+      Array.isArray(aggregate.ownerActions) &&
+      aggregate.singleRepoGateReplacement === false;
+
+    if (!valid) {
+      return doctorFail(
+        "Multi-Repo Aggregate Contract Readiness",
+        "Multi-repo aggregate contract is incomplete",
+        details,
+        "Regenerate the aggregate from exported repo snapshots until drift hints and owner actions are present under the local-only contract.",
+        "npm run jispec -- console aggregate-governance --dir . --root .",
+        [aggregatePath],
+      );
+    }
+
+    return doctorPass("Multi-Repo Aggregate Contract Readiness", "Multi-repo aggregate ready", details, [aggregatePath]);
+  }
+
+  private async checkGlobalReleaseCompareReadiness(): Promise<DoctorCheckResult> {
+    const comparePaths = listReleaseCompareReports(this.root);
+    const trendPath = ".spec/releases/drift-trend.json";
+    const latestComparePath = comparePaths.at(-1);
+    const latestCompare = latestComparePath
+      ? readJsonFile(path.join(this.root, latestComparePath))
+      : undefined;
+    const trend = readJsonFile(path.join(this.root, trendPath));
+    const driftSummary = isRecord(latestCompare?.driftSummary) ? latestCompare.driftSummary : {};
+    const details = [
+      `Compare reports: ${comparePaths.length}`,
+      `Latest compare report: ${latestComparePath ?? "not_available_yet"}`,
+      `Latest drift status: ${String(driftSummary.overallStatus ?? driftSummary.overall_status ?? "not_declared")}`,
+      `Drift trend present: ${trend ? "yes" : "no"}`,
+    ];
+
+    if (!latestComparePath || !latestCompare || !trend || !isRecord(latestCompare.driftSummary)) {
+      return doctorFail(
+        "Release Compare Contract Readiness",
+        "Release compare artifacts are incomplete",
+        details,
+        "Produce the release compare report and drift trend before treating release governance as globally ready.",
+        "npm run jispec -- release compare --from <ref> --to <ref> --root .",
+        stableUnique([...(latestComparePath ? [latestComparePath] : []), trendPath]),
+      );
+    }
+
+    return doctorPass(
+      "Release Compare Contract Readiness",
+      "Release compare artifacts available",
+      details,
+      [latestComparePath, trendPath],
+    );
+  }
+
+  private async checkGlobalDeferredSurfacePromotionReadiness(): Promise<DoctorCheckResult> {
+    const promotion = getDeferredSurfacePromotionContract();
+    const deferredContracts = getDeferredSurfaceContracts();
+    const readiness = assessDeferredSurfacePromotionReadiness(this.root);
+    const requirementIds = promotion.promotionRequirements.map((requirement) => requirement.id);
+    const candidateIds = promotion.initialPromotionCandidates.map((candidate) => candidate.id);
+    const deferredIds = promotion.explicitlyDeferredSurfaces.map((surface) => surface.id);
+    const details = [
+      `Promotion contract version: ${promotion.contractVersion}`,
+      `Promotion requirements: ${requirementIds.join(", ")}`,
+      `Initial promotion candidates: ${candidateIds.join(", ")}`,
+      `Explicitly deferred surfaces: ${deferredIds.join(", ")}`,
+      `Boundary: verify=${promotion.boundary.verifyRemainsPrimaryGate}, ci:verify=${promotion.boundary.ciVerifyRemainsPrimaryGate}, no accidental blockers=${promotion.boundary.supportSurfacesCannotBecomeAccidentalBlockers}`,
+      `Promotion evidence health: ${readiness.ready ? "healthy" : "attention_required"}`,
+    ];
+    for (const candidate of readiness.candidates) {
+      details.push(`Candidate ${candidate.id}: ${candidate.status} - ${candidate.summary}`);
+      details.push(`  Machine artifacts: ${candidate.machineArtifacts.map((artifact) => `${artifact.path} [${artifact.status}]`).join(", ")}`);
+      details.push(`  Audit evidence: ${candidate.auditEvidence.map((artifact) => `${artifact.path} [${artifact.status}]`).join(", ")}`);
+    }
+
+    const valid =
+      promotion.schemaVersion === 1 &&
+      promotion.contractVersion >= 3 &&
+      promotion.status === "explicit_promotion_required" &&
+      requirementIds.length === 6 &&
+      requirementIds.includes("stable_machine_artifacts") &&
+      requirementIds.includes("audit_evidence") &&
+      requirementIds.includes("owner_and_next_command") &&
+      requirementIds.includes("cannot_override_verify") &&
+      requirementIds.includes("dedicated_acceptance_scenarios") &&
+      requirementIds.includes("deterministic_local_first_behavior") &&
+      candidateIds.length === 2 &&
+      candidateIds.includes("console_governance_export") &&
+      candidateIds.includes("multi_repo_governance_aggregate") &&
+      promotion.initialPromotionCandidates.every((candidate) =>
+        candidate.localFirst === true &&
+        candidate.cannotOverrideVerify === true &&
+        candidate.deterministicArtifactsOnly === true &&
+        candidate.machineArtifacts.length > 0 &&
+        candidate.auditEvidence.length > 0 &&
+        candidate.acceptanceScenarios.length > 0 &&
+        candidate.nextCommand.trim().length > 0 &&
+        candidate.owner.trim().length > 0
+      ) &&
+      deferredIds.includes("collaboration-workspace") &&
+      deferredIds.includes("presence-awareness") &&
+      deferredIds.includes("distributed-execution") &&
+      deferredIds.includes("notifications") &&
+      deferredIds.includes("conflict-resolution") &&
+      deferredContracts.every((contract) => contract.forbiddenDoctorProfiles.includes("global")) &&
+      readiness.ready;
+
+    if (!valid) {
+      return doctorFail(
+        "Deferred Surface Promotion Contract",
+        "Deferred surface promotion boundary or candidate evidence health is incomplete",
+        details,
+        "Repair the promotion contract or materialize readable candidate audit evidence before treating support surfaces as globally promotion-ready.",
+        "node --import tsx ./tools/jispec/tests/p13-deferred-surface-promotion.ts",
+        stableUnique([
+          "tools/jispec/runtime/deferred-surface-contract.ts",
+          "docs/collaboration-surface-freeze.md",
+          "tools/jispec/tests/p13-deferred-surface-promotion.ts",
+          ...candidateIds.flatMap((candidateId) => {
+            const health = readiness.candidates.find((candidate) => candidate.id === candidateId);
+            return health
+              ? [
+                  ...health.machineArtifacts.map((artifact) => artifact.path),
+                  ...health.auditEvidence.map((artifact) => artifact.path),
+                ]
+              : [];
+          }),
+        ]),
+      );
+    }
+
+    return doctorPass(
+      "Deferred Surface Promotion Contract",
+      "Deferred surface promotion boundary is explicit and testable",
+      details,
+      [
+        "tools/jispec/runtime/deferred-surface-contract.ts",
+        "docs/collaboration-surface-freeze.md",
+      ],
+    );
+  }
+
+  private async checkGlobalNorthStarAcceptanceReadiness(): Promise<DoctorCheckResult> {
+    const acceptancePath = ".spec/north-star/acceptance.json";
+    const acceptance = readJsonFile(path.join(this.root, acceptancePath));
+
+    if (!acceptance) {
+      return doctorFail(
+        "North Star Acceptance Artifact Readiness",
+        "North Star acceptance artifact missing",
+        ["No .spec/north-star/acceptance.json artifact was found."],
+        "Materialize the acceptance artifact before using doctor global as the broader closure readiness view.",
+        "npm run jispec -- north-star acceptance --root .",
+        [acceptancePath],
+      );
+    }
+
+    const boundary = isRecord(acceptance.boundary) ? acceptance.boundary : {};
+    const summary = isRecord(acceptance.summary) ? acceptance.summary : {};
+    const details = [
+      `Kind: ${String(acceptance.kind ?? "not_declared")}`,
+      `Schema version: ${String(acceptance.schemaVersion ?? "not_declared")}`,
+      `Scenario count: ${String(summary.scenarioCount ?? "not_declared")}`,
+      `Passed scenarios: ${String(summary.passedScenarioCount ?? "not_declared")}`,
+      `Blocking scenarios: ${String(summary.blockingScenarioCount ?? "not_declared")}`,
+      `Ready: ${summary.ready === true ? "yes" : "no"}`,
+    ];
+    const validBoundary =
+      acceptance.kind === "jispec-north-star-acceptance" &&
+      acceptance.schemaVersion === 1 &&
+      boundary.localOnly === true &&
+      boundary.sourceUploadRequired === false &&
+      boundary.llmBlockingDecisionSource === false &&
+      boundary.replacesVerify === false &&
+      boundary.replacesDoctorV1 === false &&
+      boundary.replacesDoctorRuntime === false &&
+      boundary.replacesDoctorPilot === false;
+
+    if (!validBoundary || summary.ready !== true) {
+      return doctorFail(
+        "North Star Acceptance Artifact Readiness",
+        "North Star acceptance is missing or not ready",
+        details,
+        "Rebuild the acceptance artifact and clear its blocking scenarios before treating the broader closure loop as healthy.",
+        "npm run jispec -- north-star acceptance --root .",
+        [acceptancePath],
+      );
+    }
+
+    return doctorPass("North Star Acceptance Artifact Readiness", "North Star acceptance ready", details, [acceptancePath]);
+  }
+
   /**
    * Check V1.4: V1 Regression Coverage
    */
@@ -1905,11 +2306,13 @@ export class Doctor {
   static formatText(report: DoctorReport): string {
     const lines: string[] = [];
 
-    const title = report.profile === "v1"
-      ? "=== JiSpec Doctor: V1 Mainline Readiness ===\n"
+    const title = report.profile === "mainline"
+      ? "=== JiSpec Doctor: Mainline Readiness ===\n"
       : report.profile === "pilot"
         ? "=== JiSpec Doctor: Commercial Pilot Readiness ===\n"
-        : "=== JiSpec Doctor: Extended Runtime Readiness ===\n";
+        : report.profile === "global"
+          ? "=== JiSpec Doctor: Global Closure Readiness ===\n"
+          : "=== JiSpec Doctor: Extended Runtime Readiness ===\n";
     lines.push(title);
 
     for (const check of report.checks) {
@@ -1929,11 +2332,13 @@ export class Doctor {
 
     lines.push("=== Summary ===");
     lines.push(`${report.passedChecks}/${report.totalChecks} checks passed`);
-    const readinessLabel = report.profile === "v1"
-      ? "V1 Mainline Ready"
+    const readinessLabel = report.profile === "mainline"
+      ? "Mainline Ready"
       : report.profile === "pilot"
         ? "Commercial Pilot Ready"
-        : "Extended Runtime Ready";
+        : report.profile === "global"
+          ? "Global Closure Ready"
+          : "Extended Runtime Ready";
     lines.push(`${readinessLabel}: ${report.ready ? "YES" : "NO"}`);
 
     return lines.join("\n");
@@ -1958,6 +2363,40 @@ function pilotPass(
     status: "pass",
     summary,
     details,
+    sourceArtifacts,
+  };
+}
+
+function doctorPass(
+  name: string,
+  summary: string,
+  details: string[],
+  sourceArtifacts: string[] = [],
+): DoctorCheckResult {
+  return {
+    name,
+    status: "pass",
+    summary,
+    details,
+    sourceArtifacts,
+  };
+}
+
+function doctorFail(
+  name: string,
+  summary: string,
+  details: string[],
+  ownerAction: string,
+  nextCommand: string,
+  sourceArtifacts: string[] = [],
+): DoctorCheckResult {
+  return {
+    name,
+    status: "fail",
+    summary,
+    details,
+    ownerAction,
+    nextCommand,
     sourceArtifacts,
   };
 }
@@ -2021,6 +2460,19 @@ function listNestedJsonRecords(directory: string, maxDepth: number): Record<stri
   return records;
 }
 
+function listReleaseCompareReports(root: string): string[] {
+  const compareRoot = path.join(root, ".spec", "releases", "compare");
+  if (!fs.existsSync(compareRoot)) {
+    return [];
+  }
+  return fs.readdirSync(compareRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(compareRoot, entry.name, "compare-report.json"))
+    .filter((entry) => fs.existsSync(entry))
+    .map((entry) => normalizeRelativePath(root, entry))
+    .sort((left, right) => left.localeCompare(right));
+}
+
 function visitJsonRecords(base: string, current: string, maxDepth: number, records: Record<string, unknown>[]): void {
   if (!fs.existsSync(current)) {
     return;
@@ -2056,6 +2508,21 @@ function numberValue(value: unknown): number | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function findGovernanceObject(
+  objects: ConsoleGovernanceObjectSnapshot[],
+  id: string,
+): ConsoleGovernanceObjectSnapshot | undefined {
+  return objects.find((object) => object.id === id);
+}
+
+function normalizeRelativePath(root: string, targetPath: string): string {
+  return path.relative(root, targetPath).replace(/\\/g, "/");
+}
+
+function stableUnique(values: string[]): string[] {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0))).sort((left, right) => left.localeCompare(right));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

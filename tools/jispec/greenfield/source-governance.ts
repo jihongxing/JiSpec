@@ -3,6 +3,7 @@ import path from "node:path";
 import * as yaml from "js-yaml";
 import { appendAuditEvent } from "../audit/event-ledger";
 import { readChangeSession } from "../change/change-session";
+import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
 import type { GreenfieldSourceEvolutionDiff, GreenfieldSourceEvolutionItem } from "./provenance-drift";
 import {
   buildInitialRequirementLifecycleRegistry,
@@ -397,12 +398,35 @@ export function renderGreenfieldSourceReviewListText(result: GreenfieldSourceRev
 }
 
 export function renderGreenfieldSourceReviewTransitionText(result: GreenfieldSourceReviewTransitionResult): string {
+  const nextCommand = result.decision.status === "adopted"
+    ? result.nextCommands.find((command) => command.includes("source adopt")) ?? result.nextCommands[0] ?? "not recorded"
+    : result.nextCommands[0] ?? "not recorded";
+  const affectedArtifact = result.decision.anchor_id
+    ? `${result.decision.source_document}:${result.decision.anchor_id}`
+    : result.decision.source_document;
+  const expiration = result.decision.defer_record?.expires_at ?? result.decision.waiver_record?.expires_at;
+
   return [
     "Greenfield source review updated.",
     `Change ID: ${result.changeId}`,
     `Item: ${result.decision.item_id}`,
     `Status: ${result.decision.status}`,
     `Source review: ${result.sourceReviewPath}`,
+    "",
+    "Decision packet:",
+    ...renderHumanDecisionSnapshotText({
+      currentState: `${result.decision.status} source review for ${result.decision.evolution_kind}`,
+      risk: renderSourceReviewDecisionRisk(result.decision),
+      evidence: [
+        result.sourceReviewPath,
+        result.sourceEvolutionPath,
+        result.decision.summary,
+      ],
+      owner: result.decision.owner ?? "reviewer",
+      nextCommand,
+      affectedArtifact,
+      expiration,
+    }).map((entry) => `- ${entry}`),
     "",
     "Next:",
     ...result.nextCommands.map((command) => `- ${command}`),
@@ -625,6 +649,24 @@ function auditEventTypeForSourceAction(action: GreenfieldSourceReviewAction): "s
 
 function defaultReasonForSourceAction(action: GreenfieldSourceReviewAction, item: GreenfieldSourceEvolutionItem): string {
   return `${action} source evolution ${item.anchor_id ?? item.evolution_id}.`;
+}
+
+function renderSourceReviewDecisionRisk(decision: GreenfieldSourceReviewDecision): string {
+  switch (decision.status) {
+    case "adopted":
+      return decision.severity === "blocking"
+        ? "blocking source evolution is reviewed, but active truth still stays unchanged until source adopt runs."
+        : "advisory source evolution is reviewed and ready for source adopt when desired.";
+    case "deferred":
+      return "review is recorded as deferred, so downstream contract and test follow-up remains open until repayment.";
+    case "waived":
+      return "review is recorded as waived, so the exception remains visible and should stay short-lived.";
+    case "rejected":
+      return "the proposed source evolution was rejected and must be corrected before verify can pass.";
+    case "proposed":
+    default:
+      return "source evolution still needs an explicit governance decision before it can become active truth.";
+  }
 }
 
 function promoteProposedManifest(

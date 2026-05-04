@@ -1442,7 +1442,7 @@ Run:
 ```powershell
 npm run typecheck
 npm run post-release:gate
-node --import tsx tools\jispec\cli.ts doctor v1 --root . --json
+node --import tsx tools\jispec\cli.ts doctor mainline --root . --json
 node --import tsx tools\jispec\cli.ts doctor runtime --root . --json
 node --import tsx tools\jispec\cli.ts doctor pilot --root . --json
 ```
@@ -1451,7 +1451,7 @@ Expected:
 
 - TypeScript passes with no errors.
 - Post-release gate reports all suites passing.
-- `doctor v1`, `doctor runtime`, and `doctor pilot` return JSON with `ready: true`.
+- `doctor mainline`, `doctor runtime`, and `doctor pilot` return JSON with `ready: true`.
 
 ## Self-Review Checklist
 
@@ -3112,7 +3112,7 @@ Run:
 ```powershell
 npm run typecheck
 npm run gate:quick
-node --import tsx tools\jispec\cli.ts doctor v1 --root . --json
+node --import tsx tools\jispec\cli.ts doctor mainline --root . --json
 node --import tsx tools\jispec\cli.ts doctor runtime --root . --json
 node --import tsx tools\jispec\cli.ts doctor pilot --root . --json
 ```
@@ -3121,7 +3121,7 @@ Expected:
 
 - TypeScript passes with no errors.
 - `gate:quick` reports registered quick suites passing.
-- `doctor v1`, `doctor runtime`, and `doctor pilot` return JSON with `ready: true`.
+- `doctor mainline`, `doctor runtime`, and `doctor pilot` return JSON with `ready: true`.
 - Matrix contract reports `131` suites and `581` expected tests.
 
 - [x] **Step 8: Commit P9-T7**

@@ -54,6 +54,12 @@ export interface MultiRepoGovernanceSnapshot {
     unmatchedActiveWaivers: unknown;
     openSpecDebt: unknown;
     bootstrapSpecDebt: unknown;
+    sourceEvolutionChangeId: unknown;
+    sourceEvolutionBlockingOpenItems: unknown;
+    sourceEvolutionExpiredExceptions: unknown;
+    sourceEvolutionRepresentativeArtifact: unknown;
+    lastAdoptedSourceChange: unknown;
+    lifecycleDeltaCounts: unknown;
     releaseDriftStatus: unknown;
     releaseDriftTrendComparisons: unknown;
     approvalWorkflowStatus: unknown;
@@ -179,6 +185,8 @@ export function renderConsoleGovernanceExportText(snapshot: MultiRepoGovernanceS
     `- Active waivers: ${String(snapshot.aggregateHints.activeWaivers ?? "not_available_yet")}`,
     `- Expiring soon waivers: ${formatList(snapshot.aggregateHints.expiringSoonWaivers)}`,
     `- Open spec debt: ${String(snapshot.aggregateHints.openSpecDebt ?? "not_available_yet")}`,
+    `- Source evolution change: ${String(snapshot.aggregateHints.sourceEvolutionChangeId ?? "not_available_yet")}`,
+    `- Source evolution blocking open items: ${String(snapshot.aggregateHints.sourceEvolutionBlockingOpenItems ?? "not_available_yet")}`,
     `- Release drift: ${String(snapshot.aggregateHints.releaseDriftStatus ?? "not_available_yet")}`,
     `- Privacy redactions: ${snapshot.privacy?.findingCount ?? 0}`,
     "",
@@ -206,6 +214,7 @@ function buildAggregateHints(
   const verify = governanceObject(governanceObjects, "verify_trend");
   const audit = governanceObject(governanceObjects, "audit_events");
   const approval = governanceObject(governanceObjects, "approval_workflow");
+  const sourceEvolution = governanceObject(governanceObjects, "source_evolution_governance");
 
   return {
     verifyVerdict: verify?.summary.verdict ?? "not_available_yet",
@@ -217,6 +226,13 @@ function buildAggregateHints(
     unmatchedActiveWaivers: waivers?.summary.unmatchedActiveIds ?? [],
     openSpecDebt: debt?.summary.greenfieldLedgerItems ?? "not_available_yet",
     bootstrapSpecDebt: debt?.summary.bootstrapDebtRecords ?? "not_available_yet",
+    sourceEvolutionChangeId: sourceEvolution?.summary.activeChangeId ?? "not_available_yet",
+    sourceEvolutionBlockingOpenItems: sourceEvolution?.summary.blockingOpenReviewItems ?? "not_available_yet",
+    sourceEvolutionExpiredExceptions: (Number(sourceEvolution?.summary.expiredDeferredItems ?? 0) || 0)
+      + (Number(sourceEvolution?.summary.expiredWaivedItems ?? 0) || 0),
+    sourceEvolutionRepresentativeArtifact: sourceEvolution?.summary.activeRepresentativeItem ?? "not_available_yet",
+    lastAdoptedSourceChange: sourceEvolution?.summary.lastAdoptedSourceChange ?? "not_available_yet",
+    lifecycleDeltaCounts: sourceEvolution?.summary.lifecycleDeltaCounts ?? {},
     releaseDriftStatus: extractNestedValue(drift?.summary.driftSummary, ["overallStatus"]) ?? "not_available_yet",
     releaseDriftTrendComparisons: drift?.summary.trendCompareCount ?? "not_available_yet",
     approvalWorkflowStatus: approval?.summary.status ?? "not_available_yet",

@@ -202,6 +202,16 @@ function resolveArtifactRelativePaths(root: string, pathPattern: string): string
       .filter((relativePath) => relativePath !== ".spec/spec-debt/ledger.yaml");
   }
 
+  if (pathPattern === ".spec/deltas/<change-id>/source-evolution.json") {
+    return listNestedFiles(root, ".spec/deltas", ".json", 2)
+      .filter((relativePath) => relativePath.endsWith("/source-evolution.json"));
+  }
+
+  if (pathPattern === ".spec/deltas/<change-id>/source-review.yaml") {
+    return listNestedFiles(root, ".spec/deltas", ".yaml", 2)
+      .filter((relativePath) => relativePath.endsWith("/source-review.yaml"));
+  }
+
   if (pathPattern === ".spec/baselines/releases/<version>.yaml") {
     return listDirectFiles(root, ".spec/baselines/releases", ".yaml");
   }
@@ -324,7 +334,8 @@ function buildGovernanceObjects(root: string, artifacts: ConsoleSnapshotArtifact
     const missingSourceArtifactIds = sourceArtifacts
       .filter((artifact) => artifact.status === "not_available_yet")
       .map((artifact) => artifact.id);
-    const status = summarizeGovernanceStatus(sourceArtifacts);
+    const summary = buildGovernanceSummary(root, object.id, sourceArtifacts);
+    const status = overrideGovernanceStatus(object.id, summarizeGovernanceStatus(sourceArtifacts), summary);
 
     return {
       id: object.id,
@@ -335,7 +346,7 @@ function buildGovernanceObjects(root: string, artifacts: ConsoleSnapshotArtifact
       missingSourceArtifactIds,
       automationInputs: object.automationInputs,
       markdownDisplayOnly: true,
-      summary: buildGovernanceSummary(root, object.id, sourceArtifacts),
+      summary,
       message: status === "not_available_yet"
         ? "Governance object not available yet. Run the producing JiSpec command to create its source artifact."
         : undefined,
@@ -384,6 +395,17 @@ function summarizeGovernanceObjects(objects: ConsoleGovernanceObjectSnapshot[]):
   );
 }
 
+function overrideGovernanceStatus(
+  id: ConsoleGovernanceObjectId,
+  status: ConsoleGovernanceObjectStatus,
+  summary: Record<string, unknown>,
+): ConsoleGovernanceObjectStatus {
+  if (id === "source_evolution_governance" && summary.state === "available") {
+    return "available";
+  }
+  return status;
+}
+
 function buildGovernanceSummary(
   root: string,
   id: ConsoleGovernanceObjectId,
@@ -409,6 +431,9 @@ function buildGovernanceSummary(
   }
   if (id === "spec_debt_ledger") {
     return summarizeSpecDebt(sourceArtifacts);
+  }
+  if (id === "source_evolution_governance") {
+    return summarizeSourceEvolutionGovernance(sourceArtifacts);
   }
   if (id === "contract_drift") {
     return summarizeContractDrift(sourceArtifacts);
@@ -501,6 +526,114 @@ function summarizeSpecDebt(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<s
     state: ledgerItems.length > 0 || bootstrapRecords.length > 0 ? "available" : "not_available_yet",
     greenfieldLedgerItems: ledgerItems.length,
     bootstrapDebtRecords: bootstrapRecords.length,
+  };
+}
+
+function summarizeSourceEvolutionGovernance(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const baseline = getFirstData(sourceArtifacts, "greenfield-current-baseline");
+  const lifecycle = getFirstData(sourceArtifacts, "greenfield-requirement-lifecycle");
+  const sourceEvolutionInstances = getInstances(sourceArtifacts, "greenfield-source-evolution");
+  const sourceReviewInstances = getInstances(sourceArtifacts, "greenfield-source-review");
+  const baselineSourceEvolution = isRecord(baseline) && isRecord(baseline.source_evolution) ? baseline.source_evolution : undefined;
+  const baselineRequirementLifecycle = isRecord(baseline) && isRecord(baseline.requirement_lifecycle)
+    ? baseline.requirement_lifecycle
+    : undefined;
+  const lifecycleRequirements = isRecord(lifecycle) && Array.isArray(lifecycle.requirements)
+    ? lifecycle.requirements.filter(isRecord)
+    : [];
+  const lifecycleDeltaCounts = countByStatus(lifecycleRequirements.map((entry) => String(entry.status ?? "active")));
+  const lastAdoptedSourceChange = stringValue(extractNestedValue(baselineSourceEvolution, ["last_adopted_change_id"]))
+    ?? stringValue(extractNestedValue(baselineRequirementLifecycle, ["last_adopted_change_id"]))
+    ?? stringValue(extractNestedValue(lifecycle, ["last_adopted_change_id"]))
+    ?? "not_available_yet";
+  const lifecyclePath = getInstances(sourceArtifacts, "greenfield-requirement-lifecycle")[0]?.relativePath
+    ?? stringValue(extractNestedValue(baselineRequirementLifecycle, ["path"]))
+    ?? ".spec/requirements/lifecycle.yaml";
+
+  const pairs = stableUnique([
+    ...sourceEvolutionInstances.map((instance) => extractChangeIdFromDeltaPath(instance.relativePath)),
+    ...sourceReviewInstances.map((instance) => extractChangeIdFromDeltaPath(instance.relativePath)),
+  ].filter((value): value is string => Boolean(value)))
+    .map((changeId) => {
+      const evolution = sourceEvolutionInstances.find((instance) => extractChangeIdFromDeltaPath(instance.relativePath) === changeId);
+      const review = sourceReviewInstances.find((instance) => extractChangeIdFromDeltaPath(instance.relativePath) === changeId);
+      return buildSourceEvolutionPair(changeId, evolution, review);
+    })
+    .filter((pair): pair is SourceEvolutionPair => Boolean(pair));
+  const active = selectActiveSourceEvolutionPair(pairs);
+  const activeSummary = active?.evolutionSummary;
+  const activeReview = active?.reviewSummary;
+  const reviewedBlocking = (activeSummary?.blockingTotal ?? 0) - (activeReview?.blockingOpen ?? 0);
+  const canAdoptSource = Boolean(active && activeSummary && activeReview && activeSummary.total > 0 && activeReview.blockingOpen === 0);
+  const currentChangeState = active
+    ? activeReview && activeReview.blockingOpen > 0
+      ? "review_blocked"
+      : activeReview && activeReview.open > 0
+        ? "review_open"
+        : canAdoptSource
+          ? "ready_for_source_adopt"
+          : "reviewed"
+    : "no_open_source_change";
+
+  if (!isRecord(baseline) && !isRecord(lifecycle) && pairs.length === 0) {
+    return { state: "not_available_yet" };
+  }
+
+  return {
+    state: "available",
+    activeChangeId: active?.changeId ?? "not_available_yet",
+    currentChangeState,
+    sourceEvolutionSummary: activeSummary
+      ? {
+          changed: activeSummary.changed,
+          total: activeSummary.total,
+          added: activeSummary.added,
+          modified: activeSummary.modified,
+          deprecated: activeSummary.deprecated,
+          split: activeSummary.split,
+          merged: activeSummary.merged,
+          reanchored: activeSummary.reanchored,
+          blocking: activeSummary.blockingTotal,
+          advisory: activeSummary.advisoryTotal,
+        }
+      : "not_available_yet",
+    openReviewItems: activeReview?.open ?? 0,
+    blockingOpenReviewItems: activeReview?.blockingOpen ?? 0,
+    reviewedBlockingItems: reviewedBlocking > 0 ? reviewedBlocking : 0,
+    deferredItems: activeReview?.deferred ?? 0,
+    waivedItems: activeReview?.waived ?? 0,
+    rejectedItems: activeReview?.rejected ?? 0,
+    expiredDeferredItems: activeReview?.expiredDeferred ?? 0,
+    expiredWaivedItems: activeReview?.expiredWaived ?? 0,
+    openReviewItemsBySeverity: activeReview?.openBySeverity ?? {},
+    lifecycleDeltaCounts,
+    lifecycleRequirementCount: lifecycleRequirements.length,
+    lastAdoptedSourceChange,
+    lifecyclePath,
+    sourceEvolutionPath: active?.evolutionPath ?? "not_available_yet",
+    sourceReviewPath: active?.reviewPath ?? "not_available_yet",
+    sourceReviewCoverage: activeReview
+      ? {
+          totalItems: activeReview.total,
+          open: activeReview.open,
+          adopted: activeReview.adopted,
+          deferred: activeReview.deferred,
+          waived: activeReview.waived,
+          rejected: activeReview.rejected,
+        }
+      : "not_available_yet",
+    activeRepresentativeItem: active?.representativeItem ?? "not_available_yet",
+    canAdoptSource,
+    pendingChanges: pairs
+      .filter((pair) => pair.reviewSummary?.open || pair.reviewSummary?.expiredDeferred || pair.reviewSummary?.expiredWaived)
+      .map((pair) => ({
+        changeId: pair.changeId,
+        openReviewItems: pair.reviewSummary?.open ?? 0,
+        blockingOpenReviewItems: pair.reviewSummary?.blockingOpen ?? 0,
+        sourceEvolutionPath: pair.evolutionPath,
+        sourceReviewPath: pair.reviewPath,
+      })),
+    decisions: active?.decisions ?? [],
   };
 }
 
@@ -676,6 +809,8 @@ function summarizeMultiRepoExport(sourceArtifacts: ConsoleSnapshotArtifact[]): R
     policyProfile: aggregateHints.policyProfile ?? "not_declared",
     openSpecDebt: aggregateHints.openSpecDebt ?? "not_declared",
     releaseDriftStatus: aggregateHints.releaseDriftStatus ?? "not_declared",
+    sourceEvolutionChangeId: aggregateHints.sourceEvolutionChangeId ?? "not_declared",
+    sourceEvolutionBlockingOpenItems: aggregateHints.sourceEvolutionBlockingOpenItems ?? "not_declared",
   };
 }
 
@@ -799,6 +934,10 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function isApprovalAuditEvent(type: string): boolean {
   return [
     "source_review_adopt",
@@ -850,6 +989,234 @@ function isExceptionAuditEvent(type: string): boolean {
 
 function stableUnique(values: string[]): string[] {
   return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
+}
+
+interface SourceEvolutionDecisionSummary {
+  itemId: string;
+  evolutionId: string;
+  summary: string;
+  severity: string;
+  status: string;
+  sourceDocument: string;
+  path: string;
+  anchorId?: string;
+  owner?: string;
+  deferExpiresAt?: string;
+  waiverExpiresAt?: string;
+  mapsTo: string[];
+}
+
+interface SourceEvolutionReviewSummary {
+  total: number;
+  open: number;
+  blockingOpen: number;
+  adopted: number;
+  deferred: number;
+  waived: number;
+  rejected: number;
+  expiredDeferred: number;
+  expiredWaived: number;
+  openBySeverity: Record<string, number>;
+}
+
+interface SourceEvolutionDiffSummary {
+  changed: boolean;
+  total: number;
+  added: number;
+  modified: number;
+  deprecated: number;
+  split: number;
+  merged: number;
+  reanchored: number;
+  blockingTotal: number;
+  advisoryTotal: number;
+}
+
+interface SourceEvolutionPair {
+  changeId: string;
+  evolutionPath?: string;
+  reviewPath?: string;
+  evolutionSummary?: SourceEvolutionDiffSummary;
+  reviewSummary?: SourceEvolutionReviewSummary;
+  representativeItem?: string;
+  decisions: SourceEvolutionDecisionSummary[];
+}
+
+function buildSourceEvolutionPair(
+  changeId: string,
+  evolution: ConsoleSnapshotArtifactInstance | undefined,
+  review: ConsoleSnapshotArtifactInstance | undefined,
+): SourceEvolutionPair {
+  const evolutionData = isRecord(evolution?.data) ? evolution.data : undefined;
+  const reviewData = isRecord(review?.data) ? review.data : undefined;
+  const evolutionItems = Array.isArray(evolutionData?.items) ? evolutionData.items.filter(isRecord) : [];
+  const reviewItems = Array.isArray(reviewData?.items) ? reviewData.items.filter(isRecord) : [];
+  const decisions = evolutionItems.map((item) => toSourceEvolutionDecisionSummary(item, reviewItems));
+  const diffSummary = isRecord(evolutionData?.summary)
+    ? {
+        changed: evolutionData.summary.changed === true,
+        total: numberValue(evolutionData.summary.total) ?? evolutionItems.length,
+        added: numberValue(evolutionData.summary.added) ?? 0,
+        modified: numberValue(evolutionData.summary.modified) ?? 0,
+        deprecated: numberValue(evolutionData.summary.deprecated) ?? 0,
+        split: numberValue(evolutionData.summary.split) ?? 0,
+        merged: numberValue(evolutionData.summary.merged) ?? 0,
+        reanchored: numberValue(evolutionData.summary.reanchored) ?? 0,
+        blockingTotal: decisions.filter((item) => item.severity === "blocking").length,
+        advisoryTotal: decisions.filter((item) => item.severity !== "blocking").length,
+      }
+    : undefined;
+
+  const reviewSummary = decisions.reduce<SourceEvolutionReviewSummary>(
+    (acc, decision) => {
+      acc.total++;
+      if (decision.status === "proposed") {
+        acc.open++;
+        acc.openBySeverity[decision.severity] = (acc.openBySeverity[decision.severity] ?? 0) + 1;
+        if (decision.severity === "blocking") {
+          acc.blockingOpen++;
+        }
+      } else if (decision.status === "adopted") {
+        acc.adopted++;
+      } else if (decision.status === "deferred") {
+        acc.deferred++;
+        if (isPastDate(decision.deferExpiresAt)) {
+          acc.expiredDeferred++;
+        }
+      } else if (decision.status === "waived") {
+        acc.waived++;
+        if (isPastDate(decision.waiverExpiresAt)) {
+          acc.expiredWaived++;
+        }
+      } else if (decision.status === "rejected") {
+        acc.rejected++;
+      }
+      return acc;
+    },
+    {
+      total: 0,
+      open: 0,
+      blockingOpen: 0,
+      adopted: 0,
+      deferred: 0,
+      waived: 0,
+      rejected: 0,
+      expiredDeferred: 0,
+      expiredWaived: 0,
+      openBySeverity: {},
+    },
+  );
+
+  return {
+    changeId,
+    evolutionPath: evolution?.relativePath,
+    reviewPath: review?.relativePath,
+    evolutionSummary: diffSummary,
+    reviewSummary,
+    representativeItem: selectRepresentativeSourceEvolutionArtifact(decisions),
+    decisions,
+  };
+}
+
+function toSourceEvolutionDecisionSummary(
+  item: Record<string, unknown>,
+  reviewItems: Record<string, unknown>[],
+): SourceEvolutionDecisionSummary {
+  const evolutionId = stringValue(item.evolution_id) ?? "unknown-evolution";
+  const review = reviewItems.find((entry) => stringValue(entry.evolution_id) === evolutionId);
+  const deferRecord = isRecord(review?.defer_record) ? review.defer_record : undefined;
+  const waiverRecord = isRecord(review?.waiver_record) ? review.waiver_record : undefined;
+  return {
+    itemId: stringValue(review?.item_id) ?? evolutionId,
+    evolutionId,
+    summary: stringValue(review?.summary) ?? stringValue(item.summary) ?? "source evolution item",
+    severity: stringValue(review?.severity) ?? stringValue(item.severity) ?? "blocking",
+    status: stringValue(review?.status) ?? "proposed",
+    sourceDocument: stringValue(review?.source_document) ?? stringValue(item.source_document) ?? "requirements",
+    path: stringValue(review?.source_document) === "technical_solution"
+      ? stringValue(item.path) ?? "docs/input/technical-solution.md"
+      : stringValue(item.path) ?? "docs/input/requirements.md",
+    anchorId: stringValue(review?.anchor_id) ?? stringValue(item.anchor_id),
+    owner: stringValue(review?.owner)
+      ?? stringValue(extractNestedValue(deferRecord, ["owner"]))
+      ?? stringValue(extractNestedValue(waiverRecord, ["owner"])),
+    deferExpiresAt: stringValue(extractNestedValue(deferRecord, ["expires_at"])),
+    waiverExpiresAt: stringValue(extractNestedValue(waiverRecord, ["expires_at"])),
+    mapsTo: Array.isArray(review?.maps_to)
+      ? review.maps_to.map(String)
+      : Array.isArray(item.successor_ids)
+        ? item.successor_ids.map(String)
+        : [],
+  };
+}
+
+function selectActiveSourceEvolutionPair(pairs: SourceEvolutionPair[]): SourceEvolutionPair | undefined {
+  return [...pairs].sort((left, right) => {
+    const leftPriority = sourceEvolutionPairPriority(left);
+    const rightPriority = sourceEvolutionPairPriority(right);
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+    return right.changeId.localeCompare(left.changeId);
+  })[0];
+}
+
+function sourceEvolutionPairPriority(pair: SourceEvolutionPair): number {
+  const summary = pair.reviewSummary;
+  if (!summary) {
+    return 5;
+  }
+  if (summary.expiredDeferred > 0 || summary.expiredWaived > 0) {
+    return 0;
+  }
+  if (summary.blockingOpen > 0) {
+    return 1;
+  }
+  if (summary.open > 0) {
+    return 2;
+  }
+  if ((pair.evolutionSummary?.total ?? 0) > 0) {
+    return 3;
+  }
+  return 4;
+}
+
+function extractChangeIdFromDeltaPath(relativePath: string): string | undefined {
+  const match = relativePath.match(/^\.spec\/deltas\/([^/]+)\//);
+  return match?.[1];
+}
+
+function selectRepresentativeSourceEvolutionArtifact(decisions: SourceEvolutionDecisionSummary[]): string | undefined {
+  const selected = [...decisions].sort((left, right) => {
+    const priority = representativeSourceEvolutionDecisionPriority(left) - representativeSourceEvolutionDecisionPriority(right);
+    if (priority !== 0) {
+      return priority;
+    }
+    return `${left.path}|${left.anchorId ?? left.evolutionId}`.localeCompare(`${right.path}|${right.anchorId ?? right.evolutionId}`);
+  })[0];
+  if (!selected) {
+    return undefined;
+  }
+  return selected.anchorId ? `${selected.path}:${selected.anchorId}` : selected.path;
+}
+
+function representativeSourceEvolutionDecisionPriority(decision: SourceEvolutionDecisionSummary): number {
+  if (decision.path.includes("/contracts/") || decision.path.includes("contract")) {
+    return 0;
+  }
+  if (decision.path.includes("/design/") || decision.path.includes("technical-solution")) {
+    return 1;
+  }
+  if (decision.path.includes("/behavior/") || decision.path.endsWith(".feature")) {
+    return 2;
+  }
+  if (decision.path.includes("/tests/") || decision.path.endsWith(".spec.ts") || decision.path.endsWith(".test.ts")) {
+    return 3;
+  }
+  if (decision.sourceDocument === "requirements") {
+    return 4;
+  }
+  return 5;
 }
 
 function listDirectFiles(root: string, relativeDir: string, extension: string): string[] {

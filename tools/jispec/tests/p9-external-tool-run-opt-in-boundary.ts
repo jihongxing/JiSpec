@@ -195,8 +195,8 @@ function main(): void {
     assert.equal(suite.task, "P9-T7");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 138);
-    assert.equal(manifest.totalExpectedTests, 620);
+    assert.equal(manifest.totalSuites, 150);
+    assert.equal(manifest.totalExpectedTests, 669);
   }));
 
   report(results);

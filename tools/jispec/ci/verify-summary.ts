@@ -32,6 +32,8 @@ export function renderVerifySummaryMarkdown(report: VerifyReport): string {
       evidence: renderVerifyDecisionEvidence(report),
       owner: "repo owner / reviewer",
       nextCommand: renderVerifyDecisionCommand(report),
+      affectedArtifact: renderVerifyDecisionAffectedArtifact(report),
+      replayCommand: renderVerifyDecisionReplayCommand(report),
     }),
     "## Decision",
     "",
@@ -65,6 +67,10 @@ export function renderVerifySummaryMarkdown(report: VerifyReport): string {
     "## Impact Graph",
     "",
     ...renderImpactGraphContext(report),
+    "",
+    "## Release Global Context",
+    "",
+    ...renderReleaseGlobalContext(report),
     "",
     "## Source Of Truth",
     "",
@@ -142,6 +148,49 @@ export function renderVerifyDecisionEvidence(report: VerifyReport): string[] {
   if (report.modes?.waiversApplied) {
     evidence.push(`${report.modes.waiversApplied} matched waiver(s)`);
   }
+  const impactGraphPath = stringValue(report.modes?.impactGraphPath);
+  if (impactGraphPath) {
+    evidence.push(`impact graph \`${impactGraphPath}\``);
+  }
+  const impactReportPath = stringValue(report.modes?.impactReportPath);
+  if (impactReportPath) {
+    evidence.push(`impact report \`${impactReportPath}\``);
+  }
+  const verifyFocusPath = stringValue(report.modes?.verifyFocusPath);
+  if (verifyFocusPath) {
+    evidence.push(`verify focus \`${verifyFocusPath}\``);
+  }
+  const impactFreshness = stringValue(report.modes?.impactGraphFreshness);
+  if (impactFreshness) {
+    evidence.push(`impact freshness \`${impactFreshness}\``);
+  }
+  const releaseCompareReportPath = stringValue(report.modes?.releaseCompareReportPath);
+  if (releaseCompareReportPath) {
+    const overallStatus = stringValue(report.modes?.releaseCompareOverallStatus);
+    const globalContextStatus = stringValue(report.modes?.releaseCompareGlobalContextStatus);
+    const qualifiers = [overallStatus, globalContextStatus].filter((value): value is string => Boolean(value));
+    evidence.push(
+      qualifiers.length > 0
+        ? `release compare \`${releaseCompareReportPath}\` (${qualifiers.join(", ")})`
+        : `release compare \`${releaseCompareReportPath}\``,
+    );
+  }
+  const releaseCompareAggregatePath = stringValue(report.modes?.releaseCompareAggregatePath);
+  if (releaseCompareAggregatePath) {
+    evidence.push(`release aggregate \`${releaseCompareAggregatePath}\``);
+  }
+  const ownerReviewRecommendationCount = numberValue(report.modes?.releaseCompareOwnerReviewRecommendationCount);
+  if (ownerReviewRecommendationCount > 0) {
+    evidence.push(`${ownerReviewRecommendationCount} release owner-review recommendation(s)`);
+  }
+  const relevantContractDriftHintCount = numberValue(report.modes?.releaseCompareRelevantContractDriftHintCount);
+  if (relevantContractDriftHintCount > 0) {
+    evidence.push(`${relevantContractDriftHintCount} relevant release drift hint(s)`);
+  }
+  const relevantOwnerActionCount = numberValue(report.modes?.releaseCompareRelevantOwnerActionCount);
+  if (relevantOwnerActionCount > 0) {
+    evidence.push(`${relevantOwnerActionCount} relevant release owner action(s)`);
+  }
   const agentDiscipline = report.modes?.agentDiscipline as { latestReportPath?: string; completionStatus?: string } | undefined;
   if (agentDiscipline?.latestReportPath) {
     evidence.push(`Agent discipline: \`${agentDiscipline.latestReportPath}\` (${agentDiscipline.completionStatus ?? "unknown"})`);
@@ -154,6 +203,78 @@ export function renderVerifyDecisionCommand(report: VerifyReport): string {
     return "`npm run jispec-cli -- verify` after fixing blockers or recording explicit governance decisions";
   }
   return "`npm run ci:verify` before merge or release";
+}
+
+export function renderVerifyDecisionAffectedArtifact(report: VerifyReport): string | undefined {
+  const verifyFocusPath = stringValue(report.modes?.verifyFocusPath);
+  const impactedFiles = stringArray(report.modes?.impactGraphImpactedFiles);
+  if (verifyFocusPath && impactedFiles.length > 0) {
+    return `${selectRepresentativeAffectedArtifact(impactedFiles)} (verify focus: ${verifyFocusPath})`;
+  }
+  if (verifyFocusPath) {
+    return verifyFocusPath;
+  }
+  if (impactedFiles.length > 0) {
+    return selectRepresentativeAffectedArtifact(impactedFiles);
+  }
+
+  const blockingPath = report.issues.find((issue) => issue.severity === "blocking" && issue.path)?.path;
+  if (blockingPath) {
+    return blockingPath;
+  }
+
+  const highlightedPath = report.issues.find((issue) => typeof issue.path === "string" && issue.path.trim().length > 0)?.path;
+  if (highlightedPath) {
+    return highlightedPath;
+  }
+  const releaseRepresentativeArtifact = stringValue(report.modes?.releaseCompareRepresentativeArtifact);
+  if (releaseRepresentativeArtifact) {
+    return releaseRepresentativeArtifact;
+  }
+  const releaseAggregatePath = stringValue(report.modes?.releaseCompareAggregatePath);
+  if (releaseAggregatePath) {
+    return releaseAggregatePath;
+  }
+  return stringValue(report.modes?.impactGraphPath) ?? ".jispec-ci/verify-report.json";
+}
+
+export function renderVerifyDecisionReplayCommand(report: VerifyReport): string | undefined {
+  return stringValue(report.modes?.impactGraphNextReplayCommand)
+    ?? stringValue(report.modes?.releaseCompareReplayCommand);
+}
+
+export function renderReleaseGlobalContext(report: VerifyReport): string[] {
+  const releaseCompareReportPath = stringValue(report.modes?.releaseCompareReportPath);
+  if (!releaseCompareReportPath) {
+    return ["- No release compare global context recorded for this verify report yet."];
+  }
+
+  const overallStatus = stringValue(report.modes?.releaseCompareOverallStatus) ?? "not recorded";
+  const globalContextStatus = stringValue(report.modes?.releaseCompareGlobalContextStatus) ?? "not recorded";
+  const aggregatePath = stringValue(report.modes?.releaseCompareAggregatePath) ?? "not recorded";
+  const aggregateGeneratedAt = stringValue(report.modes?.releaseCompareAggregateGeneratedAt);
+  const representativeArtifacts = stringArray(report.modes?.releaseCompareRepresentativeArtifacts);
+  const sourceEvolutionChangeId = stringValue(report.modes?.releaseCompareSourceEvolutionChangeId);
+  const replayCommand = stringValue(report.modes?.releaseCompareReplayCommand);
+  const summary = stringValue(report.modes?.releaseCompareSummary);
+  const ownerReviewRecommendationCount = numberValue(report.modes?.releaseCompareOwnerReviewRecommendationCount);
+  const relevantContractDriftHintCount = numberValue(report.modes?.releaseCompareRelevantContractDriftHintCount);
+  const relevantOwnerActionCount = numberValue(report.modes?.releaseCompareRelevantOwnerActionCount);
+
+  return [
+    `- Status: \`${globalContextStatus}\` (overall drift: \`${overallStatus}\`).`,
+    `- Report: \`${releaseCompareReportPath}\`.`,
+    `- Aggregate artifact: \`${aggregatePath}\`.`,
+    ...(aggregateGeneratedAt ? [`- Aggregate generated at: \`${aggregateGeneratedAt}\`.`] : []),
+    ...(summary ? [`- Summary: ${summary}.`] : []),
+    ...(sourceEvolutionChangeId ? [`- Source evolution change: \`${sourceEvolutionChangeId}\`.`] : []),
+    `- Representative artifacts: ${summarizeStringList(representativeArtifacts)}.`,
+    `- Relevant contract drift hints: ${relevantContractDriftHintCount}.`,
+    `- Relevant owner actions: ${relevantOwnerActionCount}.`,
+    `- Owner-review recommendations: ${ownerReviewRecommendationCount}.`,
+    ...(replayCommand ? [`- Replay command: \`${replayCommand}\`.`] : []),
+    "- Release global context is advisory evidence and does not replace deterministic verify or ci:verify.",
+  ];
 }
 
 function renderGreenfieldControlContextSection(report: VerifyReport): string[] {
@@ -243,10 +364,74 @@ function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     : [];
+}
+
+function selectRepresentativeAffectedArtifact(paths: string[]): string {
+  return [...paths]
+    .sort((left, right) =>
+      compareAffectedArtifactPriority(normalizeAffectedArtifactPath(left), normalizeAffectedArtifactPath(right))
+      || normalizeAffectedArtifactPath(left).localeCompare(normalizeAffectedArtifactPath(right)),
+    )[0];
+}
+
+function compareAffectedArtifactPriority(left: string, right: string): number {
+  return affectedArtifactPriority(left) - affectedArtifactPriority(right);
+}
+
+function affectedArtifactPriority(path: string): number {
+  if (isContractArtifact(path)) {
+    return 0;
+  }
+  if (isDesignArtifact(path)) {
+    return 1;
+  }
+  if (isBehaviorArtifact(path)) {
+    return 2;
+  }
+  if (isTestArtifact(path)) {
+    return 3;
+  }
+  return 4;
+}
+
+function isContractArtifact(path: string): boolean {
+  return (
+    path.startsWith(".spec/contracts/")
+    || path.endsWith("/contracts.yaml")
+    || path.endsWith("/contracts.yml")
+    || path.endsWith("/domain.yaml")
+    || path.endsWith("/api_spec.json")
+    || path.endsWith("/api-spec.json")
+  );
+}
+
+function isDesignArtifact(path: string): boolean {
+  return path.includes("/design/") || path.endsWith("/design.md");
+}
+
+function isBehaviorArtifact(path: string): boolean {
+  return path.includes("/behavior/") || path.endsWith(".feature");
+}
+
+function isTestArtifact(path: string): boolean {
+  return (
+    path.endsWith("/test-spec.yaml")
+    || path.endsWith("/test-plan.yaml")
+    || path.includes("/tests/")
+    || path.includes("/test/")
+  );
+}
+
+function normalizeAffectedArtifactPath(path: string): string {
+  return path.replace(/\\/g, "/");
 }
 
 function summarizeStringList(values: string[], limit = 4): string {

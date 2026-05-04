@@ -9,7 +9,7 @@ Target time: about 15 minutes on the minimal sample.
 ```bash
 npm install
 npm run jispec -- --version
-npm run jispec -- doctor v1
+npm run jispec -- doctor mainline
 ```
 
 No cloud account or source upload is required.
