@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { type ChangeImpactSummary } from "../change/impact-summary";
 import { writeChangeSession, type ChangeSession } from "../change/change-session";
 import { mediateExternalPatch } from "../implement/patch-mediation";
 import { compareReleaseBaselines, createReleaseSnapshot } from "../release/baseline-snapshot";
@@ -88,6 +89,13 @@ async function main(): Promise<void> {
       assert.ok(verifyPayload.metadata?.replay?.nextHumanAction);
     }));
 
+    const replayChangeDir = path.join(bootstrapRoot, ".spec", "deltas", "change-replay");
+    fs.mkdirSync(replayChangeDir, { recursive: true });
+    fs.writeFileSync(path.join(replayChangeDir, "delta.yaml"), "change_id: change-replay\n", "utf-8");
+    fs.writeFileSync(path.join(replayChangeDir, "impact-graph.json"), JSON.stringify({ generatedAt: "2026-05-02T00:00:00.000Z" }, null, 2), "utf-8");
+    fs.writeFileSync(path.join(replayChangeDir, "impact-report.md"), "# Impact Report\n", "utf-8");
+    fs.writeFileSync(path.join(replayChangeDir, "verify-focus.yaml"), "contracts: [CTR-ORDERING-001]\n", "utf-8");
+
     const session: ChangeSession = {
       id: "change-replay",
       createdAt: "2026-05-02T00:00:00.000Z",
@@ -100,6 +108,32 @@ async function main(): Promise<void> {
       changedPaths: [{ path: "src/allowed.ts", kind: "unknown" }],
       baseRef: "HEAD",
       nextCommands: [{ command: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-replay.json", description: "Replay handoff" }],
+      impactSummary: {
+        version: 2,
+        changeId: "change-replay",
+        artifacts: {
+          deltaPath: ".spec/deltas/change-replay/delta.yaml",
+          impactGraphPath: ".spec/deltas/change-replay/impact-graph.json",
+          impactReportPath: ".spec/deltas/change-replay/impact-report.md",
+          verifyFocusPath: ".spec/deltas/change-replay/verify-focus.yaml",
+        },
+        changedFiles: ["src/allowed.ts"],
+        changedKinds: { unknown: 1 },
+        contractRefs: ["CTR-ORDERING-001"],
+        testRefs: ["TEST-ORDERING-001"],
+        scopeHints: ["contract-sensitive change"],
+        impactedContracts: ["CTR-ORDERING-001"],
+        impactedFiles: ["src/allowed.ts"],
+        missingVerificationHints: [],
+        freshness: {
+          status: "fresh",
+          path: ".spec/deltas/change-replay/impact-graph.json",
+          generatedAt: "2026-05-02T00:00:00.000Z",
+          reason: "Impact graph is available and recent.",
+        },
+        nextReplayCommand: "npm run jispec-cli -- change \"Replay patch mediation\" --slice ordering-checkout-v1 --json",
+        advisoryOnly: true,
+      } satisfies ChangeImpactSummary,
     };
     writeChangeSession(bootstrapRoot, session);
     const patchPath = writePatch(bootstrapRoot, "out-of-scope.patch", [
@@ -118,6 +152,17 @@ async function main(): Promise<void> {
       assert.ok(mediation.artifact.replay?.inputArtifacts?.includes("src/allowed.ts"));
       assert.ok(mediation.artifact.replay?.commands?.retryWithExternalPatch.includes("--external-patch <path>"));
       assert.ok(mediation.artifact.replay?.nextHumanAction?.includes("scope"));
+    }));
+
+    const verifyWithChange = await runVerify({
+      root: bootstrapRoot,
+      generatedAt: "2026-05-02T00:20:00.000Z",
+    });
+    const verifyWithChangePayload = JSON.parse(renderVerifyJSON(verifyWithChange)) as { metadata?: { replay?: ReplayMetadata } };
+    results.push(record("verify replay metadata includes the active change session and impact artifacts", () => {
+      assert.ok(verifyWithChangePayload.metadata?.replay?.inputArtifacts?.includes(".jispec/change-session.json"));
+      assert.ok(verifyWithChangePayload.metadata?.replay?.inputArtifacts?.includes(".spec/deltas/change-replay/impact-graph.json"));
+      assert.ok(verifyWithChangePayload.metadata?.replay?.inputArtifacts?.includes(".spec/deltas/change-replay/verify-focus.yaml"));
     }));
 
     seedReleaseInputs(releaseRoot, sourceRoot);

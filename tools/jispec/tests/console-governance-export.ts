@@ -31,6 +31,13 @@ async function main(): Promise<void> {
       writeJson(root, ".spec/policy.yaml", { version: 1, rules: [] });
       writeJson(root, ".jispec-ci/verify-report.json", { verdict: "PASS", issueCount: 0, blockingIssueCount: 0, modes: {} });
       writeJson(root, ".spec/releases/compare/v1-to-v2/compare-report.json", { driftSummary: { overallStatus: "changed" } });
+      writeJson(root, ".spec/north-star/acceptance.json", {
+        kind: "jispec-north-star-acceptance",
+        summary: { ready: true, scenarioCount: 9, passedScenarioCount: 9, blockingScenarioCount: 0 },
+        contract: { version: 1 },
+        boundary: { localOnly: true, sourceUploadRequired: false, deterministicLocalArtifactsOnly: true },
+      });
+      writeText(root, ".spec/north-star/acceptance.md", "# North Star Acceptance\n\nLocal only.\n");
       writeJson(root, ".spec/console/governance-snapshot.json", {
         schemaVersion: 1,
         kind: "jispec-multi-repo-governance-snapshot",
@@ -81,6 +88,7 @@ async function main(): Promise<void> {
       assert.equal(result.snapshot.contract?.missingSemantics.unavailableValue, "not_available_yet");
       assert.equal(result.snapshot.contract?.missingSemantics.missingSnapshotReason, "snapshot_not_found");
       assert.equal(result.snapshot.aggregateHints.releaseDriftStatus, "changed");
+      assert.equal(result.snapshot.governanceObjects.some((object) => object.id === "north_star_acceptance"), true);
       assert.match(renderConsoleGovernanceExportText(result.snapshot), /Snapshot contract: 1/);
       assert.match(renderConsoleGovernanceExportText(result.snapshot), /JiSpec Multi-Repo Governance Snapshot/);
 
@@ -120,6 +128,12 @@ function writeJson(root: string, relativePath: string, value: unknown): void {
   const target = path.join(root, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+}
+
+function writeText(root: string, relativePath: string, content: string): void {
+  const target = path.join(root, relativePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content, "utf-8");
 }
 
 function runCli(args: string[]): { status: number | null; stdout: string; stderr: string } {

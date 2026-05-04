@@ -121,19 +121,19 @@ async function main(): Promise<void> {
 
   results.push(record("north-star docs and CLI help expose final acceptance without replacing existing gates", () => {
     const repoRoot = path.resolve(__dirname, "..", "..", "..");
-    const plan = fs.readFileSync(path.join(repoRoot, "docs", "north-star-next-development-plan.md"), "utf-8");
+    const acceptanceDoc = fs.readFileSync(path.join(repoRoot, "docs", "north-star-acceptance.md"), "utf-8");
     const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf-8");
     const stableContract = fs.readFileSync(path.join(repoRoot, "docs", "v1-mainline-stable-contract.md"), "utf-8");
     const consoleContract = fs.readFileSync(path.join(repoRoot, "docs", "console-read-model-contract.md"), "utf-8");
     const checklist = fs.readFileSync(path.join(repoRoot, "docs", "pilot-readiness-checklist.md"), "utf-8");
     const help = runCli(["--help"]);
 
-    assert.match(plan, /M7-T5[\s\S]*状态：已完成/);
-    assert.match(plan, /north-star acceptance/i);
+    assert.match(acceptanceDoc, /north-star acceptance/i);
+    assert.match(acceptanceDoc, /local-only/i);
     assert.match(readme, /north-star acceptance/i);
     assert.match(stableContract, /north-star acceptance/i);
     assert.match(consoleContract, /north-star acceptance/i);
-    assert.match(checklist, /north-star acceptance/i);
+    assert.match(checklist, /pilot:ready/i);
     assert.match(help.stdout, /jispec-cli north-star acceptance \[--json\]/);
   }));
 

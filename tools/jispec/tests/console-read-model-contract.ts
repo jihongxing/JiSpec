@@ -32,12 +32,12 @@ async function main(): Promise<void> {
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const docPath = path.join(repoRoot, "docs", "console-read-model-contract.md");
   const stableContractPath = path.join(repoRoot, "docs", "v1-mainline-stable-contract.md");
-  const planPath = path.join(repoRoot, "docs", "post-v1-north-star-plan.md");
+  const acceptancePath = path.join(repoRoot, "docs", "north-star-acceptance.md");
   const readmePath = path.join(repoRoot, "README.md");
   const zhReadmePath = path.join(repoRoot, "README.zh-CN.md");
   const doc = fs.readFileSync(docPath, "utf-8");
   const stableContract = fs.readFileSync(stableContractPath, "utf-8");
-  const plan = fs.readFileSync(planPath, "utf-8");
+  const acceptanceDoc = fs.readFileSync(acceptancePath, "utf-8");
   const readme = fs.readFileSync(readmePath, "utf-8");
   const zhReadme = fs.readFileSync(zhReadmePath, "utf-8");
 
@@ -48,7 +48,7 @@ async function main(): Promise<void> {
     assert.equal(contract.boundary.replacesCliGate, false);
     assert.equal(contract.boundary.sourceUploadRequired, false);
     assert.equal(contract.boundary.localArtifactsAreSourceOfTruth, true);
-    assert.equal(contract.governanceObjects.length, 11);
+    assert.equal(contract.governanceObjects.length, 12);
   });
 
   record("contract includes required machine-readable read model artifacts and governance sources", () => {
@@ -71,6 +71,8 @@ async function main(): Promise<void> {
       ".jispec/implement/<session-id>/patch-mediation.json",
       ".spec/approvals/*.json",
       ".spec/audit/events.jsonl",
+      ".spec/north-star/acceptance.json",
+      ".spec/north-star/scenarios/*.json",
     ]) {
       assert.ok(machinePaths.includes(expected), `Missing ${expected}`);
     }
@@ -90,6 +92,7 @@ async function main(): Promise<void> {
       "audit_events",
       "approval_workflow",
       "multi_repo_export",
+      "north_star_acceptance",
     ]);
     for (const object of CONSOLE_GOVERNANCE_OBJECTS) {
       assert.equal(object.missingState, "not_available_yet");
@@ -120,8 +123,8 @@ async function main(): Promise<void> {
     assert.ok(doc.includes("must not require source upload"));
     assert.ok(stableContract.includes("Console Read Model Contract"));
     assert.ok(stableContract.includes("docs/console-read-model-contract.md"));
-    assert.ok(plan.includes("状态：已实现"));
-    assert.ok(plan.includes("console-read-model-contract.ts"));
+    assert.ok(acceptanceDoc.includes("North Star Acceptance"));
+    assert.ok(acceptanceDoc.includes("local-only"));
     assert.ok(readme.includes("Console read model contract"));
     assert.ok(zhReadme.includes("Console read model contract"));
   });
@@ -160,6 +163,16 @@ async function main(): Promise<void> {
       writeText(fixtureRoot, ".spec/baselines/releases/v1.yaml", "version: v1\n");
       writeText(fixtureRoot, ".spec/releases/compare/v1-to-v2/compare-report.json", JSON.stringify({ driftSummary: { changed: 1 } }, null, 2));
       writeText(fixtureRoot, ".spec/console/governance-snapshot.json", JSON.stringify({ kind: "jispec-multi-repo-governance-snapshot" }, null, 2));
+      writeText(fixtureRoot, ".spec/north-star/acceptance.json", JSON.stringify({
+        kind: "jispec-north-star-acceptance",
+        summary: { ready: true, scenarioCount: 9, passedScenarioCount: 9, blockingScenarioCount: 0 },
+        contract: { version: 1 },
+        boundary: { localOnly: true, sourceUploadRequired: false, deterministicLocalArtifactsOnly: true },
+      }, null, 2));
+      writeText(fixtureRoot, ".spec/north-star/acceptance.md", "# North Star Acceptance\n\nLocal only.\n");
+      writeText(fixtureRoot, ".spec/north-star/scenarios/console-governance.json", JSON.stringify({ id: "console_governance", status: "passed" }, null, 2));
+      writeText(fixtureRoot, ".spec/north-star/scenarios/console-governance-decision.md", "# Decision\n\nPass.\n");
+      writeText(fixtureRoot, ".spec/north-star/scenarios/legacy_takeover.json", JSON.stringify({ id: "legacy_takeover", status: "passed" }, null, 2));
       writeText(fixtureRoot, ".spec/handoffs/retakeover-metrics.json", JSON.stringify({ qualityScorecard: { score: 82 } }, null, 2));
       writeText(fixtureRoot, ".jispec/handoff/change-1.json", JSON.stringify({ outcome: "budget_exhausted", decisionPacket: { stopPoint: "budget" }, replay: { replayable: true } }, null, 2));
       writeText(fixtureRoot, ".jispec/implement/change-1/patch-mediation.json", JSON.stringify({ status: "accepted", applied: true }, null, 2));
@@ -199,6 +212,9 @@ async function main(): Promise<void> {
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "verify-policy")?.instances[0]?.data && true, true);
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "release-compare-report")?.instances[0]?.relativePath, ".spec/releases/compare/v1-to-v2/compare-report.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "multi-repo-governance-snapshot")?.instances[0]?.relativePath, ".spec/console/governance-snapshot.json");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "north-star-acceptance")?.status, "available");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "north-star-acceptance-summary")?.status, "available");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "north-star-scenario-packets")?.instances[0]?.relativePath, ".spec/north-star/scenarios/console-governance.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "implementation-handoff-packets")?.instances[0]?.relativePath, ".jispec/handoff/change-1.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "policy-approvals")?.instances[0]?.relativePath, ".spec/approvals/approval-1.json");
     } finally {
@@ -282,6 +298,10 @@ async function main(): Promise<void> {
       assert.equal(multiRepo.status, "available");
       assert.equal(multiRepo.summary.repoId, "repo-1");
       assert.equal(multiRepo.summary.releaseDriftStatus, "changed");
+
+      const northStar = governanceObject(snapshot, "north_star_acceptance");
+      assert.equal(northStar.status, "not_available_yet");
+      assert.equal(northStar.summary.state, "not_available_yet");
 
       const implementation = governanceObject(snapshot, "implementation_mediation_outcomes");
       assert.equal(implementation.status, "partial");

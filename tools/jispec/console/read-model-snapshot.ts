@@ -226,6 +226,28 @@ function resolveArtifactRelativePaths(root: string, pathPattern: string): string
       : [];
   }
 
+  if (pathPattern === ".spec/north-star/acceptance.json") {
+    return fs.existsSync(path.join(root, ".spec", "north-star", "acceptance.json"))
+      ? [".spec/north-star/acceptance.json"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/north-star/acceptance.md") {
+    return fs.existsSync(path.join(root, ".spec", "north-star", "acceptance.md"))
+      ? [".spec/north-star/acceptance.md"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/north-star/scenarios/*.json") {
+    return listDirectFiles(root, ".spec/north-star/scenarios", ".json")
+      .filter((relativePath) => !relativePath.endsWith("-decision.md"));
+  }
+
+  if (pathPattern === ".spec/north-star/scenarios/*-decision.md") {
+    return listDirectFiles(root, ".spec/north-star/scenarios", ".md")
+      .filter((relativePath) => relativePath.endsWith("-decision.md"));
+  }
+
   if (pathPattern === ".jispec/handoff/*.json") {
     return listDirectFiles(root, ".jispec/handoff", ".json");
   }
@@ -427,6 +449,9 @@ function buildGovernanceSummary(
   }
   if (id === "multi_repo_export") {
     return summarizeMultiRepoExport(sourceArtifacts);
+  }
+  if (id === "north_star_acceptance") {
+    return summarizeNorthStarAcceptance(sourceArtifacts);
   }
   if (id === "approval_workflow") {
     return summarizeApprovalWorkflow(root);
@@ -676,6 +701,34 @@ function summarizeMultiRepoExport(sourceArtifacts: ConsoleSnapshotArtifact[]): R
     policyProfile: aggregateHints.policyProfile ?? "not_declared",
     openSpecDebt: aggregateHints.openSpecDebt ?? "not_declared",
     releaseDriftStatus: aggregateHints.releaseDriftStatus ?? "not_declared",
+  };
+}
+
+function summarizeNorthStarAcceptance(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const acceptance = getFirstData(sourceArtifacts, "north-star-acceptance");
+  const scenarios = getAllData(sourceArtifacts, "north-star-scenario-packets").filter(isRecord);
+
+  if (!isRecord(acceptance)) {
+    return { state: "not_available_yet" };
+  }
+
+  const summary = isRecord(acceptance.summary) ? acceptance.summary : {};
+  const contract = isRecord(acceptance.contract) ? acceptance.contract : {};
+  return {
+    state: "available",
+    ready: summary.ready ?? "not_declared",
+    scenarioCount: summary.scenarioCount ?? scenarios.length ?? "not_declared",
+    passedScenarioCount: summary.passedScenarioCount ?? "not_declared",
+    blockingScenarioCount: summary.blockingScenarioCount ?? "not_declared",
+    scenarioIds: scenarios.map((scenario) => String(scenario.id ?? scenario.scenarioId ?? "unknown")),
+    scenarioStatuses: scenarios.reduce((acc, scenario) => {
+      const id = String(scenario.id ?? scenario.scenarioId ?? "unknown");
+      acc[id] = String(scenario.status ?? "not_declared");
+      return acc;
+    }, {} as Record<string, string>),
+    contractVersion: contract.version ?? "not_declared",
+    boundary: acceptance.boundary ?? {},
+    blockers: Array.isArray(acceptance.blockers) ? acceptance.blockers.length : "not_declared",
   };
 }
 

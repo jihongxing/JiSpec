@@ -46,12 +46,14 @@ Original artifacts remain unchanged:
 - pilot package and share bundle artifacts
 - audit events
 - release compare reports
+- north-star acceptance packages and scenario packets
 
 Privacy report classifies `.spec/integrations/**` as `integration_payload`, `.spec/pilot/**` as `pilot_package`, and `.jispec/handoff/**` as `handoff`. A classified artifact is not automatically safe to publish; it receives either `shareable` or `review_before_sharing`, and findings produce a redacted companion view.
 
 ## Console Export
 
 `console export-governance` redacts sensitive strings before writing `.spec/console/governance-snapshot.json` and records a privacy hint in the snapshot. This keeps multi-repo aggregation and external review safer without mutating the underlying local facts.
+North-star acceptance packages are treated as closeout artifacts for privacy scanning, but they remain read-only evidence and do not replace any gate.
 
 ## External Tool Boundary
 

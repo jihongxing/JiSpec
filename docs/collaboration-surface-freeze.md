@@ -3,6 +3,7 @@
 Status: P4-T2 deferred surface boundary.
 
 This document freezes the boundary for distributed execution, collaboration, and presence work after V1. These surfaces may keep regression coverage so old experiments do not rot, but they are not V1 product promises and they must not affect V1 readiness.
+`runtime-extended` is diagnostic-only: it can preserve regression coverage, but it must stay out of `doctor v1` and `doctor pilot` gating.
 
 The code-level contract lives in `tools/jispec/runtime/deferred-surface-contract.ts`.
 
@@ -12,6 +13,7 @@ The code-level contract lives in `tools/jispec/runtime/deferred-surface-contract
 - `doctor runtime` may continue checking these surfaces as extended runtime diagnostics.
 - `doctor pilot` must not treat these surfaces as pilot readiness gates; pilot readiness is a separate contract.
 - Regression suites for these surfaces must stay in `runtime-extended`.
+- `runtime-extended` regression suites are diagnostics, not promotion evidence.
 - These surfaces must not override `verify`, `ci:verify`, policy evaluation, waiver lifecycle, release compare, or implementation mediation.
 - These surfaces must not become default CLI gates or release blockers until a future task explicitly promotes them.
 - Console, distributed execution, collaboration, presence, notifications, analytics, and conflict resolution remain support surfaces around the mainline, not substitutes for the mainline.

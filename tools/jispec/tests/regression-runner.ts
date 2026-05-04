@@ -4,6 +4,7 @@
  * Unified runner for the V1 and extended regression matrix.
  * Groups suites by product area so bootstrap takeover hardening can be
  * tracked separately from verify/CI, change/implement, and runtime surfaces.
+ * runtime-extended stays diagnostic-only and is excluded from V1 and pilot gating.
  */
 
 import * as path from 'path';
@@ -126,6 +127,9 @@ export const TEST_SUITES: TestSuite[] = [
   bootstrap({ name: 'Bootstrap API Surface Classification', file: 'bootstrap-api-surface-classification.ts', expectedTests: 6, task: 'Task 6/14' }),
   bootstrap({ name: 'Bootstrap Proto Domain Mapping', file: 'bootstrap-proto-domain-mapping.ts', expectedTests: 4, task: 'Task 14' }),
   bootstrap({ name: 'Bootstrap Init Project', file: 'bootstrap-init-project.ts', expectedTests: 4, task: 'Task 8' }),
+  core({ name: 'Greenfield Static Collector Pipeline', file: 'greenfield-static-collector-pipeline.ts', expectedTests: 5 }),
+  core({ name: 'Greenfield Human Review Pack', file: 'greenfield-human-review-pack.ts', expectedTests: 5 }),
+  core({ name: 'Greenfield Review Adopt Workflow', file: 'greenfield-review-adopt-workflow.ts', expectedTests: 8 }),
   retakeover({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 15, task: 'P0-T1/P0-T2/N8' }),
   bootstrap({ name: 'Adopt CLI Surface', file: 'adopt-cli-surface.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Adopt Atomic', file: 'bootstrap-adopt-atomic.ts', expectedTests: 3 }),
@@ -156,11 +160,13 @@ export const TEST_SUITES: TestSuite[] = [
   changeImplement({ name: 'Implement Handoff Adapters', file: 'implement-handoff-adapters.ts', expectedTests: 5, task: 'P7-T1' }),
   changeImplement({ name: 'Implement Stall Budget', file: 'implement-stall-budget.ts', expectedTests: 4, task: 'P2-T2' }),
   changeImplement({ name: 'Implement CLI Parity', file: 'implement-cli-parity.ts', expectedTests: 3, task: 'P2-T4' }),
-  changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 6, task: 'P9-T3' }),
+  changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 7, task: 'P9-T3' }),
   changeImplement({ name: 'P10 Agent Discipline Artifacts', file: 'agent-discipline-artifacts.ts', expectedTests: 10, task: 'P10-T1/P10-T2/P10-T3/P10-T4' }),
   changeImplement({ name: 'P10 Agent Discipline Implement', file: 'agent-discipline-implement.ts', expectedTests: 4, task: 'P10-T5/P10-T6/P10-T7' }),
   changeImplement({ name: 'P10 Agent Discipline Verify CI', file: 'agent-discipline-verify-ci.ts', expectedTests: 3, task: 'P10-T8' }),
   runtime({ name: 'Stage Runner Identity', file: 'stage-runner-identity-apply.ts', expectedTests: 8 }),
+  runtime({ name: 'Artifact Identity Round-trip', file: 'artifact-identity-roundtrip.ts', expectedTests: 9 }),
+  runtime({ name: 'Provider Identity Semantics', file: 'provider-identity-semantics.ts', expectedTests: 3 }),
   runtime({ name: 'Cache Key Spec', file: 'cache-key-spec.ts', expectedTests: 10 }),
   runtime({ name: 'Cache Manifest Spec', file: 'cache-manifest-spec.ts', expectedTests: 10 }),
   runtime({ name: 'Cache Integration', file: 'cache-integration.ts', expectedTests: 4 }),
@@ -172,6 +178,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Terminal State Rerun', file: 'terminal-state-rerun.ts', expectedTests: 2 }),
   runtime({ name: 'Stable Snapshot Gates', file: 'stable-snapshot-gates.ts', expectedTests: 1 }),
   runtime({ name: 'Evidence Cleanup', file: 'evidence-cleanup.ts', expectedTests: 2 }),
+  runtime({ name: 'Replay Provenance Baseline', file: 'replay-provenance-baseline.ts', expectedTests: 5 }),
   runtime({ name: 'Distributed Scheduler MVP', file: 'distributed-scheduler-mvp.ts', expectedTests: 5 }),
   runtime({ name: 'Distributed Cache MVP', file: 'distributed-cache-mvp.ts', expectedTests: 3 }),
   runtime({ name: 'Distributed Cache Invalidation & Warmup', file: 'distributed-cache-invalidation-warmup.ts', expectedTests: 3 }),
@@ -198,7 +205,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Commercial Pilot Readiness', file: 'pilot-readiness.ts', expectedTests: 6, task: 'P8-T2/T0-5' }),
   runtime({ name: 'Pilot Product Package', file: 'pilot-product-package.ts', expectedTests: 4, task: 'M7-T4' }),
   runtime({ name: 'North Star Acceptance', file: 'north-star-acceptance.ts', expectedTests: 4, task: 'M7-T5' }),
-  runtime({ name: 'Regression Matrix Contract', file: 'regression-matrix-contract.ts', expectedTests: 5, task: 'M5-T3' }),
+  runtime({ name: 'Regression Matrix Contract', file: 'regression-matrix-contract.ts', expectedTests: 6, task: 'M5-T3' }),
   runtime({ name: 'P9 Baseline Contract', file: 'p9-baseline-contract.ts', expectedTests: 5, task: 'P9-T1' }),
   runtime({ name: 'P9 Reviewer Companion Consolidation', file: 'p9-reviewer-companion-consolidation.ts', expectedTests: 6, task: 'P9-T4' }),
   runtime({ name: 'P9 External Tool Run Opt-In Boundary', file: 'p9-external-tool-run-opt-in-boundary.ts', expectedTests: 6, task: 'P9-T7' }),
@@ -260,6 +267,22 @@ export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
     .filter((suite) => deferredSuiteSet.has(suite.file))
     .reduce((sum, suite) => sum + suite.expectedTests, 0);
   const pilotSuite = TEST_SUITES.find((suite) => suite.file === 'pilot-readiness.ts');
+  const pilotReadinessBoundary = {
+    suiteFile: 'pilot-readiness.ts',
+    regressionArea: (pilotSuite?.area ?? 'missing') as RegressionArea | 'missing',
+    doctorProfile: 'pilot' as const,
+    runtimeDiagnosticOnly: true as const,
+  };
+  const deferredSurfaceBoundary = {
+    contractVersion: DEFERRED_SURFACE_CONTRACT_VERSION,
+    suiteCount: deferredSuites.length,
+    expectedTests: deferredExpectedTests,
+    allowedRegressionArea: 'runtime-extended' as const,
+    allowedDoctorProfiles: ['runtime'] as ['runtime'],
+    forbiddenDoctorProfiles: ['v1', 'pilot'] as ['v1', 'pilot'],
+    diagnosticsOnly: true as const,
+    suites: deferredSuites,
+  };
 
   const issues: string[] = [];
   const areaTotalSuites = areas.reduce((sum, area) => sum + area.suiteCount, 0);
@@ -293,11 +316,17 @@ export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
   } else if (pilotSuite.area !== 'runtime-extended') {
     issues.push('Pilot readiness regression suite must stay in runtime-extended and leave gating to doctor pilot');
   }
+  if (pilotReadinessBoundary.runtimeDiagnosticOnly !== true) {
+    issues.push('Pilot readiness regression suite must remain diagnostic-only and stay excluded from V1 and pilot gating');
+  }
 
   for (const contract of getDeferredSurfaceContracts()) {
     if (!contract.forbiddenDoctorProfiles.includes('pilot')) {
       issues.push(`Deferred surface contract ${contract.id} does not forbid doctor pilot gating`);
     }
+  }
+  if (deferredSurfaceBoundary.diagnosticsOnly !== true) {
+    issues.push('Deferred surface contract must remain diagnostic-only and stay excluded from V1 and pilot gating');
   }
 
   return {
@@ -316,22 +345,8 @@ export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
         'change-implement',
       ],
       runtimeExtendedArea: 'runtime-extended',
-      pilotReadiness: {
-        suiteFile: 'pilot-readiness.ts',
-        regressionArea: pilotSuite?.area ?? 'missing',
-        doctorProfile: 'pilot',
-        runtimeDiagnosticOnly: true,
-      },
-      deferredSurfaces: {
-        contractVersion: DEFERRED_SURFACE_CONTRACT_VERSION,
-        suiteCount: deferredSuites.length,
-        expectedTests: deferredExpectedTests,
-        allowedRegressionArea: 'runtime-extended',
-        allowedDoctorProfiles: ['runtime'],
-        forbiddenDoctorProfiles: ['v1', 'pilot'],
-        diagnosticsOnly: true,
-        suites: deferredSuites,
-      },
+      pilotReadiness: pilotReadinessBoundary,
+      deferredSurfaces: deferredSurfaceBoundary,
     },
     consistency: {
       valid: issues.length === 0,

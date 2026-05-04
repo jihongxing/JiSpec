@@ -589,18 +589,19 @@ export class Doctor {
         details.push("Deferred surface boundary missing from regression manifest");
       } else {
         details.push(`Deferred surface diagnostics: ${deferred.suiteCount} suite(s), ${deferred.expectedTests} expected test(s)`);
-        details.push(`Deferred surface gate boundary: diagnostics-only in ${deferred.allowedRegressionArea}; forbidden from ${deferred.forbiddenDoctorProfiles.join(" / ")} doctor gates`);
+        details.push(`Deferred surface boundary: diagnostics-only in ${deferred.allowedRegressionArea}; excluded from V1 and pilot gates`);
       }
 
       const pilotReadiness = manifest.boundaries?.pilotReadiness;
-      if (!pilotReadiness || pilotReadiness.regressionArea !== "runtime-extended") {
+      if (!pilotReadiness || pilotReadiness.regressionArea !== "runtime-extended" || pilotReadiness.runtimeDiagnosticOnly !== true) {
         status = "fail";
-        details.push("Pilot readiness regression boundary missing or outside runtime-extended");
+        details.push("Deferred pilot-readiness suite missing, mis-scoped, or not diagnostic-only");
       } else {
-        details.push(`Pilot readiness boundary: ${pilotReadiness.suiteFile} is regression coverage only; doctor ${pilotReadiness.doctorProfile} owns the commercial readiness gate`);
+        details.push(`Deferred pilot-readiness suite ${pilotReadiness.suiteFile} stays in runtime-extended regression coverage only`);
+        details.push("Pilot readiness remains outside runtime-extended gating; doctor pilot owns the commercial readiness gate");
       }
 
-      details.push("Profile boundary: doctor v1 gates the V1 mainline; doctor runtime diagnoses extended runtime surfaces; doctor pilot gates commercial pilot readiness.");
+      details.push("Profile boundary: doctor runtime stays diagnostic-only over runtime-extended; doctor v1 gates the V1 mainline; doctor pilot remains a separate commercial readiness profile.");
 
       let allManifestFilesExist = true;
       for (const suite of manifest.suites) {

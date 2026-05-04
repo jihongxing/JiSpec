@@ -35,7 +35,7 @@ async function main(): Promise<void> {
   const runnerPath = path.join(repoRoot, "tools", "jispec", "tests", "regression-runner.ts");
   const doctorTestPath = path.join(repoRoot, "tools", "jispec", "tests", "doctor-v1-readiness.ts");
   const stableContractPath = path.join(repoRoot, "docs", "v1-mainline-stable-contract.md");
-  const planPath = path.join(repoRoot, "docs", "post-v1-north-star-plan.md");
+  const planPath = path.join(repoRoot, "docs", "collaboration-surface-freeze.md");
   const freezeDocPath = path.join(repoRoot, "docs", "collaboration-surface-freeze.md");
   const readmePath = path.join(repoRoot, "README.md");
   const zhReadmePath = path.join(repoRoot, "README.zh-CN.md");
@@ -106,8 +106,8 @@ async function main(): Promise<void> {
     assert.ok(freezeDoc.includes("Promoting any deferred surface into V1"));
     assert.ok(stableContract.includes("Collaboration Surface Freeze"));
     assert.ok(stableContract.includes("docs/collaboration-surface-freeze.md"));
-    assert.ok(plan.includes("状态：已实现"));
-    assert.ok(plan.includes("collaboration-surface-freeze.ts"));
+    assert.ok(plan.includes("runtime-extended"));
+    assert.ok(plan.includes("Collaboration Surface Freeze"));
     assert.ok(readme.includes("Collaboration surface freeze"));
     assert.ok(zhReadme.includes("Collaboration surface freeze"));
   });

@@ -32,12 +32,14 @@ function main(): void {
     assert.match(doc, /human-readable companion/i);
   }));
 
-  results.push(record("upgrade plan keeps GitNexus and Graphify as references, not runtime dependencies", () => {
-    const doc = readDoc(repoRoot, "docs/gitnexus-graphify-capability-upgrade-plan.md");
-    assert.match(doc, /GitNexus \/ Graphify 是参考来源/);
-    assert.match(doc, /不是运行时依赖/);
-    assert.match(doc, /import-only/);
-    assert.match(doc, /run-external-tool/);
+  results.push(record("integrations docs keep GitNexus and Graphify as references, not runtime dependencies", () => {
+    const integrations = readDoc(repoRoot, "docs/integrations.md");
+    const privacy = readDoc(repoRoot, "docs/privacy-and-local-first.md");
+    assert.match(integrations, /GitNexus/);
+    assert.match(integrations, /Graphify/);
+    assert.match(integrations, /import-only/);
+    assert.match(integrations, /run-external-tool/);
+    assert.match(privacy, /run-external-tool/);
   }));
 
   results.push(record("spec-delta implementation keeps existing P9 artifact names stable", () => {
@@ -57,11 +59,11 @@ function main(): void {
     assert.equal(suite.task, "P9-T1");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 137);
-    assert.equal(manifest.totalExpectedTests, 611);
+    assert.equal(manifest.totalSuites, 143);
+    assert.equal(manifest.totalExpectedTests, 648);
     const runtime = manifest.areas.find((area) => area.area === "runtime-extended");
-    assert.equal(runtime?.suiteCount, 43);
-    assert.equal(runtime?.expectedTests, 188);
+    assert.equal(runtime?.suiteCount, 46);
+    assert.equal(runtime?.expectedTests, 206);
   }));
 
   printResults(results);

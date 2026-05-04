@@ -2,6 +2,8 @@
 
 `jispec north-star acceptance` writes a local final acceptance package for the North Star closeout. It gathers existing JiSpec artifacts into one machine-readable aggregate and one human decision packet per scenario.
 
+This is the final local acceptance surface for the project. It is local-only and does not replace `verify`, `ci:verify`, `doctor v1`, `doctor runtime`, `doctor pilot`, or `post-release:gate`.
+
 ```bash
 npm run jispec -- north-star acceptance --root .
 npm run jispec -- north-star acceptance --root . --json

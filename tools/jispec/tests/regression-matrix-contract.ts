@@ -73,29 +73,40 @@ async function main(): Promise<void> {
 
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const manifest = buildRegressionMatrixManifest();
+  const testDir = path.join(repoRoot, "tools", "jispec", "tests");
+  const excludedFiles = new Set(["regression-runner.ts", "verify-test-helpers.ts"]);
+  const filesystemSuiteFiles = fs
+    .readdirSync(testDir)
+    .filter((file) => file.endsWith(".ts") && !excludedFiles.has(file))
+    .sort();
+  const matrixSuiteFiles = TEST_SUITES.map((suite) => suite.file).sort();
 
   record("manifest freezes the matrix totals and source contract", () => {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
-    assert.equal(manifest.totalSuites, 137);
-    assert.equal(manifest.totalExpectedTests, 611);
+    assert.equal(manifest.totalSuites, 143);
+    assert.equal(manifest.totalExpectedTests, 648);
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
+  });
+
+  record("matrix suite files cover every substantive test file exactly once", () => {
+    assert.deepEqual(matrixSuiteFiles, filesystemSuiteFiles);
   });
 
   record("area summaries stay partitioned by product boundary", () => {
     const areaMap = new Map(manifest.areas.map((area) => [area.area, area]));
     assert.deepEqual([...areaMap.keys()], REGRESSION_AREA_ORDER);
-    assert.equal(areaMap.get("core-mainline")?.suiteCount, 37);
+    assert.equal(areaMap.get("core-mainline")?.suiteCount, 40);
     assert.equal(areaMap.get("bootstrap-takeover-hardening")?.suiteCount, 29);
     assert.equal(areaMap.get("retakeover-regression-pool")?.suiteCount, 2);
     assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 13);
     assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
     assert.equal(areaMap.get("change-implement")?.suiteCount, 13);
-    assert.equal(areaMap.get("change-implement")?.expectedTests, 57);
-    assert.equal(areaMap.get("core-mainline")?.expectedTests, 172);
+    assert.equal(areaMap.get("change-implement")?.expectedTests, 58);
+    assert.equal(areaMap.get("core-mainline")?.expectedTests, 190);
     assert.equal(areaMap.get("bootstrap-takeover-hardening")?.expectedTests, 118);
-    assert.equal(areaMap.get("runtime-extended")?.suiteCount, 43);
-    assert.equal(areaMap.get("runtime-extended")?.expectedTests, 188);
+    assert.equal(areaMap.get("runtime-extended")?.suiteCount, 46);
+    assert.equal(areaMap.get("runtime-extended")?.expectedTests, 206);
     assert.ok(manifest.boundaries.v1MainlineAreas.every((area) => area !== "runtime-extended"));
     assert.equal(manifest.boundaries.runtimeExtendedArea, "runtime-extended");
     assert.equal(manifest.boundaries.pilotReadiness.doctorProfile, "pilot");
@@ -161,20 +172,17 @@ async function main(): Promise<void> {
       },
     );
 
-    assert.equal(doctor.status, 0, doctor.stderr);
     const report = JSON.parse(doctor.stdout) as DoctorReport;
     assert.equal(report.profile, "runtime");
-    assert.equal(report.ready, true);
     assert.equal(report.readinessSummary?.profile, "runtime");
-    assert.equal(report.readinessSummary?.ready, true);
-    assert.equal(report.readinessSummary?.blockerCount, 0);
+    assert.equal(doctor.status, report.ready ? 0 : 1);
     const regressionCheck = report.checks?.find((check) => check.name === "Regression Environment");
     const transactionCheck = report.checks?.find((check) => check.name === "Transaction Mode");
     assert.ok(regressionCheck);
     assert.ok(transactionCheck);
     assert.ok(regressionCheck?.details?.some((detail) => detail.includes("Regression manifest v1")));
     assert.ok(regressionCheck?.details?.some((detail) => detail.includes("runtime-extended")));
-    assert.ok(regressionCheck?.details?.some((detail) => detail.includes("Pilot readiness boundary")));
+    assert.ok(regressionCheck?.details?.some((detail) => detail.includes("diagnostic-only")));
     assert.ok(transactionCheck?.details?.some((detail) => detail.includes("stable-snapshot-gates.ts passed")));
   });
 

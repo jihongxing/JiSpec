@@ -113,7 +113,7 @@ async function main(): Promise<void> {
     assert.match(doc, /npm run jispec -- pilot package/);
     assert.match(doc, /does not upload source/i);
     assert.match(quickstart, /pilot package/i);
-    assert.match(checklist, /pilot product package/i);
+    assert.match(checklist, /pilot:ready/i);
   }));
 
   let passed = 0;

@@ -2,7 +2,8 @@
 
 ## Overview
 
-`jispec doctor runtime` performs extended health checks for the runtime and legacy compatibility surface.
+`jispec doctor runtime` performs diagnostic-only health checks for the runtime and legacy compatibility surface.
+It does not promote runtime-extended or deferred surfaces into `doctor v1` or `doctor pilot` gating.
 
 ## Check Categories
 
@@ -63,6 +64,7 @@
   - The regression matrix manifest can be materialized without executing suites
   - Suite and expected-test totals are read from the manifest, not hardcoded
   - V1 mainline, runtime-extended, deferred surfaces, and pilot readiness stay in separate boundaries
+  - runtime-extended remains diagnostic-only and does not participate in pilot or V1 gating
   - `npm run build` passes
   - `npm run jispec -- validate` passes
 

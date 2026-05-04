@@ -51,7 +51,7 @@ For a new project from documents:
 ```bash
 npm run jispec -- init --root .tmp/minimal-greenfield --requirements examples/minimal-greenfield/requirements.md --technical-solution examples/minimal-greenfield/technical-solution.md --force
 npm run jispec -- verify --root .tmp/minimal-greenfield --policy .spec/policy.yaml
-npm run ci:verify
+npm run ci:verify -- --root .tmp/minimal-greenfield --policy .tmp/minimal-greenfield/.spec/policy.yaml
 ```
 
 Use `.spec/greenfield/initialization-summary.md` and `.spec/greenfield/change-mainline-handoff.md` as the human review packet.
@@ -59,8 +59,10 @@ Use `.spec/greenfield/initialization-summary.md` and `.spec/greenfield/change-ma
 ## What To Read Next
 
 - Legacy takeover decisions: `docs/takeover-guide.md`
+- Greenfield input rules: `docs/greenfield-input-contract.md`
 - Execute-default workflow: `docs/execute-default-guide.md`
 - Governance dashboard: `docs/console-governance-guide.md`
 - Policy, waiver, and spec debt operations: `docs/policy-waiver-spec-debt-cookbook.md`
 - CI templates: `docs/ci-templates.md`
 - Pilot package: `docs/pilot-product-package.md`
+- Final acceptance: `docs/north-star-acceptance.md`

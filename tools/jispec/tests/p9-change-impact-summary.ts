@@ -201,12 +201,12 @@ async function main(): Promise<void> {
     const suite = TEST_SUITES.find((candidate) => candidate.file === "p9-change-impact-summary.ts");
     assert.ok(suite);
     assert.equal(suite.area, "change-implement");
-    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.expectedTests, 7);
     assert.equal(suite.task, "P9-T3");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 137);
-    assert.equal(manifest.totalExpectedTests, 611);
+    assert.equal(manifest.totalSuites, 143);
+    assert.equal(manifest.totalExpectedTests, 648);
   }));
 
   printResults(results);

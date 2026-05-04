@@ -22,7 +22,7 @@ function npmStep(name: string, args: string[]): GateStep {
   }
   return {
     name,
-    command: "npm",
+    command: process.platform === "win32" ? "npm.cmd" : "npm",
     args,
   };
 }
