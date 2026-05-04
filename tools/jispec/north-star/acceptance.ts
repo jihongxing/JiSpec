@@ -110,7 +110,7 @@ export interface NorthStarAcceptance {
   contract: {
     version: 1;
     scenarioSuite: "north-star-acceptance";
-    sourcePlan: "docs/north-star-next-development-plan.md#M7-T5";
+    sourcePlan: "docs/north-star-acceptance.md";
   };
   boundary: {
     localOnly: true;
@@ -425,7 +425,7 @@ export function buildNorthStarAcceptance(options: NorthStarAcceptanceOptions): N
     contract: {
       version: 1,
       scenarioSuite: "north-star-acceptance",
-      sourcePlan: "docs/north-star-next-development-plan.md#M7-T5",
+      sourcePlan: "docs/north-star-acceptance.md",
     },
     boundary: {
       localOnly: true,

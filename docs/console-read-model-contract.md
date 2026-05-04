@@ -18,6 +18,7 @@ The governance dashboard shell lives in `tools/jispec/console/governance-dashboa
 The governance action planner lives in `tools/jispec/console/governance-actions.ts` and is exposed by `jispec-cli console actions`.
 The governance export command lives in `tools/jispec/console/governance-export.ts` and is exposed by `jispec-cli console export-governance`.
 The final North Star acceptance package lives in `tools/jispec/north-star/acceptance.ts` and is exposed by `jispec-cli north-star acceptance`.
+Console reads the North Star acceptance package as the terminal local acceptance artifact. It may display the package and its scenario packets, but it must not treat them as a gate or as a replacement for `verify`, `ci:verify`, doctor profiles, or `post-release:gate`.
 
 ## Stable Read Model
 
@@ -45,6 +46,10 @@ The final North Star acceptance package lives in `tools/jispec/north-star/accept
 | Multi-repo governance snapshot summary | `.spec/console/governance-snapshot.md` | `console export-governance` | Markdown | human companion | Render the exported repo-level governance snapshot summary |
 | Multi-repo governance aggregate | `.spec/console/multi-repo-governance.json` | `console aggregate-governance` | JSON | source of truth | Aggregate-level multi-repo governance source of truth; includes passive `contractDriftHints`, richer `ownerActions`, and explicit missing repo snapshots |
 | Multi-repo governance aggregate summary | `.spec/console/multi-repo-governance.md` | `console aggregate-governance` | Markdown | human-readable companion | Reviewer summary for the aggregate; Console may display it but gates must not parse it |
+| North Star acceptance | `.spec/north-star/acceptance.json` | `north-star acceptance` | JSON | final local acceptance contract | Terminal acceptance package for the mainline closeout; Console may display it, but it remains read-only evidence |
+| North Star acceptance summary | `.spec/north-star/acceptance.md` | `north-star acceptance` | Markdown | human companion | Human companion for the terminal acceptance package |
+| North Star scenario packets | `.spec/north-star/scenarios/*.json` | `north-star acceptance` | JSON | local contract | Per-scenario machine artifact for the closeout acceptance suite |
+| North Star scenario decision packets | `.spec/north-star/scenarios/*-decision.md` | `north-star acceptance` | Markdown | human companion | Per-scenario human decision packet; Console may render it, but must not parse it as a gate |
 | Retakeover metrics | `.spec/handoffs/retakeover-metrics.json` | retakeover regression | JSON | local contract | Single-repository takeover quality scorecard, risk notes, feature overclaim risk, and next action |
 | Retakeover pool metrics | `.spec/handoffs/retakeover-pool-metrics.json` | retakeover regression pool | JSON | local contract | Pool-level takeover quality trend across real and synthetic retakeover fixtures |
 | Value report | `.spec/metrics/value-report.json` | `metrics value-report` | JSON | local contract | Repo-local ROI and adoption metrics: manual sorting reduction, surfaced risks, waiver/debt aging, and execute mediation stop points |
@@ -74,7 +79,7 @@ Console snapshot groups declared artifacts into governance objects. These are di
 | Implementation mediation outcomes | `.jispec/handoff/*.json`, `.jispec/implement/<session-id>/patch-mediation.json` | `not_available_yet` | Show execute/implement outcomes, stop points, replayability, and patch mediation posture |
 | Approval workflow | `.spec/policy.yaml`, `.spec/approvals/*.json`, `.spec/waivers/*.json`, `.spec/releases/compare/<from>-to-<to>/compare-report.json` | `not_available_yet` | Show approval missing, approval stale, or approval satisfied for policy, waiver, release drift, and execute-default changes |
 | Audit events | `.spec/audit/events.jsonl` | `not_available_yet` | Show who approved or changed policy, waivers, adoption decisions, release baselines, and patch intake, with source artifact and affected contract refs |
-| North Star acceptance | `.spec/north-star/acceptance.json`, `.spec/north-star/scenarios/*.json` | `not_available_yet` | Show final local acceptance posture without replacing `verify`, `ci:verify`, doctor profiles, or post-release gate |
+| North Star acceptance | `.spec/north-star/acceptance.json`, `.spec/north-star/scenarios/*.json`, `.spec/north-star/scenarios/*-decision.md` | `not_available_yet` | Show final local acceptance posture without replacing `verify`, `ci:verify`, doctor profiles, or post-release gate |
 
 ## Audit Event Ledger
 
@@ -158,3 +163,4 @@ The local snapshot is a read-only aggregation surface, not a gate:
 - It may carry Markdown text for rendering, but Markdown remains display-only and is not a machine API.
 - It marks missing artifacts as `not_available_yet`.
 - It does not evaluate policy, override verify, synthesize gate results, scan source code, or replace any CLI command.
+- North Star acceptance is a local terminal acceptance artifact. Console may read it and privacy may scan it, but neither may promote it into a blocking gate.

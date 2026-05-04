@@ -4,30 +4,32 @@
 
 Use bounded contexts for `catalog` and `ordering`.
 
-- `catalog` owns product availability and price read models
-- `ordering` owns cart validation, checkout orchestration, and order persistence
+- `catalog` owns product availability and price read models.
+- `ordering` owns cart validation, checkout orchestration, and order persistence.
 
-## Integration Rule
+## Bounded Context Hypothesis
+
+- `catalog`
+- `ordering`
+
+## Integration Boundaries
 
 `ordering` may consume published product availability information from `catalog`, but it may not write to catalog-owned models.
 
-## Checkout Flow
+## Data Ownership
 
-1. Receive checkout request with cart identifier.
-2. Load cart and cart items.
-3. Validate product availability.
-4. Calculate order total.
-5. Persist order.
-6. Emit `OrderCreated`.
+Each bounded context owns persistence and publishes integration contracts instead of sharing tables.
 
 ## Testing Strategy
 
-- Unit tests for validation and calculation logic
-- Integration tests for checkout application service
-- Contract tests for upstream availability data assumptions
+Use unit tests for domain rules, integration tests for checkout flow, and contract tests for catalog availability consumption.
 
-## Constraints
+## Operational Constraints
 
-- No direct table sharing between bounded contexts
-- Domain invariants must be explicit in context artifacts
-- All delivery must be traceable to requirements and tests
+No direct table sharing between bounded contexts.
+
+## Risks And Open Decisions
+
+- Payment is deferred.
+- Product pricing promotions are deferred.
+- The final persistence technology is not selected in this initialization demo.

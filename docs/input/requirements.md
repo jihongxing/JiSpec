@@ -4,7 +4,18 @@
 
 Build a commerce platform that supports product browsing, cart validation, checkout, and order creation.
 
-## Core Requirements
+## Users / Actors
+
+- Shopper
+- Catalog operator
+
+## Core Journeys
+
+- Shopper browses available products.
+- Shopper checks out a valid cart.
+- Shopper receives a clear rejection when a cart contains unavailable items.
+
+## Functional Requirements
 
 ### REQ-CAT-001
 
@@ -12,7 +23,7 @@ The system must expose products that are available for sale.
 
 ### REQ-ORD-001
 
-A user must be able to submit an order from a valid cart.
+A shopper must be able to submit an order from a valid cart.
 
 ### REQ-ORD-002
 
@@ -28,6 +39,18 @@ The system must emit a domain event when an order is created successfully.
 
 ## Non-Functional Requirements
 
-- Checkout response time should be acceptable for synchronous user interaction.
-- Validation logic must be testable in isolation.
-- Context boundaries should avoid direct persistence coupling.
+- Checkout validation must be testable without external payment infrastructure.
+- Product availability decisions must remain traceable to catalog-owned data.
+
+## Out Of Scope
+
+- Refunds.
+- Payment capture.
+- Shipment orchestration.
+
+## Acceptance Signals
+
+- Available products appear in the product browsing flow.
+- Valid checkout creates an order.
+- Unavailable cart items block order creation.
+- Successful order creation emits an `OrderCreated` domain event.

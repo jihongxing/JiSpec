@@ -13,16 +13,26 @@ const npmExecPath = process.env.npm_execpath;
 
 function npmStepArgs(args: string[]): string[] {
   if (!npmExecPath) {
-    throw new Error("npm_execpath is not available; run this gate through `npm run post-release:gate`.");
+    return args;
   }
   return [npmExecPath, ...args];
+}
+
+function npmStepCommand(): { command: string; args: string[] } {
+  if (npmExecPath) {
+    return { command: nodeCommand, args: [] };
+  }
+  if (process.platform === "win32") {
+    return { command: "cmd.exe", args: ["/d", "/s", "/c", "npm"] };
+  }
+  return { command: "npm", args: [] };
 }
 
 const gateSteps: GateStep[] = [
   {
     name: "TypeScript typecheck",
-    command: nodeCommand,
-    args: npmStepArgs(["run", "typecheck"]),
+    ...npmStepCommand(),
+    args: [...npmStepCommand().args, ...npmStepArgs(["run", "typecheck"])],
   },
   {
     name: "V1 mainline golden path",
@@ -41,8 +51,8 @@ const gateSteps: GateStep[] = [
   },
   {
     name: "CI verify wrapper",
-    command: nodeCommand,
-    args: npmStepArgs(["run", "ci:verify"]),
+    ...npmStepCommand(),
+    args: [...npmStepCommand().args, ...npmStepArgs(["run", "ci:verify"])],
   },
 ];
 
@@ -91,6 +101,9 @@ function formatCommandForDisplay(command: string, args: string[]): string {
   }
   if (command === process.execPath) {
     return ["node", ...args].join(" ");
+  }
+  if (command === "cmd.exe") {
+    return ["npm", ...args.slice(4)].join(" ");
   }
   return [command, ...args].join(" ");
 }

@@ -61,6 +61,12 @@ async function main(): Promise<void> {
       writeText(root, ".spec/console/governance-snapshot.json", JSON.stringify({
         reason: `Temporary connection string ${DB_URL}`,
       }, null, 2));
+      writeText(root, ".spec/north-star/acceptance.json", JSON.stringify({
+        summary: {
+          ready: true,
+        },
+        note: `Acceptance package with ${OPENAI_KEY}`,
+      }, null, 2));
 
       const before = fs.readFileSync(path.join(root, ".jispec", "handoff", "change-1.json"), "utf-8");
       const result = buildPrivacyReport({
@@ -71,8 +77,10 @@ async function main(): Promise<void> {
 
       assert.equal(before, after);
       assert.equal(result.report.boundary.changesMachineFacts, false);
-      assert.equal(result.report.summary.artifactWithFindingCount, 3);
-      assert.equal(result.report.summary.redactedViewCount, 3);
+      assert.equal(result.report.summary.artifactWithFindingCount, 4);
+      assert.equal(result.report.summary.redactedViewCount, 4);
+      const acceptanceArtifact = result.report.artifacts.find((artifact) => artifact.path === ".spec/north-star/acceptance.json");
+      assert.equal(acceptanceArtifact?.category, "north_star_acceptance");
       const reportText = fs.readFileSync(result.reportPath, "utf-8");
       assert.doesNotMatch(reportText, /sk-testSecretValue/);
       assert.doesNotMatch(reportText, /ghp_testSecretValue/);

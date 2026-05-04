@@ -39,11 +39,12 @@ export interface PrivacyReportArtifact {
     | "summary"
     | "handoff"
     | "console_export"
-    | "integration_payload"
-    | "pilot_package"
-    | "audit"
-    | "release"
-    | "other_jispec_artifact";
+  | "integration_payload"
+  | "pilot_package"
+  | "audit"
+  | "release"
+  | "north_star_acceptance"
+  | "other_jispec_artifact";
   shareDecision: "shareable" | "review_before_sharing";
   findingCount: number;
   findingTypes: SecretFindingType[];
@@ -124,6 +125,10 @@ const ARTIFACT_CATEGORIES: PrivacyReport["artifactCategories"] = {
   release: {
     description: "Release baseline, compare, and drift artifacts.",
     mayContain: ["contract IDs", "asset paths", "drift summaries"],
+  },
+  north_star_acceptance: {
+    description: "North Star final acceptance package and scenario decision packets.",
+    mayContain: ["scenario statuses", "owner actions", "acceptance summaries", "governance evidence"],
   },
   other_jispec_artifact: {
     description: "Other local JiSpec artifacts under .spec, .jispec, or .jispec-ci.",
@@ -397,6 +402,9 @@ function categorizeArtifact(relativePath: string): PrivacyReportArtifact["catego
   }
   if (relativePath.startsWith(".spec/console/")) {
     return "console_export";
+  }
+  if (relativePath.startsWith(".spec/north-star/")) {
+    return "north_star_acceptance";
   }
   if (relativePath.startsWith(".spec/audit/")) {
     return "audit";

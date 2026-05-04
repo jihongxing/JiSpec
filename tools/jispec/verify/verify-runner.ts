@@ -276,6 +276,19 @@ function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): 
     options.factsOutPath,
   ].filter((candidate): candidate is string => typeof candidate === "string");
 
+  const activeSession = readChangeSession(options.root);
+  if (activeSession) {
+    inputArtifacts.push(".jispec/change-session.json");
+    if (activeSession.impactSummary && !Array.isArray(activeSession.impactSummary)) {
+      inputArtifacts.push(
+        activeSession.impactSummary.artifacts.deltaPath,
+        activeSession.impactSummary.artifacts.impactGraphPath,
+        activeSession.impactSummary.artifacts.impactReportPath,
+        activeSession.impactSummary.artifacts.verifyFocusPath,
+      );
+    }
+  }
+
   const existingInputs = inputArtifacts.filter((candidate) => {
     if (candidate === options.factsOutPath) {
       return true;

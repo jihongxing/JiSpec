@@ -13,7 +13,8 @@ export type ConsoleGovernanceObjectId =
   | "implementation_mediation_outcomes"
   | "audit_events"
   | "approval_workflow"
-  | "multi_repo_export";
+  | "multi_repo_export"
+  | "north_star_acceptance";
 
 export interface ConsoleReadModelArtifact {
   id: string;
@@ -377,6 +378,54 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     parseMarkdown: false,
     sourceUploadRequired: false,
   },
+  {
+    id: "north-star-acceptance",
+    pathPattern: ".spec/north-star/acceptance.json",
+    producer: "north-star acceptance",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Final local acceptance package for the north-star closeout. Console may display it, but must not treat it as a gate.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "north-star-acceptance-summary",
+    pathPattern: ".spec/north-star/acceptance.md",
+    producer: "north-star acceptance",
+    format: "markdown",
+    stability: "human-companion",
+    freshness: "project-state",
+    readModelUse: "Human companion for the final local acceptance package. Console may render it, but must not parse it as a machine API.",
+    machineReadable: false,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "north-star-scenario-packets",
+    pathPattern: ".spec/north-star/scenarios/*.json",
+    producer: "north-star acceptance",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Per-scenario machine artifacts for the north-star acceptance suite. Console may display them, but must not elevate them into a gate.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "north-star-scenario-decisions",
+    pathPattern: ".spec/north-star/scenarios/*-decision.md",
+    producer: "north-star acceptance",
+    format: "markdown",
+    stability: "human-companion",
+    freshness: "project-state",
+    readModelUse: "Per-scenario human decision packets for north-star acceptance. Markdown remains display-only.",
+    machineReadable: false,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
 ];
 
 export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
@@ -492,6 +541,15 @@ export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
     automationInputs: "json_yaml_jsonl_only",
     markdownDisplayOnly: true,
     readModelUse: "Show the exported repo-level governance snapshot intended for future multi-repo aggregation.",
+  },
+  {
+    id: "north_star_acceptance",
+    label: "North Star acceptance",
+    sourceArtifactIds: ["north-star-acceptance", "north-star-scenario-packets"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show the final local acceptance package and scenario packet availability without making it a gate.",
   },
 ];
 

@@ -13,6 +13,7 @@ Console reads declared artifacts such as:
 - implementation handoff packets
 - approval decisions
 - audit events
+- north-star acceptance packages
 
 Console does not scan source code to invent new truth.
 
@@ -118,6 +119,8 @@ The aggregate shows:
 - latest audit actors
 - missing snapshot inputs
 
+North Star acceptance is the terminal local acceptance package. Console can display it for closeout review, but it stays read-only evidence and does not override `verify`, `ci:verify`, `doctor v1`, `doctor runtime`, `doctor pilot`, or `post-release:gate`.
+
 ## Audit Integrity
 
 Console reads `.spec/audit/events.jsonl` as local governance evidence. New audit events include a hash chain (`sequence`, `previousHash`, `eventHash`) plus a signature placeholder. If the ledger has legacy unchained events, parse errors, sequence gaps, hash mismatches, or out-of-order timestamps, Console surfaces audit integrity attention instead of silently treating the ledger as clean.
@@ -146,6 +149,7 @@ npm run jispec -- privacy report
 Privacy reporting scans local JiSpec artifacts under `.spec`, `.jispec`, and `.jispec-ci` for common secrets before artifacts are shared externally. It writes `.spec/privacy/privacy-report.json`, a Markdown companion, and redacted shareable views when findings are detected.
 
 `console export-governance` redacts sensitive strings before writing the exported governance snapshot. Redaction does not mutate the original machine facts.
+Privacy reporting also scans the north-star acceptance package and scenario packets as closeout artifacts, so terminal acceptance evidence stays reviewable without becoming a gate.
 
 ## Boundaries
 

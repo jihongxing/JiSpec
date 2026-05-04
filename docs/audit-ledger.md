@@ -42,6 +42,7 @@ Approval decisions, including pilot risk acceptance, append `policy_approval_dec
 Console reads the audit ledger as a governance artifact. If integrity is `warning` or `invalid`, Console surfaces audit traceability attention instead of silently treating the ledger as clean.
 
 This does not replace `verify` or `ci:verify`. Audit integrity is governance evidence for reviewers; single-repo gate authority remains with the local verify/policy workflow.
+North Star acceptance may consume the ledger as closeout evidence, but the ledger itself remains append-only local evidence and never becomes a gate.
 
 ## Append-Only Boundary
 
