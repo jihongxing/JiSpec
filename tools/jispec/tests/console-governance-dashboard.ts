@@ -298,13 +298,7 @@ async function main(): Promise<void> {
           overallStatus: "changed",
         },
       };
-      writeJson(root, ".jispec-ci/verify-report.json", {
-        verdict: "PASS",
-        issueCount: 0,
-        blockingIssueCount: 0,
-        modes: {},
-      });
-      writeYaml(root, ".spec/policy.yaml", {
+      const policy = {
         version: 1,
         team: {
           profile: "small_team",
@@ -313,8 +307,46 @@ async function main(): Promise<void> {
           required_reviewers: 1,
         },
         rules: [],
+      };
+      const policyText = yaml.dump(policy, { lineWidth: 100, noRefs: true, sortKeys: false });
+      writeJson(root, ".jispec-ci/verify-report.json", {
+        verdict: "PASS",
+        issueCount: 0,
+        blockingIssueCount: 0,
+        modes: {},
       });
+      writeText(root, ".spec/policy.yaml", policyText);
       writeJson(root, ".spec/releases/compare/v1-to-current/compare-report.json", compareReport);
+      writeJson(root, ".spec/approvals/approval-policy.json", {
+        version: 1,
+        id: "approval-policy",
+        status: "approved",
+        subject: {
+          kind: "policy_change",
+          ref: ".spec/policy.yaml",
+          hash: sha256(policyText),
+        },
+        requirement: {
+          profile: "small_team",
+          owner: "platform",
+          reviewers: ["reviewer"],
+          requiredReviewers: 1,
+          ownerApprovalAllowed: true,
+          contract: "reviewer_quorum_or_owner_approval",
+        },
+        decision: {
+          actor: "reviewer",
+          role: "reviewer",
+          reason: "Reviewed current policy state.",
+          decidedAt: "2026-05-06T00:00:00.000Z",
+        },
+        boundary: {
+          localOnly: true,
+          sourceUploadRequired: false,
+          llmBlockingJudge: false,
+          consoleOverridesVerify: false,
+        },
+      });
       writeJson(root, ".spec/approvals/approval-release.json", {
         version: 1,
         id: "approval-release",
@@ -348,10 +380,10 @@ async function main(): Promise<void> {
 
       const dashboard = buildConsoleGovernanceDashboard(root);
       const drift = question(dashboard, "contract_drift_review");
-      assert.equal(drift.status, "attention");
+      assert.equal(drift.status, "ok");
       assert.match(drift.answer, /approval is satisfied/);
       assert.ok(drift.evidence.some((entry) => entry.includes("Approval status: approval_satisfied")));
-      assert.equal(dashboard.headline.status, "attention");
+      assert.equal(dashboard.headline.status, "unknown");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

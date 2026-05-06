@@ -204,8 +204,8 @@ Documented operating posture outside this gap audit:
 
 - `repo-group.yaml` remains intentionally optional for JiSpec's single-repo baseline-authority aggregate path
 Evidence: `.spec/console/multi-repo-governance.json` reports `repoGroup.status: not_available_yet` while still emitting `contractDriftHintCount: 1` and `ownerActionCount: 1`.
-- the Console dashboard now surfaces only the approved release-drift review as owner attention
-Evidence: `npm run jispec-cli -- console dashboard --json` now reports `headline.status: attention`, with `source_evolution_progress: ok`, `audit_traceability: ok`, `retakeover_pool_health: ok`, `execute_mediation_status: ok`, and `contract_drift_review: attention`.
+- the Console dashboard is now fully green on the declared governance surface
+Evidence: `npm run jispec-cli -- console dashboard --json` now reports `headline.status: ok`, with `source_evolution_progress: ok`, `audit_traceability: ok`, `retakeover_pool_health: ok`, `execute_mediation_status: ok`, and `contract_drift_review: ok`.
 
 ## Closeout Target
 

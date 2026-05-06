@@ -212,9 +212,9 @@ Operational attention outside this closure plan can still appear in the Console 
 1. the source evolution change is now reflected as `adopted` rather than still awaiting promotion
 2. the retakeover regression pool metrics are now present and non-blocking
 3. the latest execute mediation artifact is historical rather than an active attention signal
-4. the current release compare still reports drift, but its `release_drift` approval is already satisfied
+4. the current release compare still reports drift, but its `release_drift` approval is already satisfied and no longer keeps Console in attention state
 
-Evidence: `npm run jispec-cli -- console dashboard --json` now reports `headline.status: attention`, `source_evolution_progress: ok`, `audit_traceability: ok`, `retakeover_pool_health: ok`, `execute_mediation_status: ok`, and `contract_drift_review: attention`.
+Evidence: `npm run jispec-cli -- console dashboard --json` now reports `headline.status: ok`, `source_evolution_progress: ok`, `audit_traceability: ok`, `retakeover_pool_health: ok`, `execute_mediation_status: ok`, and `contract_drift_review: ok`.
 
 ## Immediate Next Command
 

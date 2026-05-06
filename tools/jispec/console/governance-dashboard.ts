@@ -840,17 +840,15 @@ function buildContractDriftQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGove
       return question({
         id: "contract_drift_review",
         label: "Which contract drift needs owner review?",
-        status: "attention",
-        answer: "Latest release compare still reports changed drift, but the current release-drift approval is satisfied.",
+        status: "ok",
+        answer: "Latest release compare reports changed drift, and the current release-drift approval is satisfied.",
         evidence: [
           `Latest compare report: ${latestReport ?? "unknown"}`,
           `Drift status: ${overall}`,
           `Trend: ${trendChangedCompareCount ?? "unknown"} changed of ${trendCompareCount ?? "unknown"} comparison(s)`,
           `Approval status: ${releaseDriftApprovalStatus}`,
         ],
-        nextActions: [
-          "Keep the approved compare report attached to the release decision and refresh approval if the compare hash changes.",
-        ],
+        nextActions: [],
       });
     }
 
