@@ -30,8 +30,8 @@ The install surface does not change V1 semantics: `verify` and `ci:verify` remai
 - `examples/minimal-legacy-takeover/` shows the smallest legacy takeover path.
 - `examples/minimal-greenfield/` shows Greenfield initialization from input documents.
 - `docs/quickstart.md` answers which three commands to run first.
-- `docs/takeover-guide.md` covers takeover decisions and adoption shapes.
-- `docs/greenfield-input-contract.md` defines the input contract for new project initialization.
+- `docs/user-guide/takeover-guide.md` covers takeover decisions and adoption shapes.
+- `docs/reference/greenfield-input-contract.md` defines the input contract for new project initialization.
 - `docs/pilot-product-package.md` explains the local adoption package and the line between gates and companions.
 - `docs/ci-templates.md` explains the GitHub Actions and GitLab CI templates.
 

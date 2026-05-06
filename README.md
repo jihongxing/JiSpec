@@ -10,7 +10,7 @@ North star:
 
 Large language models and AI coding tools are high-end machine tools. JiSpec is not trying to be another machine tool; it aims to become the control layer across requirements, contracts, implementation, verification, CI, and team governance.
 
-See: [docs/north-star.md](docs/north-star.md)
+See: [docs/architecture/north-star.md](docs/architecture/north-star.md)
 
 The product surface is converging on:
 
@@ -56,7 +56,7 @@ Not the wrong framing:
 
 Release notes:
 
-- [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)
+- [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
 
 ## Human-readable artifact gap
 
@@ -453,7 +453,7 @@ npm run jispec -- bootstrap discover --root examples/minimal-legacy-takeover --i
 npm run jispec -- init --root .tmp/minimal-greenfield --requirements examples/minimal-greenfield/requirements.md --technical-solution examples/minimal-greenfield/technical-solution.md --force --json
 ```
 
-For a step-by-step first takeover and CI setup, see [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md) and [docs/ci-templates.md](docs/ci-templates.md).
+For a step-by-step first takeover and CI setup, see [docs/getting-started/first-takeover-walkthrough.md](docs/getting-started/first-takeover-walkthrough.md) and [docs/ci-templates.md](docs/ci-templates.md).
 
 When unsure where to start in a repository:
 
@@ -618,49 +618,57 @@ The `ordering` context includes one complete example slice:
 
 ## Key docs
 
-- North star:
-  [docs/north-star.md](docs/north-star.md)
-- Post-V1 north-star task plan (completed record):
-  [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
-- Next north-star development plan:
-  [docs/north-star-next-development-plan.md](docs/north-star-next-development-plan.md)
-- North Star acceptance suite:
-  [docs/north-star-acceptance.md](docs/north-star-acceptance.md)
-- Post-release gate:
-  [docs/post-release-gate.md](docs/post-release-gate.md)
-- Retakeover regression pool:
-  [docs/retakeover-regression-pool.md](docs/retakeover-regression-pool.md)
-- Console read model contract:
-  [docs/console-read-model-contract.md](docs/console-read-model-contract.md)
-- Collaboration surface freeze:
-  [docs/collaboration-surface-freeze.md](docs/collaboration-surface-freeze.md)
-- V1 mainline stable contract:
-  [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
-- Greenfield input contract:
-  [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
-- Greenfield walkthrough:
-  [docs/greenfield-walkthrough.md](docs/greenfield-walkthrough.md)
-- First takeover walkthrough:
-  [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md)
-- Pilot product package:
-  [docs/pilot-product-package.md](docs/pilot-product-package.md)
+- Docs map:
+  [docs/README.md](docs/README.md)
 - Quickstart:
   [docs/quickstart.md](docs/quickstart.md)
+- Install:
+  [docs/install.md](docs/install.md)
+- First takeover walkthrough:
+  [docs/getting-started/first-takeover-walkthrough.md](docs/getting-started/first-takeover-walkthrough.md)
+- Greenfield walkthrough:
+  [docs/greenfield-walkthrough.md](docs/greenfield-walkthrough.md)
+- Execute-default guide:
+  [docs/execute-default-guide.md](docs/execute-default-guide.md)
+- Console governance guide:
+  [docs/console-governance-guide.md](docs/console-governance-guide.md)
+- External coding tool adapters:
+  [docs/external-coding-tool-adapters.md](docs/external-coding-tool-adapters.md)
+- Policy presets:
+  [docs/user-guide/policy-presets.md](docs/user-guide/policy-presets.md)
+- North star:
+  [docs/architecture/north-star.md](docs/architecture/north-star.md)
+- North Star acceptance suite:
+  [docs/architecture/north-star-acceptance.md](docs/architecture/north-star-acceptance.md)
+- Post-release gate:
+  [docs/development/post-release-gate.md](docs/development/post-release-gate.md)
+- Retakeover regression pool:
+  [docs/architecture/retakeover-regression-pool.md](docs/architecture/retakeover-regression-pool.md)
+- Console read model contract:
+  [docs/reference/console-read-model-contract.md](docs/reference/console-read-model-contract.md)
+- Collaboration surface freeze:
+  [docs/development/collaboration-surface-freeze.md](docs/development/collaboration-surface-freeze.md)
+- V1 mainline stable contract:
+  [docs/reference/v1-mainline-stable-contract.md](docs/reference/v1-mainline-stable-contract.md)
+- Greenfield input contract:
+  [docs/reference/greenfield-input-contract.md](docs/reference/greenfield-input-contract.md)
+- Pilot product package:
+  [docs/pilot-product-package.md](docs/pilot-product-package.md)
 - Takeover guide:
-  [docs/takeover-guide.md](docs/takeover-guide.md)
+  [docs/user-guide/takeover-guide.md](docs/user-guide/takeover-guide.md)
 - Execute-default guide:
   [docs/execute-default-guide.md](docs/execute-default-guide.md)
 - Console governance guide:
   [docs/console-governance-guide.md](docs/console-governance-guide.md)
 - Policy, waiver, and spec debt cookbook:
-  [docs/policy-waiver-spec-debt-cookbook.md](docs/policy-waiver-spec-debt-cookbook.md)
+  [docs/user-guide/policy-waiver-spec-debt-cookbook.md](docs/user-guide/policy-waiver-spec-debt-cookbook.md)
 - Value metrics:
-  [docs/value-metrics.md](docs/value-metrics.md)
+  [docs/architecture/value-metrics.md](docs/architecture/value-metrics.md)
 - Pilot readiness checklist:
-  [docs/pilot-readiness-checklist.md](docs/pilot-readiness-checklist.md)
+  [docs/development/pilot-readiness-checklist.md](docs/development/pilot-readiness-checklist.md)
 - CI templates:
   [docs/ci-templates.md](docs/ci-templates.md)
 - V1 minimal sample repo:
-  [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
+  [docs/development/v1-sample-repo.md](docs/development/v1-sample-repo.md)
 - Release notes:
-  [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)
+  [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)

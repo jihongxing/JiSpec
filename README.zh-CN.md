@@ -10,7 +10,7 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 
 大模型和 AI coding tools 是高端机床；JiSpec 的目标不是再造一台机床，而是成为贯穿需求、契约、实现、验证、CI 和团队治理的流水线控制层。
 
-详见：[docs/north-star.md](docs/north-star.md)
+详见：[docs/architecture/north-star.md](docs/architecture/north-star.md)
 
 当前产品面正在收敛到：
 
@@ -55,7 +55,7 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 
 发布说明：
 
-- [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)
+- [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
 
 ## 人类可读产物缺口
 
@@ -453,7 +453,7 @@ npm run jispec -- bootstrap discover --root examples/minimal-legacy-takeover --i
 npm run jispec -- init --root .tmp/minimal-greenfield --requirements examples/minimal-greenfield/requirements.md --technical-solution examples/minimal-greenfield/technical-solution.md --force --json
 ```
 
-首次接管步骤与 CI 接入说明见 [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md) 和 [docs/ci-templates.md](docs/ci-templates.md)。
+首次接管步骤与 CI 接入说明见 [docs/getting-started/first-takeover-walkthrough.md](docs/getting-started/first-takeover-walkthrough.md) 和 [docs/ci-templates.md](docs/ci-templates.md)。
 
 如果不确定当前仓库应该从哪里开始：
 
@@ -627,51 +627,57 @@ Package/bin 命令面：
 
 ## 核心文档
 
-- 北极星：
-  [docs/north-star.md](docs/north-star.md)
-- V1 后北极星推进任务（已完成记录）：
-  [docs/post-v1-north-star-plan.md](docs/post-v1-north-star-plan.md)
-- 北极星下一阶段开发任务：
-  [docs/north-star-next-development-plan.md](docs/north-star-next-development-plan.md)
-- 第二层扩充与引导式契约创建实施计划：
-  [docs/second-layer-guided-contract-implementation-plan.md](docs/second-layer-guided-contract-implementation-plan.md)
-- 北极星最终验收套件：
-  [docs/north-star-acceptance.md](docs/north-star-acceptance.md)
-- V1 后发布门禁：
-  [docs/post-release-gate.md](docs/post-release-gate.md)
-- Retakeover 回归池：
-  [docs/retakeover-regression-pool.md](docs/retakeover-regression-pool.md)
-- Console read model contract：
-  [docs/console-read-model-contract.md](docs/console-read-model-contract.md)
-- Collaboration surface freeze：
-  [docs/collaboration-surface-freeze.md](docs/collaboration-surface-freeze.md)
-- V1 主线稳定契约：
-  [docs/v1-mainline-stable-contract.md](docs/v1-mainline-stable-contract.md)
-- Greenfield 输入契约：
-  [docs/greenfield-input-contract.md](docs/greenfield-input-contract.md)
-- Greenfield walkthrough：
-  [docs/greenfield-walkthrough.md](docs/greenfield-walkthrough.md)
-- 首次接管 walkthrough：
-  [docs/first-takeover-walkthrough.md](docs/first-takeover-walkthrough.md)
-- Pilot product package：
-  [docs/pilot-product-package.md](docs/pilot-product-package.md)
+- 文档总览：
+  [docs/README.md](docs/README.md)
 - Quickstart：
   [docs/quickstart.md](docs/quickstart.md)
+- Install：
+  [docs/install.md](docs/install.md)
+- 首次接管 walkthrough：
+  [docs/getting-started/first-takeover-walkthrough.md](docs/getting-started/first-takeover-walkthrough.md)
+- Greenfield walkthrough：
+  [docs/greenfield-walkthrough.md](docs/greenfield-walkthrough.md)
+- Execute-default guide：
+  [docs/execute-default-guide.md](docs/execute-default-guide.md)
+- Console governance guide：
+  [docs/console-governance-guide.md](docs/console-governance-guide.md)
+- External coding tool adapters：
+  [docs/external-coding-tool-adapters.md](docs/external-coding-tool-adapters.md)
+- Policy presets：
+  [docs/user-guide/policy-presets.md](docs/user-guide/policy-presets.md)
+- 北极星：
+  [docs/architecture/north-star.md](docs/architecture/north-star.md)
+- 北极星最终验收套件：
+  [docs/architecture/north-star-acceptance.md](docs/architecture/north-star-acceptance.md)
+- V1 后发布门禁：
+  [docs/development/post-release-gate.md](docs/development/post-release-gate.md)
+- Retakeover 回归池：
+  [docs/architecture/retakeover-regression-pool.md](docs/architecture/retakeover-regression-pool.md)
+- Console read model contract：
+  [docs/reference/console-read-model-contract.md](docs/reference/console-read-model-contract.md)
+- Collaboration surface freeze：
+  [docs/development/collaboration-surface-freeze.md](docs/development/collaboration-surface-freeze.md)
+- V1 主线稳定契约：
+  [docs/reference/v1-mainline-stable-contract.md](docs/reference/v1-mainline-stable-contract.md)
+- Greenfield 输入契约：
+  [docs/reference/greenfield-input-contract.md](docs/reference/greenfield-input-contract.md)
+- Pilot product package：
+  [docs/pilot-product-package.md](docs/pilot-product-package.md)
 - Takeover guide：
-  [docs/takeover-guide.md](docs/takeover-guide.md)
+  [docs/user-guide/takeover-guide.md](docs/user-guide/takeover-guide.md)
 - Execute-default guide：
   [docs/execute-default-guide.md](docs/execute-default-guide.md)
 - Console governance guide：
   [docs/console-governance-guide.md](docs/console-governance-guide.md)
 - Policy、waiver、spec debt cookbook：
-  [docs/policy-waiver-spec-debt-cookbook.md](docs/policy-waiver-spec-debt-cookbook.md)
+  [docs/user-guide/policy-waiver-spec-debt-cookbook.md](docs/user-guide/policy-waiver-spec-debt-cookbook.md)
 - 价值指标：
-  [docs/value-metrics.md](docs/value-metrics.md)
+  [docs/architecture/value-metrics.md](docs/architecture/value-metrics.md)
 - 商业试点 readiness checklist：
-  [docs/pilot-readiness-checklist.md](docs/pilot-readiness-checklist.md)
+  [docs/development/pilot-readiness-checklist.md](docs/development/pilot-readiness-checklist.md)
 - CI 模板：
   [docs/ci-templates.md](docs/ci-templates.md)
 - V1 最小样板仓库：
-  [docs/v1-sample-repo.md](docs/v1-sample-repo.md)
+  [docs/development/v1-sample-repo.md](docs/development/v1-sample-repo.md)
 - 发布说明：
-  [docs/releases/v0.1.0.md](docs/releases/v0.1.0.md)
+  [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)

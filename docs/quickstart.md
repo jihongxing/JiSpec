@@ -60,11 +60,12 @@ For the empty-directory acceptance smoke that exercises the same Greenfield path
 
 ## What To Read Next
 
-- Legacy takeover decisions: `docs/takeover-guide.md`
-- Greenfield input rules: `docs/greenfield-input-contract.md`
+- Full docs map: `docs/README.md`
+- Legacy takeover decisions: `docs/user-guide/takeover-guide.md`
+- Greenfield input rules: `docs/reference/greenfield-input-contract.md`
 - Execute-default workflow: `docs/execute-default-guide.md`
 - Governance dashboard: `docs/console-governance-guide.md`
-- Policy, waiver, and spec debt operations: `docs/policy-waiver-spec-debt-cookbook.md`
+- Policy, waiver, and spec debt operations: `docs/user-guide/policy-waiver-spec-debt-cookbook.md`
 - CI templates: `docs/ci-templates.md`
 - Pilot package: `docs/pilot-product-package.md`
-- Final acceptance: `docs/north-star-acceptance.md`
+- Final acceptance: `docs/architecture/north-star-acceptance.md`
