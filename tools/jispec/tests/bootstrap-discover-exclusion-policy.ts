@@ -24,16 +24,20 @@ function main(): void {
     const exclusionRules = new Set((discoverResult.graph.excludedSummary?.rules ?? []).map((rule) => rule.ruleId));
 
     results.push({
-      name: "exclusion policy keeps production evidence and drops cache/vendor/audit paths",
+      name: "exclusion policy keeps production evidence and drops cache/vendor/audit and edge-noise paths",
       passed:
         discoverResult.graph.routes.some((route) => route.path === "/orders") &&
         discoverResult.graph.documents.some((document) => document.path === "README.md") &&
         !allEvidencePaths.some((entry) => entry.includes(".pytest_cache")) &&
         !allEvidencePaths.some((entry) => entry.includes("artifacts/dpi-audit")) &&
+        !allEvidencePaths.some((entry) => entry.includes("forensics/.pydeps")) &&
         !allEvidencePaths.some((entry) => entry.includes("node_modules")) &&
         !allEvidencePaths.some((entry) => entry.includes("vendor/")) &&
+        !allEvidencePaths.some((entry) => entry.includes("ios/Pods/")) &&
+        !allEvidencePaths.some((entry) => entry.includes("Carthage/")) &&
         !allEvidencePaths.some((entry) => entry.includes("dist/")) &&
         !allEvidencePaths.some((entry) => entry.includes(".gradle/")) &&
+        !allEvidencePaths.some((entry) => entry.includes(".terragrunt-cache/")) &&
         !allEvidencePaths.some((entry) => entry.includes("reports/security-audit/")) &&
         !allEvidencePaths.some((entry) => entry.includes("src/generated/")),
       error: `Expected noisy paths to be excluded, got evidence paths ${JSON.stringify(allEvidencePaths)}.`,
@@ -59,7 +63,9 @@ function main(): void {
       passed:
         !discoverResult.graph.documents.some((document) => document.path === ".pytest_cache/README.md") &&
         !discoverResult.graph.manifests.some((manifest) => manifest.path === "artifacts/dpi-audit/.pydeps/pandas/pyproject.toml") &&
-        !discoverResult.graph.manifests.some((manifest) => manifest.path === "node_modules/example/package.json"),
+        !discoverResult.graph.manifests.some((manifest) => manifest.path === "node_modules/example/package.json") &&
+        !discoverResult.graph.manifests.some((manifest) => manifest.path === "ios/Pods/Manifest.package.json") &&
+        !discoverResult.graph.manifests.some((manifest) => manifest.path === ".terragrunt-cache/cache-node/package.json"),
       error: `Expected cache/audit/dependency documents and manifests to be absent, got documents=${JSON.stringify(discoverResult.graph.documents)}, manifests=${JSON.stringify(discoverResult.graph.manifests)}.`,
     });
 
@@ -69,7 +75,11 @@ function main(): void {
         (includeNoiseResult.graph.excludedSummary?.totalExcludedFileCount ?? 0) === 0 &&
         includedNoisePaths.some((entry) => entry.includes("vendor/example/routes.ts")) &&
         includedNoisePaths.some((entry) => entry.includes("node_modules/example/package.json")) &&
+        includedNoisePaths.some((entry) => entry.includes("ios/Pods/Checkout/client.swift")) &&
+        includedNoisePaths.some((entry) => entry.includes("Carthage/Checkouts/Payments/client.swift")) &&
+        includedNoisePaths.some((entry) => entry.includes("forensics/.pydeps/networkx/setup.py")) &&
         includedNoisePaths.some((entry) => entry.includes("src/generated/client.gen.ts")) &&
+        includedNoisePaths.some((entry) => entry.includes(".terragrunt-cache/cache-node/package.json")) &&
         includedNoisePaths.some((entry) => entry.includes(".gradle/caches/modules-2/files-2.1/example.pom")),
       error: `Expected --include-noise scan to include previously excluded assets, got ${JSON.stringify(includedNoisePaths)}.`,
     });
@@ -133,6 +143,12 @@ function seedRepository(root: string): void {
     "def test_vendor(): pass\n",
     "utf-8",
   );
+  fs.mkdirSync(path.join(root, "forensics", ".pydeps", "networkx"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "forensics", ".pydeps", "networkx", "setup.py"),
+    "from setuptools import setup\nsetup(name='networkx')\n",
+    "utf-8",
+  );
 
   fs.mkdirSync(path.join(root, "vendor", "example"), { recursive: true });
   fs.writeFileSync(
@@ -140,15 +156,27 @@ function seedRepository(root: string): void {
     'const app = { get: () => undefined };\napp.get("/vendor-only", () => "ignore");\n',
     "utf-8",
   );
+  fs.mkdirSync(path.join(root, "vendor", "bundle", "ruby", "gems"), { recursive: true });
+  fs.writeFileSync(path.join(root, "vendor", "bundle", "ruby", "gems", "Gemfile.lock"), "GEM\n", "utf-8");
 
   fs.mkdirSync(path.join(root, "node_modules", "example"), { recursive: true });
   fs.writeFileSync(path.join(root, "node_modules", "example", "package.json"), JSON.stringify({ name: "example" }), "utf-8");
+
+  fs.mkdirSync(path.join(root, "ios", "Pods", "Checkout"), { recursive: true });
+  fs.writeFileSync(path.join(root, "ios", "Pods", "Manifest.package.json"), JSON.stringify({ name: "pods-manifest" }), "utf-8");
+  fs.writeFileSync(path.join(root, "ios", "Pods", "Checkout", "client.swift"), "struct PodClient {}\n", "utf-8");
+
+  fs.mkdirSync(path.join(root, "Carthage", "Checkouts", "Payments"), { recursive: true });
+  fs.writeFileSync(path.join(root, "Carthage", "Checkouts", "Payments", "client.swift"), "struct PaymentsClient {}\n", "utf-8");
 
   fs.mkdirSync(path.join(root, "dist"), { recursive: true });
   fs.writeFileSync(path.join(root, "dist", "app.bundle.js"), "console.log('generated');\n", "utf-8");
 
   fs.mkdirSync(path.join(root, ".gradle", "caches", "modules-2", "files-2.1"), { recursive: true });
   fs.writeFileSync(path.join(root, ".gradle", "caches", "modules-2", "files-2.1", "example.pom"), "<project />\n", "utf-8");
+
+  fs.mkdirSync(path.join(root, ".terragrunt-cache", "cache-node"), { recursive: true });
+  fs.writeFileSync(path.join(root, ".terragrunt-cache", "cache-node", "package.json"), JSON.stringify({ name: "terragrunt-cache" }), "utf-8");
 
   fs.mkdirSync(path.join(root, "reports", "security-audit", "mirror"), { recursive: true });
   fs.writeFileSync(path.join(root, "reports", "security-audit", "mirror", "package.json"), JSON.stringify({ name: "audit-mirror" }), "utf-8");

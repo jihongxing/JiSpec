@@ -76,25 +76,36 @@ function main(): void {
 
     const governanceDoc = ranked.evidence.find((entry) => entry.path === "docs/governance/README.md");
     const protoSchema = ranked.evidence.find((entry) => entry.path === "api/proto/control-plane.proto");
+    const databaseSchema = ranked.evidence.find((entry) => entry.path === "schemas/schema.prisma");
     const explicitEndpoint = ranked.evidence.find((entry) => entry.path === "/orders");
     const entrypoint = ranked.evidence.find((entry) => entry.path === "cmd/server/main.go");
+    const sdkSurface = ranked.evidence.find((entry) => entry.path === "sdk/client.ts");
     const weakCandidate = ranked.evidence.find((entry) => entry.path === "src/controllers/unknown-controller.ts");
+    const packageManifest = ranked.evidence.find((entry) => entry.path === "package.json");
 
     results.push({
       name: "boundary-first ranking labels strong surfaces and keeps weak candidates behind them",
       passed:
         governanceDoc?.metadata?.boundarySignal === "governance_document" &&
         protoSchema?.metadata?.boundarySignal === "schema_truth_source" &&
+        databaseSchema?.metadata?.boundarySignal === "schema_truth_source" &&
         explicitEndpoint?.metadata?.boundarySignal === "explicit_endpoint" &&
         entrypoint?.metadata?.boundarySignal === "service_entrypoint" &&
+        sdkSurface?.metadata?.boundarySignal === "module_surface_inference" &&
         weakCandidate?.metadata?.boundarySignal === "weak_candidate" &&
+        packageManifest?.metadata?.boundarySignal === "runtime_manifest" &&
         governanceDoc?.rankTier === "adoption_ready" &&
         protoSchema?.rankTier === "adoption_ready" &&
         explicitEndpoint?.rankTier === "adoption_ready" &&
         entrypoint?.rankTier === "adoption_ready" &&
         weakCandidate?.rankTier === "owner_review" &&
         (ranked.summary.adoptionReadyCount ?? 0) > (ranked.summary.ownerReviewCount ?? 0) &&
+        rankedPaths.indexOf("docs/governance/README.md") < rankedPaths.indexOf("package.json") &&
+        rankedPaths.indexOf("api/proto/control-plane.proto") < rankedPaths.indexOf("package.json") &&
+        rankedPaths.indexOf("schemas/schema.prisma") < rankedPaths.indexOf("package.json") &&
         rankedPaths.indexOf("/orders") < rankedPaths.indexOf("src/controllers/unknown-controller.ts") &&
+        rankedPaths.indexOf("cmd/server/main.go") < rankedPaths.indexOf("sdk/client.ts") &&
+        rankedPaths.indexOf("sdk/client.ts") < rankedPaths.indexOf("src/controllers/unknown-controller.ts") &&
         rankedPaths.indexOf("api/proto/control-plane.proto") < rankedPaths.indexOf("src/controllers/unknown-controller.ts"),
       error: `Expected boundarySignal metadata and weak-candidate ordering, got ${JSON.stringify(ranked.evidence)}.`,
     });

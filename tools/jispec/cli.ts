@@ -47,6 +47,7 @@ import {
 } from "./change/default-mode-command";
 import type { SpecDeltaChangeType } from "./change/spec-delta";
 import { migrateVerifyPolicy, renderPolicyMigrationText } from "./policy/migrate-policy";
+import { listPolicyPresets, type PolicyPresetDefinition, type PolicyPresetId } from "./policy/policy-presets";
 import {
   evaluatePolicyApprovalWorkflow,
   recordPolicyApproval,
@@ -192,7 +193,8 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli bootstrap discover [--json]",
     "  jispec-cli bootstrap draft [--json]",
     "  jispec-cli adopt --interactive [--json]",
-    "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--owner <owner>] [--reviewer <reviewer...>] [--json]",
+    "  jispec-cli policy migrate [--profile solo|small_team|regulated] [--preset <id>] [--owner <owner>] [--reviewer <reviewer...>] [--json]",
+    "  jispec-cli policy list-presets [--json]",
     "  jispec-cli policy approval status|record [--json]",
     "  jispec-cli doctor mainline",
     "  jispec-cli doctor global",
@@ -396,21 +398,38 @@ function registerPolicyCommands(program: Command): void {
   const policy = program.command("policy").description("Manage the minimal verify policy surface.");
 
   policy
+    .command("list-presets")
+    .description("List available policy presets built on the stable policy profiles.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: { json: boolean }) => {
+      const presets = listPolicyPresets();
+      if (options.json) {
+        console.log(JSON.stringify({ presets }, null, 2));
+      } else {
+        console.log(renderPolicyPresetListText(presets));
+      }
+      process.exitCode = 0;
+    });
+
+  policy
     .command("migrate")
     .description("Scaffold or normalize .spec/policy.yaml onto the current facts contract.")
     .option("--root <path>", "Repository root.", ".")
     .option("--path <path>", "Override the policy file path.")
     .option("--profile <profile>", "Policy profile: solo|small_team|regulated.")
+    .option("--preset <preset>", "Policy preset id.")
     .option("--owner <owner>", "Accountable team owner for the policy profile.")
     .option("--reviewer <reviewer...>", "Reviewer identifier(s) for the policy profile.")
     .option("--actor <actor>", "Actor recorded in the audit event.")
     .option("--reason <reason>", "Reason recorded in the audit event.")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action((options: { root: string; path?: string; profile?: string; owner?: string; reviewer?: string[]; actor?: string; reason?: string; json: boolean }) => {
+    .action((options: { root: string; path?: string; profile?: string; preset?: string; owner?: string; reviewer?: string[]; actor?: string; reason?: string; json: boolean }) => {
       try {
         const profile = parsePolicyProfileOption(options.profile);
+        const preset = parsePolicyPresetOption(options.preset);
         const result = migrateVerifyPolicy(path.resolve(options.root), options.path, {
           profile,
+          preset,
           owner: options.owner,
           reviewers: options.reviewer,
           actor: options.actor,
@@ -513,6 +532,46 @@ function parsePolicyProfileOption(profile?: string): TeamPolicyProfileName | und
     return profile;
   }
   throw new Error("--profile must be one of: solo, small_team, regulated");
+}
+
+function parsePolicyPresetOption(preset?: string): PolicyPresetId | undefined {
+  if (preset === undefined) {
+    return undefined;
+  }
+  const matchingPreset = listPolicyPresets().find((candidate) => candidate.id === preset);
+  if (matchingPreset) {
+    return matchingPreset.id;
+  }
+  throw new Error(`--preset must be one of: ${listPolicyPresets().map((candidate) => candidate.id).join(", ")}`);
+}
+
+function renderPolicyPresetListText(presets: PolicyPresetDefinition[]): string {
+  const lines = [
+    "Available policy presets:",
+    "",
+  ];
+
+  for (const preset of presets) {
+    lines.push(`- ${preset.id}`);
+    lines.push(`  Base profile: ${preset.baseProfile}`);
+    lines.push(`  Description: ${preset.description}`);
+    lines.push(`  Use cases: ${preset.useCases.join("; ")}`);
+    lines.push(`  Start with: npm run jispec-cli -- policy migrate --preset ${preset.id}`);
+    lines.push("");
+  }
+
+  lines.push("Preset vs profile:");
+  lines.push("- `profile` stays on the stable contract: solo, small_team, or regulated.");
+  lines.push("- `preset` selects one stable base profile and layers scenario-specific policy overrides on top.");
+  lines.push("");
+  lines.push("Usage:");
+  lines.push("  npm run jispec-cli -- policy migrate --preset <preset-id>");
+  lines.push("");
+  lines.push("Examples:");
+  lines.push("  npm run jispec-cli -- policy migrate --preset fintech");
+  lines.push("  npm run jispec-cli -- policy migrate --preset startup-fast-iteration");
+
+  return lines.join("\n");
 }
 
 function parseApprovalSubjectKindOption(kind: string): ApprovalSubjectKind {

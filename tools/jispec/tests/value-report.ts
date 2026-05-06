@@ -98,8 +98,11 @@ function main(): void {
       assert.equal(valueArtifact?.status, "available");
       assert.ok(takeoverTrend?.status === "available" || takeoverTrend?.status === "partial");
       assert.equal(takeoverTrend?.summary.hasValueReport, true);
+      assert.equal(takeoverTrend?.summary.hasPoolMetrics, true);
       assert.equal(takeoverTrend?.summary.estimatedManualSortingMinutesSaved, 49);
       assert.equal(takeoverTrend?.summary.blockingIssuesCaught, 1);
+      assert.equal(takeoverTrend?.summary.poolCoverageRate, 0.2);
+      assert.equal(takeoverTrend?.summary.poolReadinessThreshold, 55);
     });
   });
 
@@ -165,6 +168,50 @@ function writeValueFixture(root: string): void {
       { artifactKind: "api", finalState: "adopted", edited: true },
       { artifactKind: "feature", finalState: "spec_debt", edited: false },
     ],
+  });
+  writeJson(root, ".spec/handoffs/retakeover-pool-metrics.json", {
+    fixtureCount: 2,
+    coverage: {
+      fixtureCatalog: [
+        {
+          fixtureId: "orders-like",
+          fixtureClass: "frontend-backend-mixed-repo",
+          coverageSignals: ["class:frontend-backend-mixed-repo", "path:owner_review"],
+        },
+      ],
+      classCoverage: {
+        knownFixtureClassCount: 10,
+        coveredFixtureClassCount: 2,
+        coverageRate: 0.2,
+        classCounts: {
+          "frontend-backend-mixed-repo": 1,
+          "historical-debt-service-repo": 1,
+        },
+        missingFixtureClasses: ["synthetic-contract-drift"],
+      },
+      qualityBaseline: {
+        readinessScore: {
+          threshold: 55,
+          lowestObserved: 61,
+          averageObserved: 68,
+          fixturesBelowThreshold: [],
+        },
+        contractSignalPrecision: {
+          threshold: 0.45,
+          lowestObserved: 0.58,
+          averageObserved: 0.63,
+          fixturesBelowThreshold: [],
+        },
+        behaviorEvidenceStrength: {
+          threshold: 0.45,
+          lowestObserved: 0.52,
+          averageObserved: 0.57,
+          fixturesBelowThreshold: [],
+        },
+        verifyNonBlockingRate: 1,
+        ownerReviewFixtureRate: 0.5,
+      },
+    },
   });
   writeJson(root, ".jispec-ci/verify-report.json", {
     generatedAt: "2026-05-07T10:00:00.000Z",

@@ -57,6 +57,26 @@ function main(): void {
       assert.match(html, /Release baseline/i);
       assert.match(html, /Verify trend/i);
       assert.match(html, /Takeover quality trend/i);
+      assert.match(html, /Is the retakeover regression pool healthy/);
+      assert.match(html, /Missing Fixture Classes/);
+      assert.match(html, /Quality Baseline/);
+      assert.match(html, /Fixture Drill-Down/);
+      assert.match(html, /class="pill blocked">blocked 1<\/span>/);
+      assert.match(html, /class="pill attention">attention 0<\/span>/);
+      assert.match(html, /class="pill ok">ok 1<\/span>/);
+      assert.match(html, /Takeover readiness/);
+      assert.match(html, /Contract precision/);
+      assert.match(html, /Behavior strength/);
+      assert.match(html, /orders-like/);
+      assert.match(html, /steady-api/);
+      assert.match(html, /class:frontend-backend-mixed-repo/);
+      assert.match(html, /docs\/product\/member-journeys\.md/);
+      assert.match(html, /synthetic-contract-drift/);
+      const attentionIndex = html.indexOf("orders-like");
+      const healthyIndex = html.indexOf("steady-api");
+      assert.notEqual(attentionIndex, -1);
+      assert.notEqual(healthyIndex, -1);
+      assert.ok(attentionIndex < healthyIndex, "fixtures with baseline misses should render before healthy fixtures");
       assert.match(html, /Implementation mediation outcomes/i);
       assert.match(html, /Audit events/i);
       assert.match(html, /Suggested Local Commands/);
@@ -247,6 +267,77 @@ function writeGovernanceFixture(root: string): void {
   writeJson(root, ".spec/handoffs/retakeover-metrics.json", {
     qualityScorecard: {
       score: 0.82,
+    },
+  });
+  writeJson(root, ".spec/handoffs/retakeover-pool-metrics.json", {
+    fixtureCount: 2,
+    coverage: {
+      fixtureCatalog: [
+        {
+          fixtureId: "orders-like",
+          fixtureClass: "frontend-backend-mixed-repo",
+          featureRecommendation: "accept_candidate",
+          verifySafety: "non_blocking",
+          ownerReviewRequired: true,
+          artifactDecisionPaths: ["edited:domain"],
+          coverageSignals: ["class:frontend-backend-mixed-repo", "path:owner_review"],
+          topEvidenceSample: ["docs/product/member-journeys.md"],
+          baselineProfile: {
+            takeoverReadinessScore: 64,
+            contractSignalPrecision: 0.58,
+            behaviorEvidenceStrength: 0.52,
+            overclaimBlockRate: 0.91,
+          },
+        },
+        {
+          fixtureId: "steady-api",
+          fixtureClass: "service-api-repo",
+          featureRecommendation: "accept_candidate",
+          verifySafety: "non_blocking",
+          ownerReviewRequired: false,
+          artifactDecisionPaths: ["edited:api"],
+          coverageSignals: ["class:service-api-repo", "path:verify_safe"],
+          topEvidenceSample: ["openapi/service.yaml"],
+          baselineProfile: {
+            takeoverReadinessScore: 78,
+            contractSignalPrecision: 0.73,
+            behaviorEvidenceStrength: 0.69,
+            overclaimBlockRate: 0.95,
+          },
+        },
+      ],
+      classCoverage: {
+        knownFixtureClassCount: 10,
+        coveredFixtureClassCount: 2,
+        coverageRate: 0.2,
+        classCounts: {
+          "frontend-backend-mixed-repo": 1,
+          "historical-debt-service-repo": 1,
+        },
+        missingFixtureClasses: ["synthetic-contract-drift"],
+      },
+      qualityBaseline: {
+        readinessScore: {
+          threshold: 55,
+          lowestObserved: 52,
+          averageObserved: 61,
+          fixturesBelowThreshold: ["orders-like"],
+        },
+        contractSignalPrecision: {
+          threshold: 0.45,
+          lowestObserved: 0.44,
+          averageObserved: 0.57,
+          fixturesBelowThreshold: ["orders-like"],
+        },
+        behaviorEvidenceStrength: {
+          threshold: 0.45,
+          lowestObserved: 0.4,
+          averageObserved: 0.5,
+          fixturesBelowThreshold: ["orders-like"],
+        },
+        verifyNonBlockingRate: 1,
+        ownerReviewFixtureRate: 1,
+      },
     },
   });
   writeJson(root, ".jispec/handoff/change-1.json", {

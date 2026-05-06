@@ -26,6 +26,9 @@ import {
   renderContractSourceAdapterLines,
 } from "./contract-source-adapters";
 import {
+  type AdoptionBoundarySignal,
+  type AdoptionRankedEvidence,
+  type AdoptionRankedEvidenceEntry,
   buildAdoptionRankedEvidence,
   buildBootstrapFullInventory,
   renderAdoptionRankedEvidenceSections,
@@ -205,6 +208,7 @@ export function renderBootstrapDiscoverText(result: BootstrapDiscoverResult): st
 }
 
 export function renderBootstrapSummaryMarkdown(result: BootstrapDiscoverResult): string {
+  const rankedEvidence = buildAdoptionRankedEvidence(result.graph, { limit: 10 });
   return [
     "# Bootstrap Summary",
     "",
@@ -224,11 +228,168 @@ export function renderBootstrapSummaryMarkdown(result: BootstrapDiscoverResult):
     }),
     `${HUMAN_SUMMARY_COMPANION_NOTE} Machine consumers should use \`evidence-graph.json\`, \`full-inventory.json\`, \`adoption-ranked-evidence.json\`, and \`contract-source-adapters.json\`.`,
     "",
+    ...renderTakeoverPreviewSection(rankedEvidence),
+    "",
     "```text",
     renderBootstrapDiscoverText(result),
     "```",
     "",
   ].join("\n");
+}
+
+function renderTakeoverPreviewSection(ranked: AdoptionRankedEvidence): string[] {
+  const topCandidates = ranked.evidence.slice(0, 5);
+  const quickWins = topCandidates.filter((entry) => isQuickWinBoundarySignal(entry.metadata?.boundarySignal)).slice(0, 2);
+  const quickWinMinutes = quickWins.reduce((sum, entry) => sum + estimateCandidateEffortMinutes(entry), 0);
+  const fullBoundaryMinutes = topCandidates.reduce((sum, entry) => sum + estimateCandidateEffortMinutes(entry), 0);
+
+  return [
+    "## Takeover Preview",
+    "",
+    "### Top Adoption Candidates",
+    "",
+    ...renderTakeoverPreviewCandidates(topCandidates),
+    "",
+    "### Boundary Recommendation",
+    "",
+    `- ${buildBoundaryRecommendation(topCandidates)}`,
+    "",
+    "### Estimated Adoption Effort",
+    "",
+    `- Quick wins (${quickWins.length > 0 ? `top ${quickWins.length}` : "none identified"}): ${quickWins.length > 0 ? `~${formatEffortMinutes(quickWinMinutes)}` : "review required before estimating"}`,
+    `- Full boundary (top ${topCandidates.length}): ${topCandidates.length > 0 ? `~${formatEffortMinutes(fullBoundaryMinutes)}` : "not enough evidence yet"}`,
+    "",
+  ];
+}
+
+function renderTakeoverPreviewCandidates(candidates: AdoptionRankedEvidenceEntry[]): string[] {
+  if (candidates.length === 0) {
+    return ["No strong adoption candidates were identified yet. Run `bootstrap draft` only after reviewing the evidence graph manually."];
+  }
+
+  return candidates.map((entry, index) => {
+    const boundarySignal = normalizeBoundarySignal(entry.metadata?.boundarySignal);
+    const confidence = typeof entry.confidenceScore === "number" ? `${Math.round(entry.confidenceScore * 100)}%` : "unknown";
+    const effort = formatEffortMinutes(estimateCandidateEffortMinutes(entry));
+    const quickWin = isQuickWinBoundarySignal(boundarySignal)
+      ? "Quick win."
+      : "Needs a wider boundary review.";
+    const reason = summarizeCandidateReason(entry.reason);
+    return `${index + 1}. **\`${entry.path}\`** (${boundarySignalLabel(boundarySignal)}, confidence: ${confidence}) - ${quickWin} Estimated effort: ${effort}. Why it ranks: ${reason}`;
+  });
+}
+
+function buildBoundaryRecommendation(candidates: AdoptionRankedEvidenceEntry[]): string {
+  const boundarySignals = candidates
+    .map((entry) => normalizeBoundarySignal(entry.metadata?.boundarySignal))
+    .filter((signal): signal is AdoptionBoundarySignal => signal !== undefined);
+
+  const hasGovernance = boundarySignals.includes("governance_document");
+  const hasProtocol = boundarySignals.includes("protocol_document");
+  const hasSchema = boundarySignals.includes("schema_truth_source");
+  const hasEndpoint = boundarySignals.includes("explicit_endpoint");
+  const hasEntrypoint = boundarySignals.includes("service_entrypoint");
+
+  if ((hasProtocol || hasSchema) && hasEndpoint) {
+    return "Prioritize the API contract boundary: adopt protocol/schema truth sources first, then anchor the matching explicit endpoints.";
+  }
+  if (hasGovernance && (hasProtocol || hasSchema)) {
+    return "Start with governance and contract truth sources so the first adopted boundary is both explicit and reviewable.";
+  }
+  if (hasEntrypoint && hasEndpoint) {
+    return "Take over the executable service boundary first: service entrypoints plus explicit endpoints define the smallest stable adoption slice.";
+  }
+  if (hasSchema) {
+    return "Lead with schema truth sources. They give the cleanest first boundary and keep later route/module adoption grounded.";
+  }
+  if (hasGovernance) {
+    return "Start with governance documents to lock the repo narrative before widening into module-level or route-level evidence.";
+  }
+  return "Adopt the highest-confidence top candidates first, then widen only after the first contract boundary is reviewed and accepted.";
+}
+
+function estimateCandidateEffortMinutes(entry: AdoptionRankedEvidenceEntry): number {
+  const boundarySignal = normalizeBoundarySignal(entry.metadata?.boundarySignal);
+  switch (boundarySignal) {
+    case "governance_document":
+      return 15;
+    case "protocol_document":
+      return 25;
+    case "schema_truth_source":
+      return 30;
+    case "runtime_manifest":
+      return 20;
+    case "explicit_endpoint":
+      return 60;
+    case "service_entrypoint":
+      return 60;
+    case "module_surface_inference":
+      return 75;
+    case "supporting_evidence":
+      return 45;
+    case "weak_candidate":
+      return 90;
+    default:
+      return 45;
+  }
+}
+
+function isQuickWinBoundarySignal(boundarySignal: unknown): boolean {
+  return (
+    boundarySignal === "governance_document" ||
+    boundarySignal === "protocol_document" ||
+    boundarySignal === "schema_truth_source" ||
+    boundarySignal === "runtime_manifest"
+  );
+}
+
+function normalizeBoundarySignal(boundarySignal: unknown): AdoptionBoundarySignal | undefined {
+  return typeof boundarySignal === "string" ? boundarySignal as AdoptionBoundarySignal : undefined;
+}
+
+function boundarySignalLabel(boundarySignal: AdoptionBoundarySignal | undefined): string {
+  switch (boundarySignal) {
+    case "governance_document":
+      return "governance document";
+    case "protocol_document":
+      return "protocol document";
+    case "schema_truth_source":
+      return "schema truth source";
+    case "explicit_endpoint":
+      return "explicit endpoint";
+    case "service_entrypoint":
+      return "service entrypoint";
+    case "module_surface_inference":
+      return "module surface inference";
+    case "runtime_manifest":
+      return "runtime manifest";
+    case "weak_candidate":
+      return "weak candidate";
+    case "supporting_evidence":
+      return "supporting evidence";
+    default:
+      return "unclassified signal";
+  }
+}
+
+function summarizeCandidateReason(reason: string): string {
+  const parts = reason.split(",").map((part) => part.trim()).filter(Boolean).slice(0, 3);
+  return parts.length > 0 ? parts.join(", ") : "high-confidence evidence";
+}
+
+function formatEffortMinutes(minutes: number): string {
+  if (minutes <= 0) {
+    return "0 minutes";
+  }
+  if (minutes < 60) {
+    return `${minutes} minutes`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (remainder === 0) {
+    return hours === 1 ? "1 hour" : `${hours} hours`;
+  }
+  return `${hours} hour${hours === 1 ? "" : "s"} ${remainder} minutes`;
 }
 
 function scanRepository(root: string, options: { includeNoise?: boolean } = {}): EvidenceGraph {

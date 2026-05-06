@@ -267,7 +267,10 @@ function collectSourceEvolutionSignals(root: string): VerifyIssue[] {
 }
 
 function collectProvenanceDriftSignals(root: string): VerifyIssue[] {
-  return collectGreenfieldProvenanceAnchorDrift(root).map((drift) => ({
+  const context = resolveSourceEvolutionContext(root);
+  return collectGreenfieldProvenanceAnchorDrift(root, {
+    governedSourceEvolution: context.declared ? context.diff : undefined,
+  }).map((drift) => ({
     kind: "semantic",
     severity: drift.severity,
     code: "GREENFIELD_PROVENANCE_ANCHOR_DRIFT",

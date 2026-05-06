@@ -71,7 +71,7 @@ async function main(): Promise<void> {
       assert.match(releaseDrift?.evidence?.summary ?? "", /lifecycle\.yaml/);
       assert.match(releaseDrift?.evidence?.summary ?? "", /last adopted change change-1/);
       assert.match(sourceAdopted?.evidence?.summary ?? "", /fully adopted/i);
-      assert.match(deferredRepaid?.evidence?.summary ?? "", /repaid/i);
+      assert.match(deferredRepaid?.evidence?.summary ?? "", /defer\s*->\s*adopt/i);
       assert.equal(releaseCompareContext?.evidence?.releaseCompareGlobalContextStatus, "available");
       assert.equal(doctorGlobal?.evidence?.doctorGlobalReady, true);
       assert.ok(acceptance.proofClaims.verifiable);
@@ -187,26 +187,43 @@ async function main(): Promise<void> {
     }
   }));
 
-  results.push(record("north-star docs and CLI help expose final acceptance without replacing existing gates", () => {
-    const repoRoot = path.resolve(__dirname, "..", "..", "..");
-    const plan = fs.readFileSync(path.join(repoRoot, "docs", "north-star-next-development-plan.md"), "utf-8");
-    const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf-8");
-    const stableContract = fs.readFileSync(path.join(repoRoot, "docs", "v1-mainline-stable-contract.md"), "utf-8");
-    const consoleContract = fs.readFileSync(path.join(repoRoot, "docs", "console-read-model-contract.md"), "utf-8");
-    const checklist = fs.readFileSync(path.join(repoRoot, "docs", "pilot-readiness-checklist.md"), "utf-8");
-    const help = runCli(["--help"]);
+  results.push(record("north-star acceptance and CLI help expose the global closure layer without docs dependency", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-north-star-global-closure-"));
+    try {
+      writeNorthStarFixture(root);
+      const written = writeNorthStarAcceptance({
+        root,
+        generatedAt: "2026-05-02T00:00:00.000Z",
+      });
+      const saved = JSON.parse(fs.readFileSync(written.acceptancePath, "utf-8")) as NorthStarAcceptance;
 
-    assert.match(plan, /M7-T5[\s\S]*状态：已完成/);
-    assert.match(plan, /## V1\.1 \/ pilot-grade 周执行计划/);
-    assert.match(plan, /状态：frozen，除非通过对应任务和回归门禁，否则不调整场景范围、任务顺序和矩阵口径。/);
-    assert.match(plan, /\| W1-T1 \| W1 \| P0 \| Test Owner \+ Docs \/ Release Owner \|/);
-    assert.match(plan, /\| W8-T2 \| W8 \| P0 \| Release \/ QA Owner \|/);
-    assert.match(plan, /north-star acceptance/i);
-    assert.match(readme, /north-star acceptance/i);
-    assert.match(stableContract, /north-star acceptance/i);
-    assert.match(consoleContract, /north-star acceptance/i);
-    assert.match(checklist, /north-star acceptance/i);
-    assert.match(help.stdout, /jispec-cli north-star acceptance \[--json\]/);
+      const consoleSourceEvolution = saved.scenarios.find((scenario) => scenario.id === "console_source_evolution");
+      const ownerActionScenario = saved.scenarios.find((scenario) => scenario.id === "multi_repo_owner_action");
+      const releaseCompareScenario = saved.scenarios.find((scenario) => scenario.id === "release_compare_global_context");
+      const doctorGlobalScenario = saved.scenarios.find((scenario) => scenario.id === "doctor_global_health");
+
+      assert.equal(consoleSourceEvolution?.status, "passed");
+      assert.equal(consoleSourceEvolution?.evidence?.currentChangeState, "ready_for_source_adopt");
+      assert.equal(consoleSourceEvolution?.evidence?.sourceReviewCoverage?.adopted, 2);
+      assert.equal(ownerActionScenario?.evidence?.aggregateOwnerActionCount, 1);
+      assert.equal(ownerActionScenario?.evidence?.aggregateContractDriftHintCount, 1);
+      assert.equal(releaseCompareScenario?.evidence?.releaseCompareGlobalContextStatus, "available");
+      assert.equal(releaseCompareScenario?.evidence?.releaseCompareOwnerReviewRecommendationCount, 1);
+      assert.equal(releaseCompareScenario?.evidence?.releaseCompareRelevantHintCount, 1);
+      assert.equal(releaseCompareScenario?.evidence?.releaseCompareRelevantOwnerActionCount, 1);
+      assert.equal(doctorGlobalScenario?.evidence?.doctorGlobalReady, true);
+      assert.equal(doctorGlobalScenario?.evidence?.doctorGlobalBlockerCount, 0);
+
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/console_source_evolution-decision.md"), "utf-8"), /Current change state: ready_for_source_adopt/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/multi_repo_owner_action-decision.md"), "utf-8"), /Aggregate owner actions: 1/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_compare_global_context-decision.md"), "utf-8"), /Release compare global context: available/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/doctor_global_health-decision.md"), "utf-8"), /Doctor global prerequisites healthy: true/);
+
+      const help = runCli(["north-star", "acceptance", "--help"]);
+      assert.match(help.stdout, /Usage:\s+jispec-cli\s+north-star\s+acceptance\s+\[options\]/i);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   }));
 
   let passed = 0;

@@ -19,6 +19,7 @@ export type ConsoleGovernanceQuestionId =
   | "source_evolution_progress"
   | "waiver_attention"
   | "spec_debt_attention"
+  | "retakeover_pool_health"
   | "contract_drift_review"
   | "execute_mediation_status"
   | "approval_workflow_status"
@@ -99,6 +100,7 @@ export function buildConsoleGovernanceDashboardFromSnapshot(
     buildSourceEvolutionQuestion(snapshot),
     buildWaiverQuestion(snapshot),
     buildSpecDebtQuestion(snapshot),
+    buildRetakeoverPoolQuestion(snapshot),
     buildContractDriftQuestion(snapshot),
     buildImplementationQuestion(snapshot),
     buildApprovalQuestion(snapshot),
@@ -414,6 +416,9 @@ function ownerForQuestion(id: ConsoleGovernanceQuestionId): string {
   if (id === "spec_debt_attention") {
     return "spec debt owner";
   }
+  if (id === "retakeover_pool_health") {
+    return "discover owner";
+  }
   if (id === "contract_drift_review") {
     return "release owner";
   }
@@ -438,6 +443,9 @@ function fallbackCommandForQuestion(question: ConsoleGovernanceDashboardQuestion
   }
   if (question.id === "contract_drift_review") {
     return "npm run jispec-cli -- release compare --from <ref> --to <ref>";
+  }
+  if (question.id === "retakeover_pool_health") {
+    return "node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts";
   }
   if (question.id === "execute_mediation_status") {
     return "npm run jispec-cli -- implement --from-handoff <path>";
@@ -714,6 +722,92 @@ function buildSpecDebtQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanc
     status: "ok",
     answer: "No open or expired spec debt was found in the declared artifacts.",
     evidence: ["Spec debt ledger is available and has no open debt records."],
+    nextActions: [],
+  });
+}
+
+function buildRetakeoverPoolQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
+  const takeoverTrend = governanceObject(snapshot, "takeover_quality_trend");
+  const summary = takeoverTrend?.summary ?? {};
+  const hasPoolMetrics = summary.hasPoolMetrics === true;
+  const fixtureCount = numberValue(summary.poolFixtureCount) ?? 0;
+  const catalogCount = numberValue(summary.poolFixtureCatalogCount) ?? 0;
+  const coverageRate = numberValue(summary.poolCoverageRate);
+  const coveredClasses = numberValue(summary.poolCoveredFixtureClassCount);
+  const knownClasses = numberValue(summary.poolKnownFixtureClassCount);
+  const missingClasses = Array.isArray(summary.poolMissingFixtureClasses)
+    ? summary.poolMissingFixtureClasses.map(String)
+    : [];
+  const readinessThreshold = numberValue(summary.poolReadinessThreshold);
+  const readinessMisses = Array.isArray(summary.poolReadinessFixturesBelowThreshold)
+    ? summary.poolReadinessFixturesBelowThreshold.map(String)
+    : [];
+  const precisionThreshold = numberValue(summary.poolContractPrecisionThreshold);
+  const precisionMisses = Array.isArray(summary.poolContractPrecisionFixturesBelowThreshold)
+    ? summary.poolContractPrecisionFixturesBelowThreshold.map(String)
+    : [];
+  const behaviorThreshold = numberValue(summary.poolBehaviorStrengthThreshold);
+  const behaviorMisses = Array.isArray(summary.poolBehaviorFixturesBelowThreshold)
+    ? summary.poolBehaviorFixturesBelowThreshold.map(String)
+    : [];
+  const verifyNonBlockingRate = numberValue(summary.poolVerifyNonBlockingRate);
+  const ownerReviewFixtureRate = numberValue(summary.poolOwnerReviewFixtureRate);
+  const baselineMissCount = readinessMisses.length + precisionMisses.length + behaviorMisses.length;
+
+  if (!takeoverTrend || summary.state === "not_available_yet" || !hasPoolMetrics) {
+    return question({
+      id: "retakeover_pool_health",
+      label: "Is the retakeover regression pool healthy?",
+      status: "unknown",
+      answer: "Retakeover pool metrics are not available yet.",
+      evidence: ["Missing .spec/handoffs/retakeover-pool-metrics.json"],
+      nextActions: [
+        "Run node --import tsx ./tools/jispec/tests/bootstrap-retakeover-regression.ts to refresh pool metrics.",
+      ],
+    });
+  }
+
+  if (missingClasses.length > 0 || baselineMissCount > 0) {
+    return question({
+      id: "retakeover_pool_health",
+      label: "Is the retakeover regression pool healthy?",
+      status: "attention",
+      answer: `Pool coverage is ${formatPercent(coverageRate)} with ${missingClasses.length} missing fixture class(es) and ${baselineMissCount} baseline miss list(s).`,
+      evidence: [
+        `Fixture catalog: ${catalogCount} entry(ies); pooled fixtures: ${fixtureCount}`,
+        `Class coverage: ${coveredClasses ?? "unknown"}/${knownClasses ?? "unknown"}`,
+        readinessThreshold !== undefined ? `Readiness floor: ${readinessThreshold}/100` : "",
+        precisionThreshold !== undefined ? `Contract precision floor: ${formatPercent(precisionThreshold)}` : "",
+        behaviorThreshold !== undefined ? `Behavior strength floor: ${formatPercent(behaviorThreshold)}` : "",
+        verifyNonBlockingRate !== undefined ? `Verify non-blocking rate: ${formatPercent(verifyNonBlockingRate)}` : "",
+        ownerReviewFixtureRate !== undefined ? `Owner-review fixture rate: ${formatPercent(ownerReviewFixtureRate)}` : "",
+        missingClasses.length > 0 ? `Missing fixture classes: ${missingClasses.join(", ")}` : "",
+        readinessMisses.length > 0 ? `Readiness misses: ${readinessMisses.join(", ")}` : "",
+        precisionMisses.length > 0 ? `Contract precision misses: ${precisionMisses.join(", ")}` : "",
+        behaviorMisses.length > 0 ? `Behavior strength misses: ${behaviorMisses.join(", ")}` : "",
+      ],
+      nextActions: [
+        "Review .spec/handoffs/retakeover-pool-summary.md before changing discover ranking or takeover summaries.",
+        "Investigate fixtures below baseline and decide whether the regression is acceptable.",
+        "Add or refresh fixtures for any missing repository classes that should move into the real-like pool.",
+      ],
+    });
+  }
+
+  return question({
+    id: "retakeover_pool_health",
+    label: "Is the retakeover regression pool healthy?",
+    status: "ok",
+    answer: `Pool coverage is ${formatPercent(coverageRate)} and all covered fixtures meet the current quality baseline.`,
+    evidence: [
+      `Fixture catalog: ${catalogCount} entry(ies); pooled fixtures: ${fixtureCount}`,
+      `Class coverage: ${coveredClasses ?? "unknown"}/${knownClasses ?? "unknown"}`,
+      readinessThreshold !== undefined ? `Readiness floor: ${readinessThreshold}/100` : "",
+      precisionThreshold !== undefined ? `Contract precision floor: ${formatPercent(precisionThreshold)}` : "",
+      behaviorThreshold !== undefined ? `Behavior strength floor: ${formatPercent(behaviorThreshold)}` : "",
+      verifyNonBlockingRate !== undefined ? `Verify non-blocking rate: ${formatPercent(verifyNonBlockingRate)}` : "",
+      ownerReviewFixtureRate !== undefined ? `Owner-review fixture rate: ${formatPercent(ownerReviewFixtureRate)}` : "",
+    ],
     nextActions: [],
   });
 }
@@ -996,6 +1090,10 @@ function numberValue(value: unknown): number | undefined {
 
 function stableUnique(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+}
+
+function formatPercent(value: number | undefined): string {
+  return value === undefined ? "unknown" : `${Math.round(value * 100)}%`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

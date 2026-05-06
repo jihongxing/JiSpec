@@ -81,26 +81,78 @@ export interface ExternalToolHandoffRequest {
   prompt: string;
 }
 
-const TOOL_LABELS: Record<ExternalCodingTool, { label: string; promptStyle: string }> = {
+interface ExternalCodingToolProfile {
+  label: string;
+  promptStyle: string;
+  requestGuidance: string[];
+  operatorWalkthrough: string[];
+}
+
+const TOOL_LABELS: Record<ExternalCodingTool, ExternalCodingToolProfile> = {
   codex: {
     label: "Codex",
     promptStyle: "repository-agent",
+    requestGuidance: [
+      "Use the JiSpec packet as the full task brief and keep your work inside the repository guardrails listed below.",
+      "Explain your intended file edits briefly, then return a unified diff patch that JiSpec can mediate.",
+    ],
+    operatorWalkthrough: [
+      "Open the generated Markdown summary in your Codex session as the working brief.",
+      "Ask Codex to propose the smallest patch that satisfies the failed check and stays within the allowed paths.",
+      "Return the diff through the JiSpec retry command instead of treating the Codex result as final authority.",
+    ],
   },
   claude_code: {
     label: "Claude Code",
     promptStyle: "terminal-coding-agent",
+    requestGuidance: [
+      "Frame this as a terminal-first repair task: inspect only the listed files, keep changes scoped, and prefer commands that validate the supplied test target.",
+      "Have Claude Code explain any command it wants to run, then return a unified diff patch rather than an applied workspace state.",
+    ],
+    operatorWalkthrough: [
+      "Paste the Markdown summary into Claude Code and keep the allowed paths visible as the hard editing boundary.",
+      "Prompt Claude Code to reason from the failed check toward the minimal fix, using the listed test command before it prepares a patch.",
+      "Collect the unified diff and hand it back to JiSpec with the provided retry command.",
+    ],
   },
   cursor: {
     label: "Cursor",
     promptStyle: "ide-agent",
+    requestGuidance: [
+      "Treat this as an IDE chat handoff: anchor the request on the files needing attention and ask Cursor to keep the edit set as small as possible.",
+      "Ask for a patch-ready response that references the contract focus in plain language, then export or copy the unified diff for JiSpec mediation.",
+    ],
+    operatorWalkthrough: [
+      "Open the repository in Cursor and drop the Markdown summary into Chat or Agent mode as the initial brief.",
+      "Point Cursor at the files needing attention first so its code search stays close to the intended scope.",
+      "When Cursor proposes a fix, copy the unified diff and return it through the JiSpec external patch command.",
+    ],
   },
   copilot: {
     label: "GitHub Copilot",
     promptStyle: "ide-pair-programmer",
+    requestGuidance: [
+      "Treat this as a pair-programming brief for Copilot Chat or Workspace: restate the change intent, the failed check, and the contract focus before asking for code edits.",
+      "Have Copilot produce a reviewable unified diff and avoid broad repo-wide refactors or speculative file creation outside the allowed paths.",
+    ],
+    operatorWalkthrough: [
+      "Start from Copilot Chat or Workspace with the Markdown summary and keep the request centered on the change intent plus failed check.",
+      "Use the contract focus section to tell Copilot which contracts or spec debt artifacts define the intended behavior.",
+      "Return Copilot's diff through JiSpec so scope check, tests, and verify remain the gate.",
+    ],
   },
   devin: {
     label: "Devin",
     promptStyle: "autonomous-coding-agent",
+    requestGuidance: [
+      "Keep the request bounded to the supplied paths and replay commands even if the agent can explore more broadly.",
+      "Require Devin to return a unified diff artifact for JiSpec mediation instead of letting it self-approve completion.",
+    ],
+    operatorWalkthrough: [
+      "Provide the Markdown summary as the task contract and highlight the allowed paths before execution starts.",
+      "Ask Devin to stop after producing a unified diff plus any supporting notes about the failed check.",
+      "Use JiSpec to apply and verify the patch rather than trusting the autonomous run as final authority.",
+    ],
   },
 };
 
@@ -241,13 +293,18 @@ export function parseExternalCodingTool(value: string): ExternalCodingTool {
 }
 
 function renderExternalToolPrompt(request: ExternalToolHandoffRequest, packet: HandoffPacket): string {
+  const profile = TOOL_LABELS[request.tool.id];
   return [
     `You are receiving a JiSpec handoff for ${request.tool.label}.`,
+    `Prompt style: ${request.tool.promptStyle}.`,
     "",
     `Change intent: ${request.request.changeIntent}`,
     `Current stop point: ${request.request.stopPoint}`,
     `Failed check: ${request.request.failedCheck}`,
     `Summary: ${request.request.summary}`,
+    "",
+    `Tool-specific request guidance for ${request.tool.label}:`,
+    ...formatNumberedList(profile.requestGuidance),
     "",
     "Allowed paths:",
     ...formatList(request.request.allowedPaths),
@@ -271,13 +328,23 @@ function renderExternalToolPrompt(request: ExternalToolHandoffRequest, packet: H
 }
 
 function renderExternalToolHandoffMarkdown(request: ExternalToolHandoffRequest): string {
+  const profile = TOOL_LABELS[request.tool.id];
   return [
     "# JiSpec External Coding Tool Handoff",
     "",
     `Tool: ${request.tool.label}`,
+    `Prompt style: ${request.tool.promptStyle}`,
     `Session: ${request.sourceHandoff.sessionId}`,
     `Stop point: ${request.request.stopPoint}`,
     `Failed check: ${request.request.failedCheck}`,
+    "",
+    "## Tool-Specific Request Guidance",
+    "",
+    ...formatNumberedList(profile.requestGuidance),
+    "",
+    "## Operator Walkthrough",
+    "",
+    ...formatNumberedList(profile.operatorWalkthrough),
     "",
     "## Request",
     "",
@@ -325,6 +392,10 @@ function validateExternalCodingTool(value: string): asserts value is ExternalCod
 
 function formatList(values: string[]): string[] {
   return values.length > 0 ? values.map((value) => `- ${value}`) : ["- none"];
+}
+
+function formatNumberedList(values: string[]): string[] {
+  return values.length > 0 ? values.map((value, index) => `${index + 1}. ${value}`) : ["1. none"];
 }
 
 function stableUnique(values: string[]): string[] {

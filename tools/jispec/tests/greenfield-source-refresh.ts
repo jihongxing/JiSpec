@@ -10,6 +10,7 @@ import { runGreenfieldInit } from "../greenfield/init";
 import { collectGreenfieldProvenanceAnchorDrift } from "../greenfield/provenance-drift";
 import { runGreenfieldSourceAdopt, runGreenfieldSourceReviewTransition } from "../greenfield/source-governance";
 import { renderGreenfieldSourceRefreshText, runGreenfieldSourceRefresh } from "../greenfield/source-refresh";
+import { runVerify } from "../verify/verify-runner";
 
 interface TestResult {
   name: string;
@@ -92,6 +93,10 @@ async function main(): Promise<void> {
       reason: "Promote reviewed source change into active truth.",
       now: "2026-04-29T00:00:00.000Z",
     });
+    const postAdoptVerify = await runVerify({
+      root,
+      generatedAt: "2026-04-29T00:00:00.000Z",
+    });
     const proposedSnapshot = yaml.load(fs.readFileSync(path.join(root, ".spec", "deltas", refresh.changeId, "source-documents.proposed.yaml"), "utf-8")) as {
       snapshot?: { status?: string };
       source_documents?: {
@@ -145,6 +150,8 @@ async function main(): Promise<void> {
       assert.equal(lifecycle.last_adopted_change_id, refresh.changeId);
       assert.equal(lifecycle.registry_version, 2);
       assert.equal(lifecycle.active_snapshot_id, activeSnapshot.snapshot?.id);
+      assert.equal(postAdoptVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT"), false);
+      assert.equal(postAdoptVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNREVIEWED"), false);
       assert.ok(lifecycle.requirements?.some((entry) =>
         entry.id === "REQ-ORD-002" &&
         entry.status === "modified" &&

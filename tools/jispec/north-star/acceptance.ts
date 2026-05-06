@@ -881,17 +881,17 @@ function evaluateSourceEvolutionDeferredRepaidScenario(
   if (repaidItems.length === 0) {
     blockingReasons.push("No source review item shows a defer -> adopt repayment history.");
   }
+  if ((summary.deferredItems ?? 0) > 0) {
+    blockingReasons.push(`There are still ${summary.deferredItems} deferred source review item(s) awaiting repayment.`);
+  }
   if ((summary.expiredDeferredItems ?? 0) > 0) {
     blockingReasons.push(`There are still ${summary.expiredDeferredItems} expired deferred source review item(s).`);
-  }
-  if ((summary.deferredItems ?? 0) > 0 && repaidItems.length === 0) {
-    blockingReasons.push("Deferred source review debt still exists without repayment evidence.");
   }
 
   return {
     evidence: {
-      summary: repaidItems.length > 0
-        ? `${repaidItems.length} source review item(s) show deferred debt that was later repaid and adopted.`
+      summary: repaidItems.length > 0 && (summary.deferredItems ?? 0) === 0 && (summary.expiredDeferredItems ?? 0) === 0
+        ? `${repaidItems.length} source review item(s) show defer -> adopt repayment history and the deferred debt is now clear.`
         : "No repaid deferred source review history was found.",
       lifecycleRegistryPath: summary.lifecycleRegistryPath,
       lifecycleRegistryVersion: summary.lifecycleRegistryVersion,
@@ -919,29 +919,81 @@ function evaluateConsoleSourceEvolutionScenario(
 ): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
   const sourceEvolution = findGovernanceObject(context.snapshot, "source_evolution_governance");
   const summary = sourceEvolution?.summary ?? {};
+  const sourceReviewCoverage = isRecord(summary.sourceReviewCoverage)
+    ? {
+        totalItems: numberValue(summary.sourceReviewCoverage.totalItems) ?? 0,
+        open: numberValue(summary.sourceReviewCoverage.open) ?? 0,
+        adopted: numberValue(summary.sourceReviewCoverage.adopted) ?? 0,
+        deferred: numberValue(summary.sourceReviewCoverage.deferred) ?? 0,
+        waived: numberValue(summary.sourceReviewCoverage.waived) ?? 0,
+        rejected: numberValue(summary.sourceReviewCoverage.rejected) ?? 0,
+      }
+    : undefined;
+  const pendingChanges = Array.isArray(summary.pendingChanges)
+    ? summary.pendingChanges.filter(isRecord).map((entry) => ({
+        changeId: stringValue(entry.changeId) ?? "unknown",
+        openReviewItems: numberValue(entry.openReviewItems) ?? 0,
+        blockingOpenReviewItems: numberValue(entry.blockingOpenReviewItems) ?? 0,
+        sourceEvolutionPath: stringValue(entry.sourceEvolutionPath),
+        sourceReviewPath: stringValue(entry.sourceReviewPath),
+      }))
+    : undefined;
   const blockingReasons: string[] = [];
+  const currentChangeState = stringValue(summary.currentChangeState);
+  const activeSnapshotId = stringValue(summary.activeSnapshotId);
+  const lifecyclePath = stringValue(summary.lifecyclePath);
+  const sourceEvolutionPath = stringValue(summary.sourceEvolutionPath);
+  const sourceReviewPath = stringValue(summary.sourceReviewPath);
+  const representativeArtifact = stringValue(summary.activeRepresentativeItem);
+  const lastAdoptedSourceChange = nullableString(summary.lastAdoptedSourceChange);
   if (!sourceEvolution || sourceEvolution.status !== "available") {
     blockingReasons.push("Console source_evolution_governance object is not available.");
+  }
+  if (!currentChangeState || currentChangeState === "not_available_yet") {
+    blockingReasons.push("Console source evolution governance does not expose a current change state.");
+  }
+  if (!activeSnapshotId || activeSnapshotId === "not_available_yet") {
+    blockingReasons.push("Console source evolution governance does not expose an active source snapshot id.");
+  }
+  if (!lifecyclePath || lifecyclePath === "not_available_yet") {
+    blockingReasons.push("Console source evolution governance does not expose the lifecycle registry path.");
+  }
+  if (!sourceEvolutionPath || sourceEvolutionPath === "not_available_yet") {
+    blockingReasons.push("Console source evolution governance does not expose a source evolution artifact path.");
+  }
+  if (!sourceReviewPath || sourceReviewPath === "not_available_yet") {
+    blockingReasons.push("Console source evolution governance does not expose a source review artifact path.");
+  }
+  if (!representativeArtifact || representativeArtifact === "not_available_yet") {
+    blockingReasons.push("Console source evolution governance does not expose a representative artifact.");
+  }
+  if (lastAdoptedSourceChange === null || lastAdoptedSourceChange === "not_available_yet") {
+    blockingReasons.push("Console source evolution governance does not expose a last adopted source change.");
+  }
+  if (!sourceReviewCoverage) {
+    blockingReasons.push("Console source evolution governance does not expose source review coverage.");
   }
 
   return {
     evidence: sourceEvolution
       ? {
           summary: sourceEvolution.status === "available"
-            ? `Console exposes source evolution governance with state ${stringValue(summary.currentChangeState) ?? "not_available_yet"}.`
+            ? `Console exposes source evolution governance with state ${currentChangeState ?? "not_available_yet"}, active snapshot ${activeSnapshotId ?? "not_available_yet"}, and ${summary.reviewedBlockingItems ?? 0} reviewed blocking item(s).`
             : "Console source evolution governance object is not available yet.",
-          lifecycleRegistryPath: stringValue(summary.lifecyclePath),
-          activeSnapshotId: stringValue(summary.activeSnapshotId),
-          lastAdoptedChangeId: nullableString(summary.lastAdoptedSourceChange),
-          sourceEvolutionPath: stringValue(summary.sourceEvolutionPath),
-          sourceReviewPath: stringValue(summary.sourceReviewPath),
-          currentChangeState: stringValue(summary.currentChangeState),
+          lifecycleRegistryPath: lifecyclePath,
+          activeSnapshotId,
+          lastAdoptedChangeId: lastAdoptedSourceChange,
+          sourceEvolutionPath,
+          sourceReviewPath,
+          currentChangeState,
           openReviewItems: numberValue(summary.openReviewItems),
           blockingOpenReviewItems: numberValue(summary.blockingOpenReviewItems),
           deferredItems: numberValue(summary.deferredItems),
           expiredDeferredItems: numberValue(summary.expiredDeferredItems),
           reviewedBlockingItems: numberValue(summary.reviewedBlockingItems),
-          sourceEvolutionRepresentativeArtifact: stringValue(summary.activeRepresentativeItem),
+          sourceEvolutionRepresentativeArtifact: representativeArtifact,
+          sourceReviewCoverage,
+          pendingChanges,
           governedRequirementEvolution: sourceEvolution.status === "available",
         }
       : undefined,
@@ -958,27 +1010,41 @@ function evaluateMultiRepoOwnerActionScenario(
   const ownerActions = Array.isArray(aggregate?.ownerActions) ? aggregate.ownerActions : [];
   const contractDriftHints = Array.isArray(aggregate?.contractDriftHints) ? aggregate.contractDriftHints : [];
   const blockingReasons: string[] = [];
+  const summaryOwnerActionCount = numberValue(summary.ownerActionCount);
+  const summaryContractDriftHintCount = numberValue(summary.contractDriftHintCount);
   if (!aggregate || aggregate.kind !== "jispec-multi-repo-governance-aggregate") {
     blockingReasons.push("Multi-repo governance aggregate is missing or invalid.");
   }
-  if (ownerActions.length === 0) {
+  if (summaryOwnerActionCount === undefined) {
+    blockingReasons.push("Multi-repo governance aggregate summary does not expose an owner action count.");
+  }
+  if (summaryContractDriftHintCount === undefined) {
+    blockingReasons.push("Multi-repo governance aggregate summary does not expose a contract drift hint count.");
+  }
+  if ((summaryOwnerActionCount ?? ownerActions.length) === 0) {
     blockingReasons.push("Aggregate does not expose any multi-repo owner action.");
   }
-  if (contractDriftHints.length === 0) {
+  if ((summaryContractDriftHintCount ?? contractDriftHints.length) === 0) {
     blockingReasons.push("Aggregate does not expose any cross-repo contract drift hint.");
+  }
+  if (summaryOwnerActionCount !== undefined && summaryOwnerActionCount !== ownerActions.length) {
+    blockingReasons.push(`Aggregate owner action count ${summaryOwnerActionCount} does not match the exported owner action list (${ownerActions.length}).`);
+  }
+  if (summaryContractDriftHintCount !== undefined && summaryContractDriftHintCount !== contractDriftHints.length) {
+    blockingReasons.push(`Aggregate contract drift hint count ${summaryContractDriftHintCount} does not match the exported hint list (${contractDriftHints.length}).`);
   }
 
   const sourceEvolution = findGovernanceObject(context.snapshot, "source_evolution_governance");
   return {
     evidence: {
       summary: ownerActions.length > 0
-        ? `Aggregate exposes ${ownerActions.length} owner action(s) and ${contractDriftHints.length} cross-repo drift hint(s).`
+        ? `Aggregate exposes ${ownerActions.length} owner action(s) and ${contractDriftHints.length} cross-repo drift hint(s) from the exported summary.`
         : "Aggregate exists but does not yet expose owner-action loop output.",
       lifecycleRegistryPath: stringValue(sourceEvolution?.summary.lifecyclePath),
       sourceEvolutionPath: stringValue(sourceEvolution?.summary.sourceEvolutionPath),
       sourceReviewPath: stringValue(sourceEvolution?.summary.sourceReviewPath),
-      aggregateContractDriftHintCount: numberValue(summary.contractDriftHintCount) ?? contractDriftHints.length,
-      aggregateOwnerActionCount: numberValue(summary.ownerActionCount) ?? ownerActions.length,
+      aggregateContractDriftHintCount: summaryContractDriftHintCount ?? contractDriftHints.length,
+      aggregateOwnerActionCount: summaryOwnerActionCount ?? ownerActions.length,
       governedRequirementEvolution: Boolean(sourceEvolution && sourceEvolution.status === "available"),
     },
     blockingReasons,
@@ -997,21 +1063,49 @@ function evaluateReleaseCompareGlobalContextScenario(
   const relevantHints = Array.isArray(details.relevantContractDriftHints) ? details.relevantContractDriftHints : [];
   const relevantOwnerActions = Array.isArray(details.relevantOwnerActions) ? details.relevantOwnerActions : [];
   const blockingReasons: string[] = [];
+  const globalContextStatus = stringValue(globalContext.status);
+  const lifecycleRegistryDeltaPath = stringValue(lifecycleDelta.toPath);
+  const lifecycleRegistryDeltaVersion = numberValue(lifecycleDelta.toVersion);
+  const sourceEvolutionPath = stringValue(sourceEvolutionArtifacts.toSourceEvolutionPath);
+  const sourceReviewPath = stringValue(sourceEvolutionArtifacts.toSourceReviewPath);
+  const activeSnapshotId = stringValue(sourceEvolutionArtifacts.toActiveSnapshotId);
+  const lastAdoptedChangeId = nullableString(sourceEvolutionArtifacts.toLastAdoptedChangeId);
   if (!latest) {
     blockingReasons.push("No release compare report could be resolved from .spec/releases/drift-trend.json.");
   }
   if (globalContext.kind !== "release_compare_global_context") {
     blockingReasons.push("Latest release compare report does not expose the P13 globalContext contract.");
   }
-  if (stringValue(globalContext.status) !== "available") {
-    blockingReasons.push(`Latest release compare global context status is ${stringValue(globalContext.status) ?? "not_declared"}.`);
+  if (globalContextStatus !== "available") {
+    blockingReasons.push(`Latest release compare global context status is ${globalContextStatus ?? "not_declared"}.`);
   }
-  if (!stringValue(sourceEvolutionArtifacts.toSourceEvolutionPath) && !stringValue(details.aggregatePath)) {
+  if (!lifecycleRegistryDeltaPath || lifecycleRegistryDeltaVersion === undefined) {
+    blockingReasons.push("Latest release compare report does not describe the lifecycle registry delta.");
+  }
+  if (!sourceEvolutionPath || !sourceReviewPath) {
+    blockingReasons.push("Latest release compare report does not describe the source evolution and review artifacts.");
+  }
+  if (!activeSnapshotId || activeSnapshotId === "not_available_yet") {
+    blockingReasons.push("Latest release compare report does not expose an active source snapshot id.");
+  }
+  if (!lastAdoptedChangeId || lastAdoptedChangeId === "not_available_yet") {
+    blockingReasons.push("Latest release compare report does not expose a last adopted source change.");
+  }
+  if (relevantHints.length === 0) {
+    blockingReasons.push("Latest release compare report does not surface any relevant contract drift hints.");
+  }
+  if (relevantOwnerActions.length === 0) {
+    blockingReasons.push("Latest release compare report does not surface any relevant owner actions.");
+  }
+  if (ownerReviewRecommendations.length === 0) {
+    blockingReasons.push("Latest release compare report does not surface any owner-review recommendations.");
+  }
+  if (!stringValue(details.aggregatePath)) {
     blockingReasons.push("Latest release compare report does not link source evolution or aggregate context artifacts.");
   }
   if (
-    stringValue(globalContext.status) === "available" &&
-    stringValue(sourceEvolutionArtifacts.toSourceEvolutionPath) &&
+    globalContextStatus === "available" &&
+    sourceEvolutionPath &&
     !Boolean(lifecycleDelta.changed)
   ) {
     blockingReasons.push("Latest release compare report does not describe a lifecycle registry delta for the compared release.");
@@ -1020,19 +1114,21 @@ function evaluateReleaseCompareGlobalContextScenario(
   return {
     evidence: latest
       ? {
-          summary: stringValue(globalContext.summary) ?? "Release compare global context is not declared.",
-          lifecycleRegistryPath: stringValue(lifecycleDelta.toPath) ?? stringValue(lifecycleDelta.fromPath),
-          lifecycleRegistryVersion: numberValue(lifecycleDelta.toVersion) ?? numberValue(lifecycleDelta.fromVersion),
-          activeSnapshotId: stringValue(sourceEvolutionArtifacts.toActiveSnapshotId),
-          lastAdoptedChangeId: nullableString(sourceEvolutionArtifacts.toLastAdoptedChangeId),
-          sourceEvolutionPath: stringValue(sourceEvolutionArtifacts.toSourceEvolutionPath),
-          sourceReviewPath: stringValue(sourceEvolutionArtifacts.toSourceReviewPath),
+          summary: globalContextStatus === "available"
+            ? `Release compare consumed aggregate governance context with ${ownerReviewRecommendations.length} owner-review recommendation(s), ${relevantHints.length} relevant hint(s), and ${relevantOwnerActions.length} relevant owner action(s).`
+            : "Release compare global context is not declared.",
+          lifecycleRegistryPath: lifecycleRegistryDeltaPath ?? stringValue(lifecycleDelta.fromPath),
+          lifecycleRegistryVersion: lifecycleRegistryDeltaVersion ?? numberValue(lifecycleDelta.fromVersion),
+          activeSnapshotId,
+          lastAdoptedChangeId,
+          sourceEvolutionPath,
+          sourceReviewPath,
           releaseCompareReportPath: latest.reportPath,
-          releaseCompareGlobalContextStatus: stringValue(globalContext.status),
+          releaseCompareGlobalContextStatus: globalContextStatus,
           releaseCompareOwnerReviewRecommendationCount: ownerReviewRecommendations.length,
           releaseCompareRelevantHintCount: relevantHints.length,
           releaseCompareRelevantOwnerActionCount: relevantOwnerActions.length,
-          governedRequirementEvolution: Boolean(stringValue(sourceEvolutionArtifacts.toSourceEvolutionPath) || stringValue(sourceEvolutionArtifacts.toSourceReviewPath)),
+          governedRequirementEvolution: Boolean(sourceEvolutionPath || sourceReviewPath),
         }
       : undefined,
     blockingReasons,
@@ -1043,11 +1139,11 @@ function evaluateDoctorGlobalHealthScenario(
   root: string,
   context: ScenarioContext,
 ): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
-  const sourceEvolution = findGovernanceObject(context.snapshot, "source_evolution_governance");
+  const sourceEvolution = evaluateConsoleSourceEvolutionScenario(context);
   const compare = evaluateReleaseCompareGlobalContextScenario(root);
   const aggregate = evaluateMultiRepoOwnerActionScenario(root, context);
   const blockers = [
-    ...(sourceEvolution && sourceEvolution.status === "available" ? [] : ["Console source evolution governance is not available."]),
+    ...sourceEvolution.blockingReasons,
     ...aggregate.blockingReasons,
     ...compare.blockingReasons,
   ];
@@ -1057,17 +1153,17 @@ function evaluateDoctorGlobalHealthScenario(
       summary: blockers.length === 0
         ? "Artifacts consumed by doctor global are healthy enough to express the broader closure loop."
         : "Doctor global prerequisites are still incomplete.",
-      lifecycleRegistryPath: stringValue(sourceEvolution?.summary.lifecyclePath),
-      lastAdoptedChangeId: nullableString(sourceEvolution?.summary.lastAdoptedSourceChange),
-      sourceEvolutionPath: stringValue(sourceEvolution?.summary.sourceEvolutionPath),
-      sourceReviewPath: stringValue(sourceEvolution?.summary.sourceReviewPath),
+      lifecycleRegistryPath: sourceEvolution.evidence?.lifecycleRegistryPath,
+      lastAdoptedChangeId: sourceEvolution.evidence?.lastAdoptedChangeId,
+      sourceEvolutionPath: sourceEvolution.evidence?.sourceEvolutionPath,
+      sourceReviewPath: sourceEvolution.evidence?.sourceReviewPath,
       aggregateContractDriftHintCount: aggregate.evidence?.aggregateContractDriftHintCount,
       aggregateOwnerActionCount: aggregate.evidence?.aggregateOwnerActionCount,
       releaseCompareReportPath: compare.evidence?.releaseCompareReportPath,
       releaseCompareGlobalContextStatus: compare.evidence?.releaseCompareGlobalContextStatus,
       doctorGlobalReady: blockers.length === 0,
       doctorGlobalBlockerCount: blockers.length,
-      governedRequirementEvolution: Boolean(sourceEvolution && sourceEvolution.status === "available"),
+      governedRequirementEvolution: Boolean(sourceEvolution.evidence?.governedRequirementEvolution),
     },
     blockingReasons: blockers,
   };

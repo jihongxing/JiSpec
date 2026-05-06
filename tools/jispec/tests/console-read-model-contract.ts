@@ -32,12 +32,10 @@ async function main(): Promise<void> {
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const docPath = path.join(repoRoot, "docs", "console-read-model-contract.md");
   const stableContractPath = path.join(repoRoot, "docs", "v1-mainline-stable-contract.md");
-  const planPath = path.join(repoRoot, "docs", "post-v1-north-star-plan.md");
   const readmePath = path.join(repoRoot, "README.md");
   const zhReadmePath = path.join(repoRoot, "README.zh-CN.md");
   const doc = fs.readFileSync(docPath, "utf-8");
   const stableContract = fs.readFileSync(stableContractPath, "utf-8");
-  const plan = fs.readFileSync(planPath, "utf-8");
   const readme = fs.readFileSync(readmePath, "utf-8");
   const zhReadme = fs.readFileSync(zhReadmePath, "utf-8");
 
@@ -48,7 +46,7 @@ async function main(): Promise<void> {
     assert.equal(contract.boundary.replacesCliGate, false);
     assert.equal(contract.boundary.sourceUploadRequired, false);
     assert.equal(contract.boundary.localArtifactsAreSourceOfTruth, true);
-    assert.equal(contract.governanceObjects.length, 12);
+    assert.equal(contract.governanceObjects.length, 13);
   });
 
   record("contract includes required machine-readable read model artifacts and governance sources", () => {
@@ -94,6 +92,7 @@ async function main(): Promise<void> {
       "audit_events",
       "approval_workflow",
       "multi_repo_export",
+      "north_star_acceptance",
     ]);
     for (const object of CONSOLE_GOVERNANCE_OBJECTS) {
       assert.equal(object.missingState, "not_available_yet");
@@ -124,8 +123,6 @@ async function main(): Promise<void> {
     assert.ok(doc.includes("must not require source upload"));
     assert.ok(stableContract.includes("Console Read Model Contract"));
     assert.ok(stableContract.includes("docs/console-read-model-contract.md"));
-    assert.ok(plan.includes("状态：已实现"));
-    assert.ok(plan.includes("console-read-model-contract.ts"));
     assert.ok(readme.includes("Console read model contract"));
     assert.ok(zhReadme.includes("Console read model contract"));
   });
@@ -360,7 +357,47 @@ async function main(): Promise<void> {
         governanceObjects: [],
       }, null, 2));
       writeText(fixtureRoot, ".jispec-ci/verify-report.json", JSON.stringify({ verdict: "WARN_ADVISORY", issueCount: 3, blockingIssueCount: 0 }, null, 2));
-      writeText(fixtureRoot, ".spec/handoffs/retakeover-pool-metrics.json", JSON.stringify({ fixtures: [{ id: "legacy", qualityScorecard: { score: 76 } }] }, null, 2));
+      writeText(fixtureRoot, ".spec/handoffs/retakeover-pool-metrics.json", JSON.stringify({
+        fixtures: [{ id: "legacy", qualityScorecard: { score: 76 } }],
+        coverage: {
+          fixtureCatalog: [
+            {
+              fixtureId: "legacy",
+              fixtureClass: "high-noise-protocol-repo",
+              coverageSignals: ["class:high-noise-protocol-repo"],
+            },
+          ],
+          classCoverage: {
+            knownFixtureClassCount: 10,
+            coveredFixtureClassCount: 1,
+            coverageRate: 0.1,
+            classCounts: { "high-noise-protocol-repo": 1 },
+            missingFixtureClasses: ["synthetic-contract-drift"],
+          },
+          qualityBaseline: {
+            readinessScore: {
+              threshold: 55,
+              lowestObserved: 76,
+              averageObserved: 76,
+              fixturesBelowThreshold: [],
+            },
+            contractSignalPrecision: {
+              threshold: 0.45,
+              lowestObserved: 0.7,
+              averageObserved: 0.7,
+              fixturesBelowThreshold: [],
+            },
+            behaviorEvidenceStrength: {
+              threshold: 0.45,
+              lowestObserved: 0.65,
+              averageObserved: 0.65,
+              fixturesBelowThreshold: [],
+            },
+            verifyNonBlockingRate: 1,
+            ownerReviewFixtureRate: 0,
+          },
+        },
+      }, null, 2));
       writeText(fixtureRoot, ".jispec/handoff/change-replay.json", JSON.stringify({ outcome: "verify_blocked", decisionPacket: { stopPoint: "post_verify" }, replay: { replayable: true } }, null, 2));
       writeText(fixtureRoot, ".spec/audit/events.jsonl", `${JSON.stringify({ event: "default_mode_set", actor: "codex" })}\n`);
 
@@ -395,6 +432,15 @@ async function main(): Promise<void> {
       assert.equal(approvals.status, "partial");
       assert.equal(approvals.summary.status, "approval_missing");
       assert.equal(approvals.summary.profile, "regulated");
+
+      const takeoverTrend = governanceObject(snapshot, "takeover_quality_trend");
+      assert.equal(takeoverTrend.status, "partial");
+      assert.equal(takeoverTrend.summary.hasPoolMetrics, true);
+      assert.equal(takeoverTrend.summary.poolFixtureCatalogCount, 1);
+      assert.equal(takeoverTrend.summary.poolCoverageRate, 0.1);
+      assert.deepEqual(takeoverTrend.summary.poolMissingFixtureClasses, ["synthetic-contract-drift"]);
+      assert.equal(takeoverTrend.summary.poolReadinessThreshold, 55);
+      assert.equal(takeoverTrend.summary.poolVerifyNonBlockingRate, 1);
 
       assert.ok(!snapshot.artifacts.flatMap((artifact) => artifact.instances.map((instance) => instance.relativePath)).includes("src/ignored.ts"));
       assert.equal(snapshot.boundary.synthesizesGateResults, false);

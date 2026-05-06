@@ -83,6 +83,12 @@ function main(): void {
         discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/bootstrap-summary.md")) &&
         discoverResult.writtenFiles.some((filePath) => filePath.endsWith(".spec/facts/bootstrap/evidence-summary.txt")) &&
         bootstrapSummary.includes("# Bootstrap Summary") &&
+        bootstrapSummary.includes("## Takeover Preview") &&
+        bootstrapSummary.includes("### Top Adoption Candidates") &&
+        bootstrapSummary.includes("### Boundary Recommendation") &&
+        bootstrapSummary.includes("### Estimated Adoption Effort") &&
+        bootstrapSummary.includes("Quick win.") &&
+        bootstrapSummary.includes("Estimated effort:") &&
         bootstrapSummary.includes("Top adoption-ranked evidence:") &&
         bootstrapSummary.includes("docs/protocols/README.md") &&
         bootstrapSummary.includes("api/proto/gateway.proto"),

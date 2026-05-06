@@ -77,8 +77,8 @@ async function main(): Promise<void> {
   record("manifest freezes the matrix totals and source contract", () => {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
-    assert.equal(manifest.totalSuites, 150);
-    assert.equal(manifest.totalExpectedTests, 669);
+    assert.equal(manifest.totalSuites, 151);
+    assert.equal(manifest.totalExpectedTests, 673);
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
   });
 
@@ -94,8 +94,8 @@ async function main(): Promise<void> {
     assert.equal(areaMap.get("change-implement")?.expectedTests, 58);
     assert.equal(areaMap.get("core-mainline")?.expectedTests, 204);
     assert.equal(areaMap.get("bootstrap-takeover-hardening")?.expectedTests, 118);
-    assert.equal(areaMap.get("runtime-extended")?.suiteCount, 49);
-    assert.equal(areaMap.get("runtime-extended")?.expectedTests, 213);
+    assert.equal(areaMap.get("runtime-extended")?.suiteCount, 50);
+    assert.equal(areaMap.get("runtime-extended")?.expectedTests, 217);
     assert.ok(manifest.boundaries.v1MainlineAreas.every((area) => area !== "runtime-extended"));
     assert.equal(manifest.boundaries.runtimeExtendedArea, "runtime-extended");
     assert.equal(manifest.boundaries.pilotReadiness.doctorProfile, "pilot");

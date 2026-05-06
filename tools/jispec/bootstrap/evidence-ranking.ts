@@ -94,6 +94,18 @@ export type AdoptionBoundarySignal =
   | "runtime_manifest"
   | "supporting_evidence";
 
+const BOUNDARY_SIGNAL_PRIORITY_BOOST: Record<AdoptionBoundarySignal, number> = {
+  governance_document: 36,
+  protocol_document: 32,
+  schema_truth_source: 28,
+  explicit_endpoint: 22,
+  service_entrypoint: 14,
+  runtime_manifest: 8,
+  module_surface_inference: -4,
+  weak_candidate: -18,
+  supporting_evidence: -10,
+};
+
 interface UnrankedAdoptionEvidenceEntry extends Omit<
   AdoptionRankedEvidenceEntry,
   "rank" | "rankTier" | "provenanceLabel" | "evidenceKind" | "sourcePath" | "confidence" | "ownerReviewPosture"
@@ -146,7 +158,12 @@ export function buildAdoptionRankedEvidence(
   const candidates = collectAdoptionCandidates(graph, taxonomyPacks);
   const annotated = candidates.map((entry) => {
     const rankTier = classifyAdoptionRankTier(entry);
-    const priorityScore = Number((entry.score + rankTierPriorityBoost(rankTier)).toFixed(4));
+    const boundarySignal = typeof entry.metadata?.boundarySignal === "string"
+      ? (entry.metadata.boundarySignal as AdoptionBoundarySignal)
+      : undefined;
+    const priorityScore = Number(
+      (entry.score + rankTierPriorityBoost(rankTier) + boundarySignalPriorityBoost(boundarySignal)).toFixed(4),
+    );
     return {
       ...entry,
       rankTier,
@@ -489,6 +506,13 @@ function classifyAdoptionRankTier(entry: UnrankedAdoptionEvidenceEntry): Adoptio
 
 function rankTierPriorityBoost(rankTier: AdoptionRankTier): number {
   return rankTier === "adoption_ready" ? 7 : 0;
+}
+
+function boundarySignalPriorityBoost(boundarySignal: AdoptionBoundarySignal | undefined): number {
+  if (!boundarySignal) {
+    return 0;
+  }
+  return BOUNDARY_SIGNAL_PRIORITY_BOOST[boundarySignal] ?? 0;
 }
 
 function formatAdoptionRankedEvidenceEntry(entry: AdoptionRankedEvidenceEntry, includeRankTier = false): string {

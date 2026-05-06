@@ -170,6 +170,58 @@ async function main(): Promise<void> {
         fixturesWithBlockingVerify?: string[];
         featureOverclaimRisk?: Record<string, number>;
       };
+      coverage?: {
+        fixtureCatalog?: Array<{
+          fixtureId?: string;
+          fixtureClass?: string;
+          featureRecommendation?: string;
+          verifySafety?: string;
+          ownerReviewRequired?: boolean;
+          artifactDecisionPaths?: string[];
+          coverageSignals?: string[];
+          topEvidenceSample?: string[];
+          baselineProfile?: {
+            takeoverReadinessScore?: number;
+            contractSignalPrecision?: number;
+            behaviorEvidenceStrength?: number;
+            overclaimBlockRate?: number;
+          };
+        }>;
+        classCoverage?: {
+          knownFixtureClassCount?: number;
+          coveredFixtureClassCount?: number;
+          coverageRate?: number;
+          classCounts?: Record<string, number>;
+          missingFixtureClasses?: string[];
+        };
+        qualityBaseline?: {
+          thresholds?: {
+            minimumTakeoverReadinessScore?: number;
+            minimumContractSignalPrecision?: number;
+            minimumBehaviorEvidenceStrength?: number;
+          };
+          readinessScore?: {
+            threshold?: number;
+            lowestObserved?: number;
+            averageObserved?: number;
+            fixturesBelowThreshold?: string[];
+          };
+          contractSignalPrecision?: {
+            threshold?: number;
+            lowestObserved?: number;
+            averageObserved?: number;
+            fixturesBelowThreshold?: string[];
+          };
+          behaviorEvidenceStrength?: {
+            threshold?: number;
+            lowestObserved?: number;
+            averageObserved?: number;
+            fixturesBelowThreshold?: string[];
+          };
+          verifyNonBlockingRate?: number;
+          ownerReviewFixtureRate?: number;
+        };
+      };
     };
     const poolSummary = fs.readFileSync(path.join(poolRoot, RETAKEOVER_POOL_SUMMARY_RELATIVE_PATH), "utf-8");
 
@@ -237,14 +289,16 @@ async function main(): Promise<void> {
         breath.ranked.excludedSummary.totalExcludedFileCount >= 3 &&
         breathExcludedRules.includes("python-cache-or-env") &&
         !containsPathFragment(breathRankedPaths, [".pytest_cache/", ".ruff_cache/", "__pycache__/"]) &&
-        containsAll(breathRankedPaths.slice(0, 15), [
+        containsAll(breathRankedPaths.slice(0, 10), [
           "db/schema_governance.sql",
           "db/schema_broker_sync.sql",
-          "docs/finance-overview.md",
         ]) &&
-        containsAny(breathRankedPaths.slice(0, 15), [
+        containsAny(breathRankedPaths.slice(0, 10), [
           "db/schema_alpha.sql",
           "db/schema_shadow_run.sql",
+        ]) &&
+        containsAny(breathRankedPaths.slice(0, 20), [
+          "docs/finance-overview.md",
           "docs/system-design.md",
         ]),
       error: `Expected BreathofEarth-like ranked evidence to suppress caches and promote schemas/docs. ranked=${JSON.stringify(breath.ranked.evidence)}, excluded=${JSON.stringify(breath.ranked.excludedSummary)}.`,
@@ -443,6 +497,30 @@ async function main(): Promise<void> {
     });
 
     results.push({
+      name: "Retakeover top-five evidence stays anchored on strong boundary signals",
+      passed:
+        allFixtures.every((result) => {
+          const topFive = result.ranked.evidence.slice(0, 5);
+          return (
+            topFive.length >= 3 &&
+            topFive.filter((entry) => isStrongTopBoundarySignal(entry.metadata?.boundarySignal)).length >= Math.min(4, topFive.length) &&
+            !topFive.some((entry) => entry.metadata?.boundarySignal === "weak_candidate")
+          );
+        }),
+      error: `Expected every fixture top-five to stay boundary-first, got ${JSON.stringify(
+        allFixtures.map((result) => ({
+          fixtureId: result.metrics.fixtureId,
+          topFive: result.ranked.evidence.slice(0, 5).map((entry) => ({
+            path: entry.path,
+            boundarySignal: entry.metadata?.boundarySignal,
+          })),
+        })),
+        null,
+        2,
+      )}.`,
+    });
+
+    results.push({
       name: "Retakeover pool writes human-readable summary companion artifacts",
       passed:
         allFixtures.every((result) =>
@@ -543,6 +621,47 @@ async function main(): Promise<void> {
         poolMetrics.qualityScorecard.fixturesWithBlockingVerify?.length === 0 &&
         poolMetrics.qualityScorecard.featureOverclaimRisk?.low === 5 &&
         poolMetrics.qualityScorecard.featureOverclaimRisk?.high === 1 &&
+        poolMetrics.coverage?.fixtureCatalog?.length === 6 &&
+        poolMetrics.coverage.fixtureCatalog?.some((entry) =>
+          entry.fixtureId === "remirage-like" &&
+          entry.fixtureClass === "high-noise-protocol-repo" &&
+          entry.ownerReviewRequired === true &&
+          entry.artifactDecisionPaths?.includes("edited:domain") === true &&
+          entry.coverageSignals?.includes("correction:edited_domain") === true &&
+          entry.coverageSignals?.includes("path:owner_review") === true &&
+          entry.topEvidenceSample?.includes("docs/governance/README.md") === true &&
+          typeof entry.baselineProfile?.takeoverReadinessScore === "number"
+        ) === true &&
+        poolMetrics.coverage.fixtureCatalog?.some((entry) =>
+          entry.fixtureId === "retail-ops-monorepo-like" &&
+          entry.artifactDecisionPaths?.includes("rejected:feature") === true &&
+          entry.coverageSignals?.includes("correction:rejected_feature") === true
+        ) === true &&
+        poolMetrics.coverage.classCoverage?.knownFixtureClassCount === 10 &&
+        poolMetrics.coverage.classCoverage?.coveredFixtureClassCount === 6 &&
+        poolMetrics.coverage.classCoverage?.coverageRate === 0.6 &&
+        poolMetrics.coverage.classCoverage?.classCounts?.["high-noise-protocol-repo"] === 1 &&
+        poolMetrics.coverage.classCoverage?.classCounts?.["synthetic-god-file-monolith"] === 0 &&
+        containsAll(poolMetrics.coverage.classCoverage?.missingFixtureClasses ?? [], [
+          "synthetic-god-file-monolith",
+          "synthetic-contract-drift",
+          "synthetic-noise-heavy-hidden-signal",
+          "synthetic-thin-behavior-evidence",
+        ]) &&
+        poolMetrics.coverage.qualityBaseline?.thresholds?.minimumTakeoverReadinessScore === 55 &&
+        poolMetrics.coverage.qualityBaseline?.thresholds?.minimumContractSignalPrecision === 0.45 &&
+        poolMetrics.coverage.qualityBaseline?.thresholds?.minimumBehaviorEvidenceStrength === 0.45 &&
+        poolMetrics.coverage.qualityBaseline?.readinessScore?.threshold === 55 &&
+        typeof poolMetrics.coverage.qualityBaseline?.readinessScore?.lowestObserved === "number" &&
+        typeof poolMetrics.coverage.qualityBaseline?.readinessScore?.averageObserved === "number" &&
+        (poolMetrics.coverage.qualityBaseline?.readinessScore?.averageObserved ?? 0) >=
+          (poolMetrics.coverage.qualityBaseline?.readinessScore?.lowestObserved ?? 0) &&
+        Array.isArray(poolMetrics.coverage.qualityBaseline?.readinessScore?.fixturesBelowThreshold) &&
+        poolMetrics.coverage.qualityBaseline?.contractSignalPrecision?.threshold === 0.45 &&
+        typeof poolMetrics.coverage.qualityBaseline?.contractSignalPrecision?.lowestObserved === "number" &&
+        typeof poolMetrics.coverage.qualityBaseline?.behaviorEvidenceStrength?.lowestObserved === "number" &&
+        poolMetrics.coverage.qualityBaseline?.verifyNonBlockingRate === 1 &&
+        poolMetrics.coverage.qualityBaseline?.ownerReviewFixtureRate === 1 &&
         containsAll(poolMetrics.fixtureClasses ?? [], [
           "high-noise-protocol-repo",
           "multilingual-finance-service-repo",
@@ -562,6 +681,12 @@ async function main(): Promise<void> {
         poolSummary.includes("Top correction hotspots:") &&
         poolSummary.includes("Feature overclaim risk:") &&
         poolSummary.includes("Owner-review fixtures:") &&
+        poolSummary.includes("Class coverage: 6/10 fixture classes (60%)") &&
+        poolSummary.includes("Coverage rates: verify non-blocking=100%, owner-review path=100%") &&
+        poolSummary.includes("## Coverage") &&
+        poolSummary.includes("Fixture catalog entries: 6") &&
+        poolSummary.includes("synthetic-contract-drift") &&
+        poolSummary.includes("| Fixture | Class | Coverage Signals | Decision Paths | Baseline Profile | Top Evidence |") &&
         poolSummary.includes("## Quality Scorecard") &&
         poolSummary.includes("| Fixture | Score | Verify Safety | Feature Risk | Deferred | Next Action | Risk Notes |") &&
         poolSummary.includes("## Quality Scorecard V2") &&
@@ -571,6 +696,8 @@ async function main(): Promise<void> {
         poolSummary.includes("`owner_review_spec_debt`") &&
         poolSummary.includes("`edited_domain`") &&
         poolSummary.includes("`rejected_feature`") &&
+        poolSummary.includes("`correction:edited_domain`") &&
+        poolSummary.includes("`accepted:feature`") &&
         poolSummary.includes("## Fixture Matrix") &&
         poolSummary.includes("`remirage-like`") &&
         poolSummary.includes("`breathofearth-like`") &&
@@ -582,7 +709,7 @@ async function main(): Promise<void> {
         poolSummary.includes("db/schema_portfolio.sql") &&
         poolSummary.includes("docs/contracts/governance.md") &&
         poolSummary.includes("services/orders/contracts/openapi.yaml") &&
-        poolSummary.includes("docs/product/member-journeys.md") &&
+        (poolSummary.includes("docs/product/member-journeys.md") || poolSummary.includes("packages/contracts/schemas/plan-change.schema.json")) &&
         poolSummary.includes("docs/contracts/subscription-lifecycle.md") &&
         poolSummary.includes(RETAKEOVER_POOL_METRICS_RELATIVE_PATH) &&
         poolSummary.includes("not a machine API"),
@@ -1588,6 +1715,17 @@ function containsAll(values: string[], expected: string[]): boolean {
 
 function containsAny(values: string[], expected: string[]): boolean {
   return expected.some((value) => values.includes(value));
+}
+
+function isStrongTopBoundarySignal(boundarySignal: unknown): boolean {
+  return (
+    boundarySignal === "governance_document" ||
+    boundarySignal === "protocol_document" ||
+    boundarySignal === "schema_truth_source" ||
+    boundarySignal === "explicit_endpoint" ||
+    boundarySignal === "service_entrypoint" ||
+    boundarySignal === "runtime_manifest"
+  );
 }
 
 function containsPathFragment(values: string[], fragments: string[]): boolean {

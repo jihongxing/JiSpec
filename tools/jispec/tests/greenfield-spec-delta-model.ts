@@ -211,8 +211,8 @@ async function main(): Promise<void> {
       items?: Array<{ evolution_kind?: string; anchor_id?: string }>;
     };
     results.push(record("source evolution verify distinguishes declared review debt from undeclared workspace drift", () => {
-      assert.ok(driftVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT"));
       assert.ok(driftVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNREVIEWED"));
+      assert.equal(driftVerify.issues.some((issue) => issue.code === "GREENFIELD_PROVENANCE_ANCHOR_DRIFT"), false);
       assert.equal(driftVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNDECLARED"), false);
       assert.ok(undeclaredVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNDECLARED"));
       assert.equal(undeclaredVerify.issues.some((issue) => issue.code === "GREENFIELD_SOURCE_EVOLUTION_UNREVIEWED"), false);

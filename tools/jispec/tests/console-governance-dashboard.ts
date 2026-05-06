@@ -32,6 +32,7 @@ async function main(): Promise<void> {
       assert.equal(dashboard.boundary.firstScreen, "governance_status");
       assert.equal(dashboard.questions[0]?.id, "mergeability");
       assert.equal(dashboard.questions[0]?.status, "unknown");
+      assert.equal(question(dashboard, "retakeover_pool_health").status, "unknown");
       assert.equal(dashboard.headline.status, "unknown");
       assert.equal(dashboard.headline.mergeability.status, "unknown");
       assert.equal(dashboard.headline.risk.level, "unknown");
@@ -139,12 +140,75 @@ async function main(): Promise<void> {
         sourceArtifact: { kind: "verify-waiver", path: ".spec/waivers/waiver-soon.json" },
         affectedContracts: ["issue:API_CONTRACT_INVALID_JSON"],
       });
+      writeJson(root, ".spec/handoffs/retakeover-pool-metrics.json", {
+        fixtureCount: 2,
+        coverage: {
+          fixtureCatalog: [
+            {
+              fixtureId: "legacy-service-like",
+              fixtureClass: "high-noise-protocol-repo",
+              featureRecommendation: "accept_candidate",
+              verifySafety: "non_blocking",
+              ownerReviewRequired: true,
+              artifactDecisionPaths: ["edited:domain"],
+              coverageSignals: ["class:high-noise-protocol-repo", "path:owner_review"],
+              topEvidenceSample: ["docs/governance/README.md"],
+              baselineProfile: {
+                takeoverReadinessScore: 74,
+                contractSignalPrecision: 0.71,
+                behaviorEvidenceStrength: 0.63,
+                overclaimBlockRate: 0.92,
+              },
+            },
+          ],
+          classCoverage: {
+            knownFixtureClassCount: 10,
+            coveredFixtureClassCount: 2,
+            coverageRate: 0.2,
+            classCounts: {
+              "high-noise-protocol-repo": 1,
+              "multilingual-finance-service-repo": 1,
+            },
+            missingFixtureClasses: ["synthetic-contract-drift"],
+          },
+          qualityBaseline: {
+            thresholds: {
+              minimumTakeoverReadinessScore: 55,
+              minimumContractSignalPrecision: 0.45,
+              minimumBehaviorEvidenceStrength: 0.45,
+            },
+            readinessScore: {
+              threshold: 55,
+              lowestObserved: 52,
+              averageObserved: 63,
+              fixturesBelowThreshold: ["legacy-service-like"],
+            },
+            contractSignalPrecision: {
+              threshold: 0.45,
+              lowestObserved: 0.44,
+              averageObserved: 0.58,
+              fixturesBelowThreshold: ["legacy-service-like"],
+            },
+            behaviorEvidenceStrength: {
+              threshold: 0.45,
+              lowestObserved: 0.4,
+              averageObserved: 0.55,
+              fixturesBelowThreshold: ["legacy-service-like"],
+            },
+            verifyNonBlockingRate: 1,
+            ownerReviewFixtureRate: 1,
+          },
+        },
+      });
 
       const dashboard = buildConsoleGovernanceDashboard(root);
       assert.equal(question(dashboard, "mergeability").status, "attention");
       assert.equal(question(dashboard, "waiver_attention").status, "attention");
       assert.match(question(dashboard, "waiver_attention").answer, /expiring soon/);
       assert.equal(question(dashboard, "spec_debt_attention").status, "attention");
+      assert.equal(question(dashboard, "retakeover_pool_health").status, "attention");
+      assert.match(question(dashboard, "retakeover_pool_health").answer, /20%/);
+      assert.ok(question(dashboard, "retakeover_pool_health").evidence.some((entry) => entry.includes("synthetic-contract-drift")));
       assert.match(question(dashboard, "execute_mediation_status").answer, /post_verify/);
       assert.equal(question(dashboard, "audit_traceability").status, "ok");
       assert.match(question(dashboard, "audit_traceability").answer, /reviewer/);
@@ -174,6 +238,7 @@ async function main(): Promise<void> {
       assert.match(text.stdout, /Risk:/);
       assert.match(text.stdout, /Owner action:/);
       assert.match(text.stdout, /Evidence source:/);
+      assert.match(text.stdout, /Is the retakeover regression pool healthy/);
       assert.doesNotMatch(text.stdout, /marketing/i);
       assert.doesNotMatch(text.stdout, /file browser/i);
 

@@ -1,11 +1,18 @@
 import { appendAuditEvent } from "../audit/event-ledger";
 import { createFactsContract } from "../facts/facts-contract";
 import {
+  applyPolicyPresetOverrides,
+  getPolicyPreset,
+  type PolicyPresetDefinition,
+  type PolicyPresetId,
+} from "./policy-presets";
+import {
   policyFileExists,
   readPolicyDocument,
   resolvePolicyPath,
   writeVerifyPolicy,
 } from "./policy-loader";
+import { applyPolicyProfileDefaults, createStarterVerifyPolicy } from "./profile-defaults";
 import { validateVerifyPolicy, type TeamPolicyProfileName, type VerifyPolicy } from "./policy-schema";
 
 export interface PolicyMigrationResult {
@@ -14,97 +21,22 @@ export interface PolicyMigrationResult {
   updated: boolean;
   changes: string[];
   policy: VerifyPolicy;
+  preset?: {
+    id: PolicyPresetId;
+    label: string;
+    baseProfile: TeamPolicyProfileName;
+    useCases: string[];
+    overrideSummary: string[];
+  };
 }
 
 export interface PolicyMigrationAuditOptions {
   actor?: string;
   reason?: string;
   profile?: TeamPolicyProfileName;
+  preset?: PolicyPresetId;
   owner?: string;
   reviewers?: string[];
-}
-
-/**
- * Create a minimal starter policy pinned to the current facts contract.
- */
-export function createStarterVerifyPolicy(profile: TeamPolicyProfileName = "small_team"): VerifyPolicy {
-  const contract = createFactsContract();
-  const policy = applyPolicyProfileDefaults({
-    version: 1,
-    requires: {
-      facts_contract: contract.version,
-    },
-    team: {
-      profile,
-      owner: "unassigned",
-      reviewers: [],
-    },
-    rules: createStarterRules(),
-  }, profile);
-
-  return policy;
-}
-
-function createStarterRules(): VerifyPolicy["rules"] {
-  return [
-    {
-      id: "no-blocking-issues",
-      enabled: true,
-      action: "fail_blocking",
-      message: "Repository has blocking verify issues",
-      when: {
-        fact: "verify.blocking_issue_count",
-        op: ">",
-        value: 0,
-      },
-    },
-    {
-      id: "require-domain-contract",
-      enabled: true,
-      action: "warn",
-      message: "Domain contract is missing",
-      when: {
-        not: {
-          fact: "contracts.domain.present",
-          op: "==",
-          value: true,
-        },
-      },
-    },
-    {
-      id: "require-api-contract",
-      enabled: true,
-      action: "warn",
-      message: "API contract is missing",
-      when: {
-        not: {
-          fact: "contracts.api.present",
-          op: "==",
-          value: true,
-        },
-      },
-    },
-    {
-      id: "require-behavior-contract",
-      enabled: true,
-      action: "warn",
-      message: "Behavior contract is missing",
-      when: {
-        all: [
-          {
-            fact: "contracts.behavior.present",
-            op: "==",
-            value: false,
-          },
-          {
-            fact: "contracts.behavior.deferred",
-            op: "==",
-            value: false,
-          },
-        ],
-      },
-    },
-  ];
 }
 
 /**
@@ -117,7 +49,8 @@ export function migrateVerifyPolicy(root: string, filePath?: string, audit?: Pol
   const exists = policyFileExists(root, filePath);
   const changes: string[] = [];
   const basePolicy = exists ? loadPolicyForMigration(targetPath, changes) : null;
-  const requestedProfile = audit?.profile ?? basePolicy?.team?.profile ?? "small_team";
+  const preset = audit?.preset ? getPolicyPreset(audit.preset) : undefined;
+  const requestedProfile = resolveRequestedProfile(basePolicy, audit?.profile, preset);
   const requestedOwner = audit?.owner;
   const requestedReviewers = audit?.reviewers;
   const previousOwner = basePolicy?.team?.owner;
@@ -151,6 +84,11 @@ export function migrateVerifyPolicy(root: string, filePath?: string, audit?: Pol
     },
   }, requestedProfile, changes);
 
+  if (preset) {
+    nextPolicy = applyPolicyPresetOverrides(nextPolicy, preset);
+    changes.push(`Applied preset ${preset.id} (${preset.baseProfile})`);
+  }
+
   if (requestedOwner !== undefined && previousOwner !== requestedOwner) {
     changes.push(`Set team owner to ${requestedOwner}`);
   }
@@ -174,6 +112,15 @@ export function migrateVerifyPolicy(root: string, filePath?: string, audit?: Pol
       updated: !exists || changes.length > 0,
       changes,
       policyPath: targetPath,
+      preset: preset
+        ? {
+            id: preset.id,
+            label: preset.label,
+            baseProfile: preset.baseProfile,
+            useCases: preset.useCases,
+            overrideSummary: summarizePresetOverrides(preset),
+          }
+        : undefined,
     },
   });
 
@@ -183,6 +130,15 @@ export function migrateVerifyPolicy(root: string, filePath?: string, audit?: Pol
     updated: !exists || changes.length > 0,
     changes,
     policy: nextPolicy,
+    preset: preset
+      ? {
+          id: preset.id,
+          label: preset.label,
+          baseProfile: preset.baseProfile,
+          useCases: preset.useCases,
+          overrideSummary: summarizePresetOverrides(preset),
+        }
+      : undefined,
   };
 }
 
@@ -256,155 +212,15 @@ function normalizeDeprecatedPolicyKeys(policy: unknown, changes: string[]): unkn
   return next;
 }
 
-function applyPolicyProfileDefaults(
-  policy: VerifyPolicy,
-  profile: TeamPolicyProfileName,
-  changes: string[] = [],
-): VerifyPolicy {
-  const defaults = profileDefaults(profile);
-  const next: VerifyPolicy = {
-    ...policy,
-    team: {
-      ...defaults.team,
-      ...(policy.team ?? {}),
-      profile,
-      owner: policy.team?.owner ?? defaults.team.owner,
-      reviewers: policy.team?.reviewers ?? defaults.team.reviewers,
-      required_reviewers: policy.team?.required_reviewers ?? defaults.team.required_reviewers,
-    },
-    waivers: {
-      ...defaults.waivers,
-      ...(policy.waivers ?? {}),
-    },
-    release: {
-      ...defaults.release,
-      ...(policy.release ?? {}),
-    },
-    execute_default: {
-      ...defaults.execute_default,
-      ...(policy.execute_default ?? {}),
-    },
-  };
-
-  if (!policy.waivers) {
-    changes.push(`Added ${profile} waiver policy`);
+function resolveRequestedProfile(
+  basePolicy: VerifyPolicy | null,
+  explicitProfile: TeamPolicyProfileName | undefined,
+  preset: PolicyPresetDefinition | undefined,
+): TeamPolicyProfileName {
+  if (preset && explicitProfile && explicitProfile !== preset.baseProfile) {
+    throw new Error(`--profile ${explicitProfile} conflicts with preset ${preset.id} base profile ${preset.baseProfile}`);
   }
-  if (!policy.release) {
-    changes.push(`Added ${profile} release policy`);
-  }
-  if (!policy.execute_default) {
-    changes.push(`Added ${profile} execute-default policy`);
-  }
-  if (policy.team?.required_reviewers === undefined) {
-    changes.push(`Set ${profile} required reviewer count`);
-  }
-
-  return next;
-}
-
-function profileDefaults(profile: TeamPolicyProfileName): Required<Pick<VerifyPolicy, "team" | "waivers" | "release" | "execute_default">> {
-  if (profile === "solo") {
-    return {
-      team: {
-        profile,
-        owner: "unassigned",
-        reviewers: [],
-        required_reviewers: 0,
-      },
-      waivers: {
-        require_owner: true,
-        require_reason: true,
-        require_expiration: false,
-        max_active_days: 90,
-        expiring_soon_days: 14,
-        unmatched_active_severity: "advisory",
-      },
-      release: {
-        require_snapshot: false,
-        require_compare: false,
-        drift_requires_owner_review: true,
-        policy_drift_severity: "advisory",
-        static_collector_drift_severity: "advisory",
-        contract_graph_drift_severity: "advisory",
-      },
-      execute_default: {
-        allowed: true,
-        require_policy: true,
-        require_clear_adopt_boundary: true,
-        require_clean_verify: false,
-        max_cost_usd: 5,
-        max_iterations: 10,
-      },
-    };
-  }
-
-  if (profile === "regulated") {
-    return {
-      team: {
-        profile,
-        owner: "unassigned",
-        reviewers: [],
-        required_reviewers: 2,
-      },
-      waivers: {
-        require_owner: true,
-        require_reason: true,
-        require_expiration: true,
-        max_active_days: 30,
-        expiring_soon_days: 14,
-        unmatched_active_severity: "blocking",
-      },
-      release: {
-        require_snapshot: true,
-        require_compare: true,
-        drift_requires_owner_review: true,
-        policy_drift_severity: "blocking",
-        static_collector_drift_severity: "advisory",
-        contract_graph_drift_severity: "blocking",
-      },
-      execute_default: {
-        allowed: true,
-        require_policy: true,
-        require_clear_adopt_boundary: true,
-        require_clean_verify: true,
-        max_cost_usd: 3,
-        max_iterations: 6,
-      },
-    };
-  }
-
-  return {
-    team: {
-      profile: "small_team",
-      owner: "unassigned",
-      reviewers: [],
-      required_reviewers: 1,
-    },
-    waivers: {
-      require_owner: true,
-      require_reason: true,
-      require_expiration: true,
-      max_active_days: 60,
-      expiring_soon_days: 14,
-      unmatched_active_severity: "advisory",
-    },
-    release: {
-      require_snapshot: true,
-      require_compare: true,
-      drift_requires_owner_review: true,
-      policy_drift_severity: "advisory",
-      static_collector_drift_severity: "advisory",
-      contract_graph_drift_severity: "blocking",
-    },
-    execute_default: {
-      allowed: true,
-      require_policy: true,
-      require_clear_adopt_boundary: true,
-      require_clean_verify: false,
-      max_cost_usd: 5,
-      max_iterations: 10,
-    },
-  };
+  return explicitProfile ?? preset?.baseProfile ?? basePolicy?.team?.profile ?? "small_team";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -424,6 +240,16 @@ export function renderPolicyMigrationText(result: PolicyMigrationResult): string
     result.created ? "Result: created" : result.updated ? "Result: updated" : "Result: already current",
   ];
 
+  if (result.preset) {
+    lines.push(`Using preset '${result.preset.id}' (base profile: ${result.preset.baseProfile})`);
+    if (result.preset.overrideSummary.length > 0) {
+      lines.push("Applying preset overrides:");
+      for (const override of result.preset.overrideSummary) {
+        lines.push(`- ${override}`);
+      }
+    }
+  }
+
   if (result.changes.length === 0) {
     lines.push("Changes: none");
   } else {
@@ -433,5 +259,58 @@ export function renderPolicyMigrationText(result: PolicyMigrationResult): string
     }
   }
 
+  lines.push("Next steps:");
+  lines.push("- Review .spec/policy.yaml");
+  lines.push("- Run: npm run jispec-cli -- doctor mainline");
+
   return lines.join("\n");
 }
+
+function summarizePresetOverrides(preset: PolicyPresetDefinition): string[] {
+  const lines: string[] = [];
+  const overrides = preset.policyOverrides;
+
+  if (overrides.team?.required_reviewers !== undefined) {
+    lines.push(`team.required_reviewers = ${overrides.team.required_reviewers}`);
+  }
+  if (overrides.waivers?.max_active_days !== undefined) {
+    lines.push(`waivers.max_active_days = ${overrides.waivers.max_active_days}`);
+  }
+  if (overrides.waivers?.require_expiration !== undefined) {
+    lines.push(`waivers.require_expiration = ${overrides.waivers.require_expiration}`);
+  }
+  if (overrides.waivers?.unmatched_active_severity !== undefined) {
+    lines.push(`waivers.unmatched_active_severity = ${overrides.waivers.unmatched_active_severity}`);
+  }
+  if (overrides.release?.require_compare !== undefined) {
+    lines.push(`release.require_compare = ${overrides.release.require_compare}`);
+  }
+  if (overrides.release?.policy_drift_severity !== undefined) {
+    lines.push(`release.policy_drift_severity = ${overrides.release.policy_drift_severity}`);
+  }
+  if (overrides.release?.static_collector_drift_severity !== undefined) {
+    lines.push(`release.static_collector_drift_severity = ${overrides.release.static_collector_drift_severity}`);
+  }
+  if (overrides.release?.contract_graph_drift_severity !== undefined) {
+    lines.push(`release.contract_graph_drift_severity = ${overrides.release.contract_graph_drift_severity}`);
+  }
+  if (overrides.execute_default?.allowed !== undefined) {
+    lines.push(`execute_default.allowed = ${overrides.execute_default.allowed}`);
+  }
+  if (overrides.execute_default?.require_clean_verify !== undefined) {
+    lines.push(`execute_default.require_clean_verify = ${overrides.execute_default.require_clean_verify}`);
+  }
+  if (overrides.execute_default?.max_cost_usd !== undefined) {
+    lines.push(`execute_default.max_cost_usd = ${overrides.execute_default.max_cost_usd}`);
+  }
+  if (overrides.execute_default?.max_iterations !== undefined) {
+    lines.push(`execute_default.max_iterations = ${overrides.execute_default.max_iterations}`);
+  }
+  if (overrides.greenfield?.review_gate?.low_confidence_blocks !== undefined) {
+    lines.push(`greenfield.review_gate.low_confidence_blocks = ${overrides.greenfield.review_gate.low_confidence_blocks}`);
+  }
+
+  return lines;
+}
+
+export { createStarterVerifyPolicy } from "./profile-defaults";

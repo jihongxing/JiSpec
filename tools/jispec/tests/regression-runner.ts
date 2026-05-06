@@ -203,6 +203,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'P13 Release Global Context', file: 'p13-release-global-context.ts', expectedTests: 4, task: 'P13-T1' }),
   runtime({ name: 'P13 Global Closure Acceptance', file: 'p13-global-closure-acceptance.ts', expectedTests: 3, task: 'P13-T2' }),
   runtime({ name: 'P13 Deferred Surface Promotion', file: 'p13-deferred-surface-promotion.ts', expectedTests: 3, task: 'P13-T3' }),
+  runtime({ name: 'P1 Global Closure Regression', file: 'p1-global-closure-regression.ts', expectedTests: 4, task: 'P1-T7' }),
   runtime({ name: 'Console Multi-Repo Governance', file: 'console-multi-repo-governance.ts', expectedTests: 5, task: 'P5-T3/M7-T1' }),
   runtime({ name: 'P9 Multi-Repo Contract Drift Hints', file: 'p9-multi-repo-contract-drift-hints.ts', expectedTests: 6, task: 'P9-T5' }),
   runtime({ name: 'Privacy Redaction', file: 'privacy-redaction.ts', expectedTests: 7, task: 'P6-T2/M7-T3' }),

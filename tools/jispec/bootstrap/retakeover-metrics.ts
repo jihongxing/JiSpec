@@ -157,7 +157,57 @@ export interface RetakeoverPoolMetrics {
     fixturesWithBlockingVerify: string[];
     featureOverclaimRisk: Record<RetakeoverFeatureOverclaimRisk, number>;
   };
+  coverage: {
+    fixtureCatalog: RetakeoverPoolFixtureCatalogEntry[];
+    classCoverage: RetakeoverPoolClassCoverage;
+    qualityBaseline: RetakeoverPoolQualityBaseline;
+  };
   fixtures: RetakeoverMetrics[];
+}
+
+export interface RetakeoverPoolFixtureCatalogEntry {
+  fixtureId: string;
+  fixtureClass: RetakeoverFixtureClass;
+  featureRecommendation: RetakeoverFeatureRecommendation;
+  verifySafety: RetakeoverVerifySafety;
+  ownerReviewRequired: boolean;
+  artifactDecisionPaths: string[];
+  coverageSignals: string[];
+  topEvidenceSample: string[];
+  baselineProfile: {
+    takeoverReadinessScore: number;
+    contractSignalPrecision: number;
+    behaviorEvidenceStrength: number;
+    overclaimBlockRate: number;
+  };
+}
+
+export interface RetakeoverPoolClassCoverage {
+  knownFixtureClassCount: number;
+  coveredFixtureClassCount: number;
+  coverageRate: number;
+  classCounts: Record<RetakeoverFixtureClass, number>;
+  missingFixtureClasses: RetakeoverFixtureClass[];
+}
+
+export interface RetakeoverPoolQualityBaseline {
+  thresholds: {
+    minimumTakeoverReadinessScore: number;
+    minimumContractSignalPrecision: number;
+    minimumBehaviorEvidenceStrength: number;
+  };
+  readinessScore: RetakeoverPoolBaselineMetric;
+  contractSignalPrecision: RetakeoverPoolBaselineMetric;
+  behaviorEvidenceStrength: RetakeoverPoolBaselineMetric;
+  verifyNonBlockingRate: number;
+  ownerReviewFixtureRate: number;
+}
+
+export interface RetakeoverPoolBaselineMetric {
+  threshold: number;
+  lowestObserved: number;
+  averageObserved: number;
+  fixturesBelowThreshold: string[];
 }
 
 export interface RetakeoverPoolArtifactWriteResult {
@@ -169,6 +219,25 @@ export const RETAKEOVER_METRICS_RELATIVE_PATH = ".spec/handoffs/retakeover-metri
 export const RETAKEOVER_SUMMARY_RELATIVE_PATH = ".spec/handoffs/retakeover-summary.md";
 export const RETAKEOVER_POOL_METRICS_RELATIVE_PATH = ".spec/handoffs/retakeover-pool-metrics.json";
 export const RETAKEOVER_POOL_SUMMARY_RELATIVE_PATH = ".spec/handoffs/retakeover-pool-summary.md";
+
+const RETAKEOVER_FIXTURE_CLASS_CATALOG: RetakeoverFixtureClass[] = [
+  "high-noise-protocol-repo",
+  "multilingual-finance-service-repo",
+  "docs-api-schema-scattered-repo",
+  "multi-language-monorepo-repo",
+  "frontend-backend-mixed-repo",
+  "historical-debt-service-repo",
+  "synthetic-god-file-monolith",
+  "synthetic-contract-drift",
+  "synthetic-noise-heavy-hidden-signal",
+  "synthetic-thin-behavior-evidence",
+];
+
+const RETAKEOVER_POOL_QUALITY_BASELINE_THRESHOLDS = {
+  minimumTakeoverReadinessScore: 55,
+  minimumContractSignalPrecision: 0.45,
+  minimumBehaviorEvidenceStrength: 0.45,
+} as const;
 
 export function parseRetakeoverFeatureRecommendation(feature: string): RetakeoverFeatureRecommendation {
   if (feature.includes("# adoption_recommendation: accept_candidate")) {
@@ -360,6 +429,9 @@ export function buildRetakeoverPoolMetrics(fixtures: RetakeoverMetrics[]): Retak
   const behaviorEvidenceStrengths = fixtures.map((fixture) => fixture.qualityScorecard.behaviorEvidenceStrength);
   const overclaimBlockRates = fixtures.map((fixture) => fixture.qualityScorecard.overclaimBlockRate);
   const correctionHotspotCounts = countCorrectionHotspots(fixtures);
+  const classCounts = countFixtureClasses(fixtures);
+  const coveredFixtureClasses = RETAKEOVER_FIXTURE_CLASS_CATALOG.filter((fixtureClass) => classCounts[fixtureClass] > 0);
+  const fixtureCatalog = fixtures.map(buildPoolFixtureCatalogEntry);
 
   return {
     version: 1,
@@ -423,6 +495,47 @@ export function buildRetakeoverPoolMetrics(fixtures: RetakeoverMetrics[]): Retak
         .filter((fixture) => fixture.qualityScorecard.verifySafety === "blocking")
         .map((fixture) => fixture.fixtureId),
       featureOverclaimRisk,
+    },
+    coverage: {
+      fixtureCatalog,
+      classCoverage: {
+        knownFixtureClassCount: RETAKEOVER_FIXTURE_CLASS_CATALOG.length,
+        coveredFixtureClassCount: coveredFixtureClasses.length,
+        coverageRate: ratio(coveredFixtureClasses.length, RETAKEOVER_FIXTURE_CLASS_CATALOG.length),
+        classCounts,
+        missingFixtureClasses: RETAKEOVER_FIXTURE_CLASS_CATALOG.filter((fixtureClass) => classCounts[fixtureClass] === 0),
+      },
+      qualityBaseline: {
+        thresholds: {
+          minimumTakeoverReadinessScore: RETAKEOVER_POOL_QUALITY_BASELINE_THRESHOLDS.minimumTakeoverReadinessScore,
+          minimumContractSignalPrecision: RETAKEOVER_POOL_QUALITY_BASELINE_THRESHOLDS.minimumContractSignalPrecision,
+          minimumBehaviorEvidenceStrength: RETAKEOVER_POOL_QUALITY_BASELINE_THRESHOLDS.minimumBehaviorEvidenceStrength,
+        },
+        readinessScore: buildPoolBaselineMetric(
+          fixtures,
+          RETAKEOVER_POOL_QUALITY_BASELINE_THRESHOLDS.minimumTakeoverReadinessScore,
+          (fixture) => fixture.qualityScorecard.takeoverReadinessScore,
+        ),
+        contractSignalPrecision: buildPoolBaselineMetric(
+          fixtures,
+          RETAKEOVER_POOL_QUALITY_BASELINE_THRESHOLDS.minimumContractSignalPrecision,
+          (fixture) => fixture.qualityScorecard.contractSignalPrecision,
+        ),
+        behaviorEvidenceStrength: buildPoolBaselineMetric(
+          fixtures,
+          RETAKEOVER_POOL_QUALITY_BASELINE_THRESHOLDS.minimumBehaviorEvidenceStrength,
+          (fixture) => fixture.qualityScorecard.behaviorEvidenceStrength,
+        ),
+        verifyNonBlockingRate: ratio(fixtures.filter((fixture) => fixture.verifyOk).length, fixtures.length),
+        ownerReviewFixtureRate: ratio(
+          fixtures.filter((fixture) =>
+            fixture.qualityScorecard.nextAction === "owner_review_spec_debt" ||
+            fixture.qualityScorecard.featureOverclaimRisk !== "low" ||
+            fixture.adoptCorrection.ownerReviewArtifactCount > 0
+          ).length,
+          fixtures.length,
+        ),
+      },
     },
     fixtures,
   };
@@ -504,6 +617,8 @@ export function renderRetakeoverSummaryMarkdown(metrics: RetakeoverMetrics): str
 }
 
 export function renderRetakeoverPoolSummaryMarkdown(pool: RetakeoverPoolMetrics): string {
+  const classCoverage = pool.coverage.classCoverage;
+  const qualityBaseline = pool.coverage.qualityBaseline;
   const lines = [
     "# JiSpec Retakeover Pool Summary",
     "",
@@ -524,6 +639,19 @@ export function renderRetakeoverPoolSummaryMarkdown(pool: RetakeoverPoolMetrics)
     `- V2 decision load: adoption-ready artifacts=${pool.qualityScorecard.totalAdoptionReadyArtifactCount}, owner decision count=${pool.qualityScorecard.totalNeedsOwnerDecisionCount}, hotspot fixtures=${pool.qualityScorecard.fixturesWithHumanCorrectionHotspots.length}.`,
     `- Feature overclaim risk: low=${pool.qualityScorecard.featureOverclaimRisk.low}, medium=${pool.qualityScorecard.featureOverclaimRisk.medium}, high=${pool.qualityScorecard.featureOverclaimRisk.high}.`,
     `- Owner-review fixtures: ${pool.qualityScorecard.fixturesNeedingOwnerReview.map((fixture) => `\`${fixture}\``).join(", ") || "none"}.`,
+    `- Class coverage: ${classCoverage.coveredFixtureClassCount}/${classCoverage.knownFixtureClassCount} fixture classes (${formatPercent(classCoverage.coverageRate)}); missing classes: ${classCoverage.missingFixtureClasses.map((fixtureClass) => `\`${fixtureClass}\``).join(", ") || "none"}.`,
+    `- Quality baseline: readiness floor=${qualityBaseline.readinessScore.threshold}/100 misses=${renderFixtureIdList(qualityBaseline.readinessScore.fixturesBelowThreshold)}; contract precision floor=${formatPercent(qualityBaseline.contractSignalPrecision.threshold)} misses=${renderFixtureIdList(qualityBaseline.contractSignalPrecision.fixturesBelowThreshold)}; behavior strength floor=${formatPercent(qualityBaseline.behaviorEvidenceStrength.threshold)} misses=${renderFixtureIdList(qualityBaseline.behaviorEvidenceStrength.fixturesBelowThreshold)}.`,
+    `- Coverage rates: verify non-blocking=${formatPercent(qualityBaseline.verifyNonBlockingRate)}, owner-review path=${formatPercent(qualityBaseline.ownerReviewFixtureRate)}.`,
+    "",
+    "## Coverage",
+    "",
+    `- Fixture catalog entries: ${pool.coverage.fixtureCatalog.length}.`,
+    `- Missing fixture classes: ${classCoverage.missingFixtureClasses.map((fixtureClass) => `\`${fixtureClass}\``).join(", ") || "none"}.`,
+    `- Baseline misses: readiness=${renderFixtureIdList(qualityBaseline.readinessScore.fixturesBelowThreshold)}, contract precision=${renderFixtureIdList(qualityBaseline.contractSignalPrecision.fixturesBelowThreshold)}, behavior strength=${renderFixtureIdList(qualityBaseline.behaviorEvidenceStrength.fixturesBelowThreshold)}.`,
+    "",
+    "| Fixture | Class | Coverage Signals | Decision Paths | Baseline Profile | Top Evidence |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...pool.coverage.fixtureCatalog.map(renderPoolCoverageRow),
     "",
     "## Quality Scorecard",
     "",
@@ -590,6 +718,24 @@ function renderPoolDecision(pool: RetakeoverPoolMetrics): string {
     return "Retakeover pool is non-blocking, with explicit owner-review, human correction, or spec-debt follow-up.";
   }
   return "Retakeover pool is non-blocking and all fixture packets are adoptable as initial contracts.";
+}
+
+function renderPoolCoverageRow(entry: RetakeoverPoolFixtureCatalogEntry): string {
+  const baseline = [
+    `score=${entry.baselineProfile.takeoverReadinessScore}/100`,
+    `contract=${formatPercent(entry.baselineProfile.contractSignalPrecision)}`,
+    `behavior=${formatPercent(entry.baselineProfile.behaviorEvidenceStrength)}`,
+    `blocked=${formatPercent(entry.baselineProfile.overclaimBlockRate)}`,
+  ].join(", ");
+
+  return [
+    `\`${entry.fixtureId}\``,
+    `\`${entry.fixtureClass}\``,
+    escapeTableCell(entry.coverageSignals.map((signal) => `\`${signal}\``).join(", ")),
+    escapeTableCell(entry.artifactDecisionPaths.map((artifactPath) => `\`${artifactPath}\``).join(", ")),
+    escapeTableCell(baseline),
+    escapeTableCell(entry.topEvidenceSample.map((evidencePath) => `\`${evidencePath}\``).join(", ")),
+  ].join(" | ").replace(/^/, "| ").replace(/$/, " |");
 }
 
 function renderFeatureRecommendationCounts(counts: Record<RetakeoverFeatureRecommendation, number>): string {
@@ -783,6 +929,10 @@ function renderTopRankedEvidence(topRankedEvidence: string[]): string[] {
   ];
 }
 
+function renderFixtureIdList(fixtureIds: string[]): string {
+  return fixtureIds.length > 0 ? fixtureIds.map((fixtureId) => `\`${fixtureId}\``).join(", ") : "none";
+}
+
 function sanitizeCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
 }
@@ -848,6 +998,75 @@ function countCorrectionHotspots(fixtures: RetakeoverMetrics[]): Array<[string, 
     }
   }
   return [...counts.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+}
+
+function countFixtureClasses(fixtures: RetakeoverMetrics[]): Record<RetakeoverFixtureClass, number> {
+  const counts: Record<RetakeoverFixtureClass, number> = {
+    "high-noise-protocol-repo": 0,
+    "multilingual-finance-service-repo": 0,
+    "docs-api-schema-scattered-repo": 0,
+    "multi-language-monorepo-repo": 0,
+    "frontend-backend-mixed-repo": 0,
+    "historical-debt-service-repo": 0,
+    "synthetic-god-file-monolith": 0,
+    "synthetic-contract-drift": 0,
+    "synthetic-noise-heavy-hidden-signal": 0,
+    "synthetic-thin-behavior-evidence": 0,
+  };
+  for (const fixture of fixtures) {
+    counts[fixture.fixtureClass] += 1;
+  }
+  return counts;
+}
+
+function buildPoolFixtureCatalogEntry(fixture: RetakeoverMetrics): RetakeoverPoolFixtureCatalogEntry {
+  const ownerReviewRequired =
+    fixture.qualityScorecard.nextAction === "owner_review_spec_debt" ||
+    fixture.qualityScorecard.featureOverclaimRisk !== "low" ||
+    fixture.adoptCorrection.ownerReviewArtifactCount > 0;
+
+  return {
+    fixtureId: fixture.fixtureId,
+    fixtureClass: fixture.fixtureClass,
+    featureRecommendation: fixture.draftQuality.featureRecommendation,
+    verifySafety: fixture.qualityScorecard.verifySafety,
+    ownerReviewRequired,
+    artifactDecisionPaths: uniqueSorted(
+      fixture.adoptCorrection.artifactCorrectionLoad.map((entry) => `${entry.decision}:${entry.artifactKind}`),
+    ),
+    coverageSignals: uniqueSorted([
+      `class:${fixture.fixtureClass}`,
+      `feature:${fixture.draftQuality.featureRecommendation}`,
+      `verify:${fixture.qualityScorecard.verifySafety}`,
+      ownerReviewRequired ? "path:owner_review" : "path:adoptable_initial_packet",
+      ...fixture.adoptCorrection.artifactCorrectionLoad
+        .filter((entry) => entry.decision !== "accepted")
+        .map((entry) => `correction:${entry.decision}_${entry.artifactKind}`),
+    ]),
+    topEvidenceSample: fixture.topRankedEvidence.slice(0, 3),
+    baselineProfile: {
+      takeoverReadinessScore: fixture.qualityScorecard.takeoverReadinessScore,
+      contractSignalPrecision: fixture.qualityScorecard.contractSignalPrecision,
+      behaviorEvidenceStrength: fixture.qualityScorecard.behaviorEvidenceStrength,
+      overclaimBlockRate: fixture.qualityScorecard.overclaimBlockRate,
+    },
+  };
+}
+
+function buildPoolBaselineMetric(
+  fixtures: RetakeoverMetrics[],
+  threshold: number,
+  selector: (fixture: RetakeoverMetrics) => number,
+): RetakeoverPoolBaselineMetric {
+  const observed = fixtures.map(selector);
+  return {
+    threshold,
+    lowestObserved: observed.length > 0 ? Number(Math.min(...observed).toFixed(2)) : 0,
+    averageObserved: average(observed),
+    fixturesBelowThreshold: fixtures
+      .filter((fixture) => selector(fixture) < threshold)
+      .map((fixture) => fixture.fixtureId),
+  };
 }
 
 function average(values: number[]): number {

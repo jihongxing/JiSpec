@@ -252,6 +252,168 @@ async function main(): Promise<void> {
     }
   });
 
+  record("policy list-presets CLI exposes available preset ids and base profiles", () => {
+    const repoRoot = path.resolve(__dirname, "..", "..", "..");
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "./tools/jispec/cli.ts",
+        "policy",
+        "list-presets",
+        "--json",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf-8",
+      },
+    );
+    const result = JSON.parse(output) as { presets?: Array<{ id?: string; baseProfile?: string }> };
+    assert.ok(result.presets?.some((preset) => preset.id === "fintech" && preset.baseProfile === "regulated"));
+    assert.ok(result.presets?.some((preset) => preset.id === "startup-fast-iteration" && preset.baseProfile === "small_team"));
+    assert.ok(result.presets?.some((preset) => preset.id === "open-source-maintainer" && preset.baseProfile === "small_team"));
+  });
+
+  record("policy list-presets CLI text output acts like a preset selection guide", () => {
+    const repoRoot = path.resolve(__dirname, "..", "..", "..");
+    const output = execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "./tools/jispec/cli.ts",
+        "policy",
+        "list-presets",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf-8",
+      },
+    );
+    assert.match(output, /Available policy presets:/);
+    assert.match(output, /Base profile: regulated/);
+    assert.match(output, /Use cases: financial systems; change control; audit-heavy delivery/);
+    assert.match(output, /Start with: npm run jispec-cli -- policy migrate --preset fintech/);
+    assert.match(output, /Preset vs profile:/);
+    assert.match(output, /stable contract: solo, small_team, or regulated/);
+    assert.match(output, /Usage:/);
+    assert.match(output, /Examples:/);
+  });
+
+  record("policy migrate CLI applies preset overrides on top of its stable base profile", () => {
+    const fixtureRoot = createFixtureRoot("jispec-policy-preset-cli-");
+    const repoRoot = path.resolve(__dirname, "..", "..", "..");
+    try {
+      const output = execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "./tools/jispec/cli.ts",
+          "policy",
+          "migrate",
+          "--root",
+          fixtureRoot,
+          "--preset",
+          "fintech",
+          "--json",
+        ],
+        {
+          cwd: repoRoot,
+          encoding: "utf-8",
+        },
+      );
+      const result = JSON.parse(output) as {
+        preset?: { id?: string; baseProfile?: string };
+        policy?: {
+          team?: { profile?: string; required_reviewers?: number };
+          waivers?: { max_active_days?: number };
+          execute_default?: { require_clean_verify?: boolean; max_cost_usd?: number };
+        };
+        changes?: string[];
+      };
+      assert.equal(result.preset?.id, "fintech");
+      assert.equal(result.preset?.baseProfile, "regulated");
+      assert.equal(result.policy?.team?.profile, "regulated");
+      assert.equal(result.policy?.team?.required_reviewers, 2);
+      assert.equal(result.policy?.waivers?.max_active_days, 21);
+      assert.equal(result.policy?.execute_default?.require_clean_verify, true);
+      assert.equal(result.policy?.execute_default?.max_cost_usd, 2);
+      assert.ok(result.changes?.some((change) => change.includes("Applied preset fintech")));
+    } finally {
+      removeFixtureRoot(fixtureRoot);
+    }
+  });
+
+  record("policy migrate CLI text output confirms preset usage, override summary, and next steps", () => {
+    const fixtureRoot = createFixtureRoot("jispec-policy-preset-cli-text-");
+    const repoRoot = path.resolve(__dirname, "..", "..", "..");
+    try {
+      const output = execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "./tools/jispec/cli.ts",
+          "policy",
+          "migrate",
+          "--root",
+          fixtureRoot,
+          "--preset",
+          "fintech",
+        ],
+        {
+          cwd: repoRoot,
+          encoding: "utf-8",
+        },
+      );
+      assert.match(output, /Using preset 'fintech' \(base profile: regulated\)/);
+      assert.match(output, /Applying preset overrides:/);
+      assert.match(output, /waivers\.max_active_days = 21/);
+      assert.match(output, /execute_default\.require_clean_verify = true/);
+      assert.match(output, /Next steps:/);
+      assert.match(output, /Review \.spec\/policy\.yaml/);
+      assert.match(output, /Run: npm run jispec-cli -- doctor mainline/);
+    } finally {
+      removeFixtureRoot(fixtureRoot);
+    }
+  });
+
+  record("policy migrate CLI rejects profile and preset combinations that disagree on the stable base profile", () => {
+    const fixtureRoot = createFixtureRoot("jispec-policy-preset-conflict-");
+    const repoRoot = path.resolve(__dirname, "..", "..", "..");
+    try {
+      assert.throws(
+        () => execFileSync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            "./tools/jispec/cli.ts",
+            "policy",
+            "migrate",
+            "--root",
+            fixtureRoot,
+            "--profile",
+            "solo",
+            "--preset",
+            "fintech",
+            "--json",
+          ],
+          {
+            cwd: repoRoot,
+            encoding: "utf-8",
+            stdio: "pipe",
+          },
+        ),
+        /conflicts with preset fintech base profile regulated/,
+      );
+    } finally {
+      removeFixtureRoot(fixtureRoot);
+    }
+  });
+
   console.log(`\n${passed}/${passed + failed} tests passed`);
 
   if (failed > 0) {

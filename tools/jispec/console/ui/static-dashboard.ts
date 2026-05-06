@@ -330,6 +330,170 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
       gap: 9px;
     }
 
+    .question-special {
+      gap: 14px;
+    }
+
+    .question-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .question-metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfe;
+      min-height: 82px;
+    }
+
+    .question-metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .question-metric-value {
+      margin-top: 6px;
+      font-size: 20px;
+      font-weight: 760;
+    }
+
+    .question-metric-detail {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .inline-pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fbfcfe;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .pill.ok {
+      border-color: rgba(31, 122, 77, 0.25);
+      background: rgba(31, 122, 77, 0.08);
+      color: var(--ok);
+    }
+
+    .pill.attention {
+      border-color: rgba(154, 97, 0, 0.25);
+      background: rgba(154, 97, 0, 0.08);
+      color: var(--attention);
+    }
+
+    .pill.blocked {
+      border-color: rgba(180, 35, 24, 0.25);
+      background: rgba(180, 35, 24, 0.08);
+      color: var(--blocked);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table.compact {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    table.compact th,
+    table.compact td {
+      text-align: left;
+      vertical-align: top;
+      padding: 8px 10px;
+      border-top: 1px solid var(--line);
+    }
+
+    table.compact th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    .row-attention {
+      background: rgba(154, 97, 0, 0.04);
+    }
+
+    .row-blocked {
+      background: rgba(180, 35, 24, 0.05);
+    }
+
+    .drilldown {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 12px;
+    }
+
+    .drilldown summary {
+      cursor: pointer;
+      font-weight: 700;
+      list-style: none;
+    }
+
+    .drilldown summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .drilldown-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .drilldown-copy {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .drilldown-body {
+      margin-top: 12px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .evidence-stack {
+      display: grid;
+      gap: 6px;
+    }
+
+    .code-chip {
+      display: block;
+      width: fit-content;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background: #eef2f7;
+      color: #1c2b45;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+
     .object {
       min-height: 126px;
     }
@@ -419,7 +583,7 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     }
 
     @media (max-width: 860px) {
-      .hero, .grid-2, .grid-3, .signal-grid, .boundary, .action-meta {
+      .hero, .grid-2, .grid-3, .signal-grid, .boundary, .action-meta, .question-grid {
         grid-template-columns: 1fr;
       }
 
@@ -476,7 +640,7 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     <section class="panel" aria-labelledby="questions">
       <h2 id="questions">Governance Questions</h2>
       <div class="grid-2">
-        ${model.dashboard.questions.map(renderQuestion).join("\n")}
+        ${model.dashboard.questions.map((question) => renderQuestion(question, model)).join("\n")}
       </div>
     </section>
 
@@ -554,7 +718,14 @@ export function renderLocalConsoleUiResultText(result: LocalConsoleUiWriteResult
   ].join("\n");
 }
 
-function renderQuestion(question: ConsoleGovernanceDashboard["questions"][number]): string {
+function renderQuestion(
+  question: ConsoleGovernanceDashboard["questions"][number],
+  model: LocalConsoleUiModel,
+): string {
+  if (question.id === "retakeover_pool_health") {
+    return renderRetakeoverPoolQuestion(question, model);
+  }
+
   return `<article class="question">
   <div class="status-row">
     <span class="badge ${statusClass(question.status)}">${escapeHtml(question.status)}</span>
@@ -564,6 +735,138 @@ function renderQuestion(question: ConsoleGovernanceDashboard["questions"][number
   ${question.evidence.length > 0 ? `<div><p class="small">Evidence</p><ul>${question.evidence.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
   ${question.nextActions.length > 0 ? `<div><p class="small">Next</p><ul>${question.nextActions.slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
 </article>`;
+}
+
+function renderRetakeoverPoolQuestion(
+  question: ConsoleGovernanceDashboard["questions"][number],
+  model: LocalConsoleUiModel,
+): string {
+  const summary = model.snapshot.governance.objects.find((object) => object.id === "takeover_quality_trend")?.summary ?? {};
+  const coverageRate = numberValue(summary.poolCoverageRate);
+  const coveredClasses = numberValue(summary.poolCoveredFixtureClassCount);
+  const knownClasses = numberValue(summary.poolKnownFixtureClassCount);
+  const fixtureCatalogCount = numberValue(summary.poolFixtureCatalogCount);
+  const fixtureCount = numberValue(summary.poolFixtureCount);
+  const missingClasses = stringArray(summary.poolMissingFixtureClasses);
+  const readinessThreshold = numberValue(summary.poolReadinessThreshold);
+  const readinessLowest = numberValue(summary.poolReadinessLowestObserved);
+  const readinessMisses = stringArray(summary.poolReadinessFixturesBelowThreshold);
+  const precisionThreshold = numberValue(summary.poolContractPrecisionThreshold);
+  const precisionLowest = numberValue(summary.poolContractPrecisionLowestObserved);
+  const precisionMisses = stringArray(summary.poolContractPrecisionFixturesBelowThreshold);
+  const behaviorThreshold = numberValue(summary.poolBehaviorStrengthThreshold);
+  const behaviorLowest = numberValue(summary.poolBehaviorStrengthLowestObserved);
+  const behaviorMisses = stringArray(summary.poolBehaviorFixturesBelowThreshold);
+  const fixtureCatalog = recordArray(summary.poolFixtureCatalog);
+  const sortedFixtureCatalog = [...fixtureCatalog].sort((left, right) =>
+    compareFixturePriority(left, right, readinessMisses, precisionMisses, behaviorMisses)
+  );
+  const severityCounts = countFixtureSeverities(
+    fixtureCatalog,
+    readinessMisses,
+    precisionMisses,
+    behaviorMisses,
+  );
+  const fixturesWithMisses = fixtureCatalog.filter((entry) =>
+    fixtureMissSeverity(entry, readinessMisses, precisionMisses, behaviorMisses) !== "ok"
+  ).length;
+  const fixtureDrilldown = fixtureCatalog.length > 0
+    ? `<details class="drilldown">
+    <summary>
+      <span class="drilldown-summary">
+        <span>Fixture Drill-Down</span>
+        <span class="drilldown-copy">${escapeHtml(`${fixturesWithMisses}/${fixtureCatalog.length} fixture(s) need attention`)}</span>
+        ${renderSeverityCountPills(severityCounts)}
+      </span>
+    </summary>
+    <div class="drilldown-body">
+      <p class="small">Use baseline misses to spot the regressed fixture, then inspect its class, decision paths, and representative evidence.</p>
+      <div class="table-wrap">
+        <table class="compact">
+          <thead>
+            <tr><th>Fixture ID</th><th>Class</th><th>Coverage Signals</th><th>Decision Paths</th><th>Top Evidence Sample</th></tr>
+          </thead>
+          <tbody>
+            ${sortedFixtureCatalog.map((entry) => renderFixtureDrilldownRow(entry, readinessMisses, precisionMisses, behaviorMisses)).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </details>`
+    : `<div><p class="small">Fixture Drill-Down</p><p class="small">No fixture catalog is available yet.</p></div>`;
+
+  return `<article class="question question-special">
+  <div class="status-row">
+    <span class="badge ${statusClass(question.status)}">${escapeHtml(question.status)}</span>
+    <h3>${escapeHtml(question.label)}</h3>
+  </div>
+  <p>${escapeHtml(question.answer)}</p>
+  <div class="question-grid">
+    ${questionMetric("Coverage", formatPercent(coverageRate), `${coveredClasses ?? "unknown"}/${knownClasses ?? "unknown"} fixture classes`)}
+    ${questionMetric("Fixture Catalog", fixtureCatalogCount !== undefined ? String(fixtureCatalogCount) : "unknown", `${fixtureCount ?? "unknown"} pooled fixture(s)`)}
+    ${questionMetric("Missing Classes", String(missingClasses.length), missingClasses.length > 0 ? missingClasses.slice(0, 2).join(", ") : "none")}
+  </div>
+  <div>
+    <p class="small">Missing Fixture Classes</p>
+    ${missingClasses.length > 0 ? `<div class="inline-pills">${missingClasses.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>` : `<p class="small">None. Coverage is complete for the current catalog.</p>`}
+  </div>
+  <div>
+    <p class="small">Quality Baseline</p>
+    <div class="table-wrap">
+      <table class="compact">
+        <thead>
+          <tr><th>Signal</th><th>Threshold</th><th>Lowest Observed</th><th>Fixtures Below Threshold</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Takeover readiness</td>
+            <td>${escapeHtml(readinessThreshold !== undefined ? `${readinessThreshold}/100` : "unknown")}</td>
+            <td>${escapeHtml(readinessLowest !== undefined ? `${readinessLowest}/100` : "unknown")}</td>
+            <td>${escapeHtml(renderInlineList(readinessMisses))}</td>
+          </tr>
+          <tr>
+            <td>Contract precision</td>
+            <td>${escapeHtml(formatPercent(precisionThreshold))}</td>
+            <td>${escapeHtml(formatPercent(precisionLowest))}</td>
+            <td>${escapeHtml(renderInlineList(precisionMisses))}</td>
+          </tr>
+          <tr>
+            <td>Behavior strength</td>
+            <td>${escapeHtml(formatPercent(behaviorThreshold))}</td>
+            <td>${escapeHtml(formatPercent(behaviorLowest))}</td>
+            <td>${escapeHtml(renderInlineList(behaviorMisses))}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  ${fixtureDrilldown}
+  ${question.evidence.length > 0 ? `<div><p class="small">Evidence</p><ul>${question.evidence.slice(0, 5).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+  ${question.nextActions.length > 0 ? `<div><p class="small">Next Actions</p><ul>${question.nextActions.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+</article>`;
+}
+
+function renderFixtureDrilldownRow(
+  entry: Record<string, unknown>,
+  readinessMisses: string[],
+  precisionMisses: string[],
+  behaviorMisses: string[],
+): string {
+  const fixtureId = typeof entry.fixtureId === "string" ? entry.fixtureId : "unknown";
+  const fixtureClass = typeof entry.fixtureClass === "string" ? entry.fixtureClass : "unknown";
+  const coverageSignals = stringArray(entry.coverageSignals);
+  const artifactDecisionPaths = stringArray(entry.artifactDecisionPaths);
+  const topEvidenceSample = stringArray(entry.topEvidenceSample).slice(0, 5);
+  const severity = fixtureMissSeverity(entry, readinessMisses, precisionMisses, behaviorMisses);
+  const rowClass = severity === "ok" ? "" : ` class="row-${severity}"`;
+
+  return `<tr${rowClass}>
+    <td><span class="pill ${severity}">${escapeHtml(fixtureId)}</span></td>
+    <td>${escapeHtml(fixtureClass)}</td>
+    <td>${renderSignalPills(coverageSignals, severity)}</td>
+    <td>${renderSignalPills(artifactDecisionPaths, severity)}</td>
+    <td>${renderEvidenceSample(topEvidenceSample)}</td>
+  </tr>`;
 }
 
 function renderGovernanceObject(object: ConsoleGovernanceObjectSnapshot): string {
@@ -613,6 +916,10 @@ function metric(label: string, value: string): string {
   return `<div class="metric"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${escapeHtml(value)}</div></div>`;
 }
 
+function questionMetric(label: string, value: string, detail: string): string {
+  return `<div class="question-metric"><div class="question-metric-label">${escapeHtml(label)}</div><div class="question-metric-value">${escapeHtml(value)}</div><div class="question-metric-detail">${escapeHtml(detail)}</div></div>`;
+}
+
 function boundaryItem(label: string, value: string): string {
   return `<div class="boundary-item"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value">${escapeHtml(value)}</div></div>`;
 }
@@ -656,6 +963,119 @@ function formatSummaryValue(value: unknown): string {
 
 function formatList(values: string[]): string {
   return values.length > 0 ? values.join(", ") : "not declared";
+}
+
+function renderInlineList(values: string[]): string {
+  return values.length > 0 ? values.join(", ") : "none";
+}
+
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+    : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function formatPercent(value: number | undefined): string {
+  return value === undefined ? "unknown" : `${Math.round(value * 100)}%`;
+}
+
+function renderSignalPills(values: string[], severity: "ok" | "attention" | "blocked"): string {
+  if (values.length === 0) {
+    return `<span class="small">none</span>`;
+  }
+  return `<div class="inline-pills">${values.map((value) => `<span class="pill ${severity}">${escapeHtml(value)}</span>`).join("")}</div>`;
+}
+
+function renderEvidenceSample(values: string[]): string {
+  if (values.length === 0) {
+    return `<span class="small">none</span>`;
+  }
+  return `<div class="evidence-stack">${values.map((value) => `<span class="code-chip">${escapeHtml(value)}</span>`).join("")}</div>`;
+}
+
+function fixtureMissSeverity(
+  entry: Record<string, unknown>,
+  readinessMisses: string[],
+  precisionMisses: string[],
+  behaviorMisses: string[],
+): "ok" | "attention" | "blocked" {
+  const fixtureId = typeof entry.fixtureId === "string" ? entry.fixtureId : "";
+  let missCount = 0;
+  if (readinessMisses.includes(fixtureId)) {
+    missCount++;
+  }
+  if (precisionMisses.includes(fixtureId)) {
+    missCount++;
+  }
+  if (behaviorMisses.includes(fixtureId)) {
+    missCount++;
+  }
+  if (missCount >= 2) {
+    return "blocked";
+  }
+  if (missCount === 1) {
+    return "attention";
+  }
+  return "ok";
+}
+
+function compareFixturePriority(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+  readinessMisses: string[],
+  precisionMisses: string[],
+  behaviorMisses: string[],
+): number {
+  const severityDelta = severityRank(fixtureMissSeverity(right, readinessMisses, precisionMisses, behaviorMisses))
+    - severityRank(fixtureMissSeverity(left, readinessMisses, precisionMisses, behaviorMisses));
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+
+  const leftId = typeof left.fixtureId === "string" ? left.fixtureId : "";
+  const rightId = typeof right.fixtureId === "string" ? right.fixtureId : "";
+  return leftId.localeCompare(rightId);
+}
+
+function severityRank(severity: "ok" | "attention" | "blocked"): number {
+  if (severity === "blocked") {
+    return 2;
+  }
+  if (severity === "attention") {
+    return 1;
+  }
+  return 0;
+}
+
+function countFixtureSeverities(
+  entries: Record<string, unknown>[],
+  readinessMisses: string[],
+  precisionMisses: string[],
+  behaviorMisses: string[],
+): Record<"blocked" | "attention" | "ok", number> {
+  return entries.reduce(
+    (counts, entry) => {
+      counts[fixtureMissSeverity(entry, readinessMisses, precisionMisses, behaviorMisses)] += 1;
+      return counts;
+    },
+    { blocked: 0, attention: 0, ok: 0 },
+  );
+}
+
+function renderSeverityCountPills(counts: Record<"blocked" | "attention" | "ok", number>): string {
+  return `<span class="inline-pills">
+    <span class="pill blocked">blocked ${escapeHtml(String(counts.blocked))}</span>
+    <span class="pill attention">attention ${escapeHtml(String(counts.attention))}</span>
+    <span class="pill ok">ok ${escapeHtml(String(counts.ok))}</span>
+  </span>`;
 }
 
 function escapeHtml(value: string): string {

@@ -72,11 +72,18 @@ export interface GreenfieldSourceEvolutionDiff {
 const DEFAULT_REQUIREMENTS_PATH = "docs/input/requirements.md";
 const DEFAULT_TECHNICAL_SOLUTION_PATH = "docs/input/technical-solution.md";
 
-export function collectGreenfieldProvenanceAnchorDrift(rootInput: string): GreenfieldProvenanceAnchorDrift[] {
+export function collectGreenfieldProvenanceAnchorDrift(
+  rootInput: string,
+  options?: {
+    governedSourceEvolution?: GreenfieldSourceEvolutionDiff;
+  },
+): GreenfieldProvenanceAnchorDrift[] {
   const diff = collectGreenfieldSourceEvolutionDiff(rootInput);
   if (!diff) {
     return [];
   }
+
+  const governedSourceEvolution = options?.governedSourceEvolution;
 
   return diff.items
     .filter((item) => item.evolution_kind === "modified" || item.evolution_kind === "reanchored")
@@ -97,6 +104,7 @@ export function collectGreenfieldProvenanceAnchorDrift(rootInput: string): Green
         ? "excerpt_not_found" as const
         : "line_checksum_mismatch" as const,
     }))
+    .filter((drift) => !governedSourceEvolution || !isGovernedBySourceEvolution(drift, governedSourceEvolution))
     .sort((left, right) =>
       `${left.path}|${left.anchorId}|${left.reason}`.localeCompare(`${right.path}|${right.anchorId}|${right.reason}`),
     );
@@ -571,4 +579,27 @@ function numberValue(value: unknown): number | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isGovernedBySourceEvolution(
+  drift: GreenfieldProvenanceAnchorDrift,
+  sourceEvolution: GreenfieldSourceEvolutionDiff,
+): boolean {
+  const driftKey = `${drift.sourceDocument}|${drift.anchorId}`;
+
+  return sourceEvolution.items.some((item) => {
+    if (item.source_document !== drift.sourceDocument) {
+      return false;
+    }
+
+    if (item.anchor_id && `${item.source_document}|${item.anchor_id}` === driftKey) {
+      return true;
+    }
+
+    if ((item.predecessor_ids ?? []).some((predecessorId) => `${item.source_document}|${predecessorId}` === driftKey)) {
+      return true;
+    }
+
+    return (item.successor_ids ?? []).some((successorId) => `${item.source_document}|${successorId}` === driftKey);
+  });
 }

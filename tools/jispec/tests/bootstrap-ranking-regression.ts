@@ -84,6 +84,11 @@ function main(): void {
         summaryText.includes("Owner-review evidence:") &&
         summaryText.includes("Top adoption-ranked evidence:") &&
         bootstrapSummary.includes("Takeover priority:") &&
+        bootstrapSummary.includes("## Takeover Preview") &&
+        bootstrapSummary.includes("### Top Adoption Candidates") &&
+        bootstrapSummary.includes("### Boundary Recommendation") &&
+        bootstrapSummary.includes("### Estimated Adoption Effort") &&
+        bootstrapSummary.includes("Prioritize the API contract boundary:") &&
         bootstrapSummary.includes("Top adoption-ready evidence:") &&
         bootstrapSummary.includes("Owner-review evidence:") &&
         bootstrapSummary.includes("Top adoption-ranked evidence:") &&

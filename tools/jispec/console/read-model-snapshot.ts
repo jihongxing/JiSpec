@@ -567,6 +567,10 @@ function summarizeSourceEvolutionGovernance(sourceArtifacts: ConsoleSnapshotArti
     ? lifecycle.requirements.filter(isRecord)
     : [];
   const lifecycleDeltaCounts = countByStatus(lifecycleRequirements.map((entry) => String(entry.status ?? "active")));
+  const activeSnapshotId = stringValue(extractNestedValue(baselineSourceEvolution, ["active_snapshot_id"]))
+    ?? stringValue(extractNestedValue(baselineRequirementLifecycle, ["active_snapshot_id"]))
+    ?? stringValue(extractNestedValue(lifecycle, ["active_snapshot_id"]))
+    ?? "not_available_yet";
   const lastAdoptedSourceChange = stringValue(extractNestedValue(baselineSourceEvolution, ["last_adopted_change_id"]))
     ?? stringValue(extractNestedValue(baselineRequirementLifecycle, ["last_adopted_change_id"]))
     ?? stringValue(extractNestedValue(lifecycle, ["last_adopted_change_id"]))
@@ -633,6 +637,7 @@ function summarizeSourceEvolutionGovernance(sourceArtifacts: ConsoleSnapshotArti
     openReviewItemsBySeverity: activeReview?.openBySeverity ?? {},
     lifecycleDeltaCounts,
     lifecycleRequirementCount: lifecycleRequirements.length,
+    activeSnapshotId,
     lastAdoptedSourceChange,
     lifecyclePath,
     sourceEvolutionPath: active?.evolutionPath ?? "not_available_yet",
@@ -741,6 +746,17 @@ function summarizeTakeoverQuality(sourceArtifacts: ConsoleSnapshotArtifact[]): R
   const manualSorting = isRecord(metrics.manualSortingReduction) ? metrics.manualSortingReduction : {};
   const risks = isRecord(metrics.riskSurfacing) ? metrics.riskSurfacing : {};
   const execute = isRecord(metrics.executeMediationStopPoints) ? metrics.executeMediationStopPoints : {};
+  const coverage = isRecord(pool) && isRecord(pool.coverage) ? pool.coverage : {};
+  const classCoverage = isRecord(coverage.classCoverage) ? coverage.classCoverage : {};
+  const qualityBaseline = isRecord(coverage.qualityBaseline) ? coverage.qualityBaseline : {};
+  const readinessScore = isRecord(qualityBaseline.readinessScore) ? qualityBaseline.readinessScore : {};
+  const contractSignalPrecision = isRecord(qualityBaseline.contractSignalPrecision)
+    ? qualityBaseline.contractSignalPrecision
+    : {};
+  const behaviorEvidenceStrength = isRecord(qualityBaseline.behaviorEvidenceStrength)
+    ? qualityBaseline.behaviorEvidenceStrength
+    : {};
+  const fixtureCatalog = Array.isArray(coverage.fixtureCatalog) ? coverage.fixtureCatalog.filter(isRecord) : [];
 
   return {
     state: single !== undefined || pool !== undefined || valueReport !== undefined ? "available" : "not_available_yet",
@@ -749,6 +765,35 @@ function summarizeTakeoverQuality(sourceArtifacts: ConsoleSnapshotArtifact[]): R
     hasValueReport: valueReport !== undefined,
     singleScore: extractNestedValue(single, ["qualityScorecard", "score"]) ?? extractNestedValue(single, ["quality_scorecard", "score"]),
     poolFixtureCount: extractArrayFromRecord(pool, ["fixtures", "fixtureMetrics", "fixture_metrics"]).length,
+    poolFixtureCatalogCount: fixtureCatalog.length,
+    poolFixtureCatalog: fixtureCatalog.map((entry) => ({
+      fixtureId: entry.fixtureId ?? "unknown",
+      fixtureClass: entry.fixtureClass ?? "unknown",
+      coverageSignals: Array.isArray(entry.coverageSignals) ? entry.coverageSignals : [],
+      artifactDecisionPaths: Array.isArray(entry.artifactDecisionPaths) ? entry.artifactDecisionPaths : [],
+      topEvidenceSample: Array.isArray(entry.topEvidenceSample) ? entry.topEvidenceSample : [],
+    })),
+    poolCoverageRate: numberValue(classCoverage.coverageRate) ?? "not_available_yet",
+    poolCoveredFixtureClassCount: numberValue(classCoverage.coveredFixtureClassCount) ?? "not_available_yet",
+    poolKnownFixtureClassCount: numberValue(classCoverage.knownFixtureClassCount) ?? "not_available_yet",
+    poolMissingFixtureClasses: Array.isArray(classCoverage.missingFixtureClasses) ? classCoverage.missingFixtureClasses : [],
+    poolReadinessThreshold: numberValue(readinessScore.threshold) ?? "not_available_yet",
+    poolReadinessLowestObserved: numberValue(readinessScore.lowestObserved) ?? "not_available_yet",
+    poolReadinessFixturesBelowThreshold: Array.isArray(readinessScore.fixturesBelowThreshold)
+      ? readinessScore.fixturesBelowThreshold
+      : [],
+    poolContractPrecisionThreshold: numberValue(contractSignalPrecision.threshold) ?? "not_available_yet",
+    poolContractPrecisionLowestObserved: numberValue(contractSignalPrecision.lowestObserved) ?? "not_available_yet",
+    poolContractPrecisionFixturesBelowThreshold: Array.isArray(contractSignalPrecision.fixturesBelowThreshold)
+      ? contractSignalPrecision.fixturesBelowThreshold
+      : [],
+    poolBehaviorStrengthThreshold: numberValue(behaviorEvidenceStrength.threshold) ?? "not_available_yet",
+    poolBehaviorStrengthLowestObserved: numberValue(behaviorEvidenceStrength.lowestObserved) ?? "not_available_yet",
+    poolBehaviorFixturesBelowThreshold: Array.isArray(behaviorEvidenceStrength.fixturesBelowThreshold)
+      ? behaviorEvidenceStrength.fixturesBelowThreshold
+      : [],
+    poolVerifyNonBlockingRate: numberValue(qualityBaseline.verifyNonBlockingRate) ?? "not_available_yet",
+    poolOwnerReviewFixtureRate: numberValue(qualityBaseline.ownerReviewFixtureRate) ?? "not_available_yet",
     estimatedManualSortingMinutesSaved: headline.estimatedManualSortingMinutesSaved ?? manualSorting.estimatedMinutesSaved ?? "not_available_yet",
     blockingIssuesCaught: headline.blockingIssuesCaught ?? risks.blockingIssuesCaught ?? "not_available_yet",
     advisoryRisksSurfaced: headline.advisoryRisksSurfaced ?? risks.advisoryRisksSurfaced ?? "not_available_yet",

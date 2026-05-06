@@ -92,6 +92,58 @@ async function main(): Promise<void> {
     }
   }));
 
+  results.push(record("tool-specific guidance differs across Cursor, Claude Code, and GitHub Copilot", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-handoff-adapters-guidance-"));
+    try {
+      writeFixtureHandoff(root);
+      const cursor = buildExternalToolHandoffRequest(root, "change-adapter", "cursor", "2026-05-02T00:00:00.000Z");
+      const claude = buildExternalToolHandoffRequest(root, "change-adapter", "claude_code", "2026-05-02T00:00:00.000Z");
+      const copilot = buildExternalToolHandoffRequest(root, "change-adapter", "copilot", "2026-05-02T00:00:00.000Z");
+      const cursorSummary = writeExternalToolHandoffRequest({
+        root,
+        fromHandoff: "change-adapter",
+        tool: "cursor",
+        createdAt: "2026-05-02T00:00:00.000Z",
+      });
+      const claudeSummary = writeExternalToolHandoffRequest({
+        root,
+        fromHandoff: "change-adapter",
+        tool: "claude_code",
+        createdAt: "2026-05-02T00:00:00.000Z",
+      });
+      const copilotSummary = writeExternalToolHandoffRequest({
+        root,
+        fromHandoff: "change-adapter",
+        tool: "copilot",
+        createdAt: "2026-05-02T00:00:00.000Z",
+      });
+      const cursorMarkdown = fs.readFileSync(cursorSummary.summaryPath, "utf-8");
+      const claudeMarkdown = fs.readFileSync(claudeSummary.summaryPath, "utf-8");
+      const copilotMarkdown = fs.readFileSync(copilotSummary.summaryPath, "utf-8");
+
+      assert.match(cursor.prompt, /Tool-specific request guidance for Cursor/);
+      assert.match(cursor.prompt, /IDE chat handoff/i);
+      assert.match(cursorMarkdown, /drop the Markdown summary into Chat or Agent mode/i);
+
+      assert.match(claude.prompt, /Tool-specific request guidance for Claude Code/);
+      assert.match(claude.prompt, /terminal-first repair task/i);
+      assert.match(claudeMarkdown, /Paste the Markdown summary into Claude Code/i);
+
+      assert.match(copilot.prompt, /Tool-specific request guidance for GitHub Copilot/);
+      assert.match(copilot.prompt, /pair-programming brief for Copilot Chat or Workspace/i);
+      assert.match(copilotMarkdown, /Use the contract focus section/i);
+
+      assert.notEqual(cursor.prompt, claude.prompt);
+      assert.notEqual(claude.prompt, copilot.prompt);
+      assert.notEqual(cursor.prompt, copilot.prompt);
+      assert.notEqual(cursorMarkdown, claudeMarkdown);
+      assert.notEqual(claudeMarkdown, copilotMarkdown);
+      assert.notEqual(cursorMarkdown, copilotMarkdown);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
   results.push(record("writer emits JSON and Markdown companion without mutating source handoff", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-handoff-adapters-write-"));
     try {
@@ -106,7 +158,10 @@ async function main(): Promise<void> {
       assert.equal(fs.existsSync(result.requestPath), true);
       assert.equal(fs.existsSync(result.summaryPath), true);
       assert.equal(JSON.parse(fs.readFileSync(result.requestPath, "utf-8")).tool.id, "cursor");
-      assert.match(fs.readFileSync(result.summaryPath, "utf-8"), /JiSpec External Coding Tool Handoff/);
+      const summary = fs.readFileSync(result.summaryPath, "utf-8");
+      assert.match(summary, /JiSpec External Coding Tool Handoff/);
+      assert.match(summary, /## Tool-Specific Request Guidance/);
+      assert.match(summary, /Open the repository in Cursor and drop the Markdown summary into Chat or Agent mode as the initial brief\./);
       assert.equal(fs.readFileSync(handoffPath, "utf-8"), before);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
