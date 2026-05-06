@@ -86,6 +86,13 @@ export interface AuditLedgerIntegrityIssue {
   message: string;
 }
 
+interface AuditLedgerCompatibilityAssessment {
+  accepted: boolean;
+  derivedSequence: number;
+  derivedPreviousHash: string | null;
+  derivedEventHash: string;
+}
+
 export interface AuditLedgerInspection {
   ledgerPath: string;
   status: AuditLedgerIntegrityStatus;
@@ -223,7 +230,14 @@ export function inspectAuditLedger(rootInput: string): AuditLedgerInspection {
     const sequence = typeof event.sequence === "number" && Number.isInteger(event.sequence)
       ? event.sequence
       : lineNumber;
-    if (event.sequence === undefined || event.previousHash === undefined || event.eventHash === undefined) {
+    const compatibility = assessLegacyCompatibilityEvent({
+      event,
+      lineNumber,
+      expectedPreviousHash,
+    });
+    if (compatibility.accepted) {
+      verifiedEventCount++;
+    } else if (event.sequence === undefined || event.previousHash === undefined || event.eventHash === undefined) {
       legacyEventCount++;
       issues.push({
         line: lineNumber,
@@ -269,8 +283,8 @@ export function inspectAuditLedger(rootInput: string): AuditLedgerInspection {
       previousTimestamp = timestamp;
     }
 
-    latestSequence = Math.max(latestSequence, sequence);
-    latestHash = event.eventHash ?? hashLegacyAuditEvent(event);
+    latestSequence = Math.max(latestSequence, compatibility.accepted ? compatibility.derivedSequence : sequence);
+    latestHash = compatibility.accepted ? compatibility.derivedEventHash : event.eventHash ?? hashLegacyAuditEvent(event);
     expectedPreviousHash = latestHash;
   });
 
@@ -342,6 +356,36 @@ function hashAuditEvent(event: Omit<AuditEvent, "eventHash"> | AuditEvent): stri
 
 function hashLegacyAuditEvent(event: AuditEvent): string {
   return crypto.createHash("sha256").update(JSON.stringify(sortObject(stripHashFields(event)))).digest("hex");
+}
+
+function assessLegacyCompatibilityEvent(options: {
+  event: AuditEvent;
+  lineNumber: number;
+  expectedPreviousHash: string | null;
+}): AuditLedgerCompatibilityAssessment {
+  const { event, lineNumber, expectedPreviousHash } = options;
+  const missingChainFields = event.sequence === undefined || event.previousHash === undefined || event.eventHash === undefined;
+  if (!missingChainFields) {
+    return {
+      accepted: false,
+      derivedSequence: lineNumber,
+      derivedPreviousHash: expectedPreviousHash,
+      derivedEventHash: event.eventHash,
+    };
+  }
+
+  const isCompatibilityGenesis = lineNumber === 1
+    && event.sequence === undefined
+    && event.previousHash === undefined
+    && event.eventHash === undefined
+    && expectedPreviousHash === null;
+
+  return {
+    accepted: isCompatibilityGenesis,
+    derivedSequence: lineNumber,
+    derivedPreviousHash: null,
+    derivedEventHash: hashLegacyAuditEvent(event),
+  };
 }
 
 function stripHashFields(event: Omit<AuditEvent, "eventHash"> | AuditEvent): Record<string, unknown> {

@@ -203,7 +203,7 @@ async function main(): Promise<void> {
       const doctorGlobalScenario = saved.scenarios.find((scenario) => scenario.id === "doctor_global_health");
 
       assert.equal(consoleSourceEvolution?.status, "passed");
-      assert.equal(consoleSourceEvolution?.evidence?.currentChangeState, "ready_for_source_adopt");
+      assert.equal(consoleSourceEvolution?.evidence?.currentChangeState, "adopted");
       assert.equal(consoleSourceEvolution?.evidence?.sourceReviewCoverage?.adopted, 2);
       assert.equal(ownerActionScenario?.evidence?.aggregateOwnerActionCount, 1);
       assert.equal(ownerActionScenario?.evidence?.aggregateContractDriftHintCount, 1);
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
       assert.equal(doctorGlobalScenario?.evidence?.doctorGlobalReady, true);
       assert.equal(doctorGlobalScenario?.evidence?.doctorGlobalBlockerCount, 0);
 
-      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/console_source_evolution-decision.md"), "utf-8"), /Current change state: ready_for_source_adopt/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/console_source_evolution-decision.md"), "utf-8"), /Current change state: adopted/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/multi_repo_owner_action-decision.md"), "utf-8"), /Aggregate owner actions: 1/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_compare_global_context-decision.md"), "utf-8"), /Release compare global context: available/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/doctor_global_health-decision.md"), "utf-8"), /Doctor global prerequisites healthy: true/);

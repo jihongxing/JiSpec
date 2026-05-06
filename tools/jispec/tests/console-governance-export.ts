@@ -31,6 +31,26 @@ async function main(): Promise<void> {
       writeJson(root, ".spec/policy.yaml", { version: 1, rules: [] });
       writeJson(root, ".jispec-ci/verify-report.json", { verdict: "PASS", issueCount: 0, blockingIssueCount: 0, modes: {} });
       writeJson(root, ".spec/releases/compare/v1-to-v2/compare-report.json", { driftSummary: { overallStatus: "changed" } });
+      writeText(root, ".spec/contracts/orders.yaml", "contract: orders\n");
+      writeJson(root, ".spec/spec-debt/bootstrap-session-1/feature.json", {
+        id: "bootstrap-session-1:feature",
+        sessionId: "bootstrap-session-1",
+        artifactKind: "feature",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        draftRelativePath: "drafts/behaviors.feature",
+        sourceFiles: ["docs/input/requirements.md"],
+        confidenceScore: 0.81,
+        provenanceNote: "Bootstrap deferred behavior review",
+        draftContent: "Feature: legacy bootstrap behavior\n",
+        status: "cancelled",
+        updatedAt: "2026-05-06T00:00:00.000Z",
+        resolution: {
+          status: "cancelled",
+          resolvedAt: "2026-05-06T00:00:00.000Z",
+          resolvedBy: "codex",
+          reason: "Historical bootstrap debt closed after final review.",
+        },
+      });
       writeJson(root, ".spec/north-star/acceptance.json", {
         kind: "jispec-north-star-acceptance",
         summary: { ready: true, scenarioCount: 9, passedScenarioCount: 9, blockingScenarioCount: 0 },
@@ -88,6 +108,9 @@ async function main(): Promise<void> {
       assert.equal(result.snapshot.contract?.missingSemantics.unavailableValue, "not_available_yet");
       assert.equal(result.snapshot.contract?.missingSemantics.missingSnapshotReason, "snapshot_not_found");
       assert.equal(result.snapshot.aggregateHints.releaseDriftStatus, "changed");
+      assert.equal(result.snapshot.aggregateHints.bootstrapSpecDebt, 0);
+      assert.equal(result.snapshot.aggregateHints.contractRefs?.length, 1);
+      assert.equal(result.snapshot.aggregateHints.contractRefs?.[0]?.ref, ".spec/contracts/orders.yaml");
       assert.equal(result.snapshot.governanceObjects.some((object) => object.id === "north_star_acceptance"), true);
       assert.match(renderConsoleGovernanceExportText(result.snapshot), /Snapshot contract: 1/);
       assert.match(renderConsoleGovernanceExportText(result.snapshot), /JiSpec Multi-Repo Governance Snapshot/);
@@ -97,6 +120,9 @@ async function main(): Promise<void> {
       assert.equal(exported?.status, "available");
       assert.equal(exported?.summary.repoId, "repo-x");
       assert.equal(exported?.summary.verifyVerdict, "PASS");
+      const specDebt = snapshot.governance.objects.find((object) => object.id === "spec_debt_ledger");
+      assert.equal(specDebt?.summary.bootstrapDebtRecords, 0);
+      assert.equal(specDebt?.summary.bootstrapDebtRecordsTotal, 1);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

@@ -67,6 +67,43 @@ async function main(): Promise<void> {
       error: "Expected verify facts snapshot to expose takeover and contract presence data.",
     });
 
+    const deferredDebtPath = path.join(tempRoot, ".spec", "spec-debt", draftResult.sessionId, "api.json");
+    const deferredDebtRecord = JSON.parse(fs.readFileSync(deferredDebtPath, "utf-8")) as Record<string, unknown>;
+    fs.writeFileSync(
+      deferredDebtPath,
+      `${JSON.stringify({
+        ...deferredDebtRecord,
+        status: "cancelled",
+        updatedAt: "2026-05-06T00:00:00.000Z",
+        resolution: {
+          status: "cancelled",
+          resolvedAt: "2026-05-06T00:00:00.000Z",
+          resolvedBy: "codex",
+          reason: "Historical bootstrap debt was reviewed and closed without promoting it to an enforced contract.",
+        },
+      }, null, 2)}\n`,
+      "utf-8",
+    );
+
+    const resolvedFactsPath = ".spec/facts/verify/bootstrap-takeover-facts-resolved.json";
+    const resolvedResult = await runVerify({
+      root: tempRoot,
+      factsOutPath: resolvedFactsPath,
+    });
+    const resolvedFacts = JSON.parse(fs.readFileSync(path.join(tempRoot, resolvedFactsPath), "utf-8")) as {
+      facts?: Record<string, unknown>;
+    };
+
+    results.push({
+      name: "verify stops flagging bootstrap debt after the debt record is cancelled",
+      passed:
+        resolvedResult.verdict === "PASS" &&
+        !resolvedResult.issues.some((issue) => issue.code === "BOOTSTRAP_SPEC_DEBT_PENDING") &&
+        resolvedFacts.facts?.["contracts.deferred_count"] === 0 &&
+        resolvedFacts.facts?.["bootstrap.spec_debt_count"] === 0,
+      error: "Expected verify to stop surfacing cancelled bootstrap debt and to report zero pending deferred contracts.",
+    });
+
     fs.rmSync(path.join(tempRoot, ".spec", "contracts", "domain.yaml"), { force: true });
     const blockingResult = await runVerify({ root: tempRoot });
 

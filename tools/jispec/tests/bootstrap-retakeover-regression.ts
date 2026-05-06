@@ -96,6 +96,7 @@ async function main(): Promise<void> {
   const fullstackRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-fullstack-"));
   const debtRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-debt-"));
   const poolRoot = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-retakeover-pool-"));
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const results: TestResult[] = [];
 
   try {
@@ -139,6 +140,7 @@ async function main(): Promise<void> {
     });
     const allFixtures = [remirage, breath, scattered, monorepo, fullstack, debt];
     writeRetakeoverPoolArtifacts(poolRoot, allFixtures.map((fixture) => fixture.metrics));
+    writeRetakeoverPoolArtifacts(repoRoot, allFixtures.map((fixture) => fixture.metrics));
     const poolMetrics = JSON.parse(
       fs.readFileSync(path.join(poolRoot, RETAKEOVER_POOL_METRICS_RELATIVE_PATH), "utf-8"),
     ) as {

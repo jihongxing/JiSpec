@@ -191,6 +191,41 @@ function main(): void {
     }
   }));
 
+  results.push(record("owner loop synthesizes a baseline authority action when repo-group config is not available", () => {
+    const root = createFixtureRoot();
+    try {
+      const webPath = writeSnapshot(root, "repos/web", snapshot({
+        id: "web",
+        name: "Checkout Web",
+        sourceEvolutionChangeId: "chg-web-42",
+        sourceEvolutionRepresentativeArtifact: "contracts/payment.yaml",
+        contractRefs: [{ ref: "contracts/payment.yaml", hash: "hash-api-v1" }],
+      }));
+
+      const result = aggregateMultiRepoGovernance({
+        root,
+        snapshotPaths: [webPath],
+        generatedAt: "2026-05-04T00:00:00.000Z",
+      });
+      const hint = result.aggregate.contractDriftHints[0];
+      const ownerAction = result.aggregate.ownerActions[0];
+
+      assert.equal(result.aggregate.repoGroup.status, "not_available_yet");
+      assert.equal(result.aggregate.contractDriftHints.length, 1);
+      assert.equal(result.aggregate.ownerActions.length, 1);
+      assert.equal(hint.upstreamRepoId, "baseline");
+      assert.equal(hint.downstreamRepoId, "web");
+      assert.equal(hint.contractRef, "contracts/payment.yaml");
+      assert.equal(ownerAction.owner, "platform");
+      assert.equal(ownerAction.primaryCommand.kind, "source_refresh");
+      assert.match(ownerAction.primaryCommand.command, /source refresh --root \/workspace\/web --change chg-web-42/);
+      assert.equal(hint.evidence.upstreamSnapshotPath, hint.evidence.downstreamSnapshotPath);
+      assert.ok(!ownerAction.sourceArtifacts.includes(".spec/console/repo-group.yaml"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
   results.push(record("missing repo snapshots stay explicit and never become synthetic owner-action gate state", () => {
     const root = createFixtureRoot();
     try {
@@ -296,7 +331,7 @@ function main(): void {
     const suite = TEST_SUITES.find((candidate) => candidate.file === "p12-multi-repo-owner-loop.ts");
     assert.ok(suite);
     assert.equal(suite.area, "runtime-extended");
-    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.expectedTests, 7);
     assert.equal(suite.task, "P12-T2");
   }));
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import * as yaml from "js-yaml";
 import { inspectAuditLedger } from "../audit/event-ledger";
 import { evaluatePolicyApprovalWorkflow } from "../policy/approval";
+import { isBootstrapSpecDebtPending } from "../bootstrap/spec-debt";
 import {
   CONSOLE_READ_MODEL_ARTIFACTS,
   CONSOLE_GOVERNANCE_OBJECTS,
@@ -546,11 +547,13 @@ function summarizeSpecDebt(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<s
   const ledger = getFirstData(sourceArtifacts, "greenfield-spec-debt-ledger");
   const bootstrapRecords = getAllData(sourceArtifacts, "bootstrap-spec-debt-records");
   const ledgerItems = extractArrayFromRecord(ledger, ["items", "entries", "debts", "spec_debt"]);
+  const openBootstrapDebtRecords = bootstrapRecords.filter((record) => isBootstrapSpecDebtPending(asBootstrapDebtStatusRecord(record)));
 
   return {
     state: ledgerItems.length > 0 || bootstrapRecords.length > 0 ? "available" : "not_available_yet",
     greenfieldLedgerItems: ledgerItems.length,
-    bootstrapDebtRecords: bootstrapRecords.length,
+    bootstrapDebtRecords: openBootstrapDebtRecords.length,
+    bootstrapDebtRecordsTotal: bootstrapRecords.length,
   };
 }
 
@@ -593,12 +596,22 @@ function summarizeSourceEvolutionGovernance(sourceArtifacts: ConsoleSnapshotArti
   const activeSummary = active?.evolutionSummary;
   const activeReview = active?.reviewSummary;
   const reviewedBlocking = (activeSummary?.blockingTotal ?? 0) - (activeReview?.blockingOpen ?? 0);
-  const canAdoptSource = Boolean(active && activeSummary && activeReview && activeSummary.total > 0 && activeReview.blockingOpen === 0);
+  const alreadyAdoptedActiveChange = Boolean(active?.changeId && active.changeId === lastAdoptedSourceChange);
+  const canAdoptSource = Boolean(
+    active
+    && activeSummary
+    && activeReview
+    && activeSummary.total > 0
+    && activeReview.blockingOpen === 0
+    && !alreadyAdoptedActiveChange
+  );
   const currentChangeState = active
     ? activeReview && activeReview.blockingOpen > 0
       ? "review_blocked"
       : activeReview && activeReview.open > 0
         ? "review_open"
+        : alreadyAdoptedActiveChange
+          ? "adopted"
         : canAdoptSource
           ? "ready_for_source_adopt"
           : "reviewed"
@@ -803,12 +816,16 @@ function summarizeTakeoverQuality(sourceArtifacts: ConsoleSnapshotArtifact[]): R
 }
 
 function summarizeImplementationMediation(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
-  const handoffs = getAllData(sourceArtifacts, "implementation-handoff-packets").filter(isRecord);
-  const patchRecords = getAllData(sourceArtifacts, "implementation-patch-mediation").filter(isRecord);
+  const handoffInstances = getInstances(sourceArtifacts, "implementation-handoff-packets");
+  const patchInstances = getInstances(sourceArtifacts, "implementation-patch-mediation");
+  const handoffs = handoffInstances.map((instance) => instance.data).filter(isRecord);
+  const patchRecords = patchInstances.map((instance) => instance.data).filter(isRecord);
   const outcomes = countByStatus(handoffs.map((handoff) => String(handoff.outcome ?? "unknown")));
   const latest = handoffs.at(-1);
+  const latestInstance = handoffInstances.at(-1);
   const latestDecision = isRecord(latest?.decisionPacket) ? latest?.decisionPacket : undefined;
   const latestReplay = isRecord(latest?.replay) ? latest?.replay : undefined;
+  const latestObservedAt = stringValue(latest?.createdAt) ?? latestInstance?.modifiedAt ?? "not_available_yet";
 
   return {
     state: handoffs.length > 0 || patchRecords.length > 0 ? "available" : "not_available_yet",
@@ -818,6 +835,7 @@ function summarizeImplementationMediation(sourceArtifacts: ConsoleSnapshotArtifa
     latestOutcome: latest?.outcome ?? "not_available_yet",
     latestStopPoint: latestDecision?.stopPoint ?? "not_available_yet",
     latestReplayable: latestReplay?.replayable ?? false,
+    latestObservedAt,
   };
 }
 
@@ -1006,6 +1024,10 @@ function extractNestedValue(value: unknown, pathSegments: string[]): unknown {
     current = current[segment];
   }
   return current;
+}
+
+function asBootstrapDebtStatusRecord(value: unknown): { status?: string } | undefined {
+  return isRecord(value) ? { status: stringValue(value.status) } : undefined;
 }
 
 function expiresWithinDays(value: string | undefined, days: number): boolean {

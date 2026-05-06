@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadBootstrapTakeoverReport } from "../bootstrap/takeover";
 import { normalizeEvidencePath } from "../bootstrap/evidence-graph";
+import { isBootstrapSpecDebtPending, readBootstrapSpecDebtRecord } from "../bootstrap/spec-debt";
 import type { VerifyIssue } from "./verdict";
 
 export function collectBootstrapTakeoverIssues(rootInput: string): VerifyIssue[] {
@@ -46,6 +47,11 @@ export function collectBootstrapTakeoverIssues(rootInput: string): VerifyIssue[]
         path: specDebtPath,
         message: "Bootstrap takeover deferred this artifact into spec debt, but the debt record is missing.",
       });
+      continue;
+    }
+
+    const debtRecord = readBootstrapSpecDebtRecord(root, specDebtPath);
+    if (!isBootstrapSpecDebtPending(debtRecord)) {
       continue;
     }
 

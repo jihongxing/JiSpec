@@ -123,7 +123,7 @@ North Star acceptance is the terminal local acceptance package. Console can disp
 
 ## Audit Integrity
 
-Console reads `.spec/audit/events.jsonl` as local governance evidence. New audit events include a hash chain (`sequence`, `previousHash`, `eventHash`) plus a signature placeholder. If the ledger has legacy unchained events, parse errors, sequence gaps, hash mismatches, or out-of-order timestamps, Console surfaces audit integrity attention instead of silently treating the ledger as clean.
+Console reads `.spec/audit/events.jsonl` as local governance evidence. New audit events include a hash chain (`sequence`, `previousHash`, `eventHash`) plus a signature placeholder. A single first-line pre-chain event can be treated as a compatibility genesis event; other legacy unchained events, parse errors, sequence gaps, hash mismatches, or out-of-order timestamps surface audit integrity attention instead of being treated as clean.
 
 Audit integrity is a reviewer signal. It does not replace `verify`, `ci:verify`, or the local policy gate.
 

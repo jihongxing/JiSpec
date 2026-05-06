@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -206,7 +207,8 @@ async function main(): Promise<void> {
       assert.equal(question(dashboard, "waiver_attention").status, "attention");
       assert.match(question(dashboard, "waiver_attention").answer, /expiring soon/);
       assert.equal(question(dashboard, "spec_debt_attention").status, "attention");
-      assert.equal(question(dashboard, "retakeover_pool_health").status, "attention");
+      assert.equal(question(dashboard, "retakeover_pool_health").status, "ok");
+      assert.match(question(dashboard, "retakeover_pool_health").answer, /non-blocking/);
       assert.match(question(dashboard, "retakeover_pool_health").answer, /20%/);
       assert.ok(question(dashboard, "retakeover_pool_health").evidence.some((entry) => entry.includes("synthetic-contract-drift")));
       assert.match(question(dashboard, "execute_mediation_status").answer, /post_verify/);
@@ -216,6 +218,140 @@ async function main(): Promise<void> {
       assert.equal(dashboard.headline.ownerAction.owner, "contracts-team");
       assert.match(dashboard.headline.ownerAction.command, /waiver renew waiver-soon/);
       assert.ok(dashboard.headline.evidence.sources.some((source) => source.includes(".spec/waivers") || source.includes("waiver")));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("dashboard treats stale execute mediation as historical instead of attention", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-console-dashboard-stale-mediation-"));
+    try {
+      const staleCreatedAt = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
+      writeJson(root, ".jispec-ci/verify-report.json", {
+        verdict: "PASS",
+        issueCount: 0,
+        blockingIssueCount: 0,
+        modes: {},
+      });
+      writeJson(root, ".jispec/handoff/change-stale.json", {
+        outcome: "external_patch_received",
+        createdAt: staleCreatedAt,
+        decisionPacket: {
+          stopPoint: "patch_apply",
+        },
+        replay: {
+          replayable: true,
+        },
+      });
+      writeJson(root, ".jispec/implement/change-stale/patch-mediation.json", {
+        sessionId: "change-stale",
+        currentTool: "codex",
+        createdAt: staleCreatedAt,
+        state: "needs_patch_rework",
+        stopPoint: "patch_apply",
+      });
+
+      const dashboard = buildConsoleGovernanceDashboard(root);
+      const mediation = question(dashboard, "execute_mediation_status");
+      assert.equal(mediation.status, "ok");
+      assert.match(mediation.answer, /historical/);
+      assert.ok(mediation.evidence.some((entry) => entry.includes("Latest packet age")));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("dashboard ignores revoked waivers when computing expiring-soon attention", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-console-dashboard-revoked-waiver-"));
+    try {
+      const soon = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      writeJson(root, ".jispec-ci/verify-report.json", {
+        verdict: "PASS",
+        issueCount: 0,
+        blockingIssueCount: 0,
+        modes: {},
+      });
+      writeJson(root, ".spec/waivers/waiver-revoked.json", {
+        id: "waiver-revoked",
+        status: "revoked",
+        owner: "contracts-team",
+        reason: "Temporary exception",
+        issueCode: "API_CONTRACT_INVALID_JSON",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        expiresAt: soon,
+        revokedAt: "2026-05-02T00:00:00.000Z",
+      });
+
+      const dashboard = buildConsoleGovernanceDashboard(root);
+      assert.equal(question(dashboard, "waiver_attention").status, "ok");
+      assert.doesNotMatch(question(dashboard, "waiver_attention").answer, /expiring soon/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
+  results.push(record("dashboard treats changed release drift as reviewed once approval is satisfied", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-console-dashboard-release-approval-"));
+    try {
+      const compareReport = {
+        driftSummary: {
+          overallStatus: "changed",
+        },
+      };
+      writeJson(root, ".jispec-ci/verify-report.json", {
+        verdict: "PASS",
+        issueCount: 0,
+        blockingIssueCount: 0,
+        modes: {},
+      });
+      writeYaml(root, ".spec/policy.yaml", {
+        version: 1,
+        team: {
+          profile: "small_team",
+          owner: "platform",
+          reviewers: ["reviewer"],
+          required_reviewers: 1,
+        },
+        rules: [],
+      });
+      writeJson(root, ".spec/releases/compare/v1-to-current/compare-report.json", compareReport);
+      writeJson(root, ".spec/approvals/approval-release.json", {
+        version: 1,
+        id: "approval-release",
+        status: "approved",
+        subject: {
+          kind: "release_drift",
+          ref: ".spec/releases/compare/v1-to-current/compare-report.json",
+          hash: sha256(`${JSON.stringify(compareReport, null, 2)}\n`),
+        },
+        requirement: {
+          profile: "small_team",
+          owner: "platform",
+          reviewers: ["reviewer"],
+          requiredReviewers: 1,
+          ownerApprovalAllowed: true,
+          contract: "reviewer_quorum_or_owner_approval",
+        },
+        decision: {
+          actor: "reviewer",
+          role: "reviewer",
+          reason: "Reviewed current release drift.",
+          decidedAt: "2026-05-06T00:00:00.000Z",
+        },
+        boundary: {
+          localOnly: true,
+          sourceUploadRequired: false,
+          llmBlockingJudge: false,
+          consoleOverridesVerify: false,
+        },
+      });
+
+      const dashboard = buildConsoleGovernanceDashboard(root);
+      const drift = question(dashboard, "contract_drift_review");
+      assert.equal(drift.status, "attention");
+      assert.match(drift.answer, /approval is satisfied/);
+      assert.ok(drift.evidence.some((entry) => entry.includes("Approval status: approval_satisfied")));
+      assert.equal(dashboard.headline.status, "attention");
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -318,6 +454,10 @@ function runCli(args: string[]): { status: number | null; stdout: string; stderr
     stdout: result.stdout,
     stderr: result.stderr,
   };
+}
+
+function sha256(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 void main().catch((error) => {

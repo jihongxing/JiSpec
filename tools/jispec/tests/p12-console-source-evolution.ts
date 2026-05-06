@@ -79,6 +79,26 @@ function main(): void {
     });
   });
 
+  runCase(results, "already adopted source evolution no longer stays in ready-for-adopt posture", () => {
+    withFixture((root) => {
+      writeSourceEvolutionFixture(root, { status: "adopted", lastAdoptedChangeId: "chg-source-1" });
+      const snapshot = collectConsoleLocalSnapshot(root);
+      const sourceEvolution = snapshot.governance.objects.find((object) => object.id === "source_evolution_governance");
+      assert.ok(sourceEvolution);
+      assert.equal(sourceEvolution.summary.currentChangeState, "adopted");
+      assert.equal(sourceEvolution.summary.canAdoptSource, false);
+
+      const dashboard = buildConsoleGovernanceDashboard(root);
+      const question = dashboard.questions.find((entry) => entry.id === "source_evolution_progress");
+      assert.ok(question);
+      assert.equal(question.status, "ok");
+      assert.match(question.answer, /already adopted/i);
+
+      const plan = buildConsoleGovernanceActionPlan(root);
+      assert.equal(plan.actions.some((action) => action.kind === "source_adopt"), false);
+    });
+  });
+
   runCase(results, "export snapshot carries source evolution aggregate hints", () => {
     withFixture((root) => {
       writeSourceEvolutionFixture(root, { status: "adopted" });
@@ -142,7 +162,8 @@ function withFixture(run: (root: string) => void): void {
   }
 }
 
-function writeSourceEvolutionFixture(root: string, options: { status: "proposed" | "adopted" }): void {
+function writeSourceEvolutionFixture(root: string, options: { status: "proposed" | "adopted"; lastAdoptedChangeId?: string }): void {
+  const lastAdoptedChangeId = options.lastAdoptedChangeId ?? "chg-source-0";
   writeJson(root, ".jispec-ci/verify-report.json", {
     verdict: "PASS",
     issueCount: 0,
@@ -169,19 +190,19 @@ function writeSourceEvolutionFixture(root: string, options: { status: "proposed"
     source_evolution: {
       source_evolution_path: ".spec/deltas/chg-source-0/source-evolution.json",
       source_review_path: ".spec/deltas/chg-source-0/source-review.yaml",
-      last_adopted_change_id: "chg-source-0",
+      last_adopted_change_id: lastAdoptedChangeId,
     },
     requirement_lifecycle: {
       path: ".spec/requirements/lifecycle.yaml",
       registry_version: 4,
-      last_adopted_change_id: "chg-source-0",
+      last_adopted_change_id: lastAdoptedChangeId,
     },
   });
   writeYaml(root, ".spec/requirements/lifecycle.yaml", {
     version: 1,
     registry_version: 4,
     generated_at: "2026-05-04T00:00:00.000Z",
-    last_adopted_change_id: "chg-source-0",
+    last_adopted_change_id: lastAdoptedChangeId,
     requirements: [
       {
         id: "REQ-ORDER-001",

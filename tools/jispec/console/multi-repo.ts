@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { MultiRepoGovernanceSnapshot } from "./governance-export";
@@ -318,7 +319,12 @@ function buildAggregate(
       comparisons: repo.releaseDriftTrendComparisons,
     }));
 
-  const contractDriftHints = buildContractDriftHints(root, repoGroup, repos);
+  const explicitContractDriftHints = buildContractDriftHints(root, repoGroup, repos);
+  const contractDriftHints = explicitContractDriftHints.length > 0
+    ? explicitContractDriftHints
+    : shouldUseBaselineAuthorityFallback(repoGroup)
+      ? buildBaselineAuthorityContractDriftHints(repos)
+      : [];
   const ownerActions = buildOwnerActions(contractDriftHints, repoGroup, repos);
   return {
     schemaVersion: 1,
@@ -533,7 +539,7 @@ function buildOwnerActions(
     const repoEntry = repoGroupById.get(hint.downstreamRepoId);
     const repoPath = normalizeRepoPath(repoEntry?.path ?? downstream?.repoRoot ?? hint.downstreamRepoId);
     const repoName = repoEntry?.repoName ?? downstream?.repoName ?? hint.downstreamRepoId;
-    const owner = repoEntry?.owner ?? `${hint.downstreamRepoId} owner`;
+    const owner = repoEntry?.owner ?? downstream?.policyOwner ?? `${hint.downstreamRepoId} owner`;
     const primaryCommand = buildOwnerPrimaryCommand(downstream, repoPath, `Reconcile ${hint.contractRef} from ${hint.upstreamRepoId}`);
     const exportCommand = buildExportGovernanceCommand(repoPath, hint.downstreamRepoId, repoName);
     return {
@@ -556,7 +562,7 @@ function buildOwnerActions(
         ".spec/console/multi-repo-governance.json",
         hint.evidence.upstreamSnapshotPath,
         hint.evidence.downstreamSnapshotPath,
-        repoGroup.sourcePath,
+        repoGroup.status === "available" ? repoGroup.sourcePath : undefined,
       ]),
       affectedContracts: [
         `${hint.upstreamRepoId}:${hint.contractRef}`,
@@ -567,6 +573,69 @@ function buildOwnerActions(
       blockingGateReplacement: false,
     };
   });
+}
+
+function shouldUseBaselineAuthorityFallback(repoGroup: MultiRepoGovernanceAggregate["repoGroup"]): boolean {
+  return repoGroup.status !== "available" || repoGroup.repos.length === 0;
+}
+
+function buildBaselineAuthorityContractDriftHints(
+  repos: MultiRepoGovernanceRepoPosture[],
+): CrossRepoContractDriftHint[] {
+  return repos
+    .flatMap((repo) => selectFallbackContractRefs(repo).map((contractRef) => buildBaselineAuthorityContractDriftHint(repo, contractRef)))
+    .sort((left, right) =>
+      left.downstreamRepoId.localeCompare(right.downstreamRepoId) ||
+      left.contractRef.localeCompare(right.contractRef),
+    );
+}
+
+function selectFallbackContractRefs(repo: MultiRepoGovernanceRepoPosture): MultiRepoContractRef[] {
+  if (!shouldSynthesizeBaselineAuthorityHint(repo) || repo.contractRefs.length === 0) {
+    return [];
+  }
+
+  const prioritized = [...repo.contractRefs].sort((left, right) =>
+    compareRepresentativeArtifactPriority(left.ref, right.ref, repo.sourceEvolutionRepresentativeArtifact) ||
+    left.ref.localeCompare(right.ref),
+  );
+  return prioritized.slice(0, 1);
+}
+
+function shouldSynthesizeBaselineAuthorityHint(repo: MultiRepoGovernanceRepoPosture): boolean {
+  return !isMissing(repo.sourceEvolutionChangeId)
+    || isReleaseDriftHotspot(repo.releaseDriftStatus)
+    || repo.sourceEvolutionBlockingOpenItems > 0
+    || repo.sourceEvolutionExpiredExceptions > 0
+    || !isMissing(repo.lastAdoptedSourceChange);
+}
+
+function buildBaselineAuthorityContractDriftHint(
+  repo: MultiRepoGovernanceRepoPosture,
+  contractRef: MultiRepoContractRef,
+): CrossRepoContractDriftHint {
+  const upstreamRepoId = "baseline";
+  const ownerActionId = `owner-action:${repo.repoId}:${contractRef.ref}`;
+  return {
+    kind: "cross_repo_contract_drift",
+    id: `hint:${upstreamRepoId}:${contractRef.ref}->${repo.repoId}`,
+    upstreamRepoId,
+    downstreamRepoId: repo.repoId,
+    contractRef: contractRef.ref,
+    upstreamHash: hashBaselineAuthority(repo, contractRef.ref),
+    downstreamHash: contractRef.hash,
+    severity: "owner_action",
+    suggestedCommand: buildCrossRepoSuggestedCommand(repo, repo.repoRoot, upstreamRepoId, contractRef.ref),
+    ownerActionId,
+    evidence: {
+      upstreamSnapshotPath: repo.snapshotPath,
+      downstreamSnapshotPath: repo.snapshotPath,
+      downstreamRepoPath: normalizePath(repo.repoRoot),
+      downstreamSourceEvolutionChangeId: repo.sourceEvolutionChangeId,
+      downstreamReleaseDriftStatus: repo.releaseDriftStatus,
+    },
+    blockingGateReplacement: false,
+  };
 }
 
 function parseRepoContractRef(value: string): { repoId: string; contractRef: string } | undefined {
@@ -665,6 +734,16 @@ function buildOwnerActionSummary(
     return `${downstream.repoId} already reports release drift ${downstream.releaseDriftStatus}; compare its release baseline before reconciling ${hint.contractRef}.`;
   }
   return `${hint.downstreamRepoId} should open a local change to reconcile ${hint.contractRef} from ${hint.upstreamRepoId}.`;
+}
+
+function hashBaselineAuthority(repo: MultiRepoGovernanceRepoPosture, contractRef: string): string {
+  return crypto.createHash("sha256").update(JSON.stringify({
+    repoId: repo.repoId,
+    contractRef,
+    sourceEvolutionChangeId: repo.sourceEvolutionChangeId,
+    lastAdoptedSourceChange: repo.lastAdoptedSourceChange,
+    releaseDriftStatus: repo.releaseDriftStatus,
+  })).digest("hex");
 }
 
 function scoreRepoRisk(repo: Omit<MultiRepoGovernanceRepoPosture, "risk">): MultiRepoGovernanceRepoPosture["risk"] {
@@ -854,8 +933,8 @@ function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
-function stableUnique(values: string[]): string[] {
-  return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
+function stableUnique(values: Array<string | undefined>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((left, right) => left.localeCompare(right));
 }
 
 function formatCounts(counts: Record<string, number>): string {
@@ -933,6 +1012,17 @@ function formatMissingSnapshots(missingSnapshots: MultiRepoGovernanceMissingSnap
 function normalizeRepoPath(repoPath: string): string {
   const normalized = normalizePath(repoPath);
   return /\s/.test(normalized) ? `"${normalized}"` : normalized;
+}
+
+function compareRepresentativeArtifactPriority(left: string, right: string, representativeArtifact: string): number {
+  return representativeArtifactRank(left, representativeArtifact) - representativeArtifactRank(right, representativeArtifact);
+}
+
+function representativeArtifactRank(value: string, representativeArtifact: string): number {
+  if (!isMissing(representativeArtifact) && normalizePath(value) === normalizePath(representativeArtifact)) {
+    return 0;
+  }
+  return 1;
 }
 
 function escapeCommandDoubleQuotes(value: string): string {

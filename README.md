@@ -640,6 +640,10 @@ The `ordering` context includes one complete example slice:
   [docs/architecture/north-star.md](docs/architecture/north-star.md)
 - North Star acceptance suite:
   [docs/architecture/north-star-acceptance.md](docs/architecture/north-star-acceptance.md)
+- North Star gap audit:
+  [docs/architecture/north-star-gap-audit.md](docs/architecture/north-star-gap-audit.md)
+- IDE trajectory:
+  [docs/architecture/ide-trajectory.md](docs/architecture/ide-trajectory.md)
 - Post-release gate:
   [docs/development/post-release-gate.md](docs/development/post-release-gate.md)
 - Retakeover regression pool:

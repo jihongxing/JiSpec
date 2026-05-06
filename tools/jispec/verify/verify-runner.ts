@@ -44,6 +44,11 @@ import {
   importExternalGraphArtifact,
   type ExternalGraphImportResult,
 } from "../integrations/external-graph-import";
+import {
+  countPendingBootstrapSpecDebtPaths,
+  isBootstrapSpecDebtPending,
+  readBootstrapSpecDebtRecord,
+} from "../bootstrap/spec-debt";
 
 export interface VerifySupplementalCollector {
   source: string;
@@ -515,6 +520,9 @@ async function buildRawFactsSnapshot(
   addRawFact(snapshot, "contracts.behavior.present", fs.existsSync(path.join(contractsDir, "behaviors.feature")), "verify-runner");
 
   const takeoverReport = loadBootstrapTakeoverReport(options.root);
+  const pendingBootstrapSpecDebtCount = takeoverReport
+    ? countPendingBootstrapSpecDebtPaths(options.root, takeoverReport.specDebtPaths)
+    : 0;
   const behaviorDeferred = Boolean(
     takeoverReport?.status === "committed" &&
       takeoverReport.decisions.some(
@@ -522,17 +530,18 @@ async function buildRawFactsSnapshot(
           decision.artifactKind === "feature" &&
           decision.finalState === "spec_debt" &&
           typeof decision.targetPath === "string" &&
-          fs.existsSync(path.join(options.root, decision.targetPath)),
+          fs.existsSync(path.join(options.root, decision.targetPath)) &&
+          isBootstrapSpecDebtPending(readBootstrapSpecDebtRecord(options.root, decision.targetPath)),
       ),
   );
   addRawFact(snapshot, "contracts.behavior.deferred", behaviorDeferred, "verify-runner");
   addRawFact(snapshot, "contracts.adopted_count", takeoverReport?.adoptedArtifactPaths.length ?? 0, "verify-runner");
-  addRawFact(snapshot, "contracts.deferred_count", takeoverReport?.specDebtPaths.length ?? 0, "verify-runner");
+  addRawFact(snapshot, "contracts.deferred_count", pendingBootstrapSpecDebtCount, "verify-runner");
   addRawFact(snapshot, "contracts.missing_count", countContractMissingIssues(result.issues), "verify-runner");
   addRawFact(snapshot, "contracts.drifted_count", countContractDriftIssues(result.issues), "verify-runner");
   addRawFact(snapshot, "bootstrap.takeover.present", Boolean(takeoverReport && takeoverReport.status === "committed"), "verify-runner");
   addRawFact(snapshot, "bootstrap.adopted_contract_count", takeoverReport?.adoptedArtifactPaths.length ?? 0, "verify-runner");
-  addRawFact(snapshot, "bootstrap.spec_debt_count", takeoverReport?.specDebtPaths.length ?? 0, "verify-runner");
+  addRawFact(snapshot, "bootstrap.spec_debt_count", pendingBootstrapSpecDebtCount, "verify-runner");
   addRawFact(snapshot, "bootstrap.rejected_artifact_kinds", takeoverReport?.rejectedArtifactKinds ?? [], "verify-runner");
   addRawFact(snapshot, "bootstrap.historical_debt_issue_count", result.issues.filter((issue) => isHistoricalDebtIssue(issue)).length, "verify-runner");
 

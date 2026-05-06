@@ -120,6 +120,47 @@ async function main(): Promise<void> {
     }
   }));
 
+  results.push(record("compatibility genesis event does not keep the ledger in warning state", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-audit-compat-genesis-"));
+    try {
+      const legacyGenesis = {
+        version: 1,
+        id: "audit-legacy-genesis",
+        type: "policy_migrate",
+        timestamp: "2026-05-01T00:00:00.000Z",
+        actor: "codex",
+        reason: "Legacy genesis event before hash-chain rollout.",
+        sourceArtifact: { kind: "verify-policy", path: ".spec/policy.yaml" },
+        affectedContracts: [".spec/policy.yaml"],
+      };
+      const ledgerPath = path.join(root, ".spec", "audit", "events.jsonl");
+      fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
+      fs.writeFileSync(ledgerPath, `${JSON.stringify(legacyGenesis)}\n`, "utf-8");
+
+      appendAuditEvent(root, {
+        type: "policy_change",
+        actor: "platform-lead",
+        reason: "Continue with chained governance events.",
+        timestamp: "2026-05-01T00:01:00.000Z",
+        sourceArtifact: { kind: "verify-policy", path: ".spec/policy.yaml" },
+      });
+
+      const integrity = inspectAuditLedger(root);
+      assert.equal(integrity.status, "verified");
+      assert.equal(integrity.legacyEventCount, 0);
+      assert.equal(integrity.issues.length, 0);
+      assert.equal(integrity.verifiedEventCount, 2);
+
+      const snapshot = collectConsoleLocalSnapshot(root);
+      const audit = snapshot.governance.objects.find((object) => object.id === "audit_events");
+      assert.equal(audit?.status, "available");
+      assert.equal(audit?.summary.integrityStatus, "verified");
+      assert.equal(audit?.summary.integrityLegacyEventCount, 0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }));
+
   results.push(record("governance commands append actor, reason, source artifact, and affected contract", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-audit-governance-"));
     try {

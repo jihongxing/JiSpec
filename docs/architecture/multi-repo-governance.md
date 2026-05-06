@@ -48,6 +48,10 @@ If an explicit `--snapshot` path is missing, the aggregate keeps that input unde
 
 ## Optional Repo Group
 
+`repo-group.yaml` is optional, not mandatory. JiSpec currently proves the single-repo aggregate path without checking this file in, and the aggregate falls back to a baseline-authority owner-action loop when the file is absent.
+
+For a single-repo workspace, that fallback is sufficient. Add `repo-group.yaml` only when you need to declare explicit upstream/downstream topology that is not already visible from exported snapshots.
+
 Add `.spec/console/repo-group.yaml` when a workspace wants to describe known upstream/downstream contract relationships even before every repo has exported a snapshot:
 
 ```yaml

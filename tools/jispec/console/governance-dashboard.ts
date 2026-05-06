@@ -521,7 +521,8 @@ function buildWaiverQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceD
   const waiver = governanceObject(snapshot, "waiver_lifecycle");
   const summary = waiver?.summary ?? {};
   const waivers = getAllArtifactRecords(snapshot, "verify-waivers");
-  const expiringSoon = waivers.filter((entry) => expiresWithinDays(stringValue(entry.expiresAt), 14));
+  const activeWaivers = waivers.filter((entry) => stringValue(entry.status) === "active");
+  const expiringSoon = activeWaivers.filter((entry) => expiresWithinDays(stringValue(entry.expiresAt), 14));
   const expired = numberValue(summary.expired) ?? 0;
   const revoked = numberValue(summary.revoked) ?? 0;
   const unmatched = Array.isArray(summary.unmatchedActiveIds) ? summary.unmatchedActiveIds : [];
@@ -659,6 +660,21 @@ function buildSourceEvolutionQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGo
     });
   }
 
+  if (state === "adopted") {
+    return question({
+      id: "source_evolution_progress",
+      label: "Is source evolution blocking progress?",
+      status: "ok",
+      answer: `Source evolution ${activeChangeId} is already adopted into active truth.`,
+      evidence: [
+        `Review state: ${state}`,
+        `Last adopted source change: ${lastAdopted ?? "not_available_yet"}`,
+        representative ? `Affected artifact: ${representative}` : "",
+      ],
+      nextActions: [],
+    });
+  }
+
   return question({
     id: "source_evolution_progress",
     label: "Is source evolution blocking progress?",
@@ -767,46 +783,23 @@ function buildRetakeoverPoolQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
     });
   }
 
-  if (missingClasses.length > 0 || baselineMissCount > 0) {
-    return question({
-      id: "retakeover_pool_health",
-      label: "Is the retakeover regression pool healthy?",
-      status: "attention",
-      answer: `Pool coverage is ${formatPercent(coverageRate)} with ${missingClasses.length} missing fixture class(es) and ${baselineMissCount} baseline miss list(s).`,
-      evidence: [
-        `Fixture catalog: ${catalogCount} entry(ies); pooled fixtures: ${fixtureCount}`,
-        `Class coverage: ${coveredClasses ?? "unknown"}/${knownClasses ?? "unknown"}`,
-        readinessThreshold !== undefined ? `Readiness floor: ${readinessThreshold}/100` : "",
-        precisionThreshold !== undefined ? `Contract precision floor: ${formatPercent(precisionThreshold)}` : "",
-        behaviorThreshold !== undefined ? `Behavior strength floor: ${formatPercent(behaviorThreshold)}` : "",
-        verifyNonBlockingRate !== undefined ? `Verify non-blocking rate: ${formatPercent(verifyNonBlockingRate)}` : "",
-        ownerReviewFixtureRate !== undefined ? `Owner-review fixture rate: ${formatPercent(ownerReviewFixtureRate)}` : "",
-        missingClasses.length > 0 ? `Missing fixture classes: ${missingClasses.join(", ")}` : "",
-        readinessMisses.length > 0 ? `Readiness misses: ${readinessMisses.join(", ")}` : "",
-        precisionMisses.length > 0 ? `Contract precision misses: ${precisionMisses.join(", ")}` : "",
-        behaviorMisses.length > 0 ? `Behavior strength misses: ${behaviorMisses.join(", ")}` : "",
-      ],
-      nextActions: [
-        "Review .spec/handoffs/retakeover-pool-summary.md before changing discover ranking or takeover summaries.",
-        "Investigate fixtures below baseline and decide whether the regression is acceptable.",
-        "Add or refresh fixtures for any missing repository classes that should move into the real-like pool.",
-      ],
-    });
-  }
-
   return question({
     id: "retakeover_pool_health",
     label: "Is the retakeover regression pool healthy?",
     status: "ok",
-    answer: `Pool coverage is ${formatPercent(coverageRate)} and all covered fixtures meet the current quality baseline.`,
+    answer: `Pool metrics are available and non-blocking; coverage is ${formatPercent(coverageRate)}.`,
     evidence: [
       `Fixture catalog: ${catalogCount} entry(ies); pooled fixtures: ${fixtureCount}`,
       `Class coverage: ${coveredClasses ?? "unknown"}/${knownClasses ?? "unknown"}`,
-      readinessThreshold !== undefined ? `Readiness floor: ${readinessThreshold}/100` : "",
-      precisionThreshold !== undefined ? `Contract precision floor: ${formatPercent(precisionThreshold)}` : "",
-      behaviorThreshold !== undefined ? `Behavior strength floor: ${formatPercent(behaviorThreshold)}` : "",
-      verifyNonBlockingRate !== undefined ? `Verify non-blocking rate: ${formatPercent(verifyNonBlockingRate)}` : "",
-      ownerReviewFixtureRate !== undefined ? `Owner-review fixture rate: ${formatPercent(ownerReviewFixtureRate)}` : "",
+      ...(readinessThreshold !== undefined ? [`Readiness floor: ${readinessThreshold}/100`] : []),
+      ...(precisionThreshold !== undefined ? [`Contract precision floor: ${formatPercent(precisionThreshold)}`] : []),
+      ...(behaviorThreshold !== undefined ? [`Behavior strength floor: ${formatPercent(behaviorThreshold)}`] : []),
+      ...(verifyNonBlockingRate !== undefined ? [`Verify non-blocking rate: ${formatPercent(verifyNonBlockingRate)}`] : []),
+      ...(ownerReviewFixtureRate !== undefined ? [`Owner-review fixture rate: ${formatPercent(ownerReviewFixtureRate)}`] : []),
+      ...(missingClasses.length > 0 ? [`Missing fixture classes: ${missingClasses.join(", ")}`] : []),
+      ...(readinessMisses.length > 0 ? [`Readiness misses: ${readinessMisses.join(", ")}`] : []),
+      ...(precisionMisses.length > 0 ? [`Contract precision misses: ${precisionMisses.join(", ")}`] : []),
+      ...(behaviorMisses.length > 0 ? [`Behavior strength misses: ${behaviorMisses.join(", ")}`] : []),
     ],
     nextActions: [],
   });
@@ -820,6 +813,16 @@ function buildContractDriftQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGove
   const latestReport = stringValue(summary.latestReport);
   const trendCompareCount = numberValue(summary.trendCompareCount);
   const trendChangedCompareCount = numberValue(summary.trendChangedCompareCount);
+  const approvalWorkflow = governanceObject(snapshot, "approval_workflow");
+  const approvalSummary = approvalWorkflow?.summary ?? {};
+  const approvalSubjects = Array.isArray(approvalSummary.subjects)
+    ? approvalSummary.subjects.filter(isRecord)
+    : [];
+  const releaseDriftApproval = approvalSubjects.find((subject) =>
+    stringValue(subject.kind) === "release_drift"
+    && stringValue(subject.ref) === latestReport
+  );
+  const releaseDriftApprovalStatus = stringValue(releaseDriftApproval?.status);
 
   if (!drift || summary.state === "not_available_yet") {
     return question({
@@ -833,6 +836,24 @@ function buildContractDriftQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGove
   }
 
   if (overall === "changed") {
+    if (releaseDriftApprovalStatus === "approval_satisfied") {
+      return question({
+        id: "contract_drift_review",
+        label: "Which contract drift needs owner review?",
+        status: "attention",
+        answer: "Latest release compare still reports changed drift, but the current release-drift approval is satisfied.",
+        evidence: [
+          `Latest compare report: ${latestReport ?? "unknown"}`,
+          `Drift status: ${overall}`,
+          `Trend: ${trendChangedCompareCount ?? "unknown"} changed of ${trendCompareCount ?? "unknown"} comparison(s)`,
+          `Approval status: ${releaseDriftApprovalStatus}`,
+        ],
+        nextActions: [
+          "Keep the approved compare report attached to the release decision and refresh approval if the compare hash changes.",
+        ],
+      });
+    }
+
     return question({
       id: "contract_drift_review",
       label: "Which contract drift needs owner review?",
@@ -867,6 +888,9 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
   const latestStopPoint = stringValue(summary.latestStopPoint);
   const replayable = summary.latestReplayable === true;
   const handoffCount = numberValue(summary.handoffCount) ?? 0;
+  const latestObservedAt = stringValue(summary.latestObservedAt);
+  const latestAgeHours = ageInHours(latestObservedAt);
+  const isHistorical = latestAgeHours !== undefined && latestAgeHours > 72;
 
   if (!implementation || summary.state === "not_available_yet") {
     return question({
@@ -880,12 +904,31 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
   }
 
   if (latestOutcome && !["preflight_passed", "ready_to_merge", "not_available_yet"].includes(latestOutcome)) {
+    if (isHistorical) {
+      return question({
+        id: "execute_mediation_status",
+        label: "Where did execute mediation last stop?",
+        status: "ok",
+        answer: `Latest execute mediation is historical (${formatAge(latestAgeHours)} old) at ${latestStopPoint ?? "unknown"} with outcome ${latestOutcome}.`,
+        evidence: [
+          `Handoff packets: ${handoffCount}`,
+          `Replayable: ${replayable ? "yes" : "no"}`,
+          `Latest packet age: ${formatAge(latestAgeHours)}`,
+        ],
+        nextActions: [],
+      });
+    }
+
     return question({
       id: "execute_mediation_status",
       label: "Where did execute mediation last stop?",
       status: "attention",
       answer: `Latest execute mediation stopped at ${latestStopPoint ?? "unknown"} with outcome ${latestOutcome}.`,
-      evidence: [`Handoff packets: ${handoffCount}`, `Replayable: ${replayable ? "yes" : "no"}`],
+      evidence: [
+        `Handoff packets: ${handoffCount}`,
+        `Replayable: ${replayable ? "yes" : "no"}`,
+        ...(latestAgeHours !== undefined ? [`Latest packet age: ${formatAge(latestAgeHours)}`] : []),
+      ],
       nextActions: [replayable ? "Resume with npm run jispec-cli -- implement --from-handoff <path>." : "Open the latest handoff packet and follow its next action."],
     });
   }
@@ -894,8 +937,13 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
     id: "execute_mediation_status",
     label: "Where did execute mediation last stop?",
     status: "ok",
-    answer: `Latest execute mediation outcome is ${latestOutcome ?? "available"} with no attention state detected.`,
-    evidence: [`Handoff packets: ${handoffCount}`],
+    answer: latestOutcome
+      ? `Latest execute mediation outcome is ${latestOutcome} with no attention state detected.`
+      : "No attention state is detected for execute mediation.",
+    evidence: [
+      `Handoff packets: ${handoffCount}`,
+      ...(latestAgeHours !== undefined ? [`Latest packet age: ${formatAge(latestAgeHours)}`] : []),
+    ],
     nextActions: [],
   });
 }
@@ -1090,6 +1138,27 @@ function numberValue(value: unknown): number | undefined {
 
 function stableUnique(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+}
+
+function ageInHours(value: string | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = new Date(value).getTime();
+  if (Number.isNaN(parsed)) {
+    return undefined;
+  }
+  return Math.max(0, (Date.now() - parsed) / (60 * 60 * 1000));
+}
+
+function formatAge(hours: number | undefined): string {
+  if (hours === undefined) {
+    return "unknown age";
+  }
+  if (hours >= 48) {
+    return `${Math.round(hours / 24)} day(s)`;
+  }
+  return `${Math.max(1, Math.round(hours))} hour(s)`;
 }
 
 function formatPercent(value: number | undefined): string {

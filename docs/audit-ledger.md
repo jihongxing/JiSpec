@@ -33,7 +33,7 @@ JiSpec can inspect the ledger for:
 - timestamps that move backward
 - legacy events without hash-chain fields
 
-Legacy unchained events are reported as warnings. Damaged or inconsistent rows are reported as invalid integrity.
+A single first-line pre-chain event is tolerated as a compatibility genesis event when later chained rows continue from its derived hash. Other legacy unchained events are reported as warnings. Damaged or inconsistent rows are reported as invalid integrity.
 
 Approval decisions, including pilot risk acceptance, append `policy_approval_decision` events with actor, reason, source artifact, affected contract refs, and the approval boundary. Commands refuse to append on an invalid ledger so damaged history is reviewed instead of being silently extended.
 
@@ -46,4 +46,4 @@ North Star acceptance may consume the ledger as closeout evidence, but the ledge
 
 ## Append-Only Boundary
 
-Do not edit existing ledger lines to fix history. Add new audited governance actions through local JiSpec CLI commands, and review damaged ledgers explicitly when integrity warnings appear.
+Do not manually edit existing ledger lines to fix history. Add new audited governance actions through local JiSpec CLI commands, and use an explicit compatibility repair path only when a historical pre-chain genesis event must be normalized into the current inspection model.

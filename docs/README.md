@@ -50,7 +50,9 @@ Use these to understand the bigger product shape:
 - Canonical section index: [architecture/README.md](./architecture/README.md)
 - [architecture/north-star.md](./architecture/north-star.md): product goal and sequencing rule
 - [architecture/north-star-acceptance.md](./architecture/north-star-acceptance.md): final local acceptance suite
+- [architecture/north-star-gap-audit.md](./architecture/north-star-gap-audit.md): live remaining gap to North Star closeout
 - [architecture/multi-repo-governance.md](./architecture/multi-repo-governance.md): exported governance aggregation model
+- [architecture/ide-trajectory.md](./architecture/ide-trajectory.md): long-term IDE evolution path
 - [architecture/retakeover-regression-pool.md](./architecture/retakeover-regression-pool.md): discover regression pool and generated metrics
 - [architecture/value-metrics.md](./architecture/value-metrics.md): local adoption and delivery metrics
 

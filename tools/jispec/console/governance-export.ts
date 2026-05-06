@@ -140,7 +140,7 @@ export function exportConsoleGovernanceSnapshot(options: ConsoleGovernanceExport
         missingSnapshotReason: "snapshot_not_found",
       },
     },
-    aggregateHints: buildAggregateHints(governanceObjects),
+    aggregateHints: buildAggregateHints(root, governanceObjects),
     governanceObjects,
   };
   const redacted = redactJsonForSharing(snapshot);
@@ -205,6 +205,7 @@ export function renderConsoleGovernanceExportJSON(result: ConsoleGovernanceExpor
 }
 
 function buildAggregateHints(
+  root: string,
   governanceObjects: MultiRepoGovernanceSnapshot["governanceObjects"],
 ): MultiRepoGovernanceSnapshot["aggregateHints"] {
   const policy = governanceObject(governanceObjects, "policy_posture");
@@ -237,7 +238,67 @@ function buildAggregateHints(
     releaseDriftTrendComparisons: drift?.summary.trendCompareCount ?? "not_available_yet",
     approvalWorkflowStatus: approval?.summary.status ?? "not_available_yet",
     latestAuditActor: audit?.summary.latestActor ?? "not_available_yet",
+    contractRefs: collectAggregateContractRefs(root, sourceEvolution),
   };
+}
+
+function collectAggregateContractRefs(
+  root: string,
+  sourceEvolution: MultiRepoGovernanceSnapshot["governanceObjects"][number] | undefined,
+): Array<{ ref: string; hash: string }> {
+  const refs = new Map<string, string>();
+  for (const relativePath of listContractArtifactPaths(root)) {
+    const absolutePath = path.join(root, relativePath);
+    refs.set(relativePath, hashFile(absolutePath));
+  }
+
+  const representativeArtifact = stringValue(sourceEvolution?.summary.activeRepresentativeItem);
+  if (representativeArtifact?.startsWith(".spec/contracts/")) {
+    const absolutePath = path.join(root, representativeArtifact);
+    if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isFile()) {
+      refs.set(normalizePath(representativeArtifact), hashFile(absolutePath));
+    }
+  }
+
+  return Array.from(refs.entries())
+    .map(([ref, hash]) => ({ ref, hash }))
+    .sort((left, right) => left.ref.localeCompare(right.ref));
+}
+
+function listContractArtifactPaths(root: string): string[] {
+  const contractRoot = path.join(root, ".spec", "contracts");
+  if (!fs.existsSync(contractRoot) || !fs.statSync(contractRoot).isDirectory()) {
+    return [];
+  }
+
+  const discovered: string[] = [];
+  const stack = [contractRoot];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const absolutePath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(absolutePath);
+        continue;
+      }
+      if (entry.isFile()) {
+        discovered.push(normalizePath(path.relative(root, absolutePath)));
+      }
+    }
+  }
+
+  return discovered.sort((left, right) => left.localeCompare(right));
+}
+
+function hashFile(filePath: string): string {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function governanceObject(
