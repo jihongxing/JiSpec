@@ -640,7 +640,7 @@ The `ordering` context includes one complete example slice:
   [docs/architecture/north-star.md](docs/architecture/north-star.md)
 - North Star acceptance suite:
   [docs/architecture/north-star-acceptance.md](docs/architecture/north-star-acceptance.md)
-- North Star gap audit:
+- North Star closeout audit:
   [docs/architecture/north-star-gap-audit.md](docs/architecture/north-star-gap-audit.md)
 - IDE trajectory:
   [docs/architecture/ide-trajectory.md](docs/architecture/ide-trajectory.md)

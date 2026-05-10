@@ -649,7 +649,7 @@ Package/bin 命令面：
   [docs/architecture/north-star.md](docs/architecture/north-star.md)
 - 北极星最终验收套件：
   [docs/architecture/north-star-acceptance.md](docs/architecture/north-star-acceptance.md)
-- 北极星差距审计：
+- 北极星收口审计：
   [docs/architecture/north-star-gap-audit.md](docs/architecture/north-star-gap-audit.md)
 - IDE 演化路径：
   [docs/architecture/ide-trajectory.md](docs/architecture/ide-trajectory.md)

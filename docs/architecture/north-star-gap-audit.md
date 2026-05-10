@@ -2,7 +2,7 @@
 
 Date: 2026-05-06
 
-This document records the remaining gap between the current live repository state and the North Star closeout.
+This document records the closeout audit trail and the historical gap analysis that led to the North Star closeout.
 
 It is an audit-style companion to:
 
