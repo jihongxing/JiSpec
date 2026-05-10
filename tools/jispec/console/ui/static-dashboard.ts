@@ -60,6 +60,7 @@ const GOVERNANCE_OBJECT_ORDER = [
   "verify_trend",
   "takeover_quality_trend",
   "implementation_mediation_outcomes",
+  "implementation_workspace",
   "approval_workflow",
   "audit_events",
   "doctor_global_readiness",
@@ -115,6 +116,7 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     .filter((object): object is ConsoleGovernanceObjectSnapshot => Boolean(object));
   const suggestedActions = model.actions.actions.slice(0, 6);
   const doctorGlobalReadiness = model.snapshot.governance.objects.find((object) => object.id === "doctor_global_readiness");
+  const workspace = model.snapshot.governance.objects.find((object) => object.id === "implementation_workspace");
   const doctorGlobalStatus = doctorGlobalReadiness?.status ?? "unknown";
   const doctorGlobalAnswer = doctorGlobalReadiness?.summary.ready === true
     ? `Doctor global ready: ${String(doctorGlobalReadiness.summary.passedChecks ?? "not available")}/${String(doctorGlobalReadiness.summary.totalChecks ?? "not available")} checks passed.`
@@ -198,6 +200,11 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     .stack {
       display: grid;
       gap: 18px;
+    }
+
+    .workspace-stack {
+      display: grid;
+      gap: 12px;
     }
 
     .hero {
@@ -635,13 +642,19 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
         </div>
         <p class="source-note">Source: ${escapeHtml(model.dashboard.headline.source)}</p>
       </div>
-      <div class="panel">
-        <h2>Local Snapshot</h2>
-        <div class="meta-grid">
-          ${metric("Artifacts", `${model.snapshot.summary.availableArtifacts}/${model.snapshot.summary.totalArtifacts}`)}
-          ${metric("Governance", `${model.snapshot.governance.summary.availableObjects}/${model.snapshot.governance.summary.totalObjects}`)}
-          ${metric("Missing", String(model.snapshot.summary.missingArtifacts))}
-          ${metric("Invalid", String(model.snapshot.summary.invalidArtifacts + model.snapshot.summary.unreadableArtifacts))}
+      <div class="stack">
+        <div class="panel">
+          <h2>Workspace</h2>
+          ${workspace ? renderWorkspacePanel(workspace) : "<p class=\"small\">No active change session or mediation record is available yet.</p>"}
+        </div>
+        <div class="panel">
+          <h2>Local Snapshot</h2>
+          <div class="meta-grid">
+            ${metric("Artifacts", `${model.snapshot.summary.availableArtifacts}/${model.snapshot.summary.totalArtifacts}`)}
+            ${metric("Governance", `${model.snapshot.governance.summary.availableObjects}/${model.snapshot.governance.summary.totalObjects}`)}
+            ${metric("Missing", String(model.snapshot.summary.missingArtifacts))}
+            ${metric("Invalid", String(model.snapshot.summary.invalidArtifacts + model.snapshot.summary.unreadableArtifacts))}
+          </div>
         </div>
       </div>
     </section>
@@ -734,6 +747,9 @@ function renderQuestion(
   if (question.id === "retakeover_pool_health") {
     return renderRetakeoverPoolQuestion(question, model);
   }
+  if (question.id === "handoff_replay_status") {
+    return renderHandoffReplayQuestion(question, model);
+  }
 
   return `<article class="question">
   <div class="status-row">
@@ -744,6 +760,106 @@ function renderQuestion(
   ${question.evidence.length > 0 ? `<div><p class="small">Evidence</p><ul>${question.evidence.slice(0, 3).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
   ${question.nextActions.length > 0 ? `<div><p class="small">Next</p><ul>${question.nextActions.slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
 </article>`;
+}
+
+function renderHandoffReplayQuestion(
+  question: ConsoleGovernanceDashboard["questions"][number],
+  model: LocalConsoleUiModel,
+): string {
+  const summary = model.snapshot.governance.objects.find((object) => object.id === "implementation_workspace")?.summary ?? {};
+  const activeSessionId = typeof summary.activeSessionId === "string" ? summary.activeSessionId : "not available";
+  const chainStatus = typeof summary.chainStatus === "string" ? summary.chainStatus : "not available";
+  const activeSessionPath = typeof summary.activeSessionPath === "string" ? summary.activeSessionPath : "not available";
+  const latestHandoffPath = typeof summary.latestHandoffPath === "string" ? summary.latestHandoffPath : "not available";
+  const latestPatchPath = typeof summary.latestPatchPath === "string" ? summary.latestPatchPath : "not available";
+  const latestPatchStatus = typeof summary.latestPatchStatus === "string" ? summary.latestPatchStatus : "not available";
+  const latestPatchReviewCompanionPath = typeof summary.latestPatchReviewCompanionPath === "string" && summary.latestPatchReviewCompanionPath !== "not_available_yet"
+    ? summary.latestPatchReviewCompanionPath
+    : "not available";
+  const latestPatchReviewCompanionSummary = typeof summary.latestPatchReviewCompanionSummary === "string" && summary.latestPatchReviewCompanionSummary !== "not_available_yet"
+    ? summary.latestPatchReviewCompanionSummary
+    : "";
+  const adapterCommand = typeof summary.latestHandoffAdapterCommand === "string"
+    ? summary.latestHandoffAdapterCommand
+    : "npm run jispec-cli -- handoff adapter --from-handoff <path-or-session> --tool codex";
+  const restoreCommand = typeof summary.latestHandoffRestoreCommand === "string"
+    ? summary.latestHandoffRestoreCommand
+    : "npm run jispec-cli -- implement --from-handoff <path>";
+  const retryCommand = typeof summary.latestHandoffRetryCommand === "string"
+    ? summary.latestHandoffRetryCommand
+    : "npm run jispec-cli -- implement --from-handoff <path> --external-patch <path>";
+  const nextCommands = question.nextActions.slice(0, 3);
+  const activeChangedPaths = stringArray(summary.activeChangedPaths).slice(0, 3);
+  const allowedPaths = stringArray(summary.latestExternalToolHandoffAllowedPaths).slice(0, 4);
+  const filesNeedingAttention = stringArray(summary.latestExternalToolHandoffFilesNeedingAttention).slice(0, 4);
+  const latestExternalToolRequest = typeof summary.latestExternalToolHandoffRequest === "string"
+    ? summary.latestExternalToolHandoffRequest
+    : "";
+
+  return `<article class="question question-special">
+  <div class="status-row">
+    <span class="badge ${statusClass(question.status)}">${escapeHtml(question.status)}</span>
+    <h3>${escapeHtml(question.label)}</h3>
+  </div>
+  <p>${escapeHtml(question.answer)}</p>
+  <div class="question-grid">
+    ${questionMetric("Active Session", activeSessionId, activeSessionPath)}
+    ${questionMetric("Chain Status", chainStatus, latestHandoffPath)}
+    ${questionMetric("Patch Return", retryCommand, latestPatchPath)}
+    ${questionMetric("Review Companion", latestPatchReviewCompanionPath, latestPatchReviewCompanionSummary || latestPatchPath)}
+  </div>
+  <div>
+    <p class="small">Replay Chain</p>
+    <div class="command-row">
+      <code>${escapeHtml(adapterCommand)}</code>
+      <button type="button" data-copy-command="${escapeHtml(adapterCommand)}">Copy</button>
+    </div>
+    <div class="command-row" style="margin-top: 8px;">
+      <code>${escapeHtml(restoreCommand)}</code>
+      <button type="button" data-copy-command="${escapeHtml(restoreCommand)}">Copy</button>
+    </div>
+    <div class="command-row" style="margin-top: 8px;">
+      <code>${escapeHtml(retryCommand)}</code>
+      <button type="button" data-copy-command="${escapeHtml(retryCommand)}">Copy</button>
+    </div>
+  </div>
+  ${activeChangedPaths.length > 0 ? `<div><p class="small">Changed Paths</p><div class="inline-pills">${activeChangedPaths.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div></div>` : ""}
+  ${allowedPaths.length > 0 ? `<div><p class="small">Allowed Paths</p><div class="inline-pills">${allowedPaths.map((item) => `<span class="pill ok">${escapeHtml(item)}</span>`).join("")}</div></div>` : ""}
+  ${filesNeedingAttention.length > 0 ? `<div><p class="small">Files Needing Attention</p><div class="inline-pills">${filesNeedingAttention.map((item) => `<span class="pill attention">${escapeHtml(item)}</span>`).join("")}</div></div>` : ""}
+  ${latestPatchReviewCompanionSummary ? `<div class="drilldown"><div class="drilldown-summary"><span>Patch Review Companion</span><span class="drilldown-copy">${escapeHtml(latestPatchStatus)}</span></div><div class="drilldown-body"><span class="code-chip">${escapeHtml(latestPatchReviewCompanionSummary)}</span></div></div>` : ""}
+  ${latestExternalToolRequest ? `<div class="drilldown"><div class="drilldown-summary"><span>External Tool Request</span><span class="drilldown-copy">${escapeHtml(chainStatus)}</span></div><div class="drilldown-body"><span class="code-chip">${escapeHtml(latestExternalToolRequest)}</span></div></div>` : ""}
+  ${nextCommands.length > 0 ? `<div><p class="small">Next</p><ul>${nextCommands.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+</article>`;
+}
+
+function renderWorkspacePanel(object: ConsoleGovernanceObjectSnapshot): string {
+  const summary = object.summary;
+  const activeSessionId = typeof summary.activeSessionId === "string" ? summary.activeSessionId : "not available";
+  const chainStatus = typeof summary.chainStatus === "string" ? summary.chainStatus : "not available";
+  const latestPatchStatus = typeof summary.latestPatchStatus === "string" ? summary.latestPatchStatus : "not available";
+  const latestPatchReviewCompanionPath = typeof summary.latestPatchReviewCompanionPath === "string" ? summary.latestPatchReviewCompanionPath : "not available";
+  const latestPatchReviewCompanionSummary = typeof summary.latestPatchReviewCompanionSummary === "string" ? summary.latestPatchReviewCompanionSummary : "";
+  const activeSessionSummary = typeof summary.activeSessionSummary === "string" ? summary.activeSessionSummary : "not available";
+  const activeChangedPaths = stringArray(summary.activeChangedPaths).slice(0, 4);
+  const nextCommands = stringArray(summary.activeNextCommands).slice(0, 3);
+  const latestExternalToolRequest = typeof summary.latestExternalToolHandoffRequest === "string" ? summary.latestExternalToolHandoffRequest : "";
+  const latestPatchRetryCommand = typeof summary.latestPatchRetryCommand === "string"
+    ? summary.latestPatchRetryCommand
+    : "npm run jispec-cli -- implement --from-handoff <path> --external-patch <path>";
+
+  return [
+    `<div class="workspace-stack">`,
+    `<div class="question-grid">`,
+    questionMetric("Active Change", activeSessionId, activeSessionSummary),
+    questionMetric("Mediation Status", latestPatchStatus, latestPatchReviewCompanionPath),
+    questionMetric("Replay Chain", chainStatus, latestPatchRetryCommand),
+    `</div>`,
+    latestPatchReviewCompanionSummary ? `<div class="drilldown"><div class="drilldown-summary"><span>Patch Review Companion</span><span class="drilldown-copy">${escapeHtml(latestPatchStatus)}</span></div><div class="drilldown-body"><span class="code-chip">${escapeHtml(latestPatchReviewCompanionSummary)}</span></div></div>` : "",
+    latestExternalToolRequest ? `<div class="drilldown"><div class="drilldown-summary"><span>External Tool Request</span><span class="drilldown-copy">handoff</span></div><div class="drilldown-body"><span class="code-chip">${escapeHtml(latestExternalToolRequest)}</span></div></div>` : "",
+    activeChangedPaths.length > 0 ? `<div><p class="small">Changed Paths</p><div class="inline-pills">${activeChangedPaths.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div></div>` : "",
+    nextCommands.length > 0 ? `<div><p class="small">Next Commands</p><ul>${nextCommands.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "",
+    `</div>`,
+  ].join("");
 }
 
 function renderRetakeoverPoolQuestion(

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { appendAuditEvent } from "../audit/event-ledger";
 import type { ChangeSession } from "../change/change-session";
+import { renderDecisionCompanionSections } from "../companion/decision-sections";
 import type { ImplementationDecisionPacket } from "./handoff-packet";
 import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
 
@@ -213,7 +214,7 @@ function buildPatchNextHumanAction(artifact: PatchMediationArtifact): string {
   if (artifact.status === "apply_failed") {
     return "Refresh the patch against the current workspace so git apply succeeds, then replay implementation mediation.";
   }
-  return "Run the mediated test and verify commands, then review patch mediation before merge.";
+  return "The patch is accepted into the workspace; review the companion summary, then run the mediated test and verify commands before merge.";
 }
 
 export function writePatchMediationArtifact(root: string, artifact: PatchMediationArtifact): string {
@@ -222,7 +223,52 @@ export function writePatchMediationArtifact(root: string, artifact: PatchMediati
 
   const artifactPath = path.join(artifactDir, "patch-mediation.json");
   fs.writeFileSync(artifactPath, JSON.stringify(artifact, null, 2), "utf-8");
+  fs.writeFileSync(path.join(artifactDir, "patch-mediation.md"), renderPatchMediationMarkdown(artifact), "utf-8");
   return artifactPath;
+}
+
+function renderPatchMediationMarkdown(artifact: PatchMediationArtifact): string {
+  const nextSteps = artifact.replay
+    ? [
+        artifact.replay.commands.retryWithExternalPatch,
+        artifact.replay.commands.inspectHandoff,
+        artifact.replay.nextHumanAction,
+      ].filter((entry): entry is string => Boolean(entry))
+    : [buildPatchNextHumanAction(artifact)];
+
+  return [
+    renderDecisionCompanionSections({
+      subject: `Patch mediation companion for session ${artifact.sessionId}`,
+      truthSources: [
+        `.jispec/implement/${artifact.sessionId}/patch-mediation.json`,
+        artifact.externalPatchPath,
+      ],
+      strongestEvidence: [
+        `Status: ${artifact.status}`,
+        `Applied: ${artifact.applied ? "yes" : "no"}`,
+        artifact.test
+          ? `Test: ${artifact.test.command} -> ${artifact.test.passed ? "passed" : "failed"}`
+          : "Test: not run",
+        artifact.postVerify
+          ? `Post verify: ${artifact.postVerify.command} -> ${artifact.postVerify.ok ? "passed" : artifact.postVerify.verdict}`
+          : "Post verify: not run",
+      ],
+      inferredEvidence: [
+        artifact.replay?.previousOutcome ? `Replay outcome: ${artifact.replay.previousOutcome}` : "Replay outcome unavailable",
+        artifact.completedAt ? `Completed at ${artifact.completedAt}` : "Completion time unavailable",
+      ],
+      drift: artifact.violations.length > 0 ? artifact.violations : ["none"],
+      impact: [
+        `Touched paths: ${artifact.touchedPaths.join(", ") || "none"}`,
+        `Allowed paths: ${artifact.allowedPaths.join(", ") || "none"}`,
+        `Replayable: ${artifact.replay?.replayable ? "yes" : "no"}`,
+      ],
+      nextSteps,
+    }),
+    "",
+    "This Markdown file is a human-readable companion summary, not a machine API.",
+    "",
+  ].join("\n");
 }
 
 export function recordPatchMediationCompletionAudit(

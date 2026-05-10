@@ -80,6 +80,17 @@ function main(): void {
       assert.notEqual(healthyIndex, -1);
       assert.ok(attentionIndex < healthyIndex, "fixtures with baseline misses should render before healthy fixtures");
       assert.match(html, /Implementation mediation outcomes/i);
+      assert.match(html, /How do I hand off or replay this change\?/i);
+      assert.match(html, /Replay Chain/);
+      assert.match(html, /handoff adapter/);
+      assert.match(html, /implement --from-handoff/);
+      assert.match(html, /Workspace/);
+      assert.match(html, /Active Change/);
+      assert.match(html, /Mediation Status/);
+      assert.match(html, /Replay Chain/);
+      assert.match(html, /Patch Review Companion/);
+      assert.match(html, /patch-mediation\.md/);
+      assert.match(html, /Patch mediation companion for session change-1/);
       assert.match(html, /Audit events/i);
       assert.match(html, /Suggested Local Commands/);
       assert.match(html, /The UI does not execute commands/);
@@ -343,14 +354,106 @@ function writeGovernanceFixture(root: string): void {
     },
   });
   writeJson(root, ".jispec/handoff/change-1.json", {
+    sessionId: "change-1",
+    changeIntent: "Repair implementation replay flow",
     outcome: "verify_blocked",
     decisionPacket: {
       stopPoint: "post_verify",
+      nextActionDetail: {
+        externalToolHandoff: {
+          required: true,
+          request: "Use the focused handoff to repair the replay chain and return a patch through JiSpec.",
+          allowedPaths: ["src/domain/order.ts"],
+          filesNeedingAttention: ["src/domain/order.ts"],
+          testCommand: "npm run test",
+          verifyCommand: "npm run verify",
+        },
+      },
     },
     replay: {
       replayable: true,
+      commands: {
+        restore: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-1.json",
+        retryWithExternalPatch: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-1.json --external-patch <path>",
+        rerunVerify: "npm run verify",
+      },
     },
   });
+  writeJson(root, ".jispec/change-session.json", {
+    id: "change-1",
+    summary: "Repair implementation replay flow",
+    orchestrationMode: "execute",
+    laneDecision: {
+      lane: "strict",
+      requestedLane: "strict",
+      autoPromoted: false,
+      reasons: ["change touches implementation code"],
+    },
+    changedPaths: [
+      {
+        path: "src/domain/order.ts",
+        kind: "source",
+      },
+    ],
+    nextCommands: [
+      {
+        command: "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-1.json --tool codex",
+        description: "Generate the external tool request.",
+      },
+      {
+        command: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-1.json --external-patch <path>",
+        description: "Return the external patch through JiSpec.",
+      },
+    ],
+  });
+  writeJson(root, ".jispec/implement/change-1/patch-mediation.json", {
+    version: 1,
+    sessionId: "change-1",
+    createdAt: "2026-05-01T00:00:00.000Z",
+    completedAt: "2026-05-01T00:00:05.000Z",
+    externalPatchPath: ".jispec/patches/change-1.patch",
+    status: "accepted",
+    touchedPaths: ["src/domain/order.ts"],
+    allowedPaths: ["src/domain/order.ts"],
+    violations: [],
+    applied: true,
+    replay: {
+      version: 1,
+      replayable: true,
+      source: "patch_mediation",
+      sourceSession: "change-1",
+      sourceArtifact: ".jispec/implement/change-1/patch-mediation.json",
+      inputArtifacts: [".jispec/patches/change-1.patch", "src/domain/order.ts"],
+      commands: {
+        retryWithExternalPatch: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-1.json --external-patch <path>",
+        inspectHandoff: "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-1.json --tool codex",
+      },
+      previousOutcome: "accepted",
+      nextHumanAction: "The patch is accepted into the workspace; review the companion summary, then run the mediated test and verify commands before merge.",
+    },
+  });
+  writeText(root, ".jispec/implement/change-1/patch-mediation.md", [
+    "## 判断对象",
+    "- Patch mediation companion for session change-1",
+    "- Truth sources:",
+    "  - .jispec/implement/change-1/patch-mediation.json",
+    "",
+    "## 最强证据",
+    "- Status: accepted",
+    "- Applied: yes",
+    "",
+    "## 推断证据",
+    "- Replay outcome: verify_blocked",
+    "",
+    "## 冲突/drift",
+    "- none",
+    "",
+    "## 影响契约/测试",
+    "- Touched paths: src/domain/order.ts",
+    "",
+    "## 下一步",
+    "- Review the patch mediation companion before merge.",
+  ].join("\n"));
   writeJson(root, ".spec/doctor/global-readiness.json", {
     profile: "global",
     ready: true,

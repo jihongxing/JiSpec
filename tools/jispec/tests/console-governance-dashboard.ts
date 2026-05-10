@@ -126,14 +126,80 @@ async function main(): Promise<void> {
         ],
       });
       writeJson(root, ".jispec/handoff/change-1.json", {
+        sessionId: "change-1",
+        changeIntent: "Repair implementation replay flow",
         outcome: "verify_blocked",
         decisionPacket: {
           stopPoint: "post_verify",
+          nextActionDetail: {
+            externalToolHandoff: {
+              required: true,
+              request: "Use the focused handoff to repair the replay chain and return a patch through JiSpec.",
+              allowedPaths: ["src/domain/order.ts"],
+              filesNeedingAttention: ["src/domain/order.ts"],
+              testCommand: "npm run test",
+              verifyCommand: "npm run verify",
+            },
+          },
         },
         replay: {
           replayable: true,
+          commands: {
+            restore: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-1.json",
+            retryWithExternalPatch: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-1.json --external-patch <path>",
+            rerunVerify: "npm run verify",
+          },
         },
       });
+      writeJson(root, ".jispec/change-session.json", {
+        id: "change-1",
+        summary: "Repair implementation replay flow",
+        orchestrationMode: "execute",
+        laneDecision: {
+          lane: "strict",
+          requestedLane: "strict",
+          autoPromoted: false,
+          reasons: ["change touches implementation code"],
+        },
+        changedPaths: [
+          {
+            path: "src/domain/order.ts",
+            kind: "source",
+          },
+        ],
+        nextCommands: [
+          {
+            command: "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-1.json --tool codex",
+            description: "Generate the external tool request.",
+          },
+          {
+            command: "npm run jispec-cli -- implement --from-handoff .jispec/handoff/change-1.json --external-patch <path>",
+            description: "Return the external patch through JiSpec.",
+          },
+        ],
+      });
+      writeText(root, ".jispec/implement/change-1/patch-mediation.md", [
+        "## 判断对象",
+        "- Patch mediation companion for session change-1",
+        "- Truth sources:",
+        "  - .jispec/implement/change-1/patch-mediation.json",
+        "",
+        "## 最强证据",
+        "- Status: accepted",
+        "- Applied: yes",
+        "",
+        "## 推断证据",
+        "- Replay outcome: verify_blocked",
+        "",
+        "## 冲突/drift",
+        "- none",
+        "",
+        "## 影响契约/测试",
+        "- Touched paths: src/domain/order.ts",
+        "",
+        "## 下一步",
+        "- Review the patch mediation companion before merge.",
+      ].join("\n"));
       appendAuditEvent(root, {
         type: "waiver_create",
         timestamp: "2026-05-01T00:00:00.000Z",
@@ -265,6 +331,11 @@ async function main(): Promise<void> {
       assert.match(question(dashboard, "retakeover_pool_health").answer, /non-blocking/);
       assert.match(question(dashboard, "retakeover_pool_health").answer, /20%/);
       assert.ok(question(dashboard, "retakeover_pool_health").evidence.some((entry) => entry.includes("synthetic-contract-drift")));
+      assert.equal(question(dashboard, "handoff_replay_status").status, "attention");
+      assert.match(question(dashboard, "handoff_replay_status").answer, /external tool handoff/);
+      assert.ok(question(dashboard, "handoff_replay_status").evidence.some((entry) => entry.includes("patch-mediation.md")));
+      assert.ok(question(dashboard, "handoff_replay_status").evidence.some((entry) => entry.includes("Patch review companion")));
+      assert.ok(question(dashboard, "handoff_replay_status").nextActions.some((entry) => entry.includes("handoff adapter")));
       assert.match(question(dashboard, "execute_mediation_status").answer, /post_verify/);
       assert.equal(question(dashboard, "audit_traceability").status, "ok");
       assert.match(question(dashboard, "audit_traceability").answer, /reviewer/);

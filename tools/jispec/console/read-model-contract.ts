@@ -11,6 +11,7 @@ export type ConsoleGovernanceObjectId =
   | "verify_trend"
   | "takeover_quality_trend"
   | "implementation_mediation_outcomes"
+  | "implementation_workspace"
   | "audit_events"
   | "approval_workflow"
   | "multi_repo_export"
@@ -344,6 +345,18 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     sourceUploadRequired: false,
   },
   {
+    id: "active-change-session",
+    pathPattern: ".jispec/change-session.json",
+    producer: "change",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Current active change session with lane, changed paths, next commands, and replay context for handoff orchestration.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
     id: "implementation-patch-mediation",
     pathPattern: ".jispec/implement/<session-id>/patch-mediation.json",
     producer: "implement --external-patch",
@@ -352,6 +365,18 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     freshness: "project-state",
     readModelUse: "External patch scope, apply, test, and verify intake records.",
     machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "implementation-patch-mediation-summary",
+    pathPattern: ".jispec/implement/<session-id>/patch-mediation.md",
+    producer: "implement --external-patch",
+    format: "markdown",
+    stability: "human-companion",
+    freshness: "project-state",
+    readModelUse: "Human companion for patch scope, local acceptance, test, verify, and replay review. Console may render it, but must not parse it as a machine API.",
+    machineReadable: false,
     parseMarkdown: false,
     sourceUploadRequired: false,
   },
@@ -522,11 +547,20 @@ export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
   {
     id: "implementation_mediation_outcomes",
     label: "Implementation mediation outcomes",
-    sourceArtifactIds: ["implementation-handoff-packets", "implementation-patch-mediation"],
+    sourceArtifactIds: ["implementation-handoff-packets", "implementation-patch-mediation", "implementation-patch-mediation-summary"],
     missingState: "not_available_yet",
     automationInputs: "json_yaml_jsonl_only",
     markdownDisplayOnly: true,
     readModelUse: "Show execute/implement outcomes, stop points, replayability, and patch mediation posture.",
+  },
+  {
+    id: "implementation_workspace",
+    label: "Implementation workspace",
+    sourceArtifactIds: ["active-change-session", "implementation-handoff-packets", "implementation-patch-mediation", "implementation-patch-mediation-summary"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show the current active change session, replay-ready handoff packet, external-tool request path, and patch mediation return path in one workspace view.",
   },
   {
     id: "audit_events",

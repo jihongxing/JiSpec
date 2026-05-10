@@ -22,6 +22,7 @@ export type ConsoleGovernanceQuestionId =
   | "retakeover_pool_health"
   | "contract_drift_review"
   | "execute_mediation_status"
+  | "handoff_replay_status"
   | "approval_workflow_status"
   | "audit_traceability"
   | "global_closure_acceptance"
@@ -105,6 +106,7 @@ export function buildConsoleGovernanceDashboardFromSnapshot(
     buildRetakeoverPoolQuestion(snapshot),
     buildContractDriftQuestion(snapshot),
     buildImplementationQuestion(snapshot),
+    buildHandoffReplayQuestion(snapshot),
     buildApprovalQuestion(snapshot),
     buildAuditQuestion(snapshot),
     buildGlobalClosureAcceptanceQuestion(snapshot),
@@ -349,6 +351,7 @@ function questionForActionSourceObject(
     source_evolution_governance: "source_evolution_progress",
     contract_drift: "contract_drift_review",
     implementation_mediation_outcomes: "execute_mediation_status",
+    implementation_workspace: "handoff_replay_status",
     approval_workflow: "approval_workflow_status",
     audit_events: "audit_traceability",
     verify_trend: "mergeability",
@@ -431,6 +434,9 @@ function ownerForQuestion(id: ConsoleGovernanceQuestionId): string {
   if (id === "execute_mediation_status") {
     return "implementation owner";
   }
+  if (id === "handoff_replay_status") {
+    return "implementation owner";
+  }
   if (id === "approval_workflow_status") {
     return "policy owner";
   }
@@ -461,6 +467,9 @@ function fallbackCommandForQuestion(question: ConsoleGovernanceDashboardQuestion
   }
   if (question.id === "execute_mediation_status") {
     return "npm run jispec-cli -- implement --from-handoff <path>";
+  }
+  if (question.id === "handoff_replay_status") {
+    return "npm run jispec-cli -- handoff adapter --from-handoff <path-or-session> --tool codex";
   }
   if (question.id === "approval_workflow_status") {
     return "npm run jispec-cli -- policy approval record --subject-kind <kind> --actor <name> --role reviewer --reason <reason>";
@@ -902,6 +911,8 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
   const summary = implementation?.summary ?? {};
   const latestOutcome = stringValue(summary.latestOutcome);
   const latestStopPoint = stringValue(summary.latestStopPoint);
+  const latestPatchReviewCompanionPath = stringValue(summary.latestPatchReviewCompanionPath);
+  const latestPatchReviewCompanionSummary = stringValue(summary.latestPatchReviewCompanionSummary);
   const replayable = summary.latestReplayable === true;
   const handoffCount = numberValue(summary.handoffCount) ?? 0;
   const latestObservedAt = stringValue(summary.latestObservedAt);
@@ -929,6 +940,8 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
         evidence: [
           `Handoff packets: ${handoffCount}`,
           `Replayable: ${replayable ? "yes" : "no"}`,
+          ...(latestPatchReviewCompanionPath && latestPatchReviewCompanionPath !== "not_available_yet" ? [`Patch review companion: ${latestPatchReviewCompanionPath}`] : []),
+          ...(latestPatchReviewCompanionSummary && latestPatchReviewCompanionSummary !== "not_available_yet" ? [`Companion summary: ${latestPatchReviewCompanionSummary}`] : []),
           `Latest packet age: ${formatAge(latestAgeHours)}`,
         ],
         nextActions: [],
@@ -943,6 +956,8 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
       evidence: [
         `Handoff packets: ${handoffCount}`,
         `Replayable: ${replayable ? "yes" : "no"}`,
+        ...(latestPatchReviewCompanionPath && latestPatchReviewCompanionPath !== "not_available_yet" ? [`Patch review companion: ${latestPatchReviewCompanionPath}`] : []),
+        ...(latestPatchReviewCompanionSummary && latestPatchReviewCompanionSummary !== "not_available_yet" ? [`Companion summary: ${latestPatchReviewCompanionSummary}`] : []),
         ...(latestAgeHours !== undefined ? [`Latest packet age: ${formatAge(latestAgeHours)}`] : []),
       ],
       nextActions: [replayable ? "Resume with npm run jispec-cli -- implement --from-handoff <path>." : "Open the latest handoff packet and follow its next action."],
@@ -958,9 +973,140 @@ function buildImplementationQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
       : "No attention state is detected for execute mediation.",
     evidence: [
       `Handoff packets: ${handoffCount}`,
+      ...(latestPatchReviewCompanionPath && latestPatchReviewCompanionPath !== "not_available_yet" ? [`Patch review companion: ${latestPatchReviewCompanionPath}`] : []),
+      ...(latestPatchReviewCompanionSummary && latestPatchReviewCompanionSummary !== "not_available_yet" ? [`Companion summary: ${latestPatchReviewCompanionSummary}`] : []),
       ...(latestAgeHours !== undefined ? [`Latest packet age: ${formatAge(latestAgeHours)}`] : []),
     ],
     nextActions: [],
+  });
+}
+
+function buildHandoffReplayQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
+  const workspace = governanceObject(snapshot, "implementation_workspace");
+  const summary = workspace?.summary ?? {};
+  const state = stringValue(summary.state);
+  const chainStatus = stringValue(summary.chainStatus);
+  const activeSessionId = stringValue(summary.activeSessionId);
+  const activeSessionPath = stringValue(summary.activeSessionPath);
+  const activeSummary = stringValue(summary.activeSessionSummary);
+  const activeMode = stringValue(summary.activeSessionMode);
+  const activeLane = stringValue(summary.activeSessionLane);
+  const activeChangedPathCount = numberValue(summary.activeChangedPathCount);
+  const activeChangedPaths = Array.isArray(summary.activeChangedPaths)
+    ? summary.activeChangedPaths.filter(isString).slice(0, 5)
+    : [];
+  const activeNextCommands = Array.isArray(summary.activeNextCommands)
+    ? summary.activeNextCommands.filter(isString)
+    : [];
+  const latestHandoffPath = stringValue(summary.latestHandoffPath);
+  const latestHandoffSessionId = stringValue(summary.latestHandoffSessionId);
+  const latestHandoffOutcome = stringValue(summary.latestHandoffOutcome);
+  const latestHandoffStopPoint = stringValue(summary.latestHandoffStopPoint);
+  const latestHandoffReplayable = summary.latestHandoffReplayable === true;
+  const latestHandoffRestoreCommand = stringValue(summary.latestHandoffRestoreCommand);
+  const latestHandoffRetryCommand = stringValue(summary.latestHandoffRetryCommand);
+  const latestHandoffAdapterCommand = stringValue(summary.latestHandoffAdapterCommand);
+  const latestExternalToolHandoffRequired = summary.latestExternalToolHandoffRequired === true;
+  const latestExternalToolRequest = stringValue(summary.latestExternalToolHandoffRequest);
+  const latestExternalToolAllowedPaths = Array.isArray(summary.latestExternalToolHandoffAllowedPaths)
+    ? summary.latestExternalToolHandoffAllowedPaths.filter(isString)
+    : [];
+  const latestExternalToolAttentionFiles = Array.isArray(summary.latestExternalToolHandoffFilesNeedingAttention)
+    ? summary.latestExternalToolHandoffFilesNeedingAttention.filter(isString)
+    : [];
+  const latestPatchPath = stringValue(summary.latestPatchPath);
+  const latestPatchStatus = stringValue(summary.latestPatchStatus);
+  const latestPatchApplied = summary.latestPatchApplied === true;
+  const latestPatchExternalPath = stringValue(summary.latestPatchExternalPatchPath);
+  const latestPatchRetryCommand = stringValue(summary.latestPatchRetryCommand);
+  const latestPatchReviewCompanionPath = stringValue(summary.latestPatchReviewCompanionPath);
+  const latestPatchReviewCompanionSummary = stringValue(summary.latestPatchReviewCompanionSummary);
+  const chainReady = summary.chainReady === true;
+
+  if (!workspace || state === "not_available_yet") {
+    return question({
+      id: "handoff_replay_status",
+      label: "How do I hand off or replay this change?",
+      status: "unknown",
+      answer: "No active change session is available yet, so the handoff/replay chain cannot be assembled.",
+      evidence: ["Missing .jispec/change-session.json"],
+      nextActions: [
+        "Open a change session first, then run npm run jispec-cli -- implement to materialize a replayable handoff packet.",
+      ],
+    });
+  }
+
+  if (latestPatchStatus === "apply_failed" || latestPatchStatus === "rejected_out_of_scope") {
+    return question({
+      id: "handoff_replay_status",
+      label: "How do I hand off or replay this change?",
+      status: "attention",
+      answer: `The current workspace needs a patch refresh: latest patch status is ${latestPatchStatus}.`,
+      evidence: [
+        `Active session: ${activeSessionPath ?? ".jispec/change-session.json"}`,
+        `Handoff packet: ${latestHandoffPath ?? "not_available_yet"}`,
+        `Patch mediation: ${latestPatchPath ?? "not_available_yet"}`,
+        ...(latestPatchReviewCompanionPath && latestPatchReviewCompanionPath !== "not_available_yet" ? [`Patch review companion: ${latestPatchReviewCompanionPath}`] : []),
+        `Latest patch: ${latestPatchExternalPath ?? "not_available_yet"}`,
+      ],
+      nextActions: [
+        latestHandoffRetryCommand ?? "npm run jispec-cli -- implement --from-handoff <path> --external-patch <path>",
+        latestHandoffRestoreCommand ?? "npm run jispec-cli -- implement --from-handoff <path>",
+      ],
+    });
+  }
+
+  if (latestExternalToolHandoffRequired || !latestHandoffReplayable) {
+    return question({
+      id: "handoff_replay_status",
+      label: "How do I hand off or replay this change?",
+      status: "attention",
+      answer: latestExternalToolHandoffRequired
+        ? `Active session ${activeSessionId ?? "unknown"} is ready for an external tool handoff, and the replay chain should return through JiSpec mediation.`
+        : `Active session ${activeSessionId ?? "unknown"} has a workspace record, but the latest handoff is not yet replayable.`,
+      evidence: [
+        `Active session: ${activeSessionId ?? "not_available_yet"}`,
+        `Latest handoff: ${latestHandoffSessionId ?? "not_available_yet"} (${latestHandoffOutcome ?? "not_available_yet"} at ${latestHandoffStopPoint ?? "unknown"})`,
+        `Replayable: ${latestHandoffReplayable ? "yes" : "no"}`,
+        ...(latestPatchReviewCompanionPath && latestPatchReviewCompanionPath !== "not_available_yet" ? [`Patch review companion: ${latestPatchReviewCompanionPath}`] : []),
+        ...(latestPatchReviewCompanionSummary && latestPatchReviewCompanionSummary !== "not_available_yet" ? [`Companion summary: ${latestPatchReviewCompanionSummary}`] : []),
+        ...(latestExternalToolHandoffRequired ? [`External tool request: ${latestExternalToolRequest ?? "not_available_yet"}`] : []),
+        ...(latestExternalToolAllowedPaths.length > 0 ? [`Allowed paths: ${latestExternalToolAllowedPaths.slice(0, 5).join(", ")}`] : []),
+      ],
+      nextActions: [
+        latestHandoffAdapterCommand ?? "npm run jispec-cli -- handoff adapter --from-handoff <path-or-session> --tool codex",
+        latestHandoffRestoreCommand ?? "npm run jispec-cli -- implement --from-handoff <path>",
+        latestHandoffRetryCommand ?? "npm run jispec-cli -- implement --from-handoff <path> --external-patch <path>",
+      ],
+    });
+  }
+
+  return question({
+    id: "handoff_replay_status",
+    label: "How do I hand off or replay this change?",
+    status: chainReady ? "ok" : "attention",
+    answer: chainReady
+      ? `The current workspace is replayable: active session ${activeSessionId ?? "unknown"} is wired to a replayable handoff chain.`
+      : `Active session ${activeSessionId ?? "unknown"} is available, but the replay chain still needs attention.`,
+    evidence: [
+      `Active session: ${activeSessionId ?? "not_available_yet"}`,
+      `Session mode: ${activeMode ?? "not_available_yet"}`,
+      `Session summary: ${activeSummary ?? "not_available_yet"}`,
+      `Lane: ${activeLane ?? "not_available_yet"}${summary.activeSessionAutoPromoted === true ? " (auto-promoted)" : ""}`,
+      `Changed paths: ${activeChangedPathCount ?? 0}`,
+      ...activeChangedPaths.slice(0, 3).map((item) => `Changed path: ${item}`),
+      `Latest handoff: ${latestHandoffPath ?? "not_available_yet"}`,
+      `Patch status: ${latestPatchStatus ?? "not_available_yet"}${latestPatchApplied ? " (applied)" : ""}`,
+      ...(latestPatchReviewCompanionPath && latestPatchReviewCompanionPath !== "not_available_yet" ? [`Patch review companion: ${latestPatchReviewCompanionPath}`] : []),
+      ...(latestPatchReviewCompanionSummary && latestPatchReviewCompanionSummary !== "not_available_yet" ? [`Companion summary: ${latestPatchReviewCompanionSummary}`] : []),
+    ],
+    nextActions: [
+      latestHandoffAdapterCommand ?? "npm run jispec-cli -- handoff adapter --from-handoff <path-or-session> --tool codex",
+      latestHandoffRestoreCommand ?? "npm run jispec-cli -- implement --from-handoff <path>",
+      latestHandoffRetryCommand ?? "npm run jispec-cli -- implement --from-handoff <path> --external-patch <path>",
+    ].concat(
+      activeNextCommands.slice(0, 2),
+    ),
   });
 }
 
@@ -1279,4 +1425,8 @@ function formatPercent(value: number | undefined): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
 }

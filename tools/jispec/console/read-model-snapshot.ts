@@ -21,6 +21,13 @@ import { summarizeDecisionCompanion, type DecisionCompanionSummary } from "../co
 export type ConsoleSnapshotArtifactStatus = "available" | "not_available_yet" | "unreadable" | "invalid";
 export type ConsoleGovernanceObjectStatus = "available" | "partial" | "not_available_yet" | "invalid";
 
+interface ExternalToolHandoffSummary {
+  required?: boolean;
+  request?: string;
+  allowedPaths?: unknown[];
+  filesNeedingAttention?: unknown[];
+}
+
 export interface ConsoleSnapshotArtifactInstance {
   relativePath: string;
   status: Exclude<ConsoleSnapshotArtifactStatus, "not_available_yet">;
@@ -269,9 +276,20 @@ function resolveArtifactRelativePaths(root: string, pathPattern: string): string
     return listDirectFiles(root, ".jispec/handoff", ".json");
   }
 
+  if (pathPattern === ".jispec/change-session.json") {
+    return fs.existsSync(path.join(root, ".jispec", "change-session.json"))
+      ? [".jispec/change-session.json"]
+      : [];
+  }
+
   if (pathPattern === ".jispec/implement/<session-id>/patch-mediation.json") {
     return listNestedFiles(root, ".jispec/implement", ".json", 2)
       .filter((relativePath) => relativePath.endsWith("/patch-mediation.json"));
+  }
+
+  if (pathPattern === ".jispec/implement/<session-id>/patch-mediation.md") {
+    return listNestedFiles(root, ".jispec/implement", ".md", 2)
+      .filter((relativePath) => relativePath.endsWith("/patch-mediation.md"));
   }
 
   return [];
@@ -478,6 +496,9 @@ function buildGovernanceSummary(
   }
   if (id === "implementation_mediation_outcomes") {
     return summarizeImplementationMediation(sourceArtifacts);
+  }
+  if (id === "implementation_workspace") {
+    return summarizeImplementationWorkspace(sourceArtifacts);
   }
   if (id === "multi_repo_export") {
     return summarizeMultiRepoExport(sourceArtifacts);
@@ -827,11 +848,13 @@ function summarizeTakeoverQuality(sourceArtifacts: ConsoleSnapshotArtifact[]): R
 function summarizeImplementationMediation(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
   const handoffInstances = getInstances(sourceArtifacts, "implementation-handoff-packets");
   const patchInstances = getInstances(sourceArtifacts, "implementation-patch-mediation");
+  const patchCompanionInstances = getInstances(sourceArtifacts, "implementation-patch-mediation-summary");
   const handoffs = handoffInstances.map((instance) => instance.data).filter(isRecord);
   const patchRecords = patchInstances.map((instance) => instance.data).filter(isRecord);
   const outcomes = countByStatus(handoffs.map((handoff) => String(handoff.outcome ?? "unknown")));
   const latest = handoffs.at(-1);
   const latestInstance = handoffInstances.at(-1);
+  const latestPatchCompanion = patchCompanionInstances.at(-1);
   const latestDecision = isRecord(latest?.decisionPacket) ? latest?.decisionPacket : undefined;
   const latestReplay = isRecord(latest?.replay) ? latest?.replay : undefined;
   const latestObservedAt = stringValue(latest?.createdAt) ?? latestInstance?.modifiedAt ?? "not_available_yet";
@@ -840,11 +863,125 @@ function summarizeImplementationMediation(sourceArtifacts: ConsoleSnapshotArtifa
     state: handoffs.length > 0 || patchRecords.length > 0 ? "available" : "not_available_yet",
     handoffCount: handoffs.length,
     patchMediationCount: patchRecords.length,
+    patchMediationCompanionCount: patchCompanionInstances.length,
     outcomes,
     latestOutcome: latest?.outcome ?? "not_available_yet",
     latestStopPoint: latestDecision?.stopPoint ?? "not_available_yet",
     latestReplayable: latestReplay?.replayable ?? false,
     latestObservedAt,
+    latestPatchReviewCompanionPath: latestPatchCompanion?.relativePath ?? "not_available_yet",
+    latestPatchReviewCompanionSummary: latestPatchCompanion?.companion?.summary ?? "not_available_yet",
+  };
+}
+
+function summarizeImplementationWorkspace(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const activeSession = getFirstData(sourceArtifacts, "active-change-session");
+  const activeSessionRecord = isRecord(activeSession) ? activeSession : undefined;
+  const activeSessionId = stringValue(activeSessionRecord?.id);
+  const handoffInstances = getInstances(sourceArtifacts, "implementation-handoff-packets");
+  const patchInstances = getInstances(sourceArtifacts, "implementation-patch-mediation");
+  const patchCompanionInstances = getInstances(sourceArtifacts, "implementation-patch-mediation-summary");
+  const matchingHandoffInstance = activeSessionId
+    ? [...handoffInstances].reverse().find((instance) => stringValue(isRecord(instance.data) ? instance.data.sessionId : undefined) === activeSessionId)
+    : handoffInstances.at(-1);
+  const matchingPatchInstance = activeSessionId
+    ? [...patchInstances].reverse().find((instance) => stringValue(isRecord(instance.data) ? instance.data.sessionId : undefined) === activeSessionId)
+    : patchInstances.at(-1);
+  const matchingPatchCompanionInstance = activeSessionId
+    ? [...patchCompanionInstances].reverse().find((instance) => instance.relativePath.endsWith(`/implement/${activeSessionId}/patch-mediation.md`))
+    : patchCompanionInstances.at(-1);
+  const latestHandoff = isRecord(matchingHandoffInstance?.data) ? matchingHandoffInstance.data : undefined;
+  const latestPatch = isRecord(matchingPatchInstance?.data) ? matchingPatchInstance.data : undefined;
+  const latestPatchCompanion = matchingPatchCompanionInstance;
+  const latestHandoffDecision = isRecord(latestHandoff?.decisionPacket) ? latestHandoff.decisionPacket : undefined;
+  const latestExternalToolHandoff = isRecord(latestHandoffDecision?.nextActionDetail)
+    ? (latestHandoffDecision.nextActionDetail as { externalToolHandoff?: ExternalToolHandoffSummary }).externalToolHandoff
+    : undefined;
+  const latestHandoffReplay = isRecord(latestHandoff?.replay) ? latestHandoff.replay : undefined;
+  const latestPatchReplay = isRecord(latestPatch?.replay) ? latestPatch.replay : undefined;
+  const activeLaneDecision = isRecord(activeSessionRecord?.laneDecision) ? activeSessionRecord.laneDecision : undefined;
+  const activeChangedPaths = Array.isArray(activeSessionRecord?.changedPaths)
+    ? activeSessionRecord.changedPaths
+      .filter(isRecord)
+      .map((entry) => stringValue(entry.path) ?? "unknown")
+    : [];
+  const activeNextCommands = Array.isArray(activeSessionRecord?.nextCommands)
+    ? activeSessionRecord.nextCommands
+      .filter(isRecord)
+      .map((entry) => stringValue(entry.command) ?? "unknown")
+    : [];
+  const latestHandoffPath = matchingHandoffInstance?.relativePath;
+  const latestPatchPath = matchingPatchInstance?.relativePath;
+  const latestHandoffSessionId = stringValue(latestHandoff?.sessionId);
+  const latestPatchSessionId = stringValue(latestPatch?.sessionId);
+  const latestPatchStatus = stringValue(latestPatch?.status);
+  const latestPatchApplied = latestPatch?.applied === true;
+  const latestPatchExternalPatchPath = stringValue(latestPatch?.externalPatchPath);
+  const latestPatchRetryCommand = isRecord(latestPatchReplay?.commands)
+    ? stringValue(latestPatchReplay.commands.retryWithExternalPatch)
+    : undefined;
+  const latestPatchReviewCompanionPath = latestPatchCompanion?.relativePath;
+  const latestPatchReviewCompanionSummary = latestPatchCompanion?.companion?.summary;
+  const latestHandoffRestoreCommand = isRecord(latestHandoffReplay?.commands)
+    ? stringValue(latestHandoffReplay.commands.restore)
+    : undefined;
+  const latestHandoffRetryCommand = isRecord(latestHandoffReplay?.commands)
+    ? stringValue(latestHandoffReplay.commands.retryWithExternalPatch)
+    : undefined;
+  const latestHandoffAdapterCommand = latestHandoffPath
+    ? `npm run jispec-cli -- handoff adapter --from-handoff ${latestHandoffPath} --tool codex`
+    : "npm run jispec-cli -- handoff adapter --from-handoff <path-or-session> --tool codex";
+  const externalToolRequired = latestExternalToolHandoff?.required === true;
+  const patchNeedsAttention = latestPatchStatus === "apply_failed" || latestPatchStatus === "rejected_out_of_scope";
+  const chainStatus = !activeSessionRecord
+    ? "not_available_yet"
+    : patchNeedsAttention
+      ? "needs_patch"
+      : externalToolRequired
+        ? "needs_external_tool"
+        : latestHandoff
+          ? "ready"
+          : "needs_handoff";
+
+  return {
+    state: activeSessionRecord || latestHandoff || latestPatch ? "available" : "not_available_yet",
+    chainStatus,
+    activeSessionId: activeSessionId ?? "not_available_yet",
+    activeSessionPath: activeSessionRecord ? ".jispec/change-session.json" : "not_available_yet",
+    activeSessionSummary: stringValue(activeSessionRecord?.summary) ?? "not_available_yet",
+    activeSessionMode: stringValue(activeSessionRecord?.orchestrationMode) ?? "not_available_yet",
+    activeSessionLane: stringValue(activeLaneDecision?.lane) ?? "not_available_yet",
+    activeSessionRequestedLane: stringValue(activeLaneDecision?.requestedLane) ?? "not_available_yet",
+    activeSessionAutoPromoted: activeLaneDecision?.autoPromoted === true,
+    activeChangedPathCount: activeChangedPaths.length,
+    activeChangedPaths,
+    activeNextCommandCount: activeNextCommands.length,
+    activeNextCommands,
+    latestHandoffSessionId: latestHandoffSessionId ?? "not_available_yet",
+    latestHandoffPath: latestHandoffPath ?? "not_available_yet",
+    latestHandoffOutcome: stringValue(latestHandoff?.outcome) ?? "not_available_yet",
+    latestHandoffStopPoint: stringValue(latestHandoffDecision?.stopPoint) ?? "not_available_yet",
+    latestHandoffReplayable: latestHandoffReplay?.replayable === true,
+    latestHandoffRestoreCommand: latestHandoffRestoreCommand ?? "not_available_yet",
+    latestHandoffRetryCommand: latestHandoffRetryCommand ?? "not_available_yet",
+    latestHandoffAdapterCommand,
+    latestExternalToolHandoffRequired: externalToolRequired,
+    latestExternalToolHandoffRequest: stringValue(latestExternalToolHandoff?.request) ?? "not_available_yet",
+    latestExternalToolHandoffAllowedPaths: Array.isArray(latestExternalToolHandoff?.allowedPaths)
+      ? latestExternalToolHandoff.allowedPaths.map(String)
+      : [],
+    latestExternalToolHandoffFilesNeedingAttention: Array.isArray(latestExternalToolHandoff?.filesNeedingAttention)
+      ? latestExternalToolHandoff.filesNeedingAttention.map(String)
+      : [],
+    latestPatchSessionId: latestPatchSessionId ?? "not_available_yet",
+    latestPatchPath: latestPatchPath ?? "not_available_yet",
+    latestPatchStatus: latestPatchStatus ?? "not_available_yet",
+    latestPatchApplied,
+    latestPatchExternalPatchPath: latestPatchExternalPatchPath ?? "not_available_yet",
+    latestPatchRetryCommand: latestPatchRetryCommand ?? "not_available_yet",
+    latestPatchReviewCompanionPath: latestPatchReviewCompanionPath ?? "not_available_yet",
+    latestPatchReviewCompanionSummary: latestPatchReviewCompanionSummary ?? "not_available_yet",
+    chainReady: chainStatus === "ready",
   };
 }
 

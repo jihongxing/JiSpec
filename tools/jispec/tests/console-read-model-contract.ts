@@ -46,7 +46,7 @@ async function main(): Promise<void> {
     assert.equal(contract.boundary.replacesCliGate, false);
     assert.equal(contract.boundary.sourceUploadRequired, false);
     assert.equal(contract.boundary.localArtifactsAreSourceOfTruth, true);
-    assert.equal(contract.governanceObjects.length, 13);
+    assert.equal(contract.governanceObjects.length, 15);
   });
 
   record("contract includes required machine-readable read model artifacts and governance sources", () => {
@@ -68,6 +68,7 @@ async function main(): Promise<void> {
       ".spec/console/governance-snapshot.json",
       ".spec/handoffs/retakeover-metrics.json",
       ".spec/handoffs/retakeover-pool-metrics.json",
+      ".jispec/change-session.json",
       ".jispec/handoff/*.json",
       ".jispec/implement/<session-id>/patch-mediation.json",
       ".spec/approvals/*.json",
@@ -89,10 +90,12 @@ async function main(): Promise<void> {
       "verify_trend",
       "takeover_quality_trend",
       "implementation_mediation_outcomes",
+      "implementation_workspace",
       "audit_events",
       "approval_workflow",
       "multi_repo_export",
       "north_star_acceptance",
+      "doctor_global_readiness",
     ]);
     for (const object of CONSOLE_GOVERNANCE_OBJECTS) {
       assert.equal(object.missingState, "not_available_yet");
@@ -108,6 +111,7 @@ async function main(): Promise<void> {
   record("Markdown artifacts are display-only companions, not machine APIs", () => {
     const markdownArtifacts = CONSOLE_READ_MODEL_ARTIFACTS.filter((artifact) => artifact.format === "markdown");
     assert.ok(markdownArtifacts.length >= 3);
+    assert.ok(markdownArtifacts.some((artifact) => artifact.pathPattern === ".jispec/implement/<session-id>/patch-mediation.md"));
     for (const artifact of markdownArtifacts) {
       assert.equal(artifact.machineReadable, false, artifact.id);
       assert.equal(artifact.parseMarkdown, false, artifact.id);
@@ -194,6 +198,29 @@ async function main(): Promise<void> {
       writeText(fixtureRoot, ".spec/releases/compare/v1-to-v2/compare-report.json", JSON.stringify({ driftSummary: { changed: 1 } }, null, 2));
       writeText(fixtureRoot, ".spec/console/governance-snapshot.json", JSON.stringify({ kind: "jispec-multi-repo-governance-snapshot" }, null, 2));
       writeText(fixtureRoot, ".spec/handoffs/retakeover-metrics.json", JSON.stringify({ qualityScorecard: { score: 82 } }, null, 2));
+      writeText(fixtureRoot, ".jispec/change-session.json", JSON.stringify({
+        id: "change-1",
+        summary: "Repair implementation replay flow",
+        orchestrationMode: "execute",
+        laneDecision: {
+          lane: "strict",
+          requestedLane: "strict",
+          autoPromoted: false,
+          reasons: ["change touches implementation code"],
+        },
+        changedPaths: [
+          {
+            path: "src/domain/order.ts",
+            kind: "source",
+          },
+        ],
+        nextCommands: [
+          {
+            command: "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-1.json --tool codex",
+            description: "Generate the external tool request.",
+          },
+        ],
+      }, null, 2));
       writeText(fixtureRoot, ".jispec/handoff/change-1.json", JSON.stringify({ outcome: "budget_exhausted", decisionPacket: { stopPoint: "budget" }, replay: { replayable: true } }, null, 2));
       writeText(fixtureRoot, ".jispec/implement/change-1/patch-mediation.json", JSON.stringify({ status: "accepted", applied: true }, null, 2));
       writeText(fixtureRoot, ".spec/approvals/approval-1.json", JSON.stringify({
@@ -235,6 +262,7 @@ async function main(): Promise<void> {
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "greenfield-requirement-lifecycle")?.instances[0]?.relativePath, ".spec/requirements/lifecycle.yaml");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "release-compare-report")?.instances[0]?.relativePath, ".spec/releases/compare/v1-to-v2/compare-report.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "multi-repo-governance-snapshot")?.instances[0]?.relativePath, ".spec/console/governance-snapshot.json");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "active-change-session")?.instances[0]?.relativePath, ".jispec/change-session.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "implementation-handoff-packets")?.instances[0]?.relativePath, ".jispec/handoff/change-1.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "policy-approvals")?.instances[0]?.relativePath, ".spec/approvals/approval-1.json");
     } finally {
@@ -398,7 +426,62 @@ async function main(): Promise<void> {
           },
         },
       }, null, 2));
-      writeText(fixtureRoot, ".jispec/handoff/change-replay.json", JSON.stringify({ outcome: "verify_blocked", decisionPacket: { stopPoint: "post_verify" }, replay: { replayable: true } }, null, 2));
+      writeText(fixtureRoot, ".jispec/change-session.json", JSON.stringify({
+        id: "change-replay",
+        summary: "Replay implementation mediation for the current workspace",
+        orchestrationMode: "execute",
+        laneDecision: {
+          lane: "strict",
+          requestedLane: "strict",
+          autoPromoted: false,
+          reasons: ["implementation change needs replay"],
+        },
+        changedPaths: [
+          {
+            path: "src/domain/order.ts",
+            kind: "source",
+          },
+        ],
+        nextCommands: [
+          {
+            command: "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-replay.json --tool codex",
+            description: "Generate the external tool request.",
+          },
+        ],
+      }, null, 2));
+      writeText(fixtureRoot, ".jispec/handoff/change-replay.json", JSON.stringify({
+        sessionId: "change-replay",
+        outcome: "verify_blocked",
+        decisionPacket: { stopPoint: "post_verify" },
+        replay: { replayable: true },
+      }, null, 2));
+      writeText(fixtureRoot, ".jispec/implement/change-replay/patch-mediation.json", JSON.stringify({
+        sessionId: "change-replay",
+        status: "accepted",
+        applied: true,
+      }, null, 2));
+      writeText(fixtureRoot, ".jispec/implement/change-replay/patch-mediation.md", [
+        "## 判断对象",
+        "- Patch mediation companion for session change-replay",
+        "- Truth sources:",
+        "  - .jispec/implement/change-replay/patch-mediation.json",
+        "",
+        "## 最强证据",
+        "- Status: accepted",
+        "- Applied: yes",
+        "",
+        "## 推断证据",
+        "- Replay outcome: verify_blocked",
+        "",
+        "## 冲突/drift",
+        "- none",
+        "",
+        "## 影响契约/测试",
+        "- Touched paths: src/domain/order.ts",
+        "",
+        "## 下一步",
+        "- Review the patch mediation companion before merge.",
+      ].join("\n"));
       writeText(fixtureRoot, ".spec/audit/events.jsonl", `${JSON.stringify({ event: "default_mode_set", actor: "codex" })}\n`);
 
       const snapshot = collectConsoleLocalSnapshot(fixtureRoot);
@@ -419,9 +502,21 @@ async function main(): Promise<void> {
       assert.equal((sourceEvolution.summary.lifecycleDeltaCounts as Record<string, unknown>).modified, 1);
 
       const implementation = governanceObject(snapshot, "implementation_mediation_outcomes");
-      assert.equal(implementation.status, "partial");
+      assert.equal(implementation.status, "available");
       assert.equal(implementation.summary.latestOutcome, "verify_blocked");
       assert.equal(implementation.summary.latestReplayable, true);
+
+      const workspace = governanceObject(snapshot, "implementation_workspace");
+      assert.equal(workspace.status, "available");
+      assert.equal(workspace.summary.state, "available");
+      assert.equal(workspace.summary.chainStatus, "ready");
+      assert.equal(workspace.summary.activeSessionId, "change-replay");
+      assert.equal(workspace.summary.latestHandoffSessionId, "change-replay");
+      assert.equal(workspace.summary.latestHandoffReplayable, true);
+      assert.equal(workspace.summary.latestHandoffAdapterCommand, "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-replay.json --tool codex");
+      assert.equal(workspace.summary.latestPatchReviewCompanionPath, ".jispec/implement/change-replay/patch-mediation.md");
+      assert.match(String(workspace.summary.latestPatchReviewCompanionSummary), /Patch mediation companion for session change-replay/);
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "implementation-patch-mediation-summary")?.instances[0]?.relativePath, ".jispec/implement/change-replay/patch-mediation.md");
 
       const audit = governanceObject(snapshot, "audit_events");
       assert.equal(audit.status, "available");

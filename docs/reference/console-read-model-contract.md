@@ -54,8 +54,10 @@ Console reads the North Star acceptance package as the terminal local acceptance
 | Retakeover metrics | `.spec/handoffs/retakeover-metrics.json` | retakeover regression | JSON | local contract | Single-repository takeover quality scorecard, risk notes, feature overclaim risk, and next action |
 | Retakeover pool metrics | `.spec/handoffs/retakeover-pool-metrics.json` | retakeover regression pool | JSON | local contract | Pool-level takeover quality trend across real and synthetic retakeover fixtures |
 | Value report | `.spec/metrics/value-report.json` | `metrics value-report` | JSON | local contract | Repo-local ROI and adoption metrics: manual sorting reduction, surfaced risks, waiver/debt aging, and execute mediation stop points |
+| Active change session | `.jispec/change-session.json` | `change` | JSON | local contract | Current active change session with lane decision, changed paths, next commands, and replay context for handoff orchestration |
 | Implementation handoff packets | `.jispec/handoff/*.json` | `implement` | JSON | local contract | Execute/implement outcomes, stop points, replay state, next-action owner, and external handoff requests |
 | Implementation patch mediation | `.jispec/implement/<session-id>/patch-mediation.json` | `implement --external-patch` | JSON | local contract | External patch scope, apply, test, and verify intake records |
+| Implementation patch mediation summary | `.jispec/implement/<session-id>/patch-mediation.md` | `implement --external-patch` | Markdown | human companion | Human companion for patch scope, local acceptance, test, verify, and replay review |
 | Policy approvals | `.spec/approvals/*.json` | `policy approval record` | JSON | local contract | Structured local approval decisions for policy, waiver, release drift, and execute-default changes |
 | Audit event ledger | `.spec/audit/events.jsonl` | governance commands | JSONL | local contract | Append-only local audit events for approvals, exceptions, boundary changes, release comparisons, and patch intake |
 | North Star acceptance | `.spec/north-star/acceptance.json` | `north-star acceptance` | JSON | final local acceptance contract | Cross-scenario acceptance status for legacy takeover, Greenfield, daily change, external patch mediation, policy waiver, release drift, Console governance, multi-repo aggregation, and privacy report |
@@ -77,7 +79,8 @@ Console snapshot groups declared artifacts into governance objects. These are di
 | Release baseline | `.spec/baselines/releases/<version>.yaml` | `not_available_yet` | Show frozen release baselines available for governance review |
 | Verify trend | `.jispec-ci/verify-report.json`, `.spec/baselines/verify-baseline.json` | `not_available_yet` | Show current verify verdict and baseline availability without recomputing verify |
 | Takeover quality trend | `.spec/handoffs/retakeover-metrics.json`, `.spec/handoffs/retakeover-pool-metrics.json`, `.spec/metrics/value-report.json` | `not_available_yet` | Show retakeover quality scorecards, value metrics, adoption trend, and next actions |
-| Implementation mediation outcomes | `.jispec/handoff/*.json`, `.jispec/implement/<session-id>/patch-mediation.json` | `not_available_yet` | Show execute/implement outcomes, stop points, replayability, and patch mediation posture |
+| Implementation mediation outcomes | `.jispec/handoff/*.json`, `.jispec/implement/<session-id>/patch-mediation.json`, `.jispec/implement/<session-id>/patch-mediation.md` | `not_available_yet` | Show execute/implement outcomes, stop points, replayability, and patch mediation posture |
+| Implementation workspace | `.jispec/change-session.json`, `.jispec/handoff/*.json`, `.jispec/implement/<session-id>/patch-mediation.json`, `.jispec/implement/<session-id>/patch-mediation.md` | `not_available_yet` | Show the active change session, replay-ready handoff packet, external-tool request path, and patch mediation return path in one workspace view |
 | Approval workflow | `.spec/policy.yaml`, `.spec/approvals/*.json`, `.spec/waivers/*.json`, `.spec/releases/compare/<from>-to-<to>/compare-report.json` | `not_available_yet` | Show approval missing, approval stale, or approval satisfied for policy, waiver, release drift, and execute-default changes |
 | Audit events | `.spec/audit/events.jsonl` | `not_available_yet` | Show who approved or changed policy, waivers, adoption decisions, release baselines, and patch intake, with source artifact and affected contract refs |
 | North Star acceptance | `.spec/north-star/acceptance.json`, `.spec/north-star/scenarios/*.json`, `.spec/north-star/scenarios/*-decision.md` | `not_available_yet` | Show final local acceptance posture without replacing `verify`, `ci:verify`, doctor profiles, or post-release gate |
@@ -112,6 +115,7 @@ The drill-down questions remain:
 - Which spec debt blocks takeover or release?
 - Which contract drift needs owner review?
 - Where did execute mediation last stop?
+- How do I hand off or replay this change?
 - Are policy approvals missing, stale, or satisfied?
 - Who approved the latest exception or boundary change?
 - Is the terminal North Star acceptance ready?

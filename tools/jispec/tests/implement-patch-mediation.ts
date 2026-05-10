@@ -112,6 +112,11 @@ async function main(): Promise<void> {
       inspectHandoff: "npm run jispec-cli -- handoff adapter --from-handoff .jispec/handoff/change-docs-patch.json --tool codex",
       previousOutcome: "accepted",
     });
+    const markdownPath = path.join(docsFixture, ".jispec", "implement", "change-docs-patch", "patch-mediation.md");
+    assert.ok(fs.existsSync(markdownPath));
+    const markdown = fs.readFileSync(markdownPath, "utf-8");
+    assert.match(markdown, /Patch mediation companion for session change-docs-patch/);
+    assert.match(markdown, /human-readable companion summary, not a machine API/);
     console.log("✓ Test 1: docs-only external patch is scoped, applied, tested, verified, and archived");
     passed++;
   } catch (error) {
@@ -207,6 +212,9 @@ async function main(): Promise<void> {
     assert.equal(result.handoffPacket?.outcome, "patch_rejected_out_of_scope");
     assert.ok(result.patchMediation?.violations.includes("out-of-scope path: src/domain/order.ts"));
     assert.equal(fs.existsSync(path.join(rejectedFixture, "src", "domain", "order.ts")), false);
+    const rejectedMarkdownPath = path.join(rejectedFixture, ".jispec", "implement", "change-rejected-patch", "patch-mediation.md");
+    assert.ok(fs.existsSync(rejectedMarkdownPath));
+    assert.match(fs.readFileSync(rejectedMarkdownPath, "utf-8"), /Status: rejected_out_of_scope/);
     assert.ok(result.metadata.patchMediationPath);
     console.log("✓ Test 3: out-of-scope external patch is rejected before apply and recorded");
     passed++;
@@ -261,6 +269,9 @@ async function main(): Promise<void> {
       result.handoffPacket?.decisionPacket.nextActionDetail.command,
       "npm run jispec-cli -- implement --session-id change-failing-patch --external-patch <path>",
     );
+    const failingMarkdownPath = path.join(failingFixture, ".jispec", "implement", "change-failing-patch", "patch-mediation.md");
+    assert.ok(fs.existsSync(failingMarkdownPath));
+    assert.match(fs.readFileSync(failingMarkdownPath, "utf-8"), /Status: accepted/);
     assert.ok(result.handoffPacket?.decisionPacket.nextActionDetail.externalToolHandoff?.request.includes("mediated test command passes"));
     assert.equal(result.handoffPacket?.nextSteps.externalToolHandoff?.required, true);
     assert.ok(result.handoffPacket?.nextSteps.externalToolHandoff?.request.includes("mediated test command passes"));

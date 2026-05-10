@@ -869,6 +869,7 @@ export function renderImplementText(result: ImplementRunResult): string {
     }
     if (result.metadata.patchMediationPath) {
       lines.push(`  Artifact: ${result.metadata.patchMediationPath}`);
+      lines.push(`  Companion: ${result.metadata.patchMediationPath.replace(/\.json$/, ".md")}`);
     }
   }
 
