@@ -99,6 +99,7 @@ export const TEST_SUITES: TestSuite[] = [
   core({ name: 'Verify Runner Fail Blocking', file: 'verify-runner-fail-blocking.ts', expectedTests: 3 }),
   core({ name: 'Verify Runner Warn Advisory', file: 'verify-runner-warn-advisory.ts', expectedTests: 3 }),
   core({ name: 'Verify Runner Runtime Soft Fail', file: 'verify-runner-runtime-soft-fail.ts', expectedTests: 3 }),
+  core({ name: 'Verify Kernel Surface', file: 'verify-kernel-surface.ts', expectedTests: 2 }),
   core({ name: 'Verify JSON Contract', file: 'verify-json-contract.ts', expectedTests: 3, task: 'P1-T5' }),
   core({ name: 'Facts Contract Roundtrip', file: 'facts-contract-roundtrip.ts', expectedTests: 4 }),
   core({ name: 'Policy Engine Basic', file: 'policy-engine-basic.ts', expectedTests: 5, task: 'P2-T6/M5-T1' }),
@@ -160,9 +161,11 @@ export const TEST_SUITES: TestSuite[] = [
   changeImplement({ name: 'Implement Mainline Lane', file: 'implement-mainline-lane.ts', expectedTests: 3 }),
   changeImplement({ name: 'Implement Handoff Mainline', file: 'implement-handoff-mainline.ts', expectedTests: 1 }),
   changeImplement({ name: 'Implement Patch Mediation', file: 'implement-patch-mediation.ts', expectedTests: 4, task: 'P2-T1' }),
-  changeImplement({ name: 'Implement Handoff Adapters', file: 'implement-handoff-adapters.ts', expectedTests: 5, task: 'P7-T1' }),
+  changeImplement({ name: 'Implement Handoff Adapters', file: 'implement-handoff-adapters.ts', expectedTests: 6, task: 'P7-T1' }),
   changeImplement({ name: 'Implement Stall Budget', file: 'implement-stall-budget.ts', expectedTests: 4, task: 'P2-T2' }),
   changeImplement({ name: 'Implement CLI Parity', file: 'implement-cli-parity.ts', expectedTests: 3, task: 'P2-T4' }),
+  changeImplement({ name: 'KTM Runtime Atomic Publication', file: 'ktm-runtime.ts', expectedTests: 3, task: 'CK-06' }),
+  changeImplement({ name: 'Ambiguity Debt Register', file: 'ambiguity-debt-register.ts', expectedTests: 6 }),
   changeImplement({ name: 'P9 Change Impact Summary', file: 'p9-change-impact-summary.ts', expectedTests: 7, task: 'P9-T3' }),
   changeImplement({ name: 'P10 Agent Discipline Artifacts', file: 'agent-discipline-artifacts.ts', expectedTests: 10, task: 'P10-T1/P10-T2/P10-T3/P10-T4' }),
   changeImplement({ name: 'P10 Agent Discipline Implement', file: 'agent-discipline-implement.ts', expectedTests: 4, task: 'P10-T5/P10-T6/P10-T7' }),
@@ -191,7 +194,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Collaboration Locking MVP', file: 'collaboration-locking-mvp.ts', expectedTests: 3 }),
   runtime({ name: 'Collaboration Notifications MVP', file: 'collaboration-notifications-mvp.ts', expectedTests: 3 }),
   runtime({ name: 'Collaboration Analytics MVP', file: 'collaboration-analytics-mvp.ts', expectedTests: 3 }),
-  runtime({ name: 'Console Read Model Contract', file: 'console-read-model-contract.ts', expectedTests: 10, task: 'T3.1/P2-T1' }),
+  runtime({ name: 'Console Read Model Contract', file: 'console-read-model-contract.ts', expectedTests: 11, task: 'T3.1/P2-T1' }),
   runtime({ name: 'Audit Event Ledger', file: 'audit-event-ledger.ts', expectedTests: 5, task: 'P2-T2/P6-T1' }),
   runtime({ name: 'Console Governance Dashboard', file: 'console-governance-dashboard.ts', expectedTests: 4, task: 'P2-T3' }),
   runtime({ name: 'Console UI Smoke', file: 'console-ui-smoke.ts', expectedTests: 4, task: 'P5-T1' }),
@@ -218,6 +221,30 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'P9 External Tool Run Opt-In Boundary', file: 'p9-external-tool-run-opt-in-boundary.ts', expectedTests: 6, task: 'P9-T7' }),
   runtime({ name: 'Collaboration Surface Freeze', file: 'collaboration-surface-freeze.ts', expectedTests: 4, task: 'P4-T2' }),
 ];
+
+export interface RegressionMatrixTotals {
+  totalSuites: number;
+  totalExpectedTests: number;
+}
+
+export const REGRESSION_MATRIX_TOTALS: RegressionMatrixTotals = {
+  totalSuites: TEST_SUITES.length,
+  totalExpectedTests: TEST_SUITES.reduce((sum, suite) => sum + suite.expectedTests, 0),
+};
+
+export const REGRESSION_MATRIX_AREA_TOTALS: Record<RegressionArea, RegressionAreaSummary> = Object.fromEntries(
+  REGRESSION_AREA_ORDER.map((area) => {
+    const suites = TEST_SUITES.filter((suite) => suite.area === area);
+    return [
+      area,
+      {
+        area,
+        suiteCount: suites.length,
+        expectedTests: suites.reduce((sum, suite) => sum + suite.expectedTests, 0),
+      },
+    ];
+  }),
+) as Record<RegressionArea, RegressionAreaSummary>;
 
 interface RegressionAreaSummary {
   area: RegressionArea;
@@ -259,14 +286,7 @@ interface RegressionMatrixManifest {
 }
 
 export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
-  const areas = REGRESSION_AREA_ORDER.map((area) => {
-    const suites = TEST_SUITES.filter((suite) => suite.area === area);
-    return {
-      area,
-      suiteCount: suites.length,
-      expectedTests: suites.reduce((sum, suite) => sum + suite.expectedTests, 0),
-    };
-  });
+  const areas = REGRESSION_AREA_ORDER.map((area) => REGRESSION_MATRIX_AREA_TOTALS[area]);
 
   const deferredSuites = getDeferredRegressionSuites();
   const deferredSuiteSet = new Set(deferredSuites);
@@ -317,8 +337,8 @@ export function buildRegressionMatrixManifest(): RegressionMatrixManifest {
   return {
     schemaVersion: 1,
     source: 'tools/jispec/tests/regression-runner.ts',
-    totalSuites: TEST_SUITES.length,
-    totalExpectedTests: TEST_SUITES.reduce((sum, suite) => sum + suite.expectedTests, 0),
+    totalSuites: REGRESSION_MATRIX_TOTALS.totalSuites,
+    totalExpectedTests: REGRESSION_MATRIX_TOTALS.totalExpectedTests,
     areas,
     suites: TEST_SUITES.map((suite) => ({ ...suite })),
     boundaries: {

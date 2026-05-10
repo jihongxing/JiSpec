@@ -32,7 +32,18 @@ import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-meta
 import { isPolicySchemaError, validatePolicyAgainstFactsContract } from "../policy/policy-schema";
 import { classifyGitDiff } from "../change/git-diff-classifier";
 import { computeLaneDecision } from "../change/lane-decision";
-import { readChangeSession } from "../change/change-session";
+import { readChangeSession, type ChangeSession } from "../change/change-session";
+import {
+  summarizeExecutionForkGovernanceRecord,
+  type ExecutionForkGovernanceRecord,
+  type ExecutionForkGovernanceSummary,
+} from "../kernel/execution-fork";
+import {
+  summarizeKtmRuntimeRecord,
+  type KtmRuntimeRecord,
+  type KtmRuntimeSummary,
+} from "../kernel/ktm";
+import { buildKernelProvenanceBinding, resolveCanonicalChangeId } from "../kernel/provenance";
 import { agentDisciplineCollector } from "./agent-discipline-collector";
 import { collectBootstrapTakeoverIssues } from "./bootstrap-takeover-collector";
 import { collectContractAssetIssues, isContractScopedPath } from "./contract-asset-collector";
@@ -53,6 +64,18 @@ import {
 export interface VerifySupplementalCollector {
   source: string;
   collect(root: string, options: VerifyRunOptions): Promise<VerifyIssue[]> | VerifyIssue[];
+}
+
+interface KernelSurfaceEvidence {
+  changeId?: string;
+  executionForkArtifactPath: string;
+  executionFork?: ExecutionForkGovernanceSummary;
+  ktmKernelLogPath: string;
+  ktmStateSnapshotPath: string;
+  ktmRuntimeSummaryPath: string;
+  ktmAuditLedgerPath: string;
+  ktmRuntime?: KtmRuntimeSummary;
+  issues: VerifyIssue[];
 }
 
 export interface VerifyRunOptions {
@@ -151,6 +174,14 @@ export async function runVerify(options: VerifyRunOptions): Promise<VerifyRunRes
 async function runFullVerify(root: string, options: VerifyRunOptions): Promise<VerifyRunResult> {
   const factsContract = createFactsContract();
   const sources: string[] = ["legacy-validator"];
+  const activeSession = readChangeSession(root);
+  const kernelSurface = loadKernelSurfaceEvidence(root, activeSession);
+  const canonicalChangeId = resolveCanonicalChangeId(activeSession) ?? kernelSurface?.changeId ?? "not_available_yet";
+  const provenanceBinding = activeSession
+    ? buildKernelProvenanceBinding(activeSession, "active_change_session")
+    : undefined;
+  const executionFork = kernelSurface?.executionFork;
+  const ktmRuntime = kernelSurface?.ktmRuntime;
   const legacyIssues = reconcileLegacyIssuesWithTakeover(await collectLegacyIssues(root), root);
   const supplementalResult = await collectSupplementalIssues(root, options.strict === true, options);
   const externalGraphImport = importExternalGraphArtifact({
@@ -168,7 +199,12 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
 
   let result = createVerifyRunResult(
     root,
-    mergeVerifyIssues(legacyIssues, supplementalResult.issues, collectExternalGraphImportIssues(externalGraphImport)),
+    mergeVerifyIssues(
+      legacyIssues,
+      kernelSurface?.issues ?? [],
+      supplementalResult.issues,
+      collectExternalGraphImportIssues(externalGraphImport),
+    ),
     {
       sources,
       generatedAt: options.generatedAt,
@@ -204,8 +240,18 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   result = await applyObservePostProcessing(result, options);
   result.metadata = {
     ...result.metadata,
-    replay: buildVerifyReplay(result, options),
+    provenanceBinding,
+    replay: buildVerifyReplay(result, options, kernelSurface),
   };
+  if (canonicalChangeId !== "not_available_yet") {
+    result.metadata.changeId = canonicalChangeId;
+  }
+  if (executionFork) {
+    result.metadata.executionFork = executionFork;
+  }
+  if (ktmRuntime) {
+    result.metadata.ktmRuntime = ktmRuntime;
+  }
   result.metadata = {
     ...result.metadata,
     ...buildImpactGraphMetadata(root),
@@ -214,11 +260,208 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   return result;
 }
 
+function loadKernelSurfaceEvidence(
+  rootInput: string,
+  activeSession: Pick<ChangeSession, "id" | "createdAt" | "changeId" | "specDelta" | "executionFork" | "ktmRuntime"> | null,
+): KernelSurfaceEvidence | undefined {
+  if (!activeSession) {
+    return undefined;
+  }
+
+  const root = path.resolve(rootInput);
+  const executionForkArtifactPath = path.join(root, ".jispec", "implement", activeSession.id, "execution-fork.json");
+  const ktmArtifactDir = path.join(root, ".jispec", "kernel-runtime", activeSession.id);
+  const ktmKernelLogPath = path.join(ktmArtifactDir, "kernel-log.json");
+  const ktmStateSnapshotPath = path.join(ktmArtifactDir, "state-snapshot.json");
+  const ktmRuntimeSummaryPath = path.join(ktmArtifactDir, "kernel-runtime.md");
+  const ktmAuditLedgerPath = path.join(root, ".spec", "audit", "events.jsonl");
+  const issues: VerifyIssue[] = [];
+  const canonicalChangeId = resolveCanonicalChangeId(activeSession) ?? activeSession.changeId;
+  const executionForkSignal = activeSession.executionFork !== undefined || fs.existsSync(executionForkArtifactPath);
+  const ktmSignal = activeSession.ktmRuntime !== undefined || fs.existsSync(ktmKernelLogPath) || fs.existsSync(ktmStateSnapshotPath);
+
+  let loadedExecutionFork: ExecutionForkGovernanceSummary | undefined;
+  let loadedKtmRuntime: KtmRuntimeSummary | undefined;
+  let parsedExecutionFork: ExecutionForkGovernanceRecord | undefined;
+  let parsedKtmRuntime: KtmRuntimeRecord | undefined;
+
+  if (executionForkSignal) {
+    if (!fs.existsSync(executionForkArtifactPath)) {
+      issues.push(createKernelSurfaceIssue(
+        "missing_file",
+        "KERNEL_EXECUTION_FORK_MISSING",
+        relativeKernelPath(root, executionForkArtifactPath),
+        "Execution fork governance is expected, but its kernel artifact is missing.",
+        {
+          sessionId: activeSession.id,
+          changeId: canonicalChangeId,
+          expectedArtifact: executionForkArtifactPath,
+        },
+      ));
+    } else {
+      parsedExecutionFork = readJsonRecord<ExecutionForkGovernanceRecord>(executionForkArtifactPath);
+      if (!parsedExecutionFork) {
+        issues.push(createKernelSurfaceIssue(
+          "runtime_error",
+          "KERNEL_EXECUTION_FORK_INVALID",
+          relativeKernelPath(root, executionForkArtifactPath),
+          "Execution fork governance artifact could not be parsed.",
+          {
+            expectedArtifact: executionForkArtifactPath,
+            sessionId: activeSession.id,
+          },
+        ));
+      } else if (parsedExecutionFork.sessionId !== activeSession.id || (canonicalChangeId && parsedExecutionFork.changeId !== canonicalChangeId)) {
+        issues.push(createKernelSurfaceIssue(
+          "trace",
+          "KERNEL_EXECUTION_FORK_LINEAGE_MISMATCH",
+          relativeKernelPath(root, executionForkArtifactPath),
+          "Execution fork governance artifact does not match the active change lineage.",
+          {
+            sessionId: activeSession.id,
+            expectedChangeId: canonicalChangeId,
+            observedSessionId: parsedExecutionFork.sessionId,
+            observedChangeId: parsedExecutionFork.changeId,
+          },
+        ));
+      } else {
+        loadedExecutionFork = summarizeExecutionForkGovernanceRecord(
+          parsedExecutionFork,
+          relativeKernelPath(root, executionForkArtifactPath),
+        );
+      }
+    }
+  }
+
+  if (ktmSignal) {
+    const kernelLogExists = fs.existsSync(ktmKernelLogPath);
+    const stateSnapshotExists = fs.existsSync(ktmStateSnapshotPath);
+
+    if (!kernelLogExists) {
+      issues.push(createKernelSurfaceIssue(
+        "missing_file",
+        "KERNEL_RUNTIME_KERNEL_LOG_MISSING",
+        relativeKernelPath(root, ktmKernelLogPath),
+        "Kernel runtime is expected, but kernel-log.json is missing.",
+        {
+          sessionId: activeSession.id,
+          changeId: canonicalChangeId,
+          expectedArtifact: ktmKernelLogPath,
+        },
+      ));
+    }
+
+    if (!stateSnapshotExists) {
+      issues.push(createKernelSurfaceIssue(
+        "missing_file",
+        "KERNEL_RUNTIME_STATE_SNAPSHOT_MISSING",
+        relativeKernelPath(root, ktmStateSnapshotPath),
+        "Kernel runtime is expected, but state-snapshot.json is missing.",
+        {
+          sessionId: activeSession.id,
+          changeId: canonicalChangeId,
+          expectedArtifact: ktmStateSnapshotPath,
+        },
+      ));
+    }
+
+    if (kernelLogExists && stateSnapshotExists) {
+      parsedKtmRuntime = readJsonRecord<KtmRuntimeRecord>(ktmKernelLogPath);
+      const stateSnapshot = readJsonRecord<Record<string, unknown>>(ktmStateSnapshotPath);
+
+      if (!parsedKtmRuntime || !stateSnapshot) {
+        issues.push(createKernelSurfaceIssue(
+          "runtime_error",
+          "KERNEL_RUNTIME_INVALID",
+          relativeKernelPath(root, ktmKernelLogPath),
+          "Kernel runtime artifact could not be parsed.",
+          {
+            kernelLogPath: ktmKernelLogPath,
+            stateSnapshotPath: ktmStateSnapshotPath,
+            sessionId: activeSession.id,
+          },
+        ));
+      } else if (parsedKtmRuntime.sessionId !== activeSession.id || (canonicalChangeId && parsedKtmRuntime.changeId !== canonicalChangeId)) {
+        issues.push(createKernelSurfaceIssue(
+          "trace",
+          "KERNEL_RUNTIME_LINEAGE_MISMATCH",
+          relativeKernelPath(root, ktmKernelLogPath),
+          "Kernel runtime artifact does not match the active change lineage.",
+          {
+            sessionId: activeSession.id,
+            expectedChangeId: canonicalChangeId,
+            observedSessionId: parsedKtmRuntime.sessionId,
+            observedChangeId: parsedKtmRuntime.changeId,
+          },
+        ));
+      } else if (!isKernelStateSnapshotCompatible(parsedKtmRuntime, stateSnapshot)) {
+        issues.push(createKernelSurfaceIssue(
+          "trace",
+          "KERNEL_RUNTIME_STATE_SNAPSHOT_MISMATCH",
+          relativeKernelPath(root, ktmStateSnapshotPath),
+          "Kernel state snapshot does not match the committed KTM transition.",
+          {
+            sessionId: activeSession.id,
+            changeId: parsedKtmRuntime.changeId,
+            kernelLogPath: ktmKernelLogPath,
+            stateSnapshotPath: ktmStateSnapshotPath,
+          },
+        ));
+      } else {
+        loadedKtmRuntime = summarizeKtmRuntimeRecord(parsedKtmRuntime);
+      }
+    }
+  }
+
+  if (activeSession.executionFork && loadedExecutionFork && activeSession.executionFork.canonicalTraceId !== loadedExecutionFork.canonicalTraceId) {
+    issues.push(createKernelSurfaceIssue(
+      "trace",
+      "KERNEL_EXECUTION_FORK_SESSION_MISMATCH",
+      relativeKernelPath(root, executionForkArtifactPath),
+      "Embedded execution fork metadata disagrees with the kernel artifact.",
+      {
+        sessionId: activeSession.id,
+        sessionCanonicalTraceId: activeSession.executionFork.canonicalTraceId,
+        artifactCanonicalTraceId: loadedExecutionFork.canonicalTraceId,
+      },
+    ));
+  }
+
+  if (activeSession.ktmRuntime && loadedKtmRuntime && activeSession.ktmRuntime.transition.id !== loadedKtmRuntime.transitionId) {
+    issues.push(createKernelSurfaceIssue(
+      "trace",
+      "KERNEL_RUNTIME_SESSION_MISMATCH",
+      relativeKernelPath(root, ktmKernelLogPath),
+      "Embedded KTM metadata disagrees with the kernel artifact.",
+      {
+        sessionId: activeSession.id,
+        sessionTransitionId: activeSession.ktmRuntime.transition.id,
+        artifactTransitionId: loadedKtmRuntime.transitionId,
+      },
+    ));
+  }
+
+  return {
+    changeId: parsedKtmRuntime?.changeId ?? parsedExecutionFork?.changeId ?? canonicalChangeId,
+    executionForkArtifactPath,
+    ...(loadedExecutionFork ? { executionFork: loadedExecutionFork } : {}),
+    ktmKernelLogPath,
+    ktmStateSnapshotPath,
+    ktmRuntimeSummaryPath,
+    ktmAuditLedgerPath,
+    ...(loadedKtmRuntime ? { ktmRuntime: loadedKtmRuntime } : {}),
+    issues,
+  };
+}
+
 function buildImpactGraphMetadata(root: string): Record<string, unknown> {
   const activeSession = readChangeSession(root);
   const impactSummary = activeSession?.impactSummary;
+  const canonicalChangeId = resolveCanonicalChangeId(activeSession);
+  const changeId = canonicalChangeId ?? activeSession?.id;
   if (impactSummary && !Array.isArray(impactSummary)) {
     return {
+      ...(changeId ? { changeId } : {}),
       impactGraphFreshness: impactSummary.freshness.status,
       impactGraphPath: impactSummary.artifacts.impactGraphPath,
       impactReportPath: impactSummary.artifacts.impactReportPath,
@@ -236,6 +479,7 @@ function buildImpactGraphMetadata(root: string): Record<string, unknown> {
   }
 
   return {
+    ...(changeId ? { changeId } : {}),
     impactGraphFreshness: "not_available_yet",
     impactAdvisoryOnly: true,
   };
@@ -269,7 +513,11 @@ function buildExternalGraphImportMetadata(result: ExternalGraphImportResult): Re
   };
 }
 
-function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): ReplayMetadata {
+function buildVerifyReplay(
+  result: VerifyRunResult,
+  options: VerifyRunOptions,
+  kernelSurface?: KernelSurfaceEvidence,
+): ReplayMetadata {
   const inputArtifacts = [
     ".spec/handoffs/bootstrap-takeover.json",
     ".spec/contracts/domain.yaml",
@@ -284,6 +532,13 @@ function buildVerifyReplay(result: VerifyRunResult, options: VerifyRunOptions): 
   const activeSession = readChangeSession(options.root);
   if (activeSession) {
     inputArtifacts.push(".jispec/change-session.json");
+    if (kernelSurface) {
+      inputArtifacts.push(kernelSurface.executionForkArtifactPath);
+      inputArtifacts.push(kernelSurface.ktmKernelLogPath);
+      inputArtifacts.push(kernelSurface.ktmStateSnapshotPath);
+      inputArtifacts.push(kernelSurface.ktmRuntimeSummaryPath);
+      inputArtifacts.push(kernelSurface.ktmAuditLedgerPath);
+    }
     if (activeSession.impactSummary && !Array.isArray(activeSession.impactSummary)) {
       inputArtifacts.push(
         activeSession.impactSummary.artifacts.deltaPath,
@@ -382,6 +637,63 @@ export function renderVerifyText(result: VerifyRunResult): string {
         ? `${result.metadata.matchedPolicyRules.length} matched rule(s)`
         : "policy evaluated";
       lines.push(`Policy: ${result.metadata.policyPath} (${matchedRules})`);
+    }
+    if (typeof result.metadata.changeId === "string") {
+      lines.push(`Change ID: ${result.metadata.changeId}`);
+    }
+    const provenanceBinding = result.metadata.provenanceBinding as { id?: string; source?: string } | undefined;
+    if (provenanceBinding?.id) {
+      lines.push(`Provenance binding: ${provenanceBinding.id}`);
+      if (provenanceBinding.source) {
+        lines.push(`Provenance source: ${provenanceBinding.source}`);
+      }
+    }
+    if (result.metadata.executionFork && isRecord(result.metadata.executionFork)) {
+      const executionFork = result.metadata.executionFork as Record<string, unknown>;
+      lines.push("Execution fork:");
+      if (typeof executionFork.artifactPath === "string") {
+        lines.push(`Artifact: ${executionFork.artifactPath}`);
+      }
+      if (typeof executionFork.canonicalTraceId === "string") {
+        lines.push(`Canonical trace: ${executionFork.canonicalTraceId}`);
+      }
+      if (typeof executionFork.canonicalTraceSummary === "string") {
+        lines.push(`Summary: ${executionFork.canonicalTraceSummary}`);
+      }
+      if (Array.isArray(executionFork.selectedAxes)) {
+        lines.push(`Selected axes: ${(executionFork.selectedAxes as unknown[]).join(", ")}`);
+      }
+      if (typeof executionFork.candidateCount === "number") {
+        lines.push(`Candidate count: ${executionFork.candidateCount}`);
+      }
+      if (typeof executionFork.suppressedCandidateCount === "number") {
+        lines.push(`Suppressed candidates: ${executionFork.suppressedCandidateCount}`);
+      }
+    }
+    if (result.metadata.ktmRuntime && isRecord(result.metadata.ktmRuntime)) {
+      const ktmRuntime = result.metadata.ktmRuntime as Record<string, unknown>;
+      lines.push("KTM runtime:");
+      if (typeof ktmRuntime.artifactDir === "string") {
+        lines.push(`Artifact dir: ${ktmRuntime.artifactDir}`);
+      }
+      if (typeof ktmRuntime.kernelLogPath === "string") {
+        lines.push(`Kernel log: ${ktmRuntime.kernelLogPath}`);
+      }
+      if (typeof ktmRuntime.stateSnapshotPath === "string") {
+        lines.push(`State snapshot: ${ktmRuntime.stateSnapshotPath}`);
+      }
+      if (typeof ktmRuntime.runtimeSummaryPath === "string") {
+        lines.push(`Runtime summary: ${ktmRuntime.runtimeSummaryPath}`);
+      }
+      if (typeof ktmRuntime.decision === "string") {
+        lines.push(`Decision: ${ktmRuntime.decision}`);
+      }
+      if (typeof ktmRuntime.transitionId === "string") {
+        lines.push(`Transition: ${ktmRuntime.transitionId}`);
+      }
+      if (typeof ktmRuntime.committed === "boolean") {
+        lines.push(`Committed: ${ktmRuntime.committed}`);
+      }
     }
   }
 
@@ -896,6 +1208,59 @@ function listReleaseCompareReports(root: string): Array<{ overallStatus: string 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readJsonRecord<T>(filePath: string): T | undefined {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function isKernelStateSnapshotCompatible(
+  record: KtmRuntimeRecord,
+  snapshot: Record<string, unknown>,
+): boolean {
+  if (snapshot.id !== record.transition.toState.id) {
+    return false;
+  }
+
+  if (snapshot.kind !== record.transition.toState.kind || snapshot.status !== record.transition.toState.status) {
+    return false;
+  }
+
+  const snapshotPayload = isRecord(snapshot.payload) ? snapshot.payload : undefined;
+  if (!snapshotPayload) {
+    return false;
+  }
+
+  if (snapshotPayload.sessionId !== record.sessionId || snapshotPayload.changeId !== record.changeId) {
+    return false;
+  }
+
+  return true;
+}
+
+function createKernelSurfaceIssue(
+  kind: VerifyIssue["kind"],
+  code: string,
+  issuePath: string,
+  message: string,
+  details?: Record<string, unknown>,
+): VerifyIssue {
+  return {
+    kind,
+    severity: "blocking",
+    code,
+    path: issuePath,
+    message,
+    ...(details ? { details } : {}),
+  };
+}
+
+function relativeKernelPath(root: string, absolutePath: string): string {
+  return path.relative(root, absolutePath).replace(/\\/g, "/");
 }
 
 function appendVerifyIssues(

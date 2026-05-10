@@ -3,6 +3,7 @@ import type { ImplementRunResult } from "../implement/implement-runner";
 import type { CompletionEvidence, CompletionEvidenceStatus, DisciplineCommandEvidence, DisciplineTruthSource } from "./types";
 
 export function buildCompletionEvidence(result: ImplementRunResult, generatedAt = new Date().toISOString(), root?: string): CompletionEvidence {
+  const changeId = result.metadata.changeId ?? result.sessionId;
   const commands: DisciplineCommandEvidence[] = [];
   const truthSources: DisciplineTruthSource[] = [];
 
@@ -47,6 +48,8 @@ export function buildCompletionEvidence(result: ImplementRunResult, generatedAt 
     schemaVersion: 1,
     kind: "jispec-agent-completion-evidence",
     sessionId: result.sessionId,
+    changeId,
+    provenanceBinding: result.metadata.provenanceBinding,
     generatedAt,
     status: computeCompletionStatus(result, missingEvidence),
     commands,

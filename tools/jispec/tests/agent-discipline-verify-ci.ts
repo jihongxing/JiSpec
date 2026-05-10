@@ -98,6 +98,7 @@ function buildSession(id: string): ChangeSession {
   return {
     id,
     createdAt: "2026-05-02T00:00:00.000Z",
+    changeId: id,
     summary: `Change ${id}`,
     laneDecision: {
       lane: "strict",
@@ -119,6 +120,7 @@ function buildReport(
     schemaVersion: 1,
     kind: "jispec-agent-discipline-report",
     sessionId,
+    changeId: sessionId,
     generatedAt,
     mode,
     phaseGate: {

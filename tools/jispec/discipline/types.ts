@@ -1,3 +1,5 @@
+import type { KernelProvenanceBinding } from "../kernel/provenance";
+
 export type DisciplinePhase =
   | "intent"
   | "design"
@@ -62,6 +64,8 @@ export interface AgentRunSession {
   schemaVersion: 1;
   kind: "jispec-agent-discipline-session";
   sessionId: string;
+  changeId: string;
+  provenanceBinding?: KernelProvenanceBinding;
   generatedAt: string;
   mode: DisciplineMode;
   currentPhase: DisciplinePhase;
@@ -77,6 +81,8 @@ export interface CompletionEvidence {
   schemaVersion: 1;
   kind: "jispec-agent-completion-evidence";
   sessionId: string;
+  changeId: string;
+  provenanceBinding?: KernelProvenanceBinding;
   generatedAt: string;
   status: CompletionEvidenceStatus;
   commands: DisciplineCommandEvidence[];
@@ -90,6 +96,8 @@ export interface DebugPacket {
   schemaVersion: 1;
   kind: "jispec-agent-debug-packet";
   sessionId: string;
+  changeId: string;
+  provenanceBinding?: KernelProvenanceBinding;
   generatedAt: string;
   stopPoint: string;
   failedCommand?: string;
@@ -109,6 +117,8 @@ export interface ReviewDiscipline {
   schemaVersion: 1;
   kind: "jispec-agent-review-discipline";
   sessionId: string;
+  changeId: string;
+  provenanceBinding?: KernelProvenanceBinding;
   purpose: string;
   impactedContracts: string[];
   verificationCommands: string[];
@@ -123,6 +133,8 @@ export interface DisciplineReport {
   schemaVersion: 1;
   kind: "jispec-agent-discipline-report";
   sessionId: string;
+  changeId: string;
+  provenanceBinding?: KernelProvenanceBinding;
   generatedAt: string;
   mode: DisciplineMode;
   phaseGate: {

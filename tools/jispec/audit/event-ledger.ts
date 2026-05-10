@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import type { KernelArtifactRef } from "../kernel/shared-models";
 
 export const AUDIT_EVENT_LEDGER_RELATIVE_PATH = ".spec/audit/events.jsonl";
 
@@ -35,12 +36,14 @@ export type AuditEventType =
   | "external_tool_run_requested"
   | "spec_debt_repay"
   | "spec_debt_cancel"
-  | "spec_debt_owner_review";
+  | "spec_debt_owner_review"
+  | "ambiguity_debt_open"
+  | "ambiguity_debt_owner_review"
+  | "ambiguity_debt_reclassify"
+  | "ambiguity_debt_resolve"
+  | "ambiguity_debt_archive";
 
-export interface AuditArtifactRef {
-  path: string;
-  kind: string;
-}
+export type AuditArtifactRef = KernelArtifactRef;
 
 export interface AuditEvent {
   version: 1;
@@ -50,6 +53,7 @@ export interface AuditEvent {
   timestamp: string;
   actor: string;
   reason: string;
+  changeId?: string;
   sourceArtifact: AuditArtifactRef;
   affectedContracts: string[];
   previousHash: string | null;
@@ -65,6 +69,7 @@ export interface AppendAuditEventInput {
   type: AuditEventType;
   actor?: string;
   reason?: string;
+  changeId?: string;
   timestamp?: string;
   sourceArtifact: AuditArtifactRef;
   affectedContracts?: string[];
@@ -122,6 +127,7 @@ export function appendAuditEvent(rootInput: string, input: AppendAuditEventInput
     timestamp: input.timestamp ?? new Date().toISOString(),
     actor: normalizeText(input.actor) ?? inferAuditActor(),
     reason: normalizeText(input.reason) ?? defaultReasonForEvent(input.type),
+    changeId: normalizeText(input.changeId) ?? undefined,
     sourceArtifact: {
       kind: input.sourceArtifact.kind,
       path: normalizeAuditPath(root, input.sourceArtifact.path),

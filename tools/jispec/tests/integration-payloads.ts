@@ -304,6 +304,7 @@ function writeIntegrationFixture(root: string): VerifyReport {
 function writeHandoff(root: string): void {
   const packet: HandoffPacket = {
     sessionId: "change-integration",
+    changeId: "change-integration",
     changeIntent: "Tighten refund handling",
     outcome: "verify_blocked",
     iterations: 1,

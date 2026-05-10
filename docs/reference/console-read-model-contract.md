@@ -36,6 +36,7 @@ Console reads the North Star acceptance package as the terminal local acceptance
 | Greenfield source review | `.spec/deltas/<change-id>/source-review.yaml` | `source review adopt\|reject\|defer\|waive` | YAML | local contract | Machine-readable source review decisions with owner, reason, status, successor mapping, and optional expiration |
 | Requirement lifecycle registry | `.spec/requirements/lifecycle.yaml` | `source adopt` | YAML | local contract | Active requirement lifecycle registry, including modified/deprecated/split/merged/replaced state |
 | Greenfield spec debt ledger | `.spec/spec-debt/ledger.yaml` | Greenfield review workflow | YAML | local contract | Open, expired, repaid, and cancelled spec debt |
+| Ambiguity debt register | `.spec/ambiguity-debt/ledger.json` | change command and ambiguity debt register | JSON | local contract | Open, owner-reviewed, reclassified, resolved, and archived ambiguity debt records |
 | Bootstrap spec debt records | `.spec/spec-debt/<session-id>/*.json` | `adopt --interactive` | JSON | local contract | Deferred takeover draft decisions and source evidence |
 | Release baseline | `.spec/baselines/releases/<version>.yaml` | `release snapshot` | YAML | local contract | Frozen release baseline with graph, static collector, policy snapshot, and tracked assets |
 | Release compare report | `.spec/releases/compare/<from>-to-<to>/compare-report.json` | `release compare` | JSON | local contract | Drift summary split into contract graph, static collector, and policy drift |
@@ -72,6 +73,7 @@ Console snapshot groups declared artifacts into governance objects. These are di
 | Policy posture | `.spec/policy.yaml` | `not_available_yet` | Show local policy presence, facts contract, team owner/reviewers, required reviewers, waiver expiration posture, release compare posture, release behavior drift posture, execute-default posture, and rule count |
 | Waiver lifecycle | `.spec/waivers/*.json`, `.jispec-ci/verify-report.json` | `not_available_yet` | Show active/revoked/expired/invalid waivers and latest matched/unmatched waiver posture |
 | Spec debt ledger | `.spec/spec-debt/ledger.yaml`, `.spec/spec-debt/<session-id>/*.json` | `not_available_yet` | Show known Greenfield and bootstrap spec debt records |
+| Ambiguity debt register | `.spec/ambiguity-debt/ledger.json` | `not_available_yet` | Show open, owner-reviewed, reclassified, resolved, and archived ambiguity debt records |
 | Source evolution governance | `.spec/baselines/current.yaml`, `.spec/deltas/<change-id>/source-evolution.json`, `.spec/deltas/<change-id>/source-review.yaml`, `.spec/requirements/lifecycle.yaml` | `not_available_yet` | Show the active source evolution change, open review counts, deferred or expired exceptions, lifecycle delta counts, and source-adopt readiness |
 | Contract drift | `.spec/releases/compare/<from>-to-<to>/compare-report.json`, `.spec/releases/drift-trend.json` | `not_available_yet` | Show latest machine-readable release compare drift summary and historical drift trend, including contract graph, static collector, behavior, and policy drift |
 | Multi-repo export | `.spec/console/governance-snapshot.json` | `not_available_yet` | Show the exported repo-level governance snapshot for future multi-repo aggregation |
@@ -96,7 +98,7 @@ P2-T2 enables `.spec/audit/events.jsonl` as an append-only local ledger. Each li
 - `affectedContracts`
 - optional structured `details`
 
-Current producers include policy migration, policy approval decisions, default-mode set/reset, waiver create/revoke, bootstrap adopt accept/edit/reject/defer, Greenfield review transitions, release snapshot/compare, and external patch intake. Audit events are read-model evidence only: they do not participate in blocking gates and do not override verify, policy, or release compare.
+Current producers include policy migration, policy approval decisions, default-mode set/reset, waiver create/revoke, bootstrap adopt accept/edit/reject/defer, Greenfield review transitions, ambiguity debt open/review/reclassify/resolve/archive, release snapshot/compare, and external patch intake. Audit events are read-model evidence only: they do not participate in blocking gates and do not override verify, policy, or release compare.
 
 ## Governance Dashboard Shell
 

@@ -5,6 +5,7 @@ export type ConsoleGovernanceObjectId =
   | "policy_posture"
   | "waiver_lifecycle"
   | "spec_debt_ledger"
+  | "ambiguity_debt_register"
   | "source_evolution_governance"
   | "contract_drift"
   | "release_baseline"
@@ -196,6 +197,18 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     stability: "local-contract",
     freshness: "project-state",
     readModelUse: "Open, expired, repaid, and cancelled Greenfield spec debt with owner, reason, expiration, and repayment hint.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
+    id: "ambiguity-debt-ledger",
+    pathPattern: ".spec/ambiguity-debt/ledger.json",
+    producer: "change command and ambiguity debt register",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Open, owner-reviewed, reclassified, resolved, and archived ambiguity debt records with owner, confidence, next review, and candidate change ids.",
     machineReadable: true,
     parseMarkdown: false,
     sourceUploadRequired: false,
@@ -493,6 +506,15 @@ export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
     automationInputs: "json_yaml_jsonl_only",
     markdownDisplayOnly: true,
     readModelUse: "Show known Greenfield and bootstrap spec debt records without scanning source files.",
+  },
+  {
+    id: "ambiguity_debt_register",
+    label: "Ambiguity debt register",
+    sourceArtifactIds: ["ambiguity-debt-ledger"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show open, owner-reviewed, reclassified, resolved, and archived ambiguity debt records without scanning source files.",
   },
   {
     id: "source_evolution_governance",

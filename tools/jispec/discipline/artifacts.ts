@@ -101,6 +101,7 @@ export function renderDisciplineSummary(report: DisciplineReport): string {
     "# Agent Discipline Summary",
     "",
     `Session: ${report.sessionId}`,
+    `Change ID: ${report.changeId}`,
     `Mode: ${report.mode}`,
     `Phase gate: ${report.phaseGate.status}`,
     `Test strategy: ${report.testStrategy.status}${report.testStrategy.command ? ` via ${report.testStrategy.command}` : ""}`,
@@ -108,6 +109,15 @@ export function renderDisciplineSummary(report: DisciplineReport): string {
     `Allowed paths: ${report.isolation.allowedPaths.join(", ") || "none"}`,
     `Touched paths: ${report.isolation.touchedPaths.join(", ") || "none"}`,
     `Unexpected paths: ${report.isolation.unexpectedPaths.join(", ") || "none"}`,
+    "",
+    "## Provenance",
+    `- Change ID: ${report.changeId}`,
+    ...(report.provenanceBinding
+      ? [
+          `- Binding: ${report.provenanceBinding.id}`,
+          `- Binding source: ${report.provenanceBinding.source}`,
+        ]
+      : ["- Binding: not recorded"]),
     "",
     "## Missing Evidence",
     ...renderList(report.completion.missingEvidence),
@@ -126,12 +136,22 @@ function renderDebugPacketMarkdown(packet: DebugPacket): string {
     "# Agent Debug Packet",
     "",
     `Session: ${packet.sessionId}`,
+    `Change ID: ${packet.changeId}`,
     `Stop point: ${packet.stopPoint}`,
     `Failing check: ${packet.failingCheck}`,
     `Failed command: ${packet.failedCommand ?? "not recorded"}`,
     `Minimal reproduction: ${packet.minimalReproductionCommand}`,
     `Hypothesis: ${packet.currentHypothesis}`,
     `Retry command: ${packet.retryCommand}`,
+    "",
+    "## Provenance",
+    `- Change ID: ${packet.changeId}`,
+    ...(packet.provenanceBinding
+      ? [
+          `- Binding: ${packet.provenanceBinding.id}`,
+          `- Binding source: ${packet.provenanceBinding.source}`,
+        ]
+      : ["- Binding: not recorded"]),
     "",
     "## Observed Evidence",
     ...renderList(packet.observedEvidence),

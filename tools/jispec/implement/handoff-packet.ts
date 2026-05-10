@@ -7,6 +7,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { loadBootstrapTakeoverReport } from "../bootstrap/takeover";
 import type { ChangeSession } from "../change/change-session";
+import type { ExecutionForkGovernanceSummary } from "../kernel/execution-fork";
+import type { KernelProvenanceBinding } from "../kernel/provenance";
 import type { ImplementRunResult } from "./implement-runner";
 import type { EpisodeMemory } from "./episode-memory";
 import { getRecentHypotheses, getRejectedPaths, getEpisodesByOutcome } from "./episode-memory";
@@ -130,6 +132,8 @@ export interface ImplementationDecisionPacket {
 
 export interface HandoffPacket {
   sessionId: string;
+  changeId: string;
+  provenanceBinding?: KernelProvenanceBinding;
   changeIntent: string;
   outcome: ImplementationMediationOutcome;
   iterations: number;
@@ -145,6 +149,7 @@ export interface HandoffPacket {
     debugPacketPath?: string;
     debugPacketMarkdownPath?: string;
   };
+  executionFork?: ExecutionForkGovernanceSummary;
   reviewDiscipline?: ReviewDiscipline;
 
   summary: {
@@ -246,6 +251,8 @@ export function generateHandoffPacket(
 
   return {
     sessionId: result.sessionId,
+    changeId: session.changeId ?? session.id,
+    provenanceBinding: session.provenanceBinding,
     changeIntent: session.summary,
     outcome: result.outcome,
     iterations: result.iterations,
@@ -286,6 +293,7 @@ export function generateHandoffPacket(
       startedAt: result.metadata.startedAt,
       completedAt: result.metadata.completedAt,
     },
+    executionFork: result.metadata.executionFork,
   };
 }
 
@@ -940,6 +948,11 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
   lines.push("=== Handoff Packet ===");
   lines.push("");
   lines.push(`Session: ${packet.sessionId}`);
+  lines.push(`Change ID: ${packet.changeId}`);
+  if (packet.provenanceBinding) {
+    lines.push(`Provenance binding: ${packet.provenanceBinding.id}`);
+    lines.push(`Binding source: ${packet.provenanceBinding.source}`);
+  }
   lines.push(`Change Intent: ${packet.changeIntent}`);
   lines.push(`Outcome: ${packet.outcome}`);
   lines.push(`Iterations: ${packet.iterations}`);
@@ -1108,6 +1121,16 @@ export function formatHandoffPacket(packet: HandoffPacket): string {
     if (packet.discipline.debugPacketMarkdownPath) {
       lines.push(`  Debug summary: ${packet.discipline.debugPacketMarkdownPath}`);
     }
+    lines.push("");
+  }
+  if (packet.executionFork) {
+    lines.push("Execution fork:");
+    lines.push(`  Artifact: ${packet.executionFork.artifactPath}`);
+    lines.push(`  Canonical trace: ${packet.executionFork.canonicalTraceId}`);
+    lines.push(`  Summary: ${packet.executionFork.canonicalTraceSummary}`);
+    lines.push(`  Selected axes: ${packet.executionFork.selectedAxes.join(", ") || "none"}`);
+    lines.push(`  Candidate count: ${packet.executionFork.candidateCount}`);
+    lines.push(`  Suppressed candidates: ${packet.executionFork.suppressedCandidateCount}`);
     lines.push("");
   }
   if (packet.reviewDiscipline) {

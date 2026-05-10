@@ -289,6 +289,7 @@ async function main(): Promise<void> {
   results.push(record("handoff and console governance text surfaces expose the enriched packet vocabulary", () => {
     const handoffPacket: HandoffPacket = {
       sessionId: "change-handoff",
+      changeId: "change-handoff",
       changeIntent: "Tighten refund flow",
       outcome: "budget_exhausted",
       iterations: 1,

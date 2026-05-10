@@ -6,6 +6,8 @@ export function buildReviewDiscipline(packet: HandoffPacket): ReviewDiscipline {
     schemaVersion: 1,
     kind: "jispec-agent-review-discipline",
     sessionId: packet.sessionId,
+    changeId: packet.changeId,
+    provenanceBinding: packet.provenanceBinding,
     purpose: `${packet.changeIntent}: ${packet.decisionPacket.summary}`,
     impactedContracts: packet.contractContext.adoptedContractPaths,
     verificationCommands: [packet.nextSteps.verifyCommand],

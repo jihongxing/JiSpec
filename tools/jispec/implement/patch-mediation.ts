@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { appendAuditEvent } from "../audit/event-ledger";
 import type { ChangeSession } from "../change/change-session";
+import type { KernelProvenanceBinding } from "../kernel/provenance";
 import { renderDecisionCompanionSections } from "../companion/decision-sections";
 import type { ImplementationDecisionPacket } from "./handoff-packet";
 import { normalizeReplayPaths, type ReplayMetadata } from "../replay/replay-metadata";
@@ -34,6 +35,8 @@ export interface PatchMediationVerifySummary {
 export interface PatchMediationArtifact {
   version: 1;
   sessionId: string;
+  changeId: string;
+  provenanceBinding?: KernelProvenanceBinding;
   createdAt: string;
   completedAt?: string;
   externalPatchPath: string;
@@ -137,6 +140,8 @@ export function mediateExternalPatch(
   const artifact: PatchMediationArtifact = {
     version: 1,
     sessionId: session.id,
+    changeId: session.changeId ?? session.id,
+    provenanceBinding: session.provenanceBinding,
     createdAt,
     externalPatchPath: formatPatchPath(root, patchPath),
     status: scope.valid ? "accepted" : "rejected_out_of_scope",
@@ -266,6 +271,11 @@ function renderPatchMediationMarkdown(artifact: PatchMediationArtifact): string 
       nextSteps,
     }),
     "",
+    `Change ID: ${artifact.changeId}`,
+    artifact.provenanceBinding
+      ? `Provenance binding: ${artifact.provenanceBinding.id}`
+      : "Provenance binding: not recorded",
+    "",
     "This Markdown file is a human-readable companion summary, not a machine API.",
     "",
   ].join("\n");
@@ -277,10 +287,12 @@ export function recordPatchMediationCompletionAudit(
   artifactPath: string,
   session: ChangeSession,
   decisionPacket: ImplementationDecisionPacket,
+  changeId?: string,
 ): void {
   appendAuditEvent(root, {
     type: "external_patch_intake",
     reason: `External patch mediation completed as ${decisionPacket.state} for change session ${session.id}.`,
+    changeId: changeId ?? session.changeId ?? session.id,
     sourceArtifact: {
       kind: "implementation-patch-mediation",
       path: artifactPath,
@@ -292,6 +304,8 @@ export function recordPatchMediationCompletionAudit(
     ],
     details: {
       sessionId: session.id,
+      changeId: changeId ?? session.changeId ?? session.id,
+      provenanceBinding: artifact.provenanceBinding,
       status: artifact.status,
       applied: artifact.applied,
       externalPatchPath: artifact.externalPatchPath,
@@ -387,6 +401,7 @@ function recordPatchIntakeAudit(
   appendAuditEvent(root, {
     type: "external_patch_intake",
     reason: `External patch ${artifact.status.replace(/_/g, " ")} for change session ${session.id}.`,
+    changeId: session.changeId ?? session.id,
     sourceArtifact: {
       kind: "implementation-patch-mediation",
       path: artifactPath,
@@ -398,6 +413,8 @@ function recordPatchIntakeAudit(
     ],
     details: {
       sessionId: session.id,
+      changeId: session.changeId ?? session.id,
+      provenanceBinding: artifact.provenanceBinding,
       status: artifact.status,
       applied: artifact.applied,
       externalPatchPath: artifact.externalPatchPath,

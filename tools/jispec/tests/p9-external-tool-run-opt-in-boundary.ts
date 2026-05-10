@@ -15,7 +15,11 @@ import {
 } from "../policy/approval";
 import { buildPrivacyReport } from "../privacy/redaction";
 import { buildExternalToolRunReplayMetadata } from "../replay/replay-metadata";
-import { buildRegressionMatrixManifest, TEST_SUITES } from "./regression-runner";
+import {
+  REGRESSION_MATRIX_TOTALS,
+  buildRegressionMatrixManifest,
+  TEST_SUITES,
+} from "./regression-runner";
 
 interface TestResult {
   name: string;
@@ -195,8 +199,8 @@ function main(): void {
     assert.equal(suite.task, "P9-T7");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 151);
-    assert.equal(manifest.totalExpectedTests, 674);
+    assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
+    assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
   }));
 
   report(results);

@@ -210,6 +210,12 @@ function resolveArtifactRelativePaths(root: string, pathPattern: string): string
       .filter((relativePath) => relativePath !== ".spec/spec-debt/ledger.yaml");
   }
 
+  if (pathPattern === ".spec/ambiguity-debt/ledger.json") {
+    return fs.existsSync(path.join(root, ".spec", "ambiguity-debt", "ledger.json"))
+      ? [".spec/ambiguity-debt/ledger.json"]
+      : [];
+  }
+
   if (pathPattern === ".spec/deltas/<change-id>/source-evolution.json") {
     return listNestedFiles(root, ".spec/deltas", ".json", 2)
       .filter((relativePath) => relativePath.endsWith("/source-evolution.json"));
@@ -479,6 +485,9 @@ function buildGovernanceSummary(
   if (id === "spec_debt_ledger") {
     return summarizeSpecDebt(sourceArtifacts);
   }
+  if (id === "ambiguity_debt_register") {
+    return summarizeAmbiguityDebtRegister(sourceArtifacts);
+  }
   if (id === "source_evolution_governance") {
     return summarizeSourceEvolutionGovernance(sourceArtifacts);
   }
@@ -584,6 +593,43 @@ function summarizeSpecDebt(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<s
     greenfieldLedgerItems: ledgerItems.length,
     bootstrapDebtRecords: openBootstrapDebtRecords.length,
     bootstrapDebtRecordsTotal: bootstrapRecords.length,
+  };
+}
+
+function summarizeAmbiguityDebtRegister(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  if (sourceArtifacts.some((artifact) => artifact.status === "invalid" || artifact.status === "unreadable")) {
+    return { state: "invalid" };
+  }
+
+  const ledger = getFirstData(sourceArtifacts, "ambiguity-debt-ledger");
+  if (!isRecord(ledger)) {
+    return { state: "not_available_yet" };
+  }
+
+  const debts = Array.isArray(ledger.debts) ? ledger.debts.filter(isRecord) : [];
+  const counts = countByStatus(debts.map((debt) => String(debt.status ?? "open")));
+  const ownerReviewRequestedIds = stableUnique(
+    debts.filter((debt) => isRecord(debt.ownerReview)).map((debt) => String(debt.id ?? "unknown")),
+  );
+
+  return {
+    state: "available",
+    total: debts.length,
+    open: counts.open ?? 0,
+    reclassified: counts.reclassified ?? 0,
+    resolved: counts.resolved ?? 0,
+    archived: counts.archived ?? 0,
+    ownerReviewRequested: ownerReviewRequestedIds.length,
+    ownerReviewRequestedIds,
+    openIds: stableUnique(
+      debts
+        .filter((debt) => String(debt.status ?? "open") === "open")
+        .map((debt) => String(debt.id ?? "unknown")),
+    ),
+    candidateChangeIds: stableUnique(
+      debts.flatMap((debt) => Array.isArray(debt.candidateChangeIds) ? debt.candidateChangeIds.map(String) : []),
+    ),
+    sourceCounts: countByStatus(debts.map((debt) => String(debt.source ?? "unknown"))),
   };
 }
 
@@ -1255,6 +1301,11 @@ function isBoundaryAuditEvent(type: string): boolean {
     "default_mode_reset",
     "release_snapshot",
     "release_compare",
+    "ambiguity_debt_open",
+    "ambiguity_debt_owner_review",
+    "ambiguity_debt_reclassify",
+    "ambiguity_debt_resolve",
+    "ambiguity_debt_archive",
   ].includes(type);
 }
 

@@ -1,7 +1,10 @@
 import path from "node:path";
 import { classifyGitDiff } from "./git-diff-classifier";
 import { computeLaneDecision, renderLaneDecisionText, type LaneType } from "./lane-decision";
+import { normalizeMutationBoundary } from "./mutation-boundary-model";
+import { recordAmbiguityDebtFromMutationBoundary, summarizeAmbiguityDebtPrior } from "./ambiguity-debt-register";
 import { listDraftSessionManifests } from "../bootstrap/draft";
+import { buildKernelProvenanceBinding, resolveCanonicalChangeId } from "../kernel/provenance";
 import {
   generateSessionId,
   writeChangeSession,
@@ -117,9 +120,8 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     throw new Error(`Invalid change default mode configuration: ${modeResolution.warnings.join("; ")}`);
   }
   const effectiveMode = modeResolution.mode;
-  const laneDecision = computeLaneDecision(classification, lane);
-  const nextCommands = buildNextCommandHints(root, laneDecision.lane, sliceId);
   const createdAt = new Date().toISOString();
+  const laneDecision = computeLaneDecision(classification, lane);
   const sessionId = generateSessionId();
   const specDelta = draftSpecDelta({
     root,
@@ -130,6 +132,39 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
     contextId,
     changedPaths: classification.changedPaths,
   });
+  const canonicalChangeId = resolveCanonicalChangeId({
+    id: sessionId,
+    createdAt,
+    specDelta,
+  }) ?? sessionId;
+  const provenanceBinding = buildKernelProvenanceBinding({
+    id: sessionId,
+    createdAt,
+    changeId: canonicalChangeId,
+    specDelta,
+  });
+  const mutationBoundaryInput: Parameters<typeof summarizeAmbiguityDebtPrior>[1] = {
+    source: "git_diff",
+    summary,
+    touchedPaths: classification.changedPaths.map((entry) => entry.path),
+    facts: [
+      ...classification.changedPaths.map((entry) => `${entry.kind}:${entry.path}`),
+      `baseRef:${baseRef}`,
+      sliceId ? `slice:${sliceId}` : "",
+      contextId ? `context:${contextId}` : "",
+    ].filter((entry): entry is string => Boolean(entry)),
+    history: [laneDecision.lane, effectiveModeHint(mode)],
+  };
+  const ambiguityDebtPrior = summarizeAmbiguityDebtPrior(root, mutationBoundaryInput);
+  const mutationBoundary = normalizeMutationBoundary({
+    ...mutationBoundaryInput,
+    observedAt: createdAt,
+    ambiguityDebtPrior,
+  });
+  const ambiguityDebt = recordAmbiguityDebtFromMutationBoundary(root, mutationBoundary, {
+    changeId: canonicalChangeId,
+  });
+  const nextCommands = buildNextCommandHints(root, laneDecision.lane, sliceId);
   if (specDelta) {
     if (specDelta.sourceEvolutionSummaryPath) {
       nextCommands.unshift({
@@ -150,15 +185,25 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
       description: "Review the change-scoped AI implementation handoff before assigning an implementer.",
     });
   }
+  if (ambiguityDebt) {
+    nextCommands.unshift({
+      command: `Review ${relativePath(root, ambiguityDebt.ledgerPath)}`,
+      description: "Review the open ambiguity debt register entry before treating the mutation as canonical.",
+    });
+  }
   const impactSummary = buildImpactSummary(root, classification.changedPaths, sessionId, sliceId, specDelta);
 
   const session: ChangeSession = {
     id: sessionId,
     createdAt,
+    changeId: canonicalChangeId,
+    provenanceBinding,
     summary,
     orchestrationMode: effectiveMode,
     laneDecision,
     changedPaths: classification.changedPaths,
+    mutationBoundary,
+    ambiguityDebt: ambiguityDebt?.summary,
     changeType,
     specDelta,
     sliceId,
@@ -192,6 +237,10 @@ export async function runChangeCommand(options: ChangeCommandOptions): Promise<C
 
   result.text = renderChangeCommandText(result);
   return result;
+}
+
+function effectiveModeHint(mode: ChangeCommandOptions["mode"]): string {
+  return mode ?? "prompt";
 }
 
 export function buildNextCommandHints(
@@ -472,6 +521,12 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
   lines.push("=== Change Session Created ===");
   lines.push("");
   lines.push(`ID: ${session.id}`);
+  lines.push(`Change ID: ${session.changeId ?? session.id}`);
+  if (session.provenanceBinding) {
+    lines.push(`Provenance binding: ${session.provenanceBinding.id}`);
+    lines.push(`- Binding source: ${session.provenanceBinding.source}`);
+    lines.push(`- Binding session: ${session.provenanceBinding.changeSessionId}`);
+  }
   lines.push(`Summary: ${session.summary}`);
   lines.push(`Mode: ${execution.mode.toUpperCase()}`);
   lines.push(`Mode source: ${result.modeResolution.source}`);
@@ -528,6 +583,23 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
     lines.push(`- AI handoff: ${session.specDelta.handoffPath}`);
     lines.push(`- Adoption record: ${session.specDelta.adoptionRecordPath}`);
     lines.push("- Active baseline remains unchanged until explicit adoption.");
+    lines.push("");
+  }
+
+  if (session.ambiguityDebt) {
+    lines.push("Ambiguity Debt:");
+    lines.push(`- Action: ${session.ambiguityDebt.action}`);
+    lines.push(`- Debt ID: ${session.ambiguityDebt.debtId}`);
+    lines.push(`- Mutation ID: ${session.ambiguityDebt.mutationId}`);
+    lines.push(`- Register: ${session.ambiguityDebt.ledgerPath}`);
+    lines.push(`- Status: ${session.ambiguityDebt.status}`);
+    lines.push(`- Owner: ${session.ambiguityDebt.owner}`);
+    lines.push(`- Confidence: ${session.ambiguityDebt.confidence}`);
+    if (session.ambiguityDebt.nextReview) {
+      lines.push(`- Next review: ${session.ambiguityDebt.nextReview}`);
+    }
+    lines.push(`- Candidate changes: ${session.ambiguityDebt.candidateChangeIds.length}`);
+    lines.push(`- Reason: ${session.ambiguityDebt.reason}`);
     lines.push("");
   }
 
@@ -609,6 +681,7 @@ export function renderChangeCommandText(result: ChangeCommandResult): string {
 function buildChangeDecisionSnapshot(result: ChangeCommandResult) {
   const impactSummary = result.session.impactSummary;
   const execution = result.execution;
+  const ambiguityDebt = result.session.ambiguityDebt;
   const nextCommand =
     execution.implement?.decisionNextCommand ??
     execution.implement?.postVerifyCommand ??
@@ -616,27 +689,31 @@ function buildChangeDecisionSnapshot(result: ChangeCommandResult) {
     "npm run jispec-cli -- verify";
 
   return {
-    currentState:
-      execution.state === "implemented"
+    currentState: ambiguityDebt
+      ? `change session recorded with open ambiguity debt ${ambiguityDebt.debtId}`
+      : execution.state === "implemented"
         ? "change session implemented and returned to verify"
         : execution.state === "awaiting_adopt"
           ? `execute mode paused for adopt session ${execution.openDraftSessionId ?? "unknown"}`
           : "change session recorded and awaiting downstream mediation",
-    risk: impactSummary
-      ? [
-          `impact freshness ${impactSummary.freshness.status}`,
-          ...impactSummary.missingVerificationHints.slice(0, 2),
-        ].join("; ")
-      : "impact summary unavailable",
+    risk: ambiguityDebt
+      ? `open ambiguity debt register entry at ${ambiguityDebt.ledgerPath}`
+      : impactSummary
+        ? [
+            `impact freshness ${impactSummary.freshness.status}`,
+            ...impactSummary.missingVerificationHints.slice(0, 2),
+          ].join("; ")
+        : "impact summary unavailable",
     evidence: [
       `changed paths: ${result.session.changedPaths.length}`,
       impactSummary ? `contracts: ${impactSummary.contractRefs.length}` : "contracts: 0",
       impactSummary ? `verify focus: ${impactSummary.artifacts.verifyFocusPath}` : "verify focus unavailable",
     ],
     owner:
+      ambiguityDebt?.owner ??
       execution.implement?.decisionNextActionOwner ??
       (execution.state === "planned" ? "human_or_external_tool" : "reviewer"),
-    nextCommand,
+    nextCommand: ambiguityDebt ? `Review ${ambiguityDebt.ledgerPath}` : nextCommand,
   };
 }
 

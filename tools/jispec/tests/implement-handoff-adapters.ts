@@ -235,6 +235,7 @@ function record(name: string, fn: () => void): TestResult {
 function writeFixtureHandoff(root: string): string {
   const packet: HandoffPacket = {
     sessionId: "change-adapter",
+    changeId: "change-adapter",
     changeIntent: "Tighten refund handling",
     outcome: "budget_exhausted",
     iterations: 1,

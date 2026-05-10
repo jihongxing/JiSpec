@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { TEST_SUITES, buildRegressionMatrixManifest } from "./regression-runner";
+import {
+  REGRESSION_MATRIX_TOTALS,
+  TEST_SUITES,
+  buildRegressionMatrixManifest,
+} from "./regression-runner";
 
 interface TestResult {
   name: string;
@@ -57,8 +61,8 @@ function main(): void {
     assert.equal(suite.task, "P9-T1");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 151);
-    assert.equal(manifest.totalExpectedTests, 674);
+    assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
+    assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
     const runtime = manifest.areas.find((area) => area.area === "runtime-extended");
     assert.equal(runtime?.suiteCount, 50);
     assert.equal(runtime?.expectedTests, 218);

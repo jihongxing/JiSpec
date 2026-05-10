@@ -10,7 +10,11 @@ import { readChangeSession } from "../change/change-session";
 import { runGreenfieldInit } from "../greenfield/init";
 import { runVerify } from "../verify/verify-runner";
 import { buildVerifyReport } from "../ci/verify-report";
-import { TEST_SUITES, buildRegressionMatrixManifest } from "./regression-runner";
+import {
+  REGRESSION_MATRIX_TOTALS,
+  TEST_SUITES,
+  buildRegressionMatrixManifest,
+} from "./regression-runner";
 
 interface TestResult {
   name: string;
@@ -216,8 +220,8 @@ async function main(): Promise<void> {
     assert.equal(suite.task, "P9-T3");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 151);
-    assert.equal(manifest.totalExpectedTests, 674);
+    assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
+    assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
   }));
 
   printResults(results);

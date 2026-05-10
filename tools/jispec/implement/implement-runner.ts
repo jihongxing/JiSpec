@@ -13,6 +13,19 @@ import {
   writeChangeSession,
   type ChangeSession,
 } from "../change/change-session";
+import { resolveCanonicalChangeId } from "../kernel/provenance";
+import {
+  buildExecutionForkGovernanceRecord,
+  summarizeExecutionForkGovernanceRecord,
+  writeExecutionForkGovernanceArtifact,
+  type ExecutionForkGovernanceSummary,
+} from "../kernel/execution-fork";
+import {
+  buildKtmRuntimeRecord,
+  summarizeKtmRuntimeRecord,
+  writeKtmRuntimeArtifact,
+  type KtmRuntimeSummary,
+} from "../kernel/ktm";
 import { BudgetController, type BudgetLimits } from "./budget-controller";
 import { runTestCommand, extractErrorMessage, type TestResult } from "./test-runner";
 import { buildContextBundle } from "./context-pruning";
@@ -37,6 +50,7 @@ import { validatePhaseGate } from "../discipline/phase-gate";
 import { buildReviewDiscipline } from "../discipline/review-discipline";
 import { buildTestStrategy, validateTestStrategy } from "../discipline/test-strategy";
 import type { AgentRunSession, DisciplineReport } from "../discipline/types";
+import { buildKernelProvenanceBinding } from "../kernel/provenance";
 import {
   mediateExternalPatch,
   recordPatchMediationCompletionAudit,
@@ -96,12 +110,17 @@ export interface ImplementRunResult {
     startedAt: string;
     completedAt: string;
     testCommand: string;
+    changeId?: string;
+    provenanceBinding?: import("../kernel/provenance").KernelProvenanceBinding;
+    executionFork?: ExecutionForkGovernanceSummary;
+    ktmRuntime?: KtmRuntimeSummary;
     stallReason?: string;
     handoffPacketPath?: string;
     patchMediationPath?: string;
     externalPatchPath?: string;
     verifyCommand?: string;
     sessionArchived?: boolean;
+    ktmRuntimeArtifactPath?: string;
     agentDiscipline?: {
       sessionPath?: string;
       completionEvidencePath?: string;
@@ -174,6 +193,11 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
   }
 
   const session = loadedSession.session;
+  const canonicalChangeId = resolveCanonicalChangeId(session) ?? session.id;
+  const provenanceBinding = session.provenanceBinding ?? buildKernelProvenanceBinding(
+    session,
+    loadedSession.source === "active" ? "active_change_session" : "archived_change_session",
+  );
   const laneResolution = resolveImplementLane(session, options.fast === true);
 
   const testCommandResolution = resolveTestCommandFromResolver(
@@ -272,14 +296,96 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
     } else if (result.patchMediation) {
       result.outcome = "patch_verified";
     }
-
-    if (postVerify.ok && loadedSession.source === "active" && isActiveChangeSession(root, session.id)) {
-      archiveChangeSession(root);
-      result.metadata.sessionArchived = true;
-    }
   }
 
   result.decisionPacket = buildImplementationDecisionPacket(result, session);
+  result.metadata = {
+    ...result.metadata,
+    changeId: canonicalChangeId,
+    provenanceBinding,
+  };
+  const executionForkRecord = buildExecutionForkGovernanceRecord({
+    sessionId: session.id,
+    changeId: canonicalChangeId,
+    createdAt: startedAt,
+    sessionSource: loadedSession.source,
+    provenanceBinding,
+    testCommand: result.metadata.testCommand,
+    implementationCommand: `npm run jispec-cli -- implement --session-id ${session.id}`,
+    verifyCommand: result.postVerify?.command ?? result.metadata.verifyCommand,
+    outcome: result.outcome,
+    testsPassed: result.testsPassed,
+    patchMediationPath: result.metadata.patchMediationPath,
+    externalPatchPath: result.metadata.externalPatchPath,
+    postVerify: result.postVerify
+      ? {
+        command: result.postVerify.command,
+        ok: result.postVerify.ok,
+        verdict: result.postVerify.verdict,
+      }
+      : undefined,
+    replay: result.metadata.replay
+      ? {
+        sourceHandoffPath: result.metadata.replay.fromHandoffPath,
+        restoredSession: result.metadata.replay.restoredSession,
+        previousOutcome: result.metadata.replay.previousOutcome,
+        previousStopPoint: result.metadata.replay.previousStopPoint,
+        previousFailedCheck: result.metadata.replay.previousFailedCheck,
+      }
+    : undefined,
+  });
+  const executionForkArtifactPath = writeExecutionForkGovernanceArtifact(root, executionForkRecord);
+  result.metadata.executionFork = summarizeExecutionForkGovernanceRecord(executionForkRecord, executionForkArtifactPath);
+  session.executionFork = executionForkRecord;
+  const ktmRecord = buildKtmRuntimeRecord({
+    sessionId: session.id,
+    changeId: canonicalChangeId,
+    createdAt: result.metadata.completedAt,
+    sessionSource: loadedSession.source,
+    changeSummary: session.summary,
+    lane: result.lane,
+    outcome: result.outcome,
+    testsPassed: result.testsPassed,
+    decisionState: result.decisionPacket?.state ?? "ready_for_verify",
+    decisionStopPoint: result.decisionPacket?.stopPoint ?? "preflight",
+    decisionSummary: result.decisionPacket?.summary ?? result.outcome,
+    decisionOwner: result.decisionPacket?.executionStatus.nextActionOwner ?? "reviewer",
+    decisionNextAction: result.decisionPacket?.nextAction ?? "review and continue",
+    provenanceBinding,
+    executionFork: executionForkRecord,
+    facts: buildKtmFacts(result, session, canonicalChangeId),
+    policy: buildKtmPolicy(result, session),
+    replay: result.metadata.replay
+      ? {
+        sourceHandoffPath: result.metadata.replay.fromHandoffPath,
+        restoredSession: result.metadata.replay.restoredSession,
+        previousOutcome: result.metadata.replay.previousOutcome,
+        previousStopPoint: result.metadata.replay.previousStopPoint,
+        previousFailedCheck: result.metadata.replay.previousFailedCheck,
+      }
+      : undefined,
+    postVerify: result.postVerify
+      ? {
+        command: result.postVerify.command,
+        ok: result.postVerify.ok,
+        verdict: result.postVerify.verdict,
+      }
+      : undefined,
+  });
+  const ktmArtifactPath = writeKtmRuntimeArtifact(root, ktmRecord);
+  result.metadata.ktmRuntime = summarizeKtmRuntimeRecord(ktmRecord);
+  session.ktmRuntime = ktmRecord;
+  result.metadata = {
+    ...result.metadata,
+    ktmRuntimeArtifactPath: ktmArtifactPath,
+  };
+  if (loadedSession.source === "active") {
+    writeChangeSession(root, session);
+  }
+  if (shouldArchiveSession(result, loadedSession.source, session.id, root)) {
+    archiveChangeSession(root);
+    result.metadata.sessionArchived = true;
+  }
   writeAgentDisciplineArtifacts(root, result, session);
   if (result.patchMediation && result.metadata.patchMediationPath) {
     recordPatchMediationCompletionAudit(
@@ -288,6 +394,7 @@ export async function runImplement(options: ImplementRunOptions): Promise<Implem
       result.metadata.patchMediationPath,
       session,
       result.decisionPacket,
+      canonicalChangeId,
     );
   }
 
@@ -333,11 +440,15 @@ function buildAgentRunSession(root: string, result: ImplementRunResult, session:
     ?? touchedPaths.filter((entry) => !isPathAllowed(entry, allowedPaths));
   const testStrategy = buildTestStrategy(session, result.metadata.testCommand, result.lane === "fast");
   const mode = result.lane === "fast" ? "fast_advisory" : "strict_gate";
+  const changeId = result.metadata.changeId ?? session.changeId ?? session.id;
+  const provenanceBinding = result.metadata.provenanceBinding ?? session.provenanceBinding;
 
   return {
     schemaVersion: 1,
     kind: "jispec-agent-discipline-session",
     sessionId: result.sessionId,
+    changeId,
+    provenanceBinding,
     generatedAt,
     mode,
     currentPhase: result.postVerify ? "handoff" : result.testsPassed ? "implement" : "debug",
@@ -410,6 +521,8 @@ function writeAgentDisciplineArtifacts(root: string, result: ImplementRunResult,
     schemaVersion: 1,
     kind: "jispec-agent-discipline-report",
     sessionId: result.sessionId,
+    changeId: result.metadata.changeId ?? session.changeId ?? session.id,
+    provenanceBinding: result.metadata.provenanceBinding ?? session.provenanceBinding,
     generatedAt,
     mode: agentSession.mode,
     phaseGate,
@@ -442,6 +555,7 @@ function writeAgentDisciplineArtifacts(root: string, result: ImplementRunResult,
   appendAuditEvent(root, {
     type: "agent_discipline_recorded",
     reason: `Agent discipline recorded ${completionEvidence.status} for change session ${result.sessionId}.`,
+    changeId: result.metadata.changeId ?? session.changeId ?? session.id,
     sourceArtifact: {
       kind: "agent-discipline-report",
       path: disciplineReportPath,
@@ -451,6 +565,7 @@ function writeAgentDisciplineArtifacts(root: string, result: ImplementRunResult,
       : [],
     details: {
       sessionId: result.sessionId,
+      changeId: result.metadata.changeId ?? session.changeId ?? session.id,
       mode: report.mode,
       completionStatus: completionEvidence.status,
       phaseGateStatus: phaseGate.status,
@@ -634,6 +749,19 @@ function buildReplayMetadata(replay: LoadedReplayState): NonNullable<ImplementRu
   };
 }
 
+function shouldArchiveSession(
+  result: ImplementRunResult,
+  sessionSource: LoadedImplementSession["source"],
+  sessionId: string,
+  root: string,
+): boolean {
+  return (
+    result.postVerify?.ok === true &&
+    sessionSource === "active" &&
+    isActiveChangeSession(root, sessionId)
+  );
+}
+
 function loadImplementSession(root: string, sessionId?: string): LoadedImplementSession | null {
   if (sessionId) {
     const session = loadChangeSession(root, sessionId);
@@ -787,6 +915,13 @@ export function renderImplementText(result: ImplementRunResult): string {
   lines.push("");
   lines.push(`Outcome: ${result.outcome}`);
   lines.push(`Session: ${result.sessionId}`);
+  if (result.metadata.changeId) {
+    lines.push(`Change ID: ${result.metadata.changeId}`);
+  }
+  if (result.metadata.provenanceBinding) {
+    lines.push(`Provenance binding: ${result.metadata.provenanceBinding.id}`);
+    lines.push(`Provenance source: ${result.metadata.provenanceBinding.source}`);
+  }
   lines.push(`Lane: ${result.lane}${result.autoPromoted ? " (auto-promoted from fast request)" : ""}`);
   lines.push(`Iterations: ${result.iterations}`);
   lines.push(`Tokens used: ${result.tokensUsed}`);
@@ -830,6 +965,33 @@ export function renderImplementText(result: ImplementRunResult): string {
     lines.push(`  Previous stop point: ${result.metadata.replay.previousStopPoint}`);
     lines.push(`  Previous failed check: ${result.metadata.replay.previousFailedCheck}`);
     lines.push(`  Restored session: ${result.metadata.replay.restoredSession}`);
+  }
+
+  if (result.metadata.executionFork) {
+    lines.push("");
+    lines.push("Execution fork:");
+    lines.push(`  Artifact: ${result.metadata.executionFork.artifactPath}`);
+    lines.push(`  Canonical trace: ${result.metadata.executionFork.canonicalTraceId}`);
+    lines.push(`  Summary: ${result.metadata.executionFork.canonicalTraceSummary}`);
+    lines.push(`  Selected axes: ${result.metadata.executionFork.selectedAxes.join(", ") || "none"}`);
+    lines.push(`  Candidate count: ${result.metadata.executionFork.candidateCount}`);
+    lines.push(`  Suppressed candidates: ${result.metadata.executionFork.suppressedCandidateCount}`);
+  }
+
+  if (result.metadata.ktmRuntime) {
+    lines.push("");
+    lines.push("KTM runtime:");
+    lines.push(`  Artifact dir: ${result.metadata.ktmRuntime.artifactDir}`);
+    lines.push(`  Kernel log: ${result.metadata.ktmRuntime.kernelLogPath}`);
+    lines.push(`  State snapshot: ${result.metadata.ktmRuntime.stateSnapshotPath}`);
+    lines.push(`  Runtime summary: ${result.metadata.ktmRuntime.runtimeSummaryPath}`);
+    lines.push(`  Decision: ${result.metadata.ktmRuntime.decision}`);
+    lines.push(`  Transition: ${result.metadata.ktmRuntime.transitionId}`);
+    lines.push(`  Committed: ${result.metadata.ktmRuntime.committed}`);
+  }
+
+  if (result.metadata.ktmRuntimeArtifactPath) {
+    lines.push(`KTM artifact path: ${result.metadata.ktmRuntimeArtifactPath}`);
   }
 
   if (result.metadata.stallReason) {
@@ -943,6 +1105,37 @@ function describeLaneResolution(resolution: ImplementLaneResolution): string {
   }
 
   return lines.join("\n");
+}
+
+function buildKtmFacts(
+  result: ImplementRunResult,
+  session: ChangeSession,
+  changeId: string,
+): Record<string, unknown> {
+  return {
+    changeId,
+    sessionId: session.id,
+    sessionSource: result.metadata.replay?.restoredSession ? "replay" : "direct",
+    lane: result.lane,
+    testsPassed: result.testsPassed,
+    outcome: result.outcome,
+    decisionState: result.decisionPacket?.state ?? "ready_for_verify",
+    decisionStopPoint: result.decisionPacket?.stopPoint ?? "preflight",
+    executionForkTrace: result.metadata.executionFork?.canonicalTraceId ?? "not_available_yet",
+    executionForkAxes: result.metadata.executionFork?.selectedAxes ?? [],
+    replayUsed: Boolean(result.metadata.replay),
+  };
+}
+
+function buildKtmPolicy(result: ImplementRunResult, session: ChangeSession): Record<string, unknown> {
+  return {
+    singleWriteAuthority: true,
+    deterministicTransition: true,
+    atomicOutputs: ["kernel-log", "state-snapshot", "runtime-summary", "audit-ledger"],
+    changeSessionLane: session.laneDecision.lane,
+    implementOutcome: result.outcome,
+    postVerifyRequired: result.testsPassed,
+  };
 }
 
 async function runPostImplementVerify(

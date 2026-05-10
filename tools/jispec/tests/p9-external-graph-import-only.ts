@@ -9,7 +9,11 @@ import {
 } from "../integrations/external-graph-import";
 import { buildPrivacyReport } from "../privacy/redaction";
 import { runVerify } from "../verify/verify-runner";
-import { buildRegressionMatrixManifest, TEST_SUITES } from "./regression-runner";
+import {
+  REGRESSION_MATRIX_TOTALS,
+  buildRegressionMatrixManifest,
+  TEST_SUITES,
+} from "./regression-runner";
 import { cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
 
 interface TestResult {
@@ -156,8 +160,8 @@ async function main(): Promise<void> {
     assert.equal(suite.task, "P9-T6");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 151);
-    assert.equal(manifest.totalExpectedTests, 674);
+    assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
+    assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
   }));
 
   report(results);

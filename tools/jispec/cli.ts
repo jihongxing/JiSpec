@@ -163,11 +163,14 @@ type LegacySurface =
 
 function buildPrimarySurfaceHelpText(): string {
   return [
-    "Current primary surface:",
+    "Semantic entry surface:",
+    "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
+    "  Everything else is derived from change and never creates canonical truth on its own.",
+    "",
+    "Derived operational surfaces:",
     "  jispec-cli init --requirements <path> [--technical-solution <path>] [--json]",
     "  jispec-cli first-run [--json]",
     "  jispec-cli verify [--json]",
-    "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
     "  jispec-cli source refresh [--change <id|latest>] [--json]",
     "  jispec-cli source diff [--change <id|latest>] [--json]",
     "  jispec-cli source review list|adopt|reject|defer|waive [--change <id|latest>] [--json]",

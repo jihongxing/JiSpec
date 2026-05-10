@@ -77,8 +77,20 @@ async function main(): Promise<void> {
     assert.equal(result.patchMediation?.test?.passed, true);
     assert.equal(result.postVerify?.verdict, "PASS");
     assert.equal(result.metadata.sessionArchived, true);
+    assert.ok(result.metadata.executionFork);
+    assert.ok(result.metadata.ktmRuntime);
+    assert.equal(result.metadata.executionFork?.canonicalTraceSummary, "session:direct_session -> implementation:external_patch_mediation -> verification:verify_pass");
+    assert.equal(result.metadata.executionFork?.externalPatchUsed, true);
+    assert.ok(fs.existsSync(path.join(docsFixture, ".jispec", "implement", "change-docs-patch", "execution-fork.json")));
+    assert.ok(fs.existsSync(path.join(docsFixture, ".jispec", "kernel-runtime", "change-docs-patch", "kernel-log.json")));
+    assert.ok(fs.existsSync(path.join(docsFixture, ".jispec", "kernel-runtime", "change-docs-patch", "state-snapshot.json")));
+    assert.equal(result.metadata.ktmRuntime?.decision, "approve");
+    assert.equal(result.metadata.ktmRuntime?.toStatus, "committed");
     assert.equal(readChangeSession(docsFixture), null);
-    assert.ok(readArchivedChangeSession(docsFixture, "change-docs-patch"));
+    const archivedSession = readArchivedChangeSession(docsFixture, "change-docs-patch");
+    assert.ok(archivedSession);
+    assert.ok(archivedSession?.executionFork);
+    assert.equal(archivedSession?.executionFork?.canonicalTraceSummary, result.metadata.executionFork?.canonicalTraceSummary);
 
     const patchAuditEvents = readAuditEvents(docsFixture).filter((event) => event.type === "external_patch_intake");
     assert.equal(patchAuditEvents.length, 2);

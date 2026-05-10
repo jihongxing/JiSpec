@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  REGRESSION_MATRIX_AREA_TOTALS,
+  REGRESSION_MATRIX_TOTALS,
   buildRegressionMatrixManifest,
   REGRESSION_AREA_ORDER,
   TEST_SUITES,
@@ -77,25 +79,20 @@ async function main(): Promise<void> {
   record("manifest freezes the matrix totals and source contract", () => {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
-    assert.equal(manifest.totalSuites, 151);
-    assert.equal(manifest.totalExpectedTests, 674);
+    assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
+    assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
   });
 
   record("area summaries stay partitioned by product boundary", () => {
     const areaMap = new Map(manifest.areas.map((area) => [area.area, area]));
     assert.deepEqual([...areaMap.keys()], REGRESSION_AREA_ORDER);
-    assert.equal(areaMap.get("core-mainline")?.suiteCount, 44);
-    assert.equal(areaMap.get("bootstrap-takeover-hardening")?.suiteCount, 29);
-    assert.equal(areaMap.get("retakeover-regression-pool")?.suiteCount, 2);
-    assert.equal(areaMap.get("verify-ci-gates")?.suiteCount, 13);
-    assert.equal(areaMap.get("verify-ci-gates")?.expectedTests, 56);
-    assert.equal(areaMap.get("change-implement")?.suiteCount, 13);
-    assert.equal(areaMap.get("change-implement")?.expectedTests, 58);
-    assert.equal(areaMap.get("core-mainline")?.expectedTests, 204);
-    assert.equal(areaMap.get("bootstrap-takeover-hardening")?.expectedTests, 118);
-    assert.equal(areaMap.get("runtime-extended")?.suiteCount, 50);
-    assert.equal(areaMap.get("runtime-extended")?.expectedTests, 218);
+    assert.deepEqual(areaMap.get("core-mainline"), REGRESSION_MATRIX_AREA_TOTALS["core-mainline"]);
+    assert.deepEqual(areaMap.get("bootstrap-takeover-hardening"), REGRESSION_MATRIX_AREA_TOTALS["bootstrap-takeover-hardening"]);
+    assert.deepEqual(areaMap.get("retakeover-regression-pool"), REGRESSION_MATRIX_AREA_TOTALS["retakeover-regression-pool"]);
+    assert.deepEqual(areaMap.get("verify-ci-gates"), REGRESSION_MATRIX_AREA_TOTALS["verify-ci-gates"]);
+    assert.deepEqual(areaMap.get("change-implement"), REGRESSION_MATRIX_AREA_TOTALS["change-implement"]);
+    assert.deepEqual(areaMap.get("runtime-extended"), REGRESSION_MATRIX_AREA_TOTALS["runtime-extended"]);
     assert.ok(manifest.boundaries.v1MainlineAreas.every((area) => area !== "runtime-extended"));
     assert.equal(manifest.boundaries.runtimeExtendedArea, "runtime-extended");
     assert.equal(manifest.boundaries.pilotReadiness.doctorProfile, "pilot");

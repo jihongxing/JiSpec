@@ -3,6 +3,7 @@ import type { ImplementRunResult } from "../implement/implement-runner";
 import type { DebugPacket } from "./types";
 
 export function buildDebugPacketFromImplementResult(result: ImplementRunResult, generatedAt = new Date().toISOString(), root?: string): DebugPacket {
+  const changeId = result.metadata.changeId ?? result.sessionId;
   const stopPoint = result.decisionPacket?.stopPoint ?? inferStopPoint(result);
   const failingCheck = result.decisionPacket?.nextActionDetail.failedCheck ?? inferFailedCheck(result);
   const retryCommand = result.decisionPacket?.nextActionDetail.command
@@ -15,6 +16,8 @@ export function buildDebugPacketFromImplementResult(result: ImplementRunResult, 
     schemaVersion: 1,
     kind: "jispec-agent-debug-packet",
     sessionId: result.sessionId,
+    changeId,
+    provenanceBinding: result.metadata.provenanceBinding,
     generatedAt,
     stopPoint,
     failedCommand,

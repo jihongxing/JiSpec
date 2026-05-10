@@ -41,6 +41,7 @@ async function main(): Promise<void> {
       schemaVersion: 1,
       kind: "jispec-agent-discipline-session",
       sessionId: "change-1",
+      changeId: "change-1",
       generatedAt,
       mode: "strict_gate",
       currentPhase: "verify",
@@ -63,6 +64,7 @@ async function main(): Promise<void> {
       schemaVersion: 1,
       kind: "jispec-agent-completion-evidence",
       sessionId: "change-1",
+      changeId: "change-1",
       generatedAt,
       status: "verified",
       commands: [
@@ -83,6 +85,7 @@ async function main(): Promise<void> {
       schemaVersion: 1,
       kind: "jispec-agent-discipline-report",
       sessionId: "change-1",
+      changeId: "change-1",
       generatedAt,
       mode: "strict_gate",
       phaseGate: {
@@ -121,6 +124,7 @@ async function main(): Promise<void> {
     assert.equal(fs.existsSync(path.join(artifactRoot, ".jispec", "agent-run", "change-1", "discipline-summary.md")), true);
     const summary = fs.readFileSync(path.join(artifactRoot, ".jispec", "agent-run", "change-1", "discipline-summary.md"), "utf-8");
     assert.match(summary, /Agent Discipline Summary/);
+    assert.match(summary, /Change ID: change-1/);
     assert.match(summary, /Completion: verified/);
     assert.match(summary, /This Markdown file is a human-readable companion/);
     console.log("✓ Test 2: artifact writers persist JSON contracts and human-readable summary");
@@ -270,6 +274,7 @@ async function main(): Promise<void> {
       schemaVersion: 1,
       kind: "jispec-agent-discipline-session",
       sessionId: "change-1",
+      changeId: "change-1",
       generatedAt: "2026-05-02T00:00:00.000Z",
       mode: "strict_gate",
       currentPhase: "handoff",
@@ -323,6 +328,7 @@ async function main(): Promise<void> {
       schemaVersion: 1,
       kind: "jispec-agent-discipline-session",
       sessionId: "change-1",
+      changeId: "change-1",
       generatedAt: "2026-05-02T00:00:00.000Z",
       mode: "fast_advisory",
       currentPhase: "implement",

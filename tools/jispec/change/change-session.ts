@@ -2,8 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import type { LaneDecision } from "./lane-decision";
 import type { ClassifiedPath } from "./git-diff-classifier";
+import type { AmbiguityDebtRegistrationSummary } from "./ambiguity-debt-register";
 import type { SpecDeltaChangeType, SpecDeltaDraftResult } from "./spec-delta";
 import type { ChangeImpactSummary } from "./impact-summary";
+import type { MutationBoundaryProjection } from "./mutation-boundary-model";
+import type { KernelIdentity } from "../kernel/shared-models";
+import type { KernelProvenanceBinding } from "../kernel/provenance";
+import type { ExecutionForkGovernanceRecord } from "../kernel/execution-fork";
+import type { KtmRuntimeRecord } from "../kernel/ktm";
 
 export type ChangeSessionOrchestrationMode = "prompt" | "execute";
 
@@ -18,13 +24,17 @@ export interface ChangeSessionCommandHint {
 /**
  * Change session state.
  */
-export interface ChangeSession {
-  id: string;
-  createdAt: string;
+export interface ChangeSession extends KernelIdentity {
+  changeId?: string;
+  provenanceBinding?: KernelProvenanceBinding;
+  executionFork?: ExecutionForkGovernanceRecord;
+  ktmRuntime?: KtmRuntimeRecord;
   summary: string;
   orchestrationMode?: ChangeSessionOrchestrationMode;
   laneDecision: LaneDecision;
   changedPaths: ClassifiedPath[];
+  mutationBoundary?: MutationBoundaryProjection;
+  ambiguityDebt?: AmbiguityDebtRegistrationSummary;
   changeType?: SpecDeltaChangeType;
   specDelta?: SpecDeltaDraftResult;
   sliceId?: string;

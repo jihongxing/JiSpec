@@ -4,6 +4,11 @@
 
 This is the final local acceptance surface for the project. It is local-only and does not replace `verify`, `ci:verify`, `doctor v1`, `doctor runtime`, `doctor pilot`, or `post-release:gate`.
 
+This acceptance now has two layers:
+
+- current closeout acceptance for the contract-driven delivery pipeline
+- current closeout extension for the completed Change Kernel stack
+
 ```bash
 npm run jispec -- north-star acceptance --root .
 npm run jispec -- north-star acceptance --root . --json
@@ -52,6 +57,19 @@ The `north-star acceptance` suite covers:
 - doctor global 依赖的 artifact 链是否健康
 
 这些场景仍然只消费本地 artifact，不替代 `verify`、`ci:verify`、`doctor mainline/runtime/pilot` 或 `post-release:gate`。换句话说，acceptance complements but does not replace verify.
+
+## Change Kernel Closeout Extension
+
+The acceptance story now also proves these higher-order capabilities as part of the current closeout checks, without replacing the contract-driven delivery pipeline story:
+
+- `change` remains the only semantic ingress
+- `MBM` normalizes external mutation into change hypotheses
+- `Ambiguity Debt` preserves unresolved reality without polluting committed truth
+- `IPL` keeps all outputs traceable to a canonical `change_id`
+- `KTM` produces deterministic state transitions and atomic commits
+- `Execution Fork Governance Layer` resolves canonical execution traces
+
+These are now current acceptance claims because the code and artifacts support them. They extend, rather than replace, the same north-star line.
 
 Each scenario writes:
 

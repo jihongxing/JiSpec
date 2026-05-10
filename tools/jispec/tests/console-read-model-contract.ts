@@ -46,7 +46,7 @@ async function main(): Promise<void> {
     assert.equal(contract.boundary.replacesCliGate, false);
     assert.equal(contract.boundary.sourceUploadRequired, false);
     assert.equal(contract.boundary.localArtifactsAreSourceOfTruth, true);
-    assert.equal(contract.governanceObjects.length, 15);
+    assert.equal(contract.governanceObjects.length, 16);
   });
 
   record("contract includes required machine-readable read model artifacts and governance sources", () => {
@@ -61,6 +61,7 @@ async function main(): Promise<void> {
       ".spec/deltas/<change-id>/source-review.yaml",
       ".spec/requirements/lifecycle.yaml",
       ".spec/spec-debt/ledger.yaml",
+      ".spec/ambiguity-debt/ledger.json",
       ".spec/spec-debt/<session-id>/*.json",
       ".spec/baselines/releases/<version>.yaml",
       ".spec/releases/compare/<from>-to-<to>/compare-report.json",
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
       "policy_posture",
       "waiver_lifecycle",
       "spec_debt_ledger",
+      "ambiguity_debt_register",
       "source_evolution_governance",
       "contract_drift",
       "release_baseline",
@@ -193,6 +195,25 @@ async function main(): Promise<void> {
         "",
       ].join("\n"));
       writeText(fixtureRoot, ".spec/waivers/waiver-1.json", JSON.stringify({ id: "waiver-1", status: "active" }, null, 2));
+      writeText(fixtureRoot, ".spec/ambiguity-debt/ledger.json", JSON.stringify({
+        version: 1,
+        debts: [
+          {
+            id: "ambiguity-debt-1",
+            createdAt: "2026-05-01T00:00:00.000Z",
+            mutationId: "mutation-1",
+            status: "open",
+            owner: "platform-lead",
+            reason: "Ambiguous mutation needs review.",
+            confidence: 0.42,
+            nextReview: "2026-05-08T00:00:00.000Z",
+            source: "external_patch",
+            candidateChangeIds: ["change-1"],
+            lineage: [],
+            summary: "Ambiguous mutation needs review.",
+          },
+        ],
+      }, null, 2));
       writeText(fixtureRoot, ".spec/spec-debt/bootstrap-takeover/feature.json", JSON.stringify({ id: "feature-debt" }, null, 2));
       writeText(fixtureRoot, ".spec/baselines/releases/v1.yaml", "version: v1\n");
       writeText(fixtureRoot, ".spec/releases/compare/v1-to-v2/compare-report.json", JSON.stringify({ driftSummary: { changed: 1 } }, null, 2));
@@ -260,6 +281,7 @@ async function main(): Promise<void> {
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "greenfield-source-evolution")?.instances[0]?.relativePath, ".spec/deltas/chg-1/source-evolution.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "greenfield-source-review")?.instances[0]?.relativePath, ".spec/deltas/chg-1/source-review.yaml");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "greenfield-requirement-lifecycle")?.instances[0]?.relativePath, ".spec/requirements/lifecycle.yaml");
+      assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "ambiguity-debt-ledger")?.instances[0]?.relativePath, ".spec/ambiguity-debt/ledger.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "release-compare-report")?.instances[0]?.relativePath, ".spec/releases/compare/v1-to-v2/compare-report.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "multi-repo-governance-snapshot")?.instances[0]?.relativePath, ".spec/console/governance-snapshot.json");
       assert.equal(snapshot.artifacts.find((artifact) => artifact.id === "active-change-session")?.instances[0]?.relativePath, ".jispec/change-session.json");
@@ -347,6 +369,30 @@ async function main(): Promise<void> {
         "",
       ].join("\n"));
       writeText(fixtureRoot, ".spec/waivers/active.json", JSON.stringify({ id: "active", status: "active" }, null, 2));
+      writeText(fixtureRoot, ".spec/ambiguity-debt/ledger.json", JSON.stringify({
+        version: 1,
+        debts: [
+          {
+            id: "ambiguity-debt-2",
+            createdAt: "2026-05-01T00:00:00.000Z",
+            mutationId: "mutation-2",
+            status: "open",
+            owner: "console-team",
+            reason: "Ambiguous input needs triage.",
+            confidence: 0.6,
+            nextReview: "2026-05-09T00:00:00.000Z",
+            source: "external_patch",
+            candidateChangeIds: ["change-2"],
+            lineage: [],
+            summary: "Ambiguous input needs triage.",
+            ownerReview: {
+              requestedAt: "2026-05-02T00:00:00.000Z",
+              requestedBy: "console-team",
+              reason: "Owner review requested.",
+            },
+          },
+        ],
+      }, null, 2));
       writeText(fixtureRoot, ".spec/spec-debt/bootstrap/feature.json", JSON.stringify({ id: "feature-debt" }, null, 2));
       writeText(fixtureRoot, ".spec/releases/compare/v1-to-v2/compare-report.json", JSON.stringify({ driftSummary: { overallStatus: "changed" } }, null, 2));
       writeText(fixtureRoot, ".spec/baselines/releases/v1.yaml", "version: v1\n");
@@ -522,6 +568,13 @@ async function main(): Promise<void> {
       assert.equal(audit.status, "available");
       assert.equal(audit.summary.eventCount, 1);
       assert.equal(audit.summary.latestActor, "codex");
+
+      const ambiguity = governanceObject(snapshot, "ambiguity_debt_register");
+      assert.equal(ambiguity.status, "available");
+      assert.equal(ambiguity.summary.total, 1);
+      assert.equal(ambiguity.summary.open, 1);
+      assert.equal(ambiguity.summary.ownerReviewRequested, 1);
+      assert.ok(Array.isArray(ambiguity.summary.candidateChangeIds));
 
       const approvals = governanceObject(snapshot, "approval_workflow");
       assert.equal(approvals.status, "partial");

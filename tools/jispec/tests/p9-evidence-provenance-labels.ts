@@ -7,7 +7,11 @@ import type { AdoptionRankedEvidence } from "../bootstrap/evidence-ranking";
 import type { ContractSourceAdapterReport } from "../bootstrap/contract-source-adapters";
 import { runGreenfieldInit } from "../greenfield/init";
 import { inferEvidenceProvenance, normalizeEvidenceProvenanceLabel } from "../provenance/evidence-provenance";
-import { TEST_SUITES, buildRegressionMatrixManifest } from "./regression-runner";
+import {
+  REGRESSION_MATRIX_TOTALS,
+  TEST_SUITES,
+  buildRegressionMatrixManifest,
+} from "./regression-runner";
 
 interface TestResult {
   name: string;
@@ -115,8 +119,8 @@ function main(): void {
     assert.equal(suite.task, "P9-T2");
 
     const manifest = buildRegressionMatrixManifest();
-    assert.equal(manifest.totalSuites, 151);
-    assert.equal(manifest.totalExpectedTests, 674);
+    assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
+    assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
   }));
 
   printResults(results);

@@ -207,6 +207,81 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
       gap: 12px;
     }
 
+    .workspace-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .workspace-kicker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .workspace-title {
+      margin-top: 4px;
+      font-size: 19px;
+      font-weight: 760;
+    }
+
+    .workspace-summary {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 44ch;
+    }
+
+    .workspace-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .workspace-meta-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fbfcfe;
+      min-width: 0;
+    }
+
+    .workspace-meta-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .workspace-meta-value {
+      margin-top: 4px;
+      font-size: 15px;
+      font-weight: 740;
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-meta-detail {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .workspace-action-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: start;
+    }
+
     .hero {
       display: grid;
       grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
@@ -642,9 +717,9 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
         </div>
         <p class="source-note">Source: ${escapeHtml(model.dashboard.headline.source)}</p>
       </div>
-      <div class="stack">
+    <div class="stack">
         <div class="panel">
-          <h2>Workspace</h2>
+          <h2>Change Workspace</h2>
           ${workspace ? renderWorkspacePanel(workspace) : "<p class=\"small\">No active change session or mediation record is available yet.</p>"}
         </div>
         <div class="panel">
@@ -834,8 +909,15 @@ function renderHandoffReplayQuestion(
 
 function renderWorkspacePanel(object: ConsoleGovernanceObjectSnapshot): string {
   const summary = object.summary;
+  const activeSessionPath = typeof summary.activeSessionPath === "string" ? summary.activeSessionPath : "not available";
   const activeSessionId = typeof summary.activeSessionId === "string" ? summary.activeSessionId : "not available";
+  const activeSessionMode = typeof summary.activeSessionMode === "string" ? summary.activeSessionMode : "not available";
+  const activeSessionLane = typeof summary.activeSessionLane === "string" ? summary.activeSessionLane : "not available";
+  const activeSessionRequestedLane = typeof summary.activeSessionRequestedLane === "string" ? summary.activeSessionRequestedLane : "not available";
+  const activeSessionAutoPromoted = summary.activeSessionAutoPromoted === true;
   const chainStatus = typeof summary.chainStatus === "string" ? summary.chainStatus : "not available";
+  const activeChangedPathCount = typeof summary.activeChangedPathCount === "number" ? summary.activeChangedPathCount : stringArray(summary.activeChangedPaths).length;
+  const activeNextCommandCount = typeof summary.activeNextCommandCount === "number" ? summary.activeNextCommandCount : stringArray(summary.activeNextCommands).length;
   const latestPatchStatus = typeof summary.latestPatchStatus === "string" ? summary.latestPatchStatus : "not available";
   const latestPatchReviewCompanionPath = typeof summary.latestPatchReviewCompanionPath === "string" ? summary.latestPatchReviewCompanionPath : "not available";
   const latestPatchReviewCompanionSummary = typeof summary.latestPatchReviewCompanionSummary === "string" ? summary.latestPatchReviewCompanionSummary : "";
@@ -849,10 +931,28 @@ function renderWorkspacePanel(object: ConsoleGovernanceObjectSnapshot): string {
 
   return [
     `<div class="workspace-stack">`,
-    `<div class="question-grid">`,
-    questionMetric("Active Change", activeSessionId, activeSessionSummary),
+    `<div class="workspace-header">`,
+    `<div>`,
+    `<p class="workspace-kicker">Current change session</p>`,
+    `<h3 class="workspace-title">${escapeHtml(activeSessionId)}</h3>`,
+    `<p class="workspace-summary">${escapeHtml(activeSessionSummary)}</p>`,
+    `</div>`,
+    `<div class="status-row"><span class="badge ${workspaceStatusClass(chainStatus)}">${escapeHtml(chainStatus)}</span><span class="small">${escapeHtml(activeSessionPath)}</span></div>`,
+    `</div>`,
+    `<div class="workspace-meta">`,
+    `<div class="workspace-meta-item"><div class="workspace-meta-label">Session Mode</div><div class="workspace-meta-value">${escapeHtml(activeSessionMode)}</div><div class="workspace-meta-detail">${escapeHtml(activeSessionPath)}</div></div>`,
+    `<div class="workspace-meta-item"><div class="workspace-meta-label">Lane</div><div class="workspace-meta-value">${escapeHtml(activeSessionLane)}</div><div class="workspace-meta-detail">${escapeHtml(activeSessionRequestedLane)}${activeSessionAutoPromoted ? " · auto-promoted" : ""}</div></div>`,
+    `<div class="workspace-meta-item"><div class="workspace-meta-label">Changed Paths</div><div class="workspace-meta-value">${escapeHtml(String(activeChangedPathCount))}</div><div class="workspace-meta-detail">${escapeHtml(activeChangedPaths.length > 0 ? activeChangedPaths.slice(0, 2).join(", ") : "none")}</div></div>`,
+    `<div class="workspace-meta-item"><div class="workspace-meta-label">Next Commands</div><div class="workspace-meta-value">${escapeHtml(String(activeNextCommandCount))}</div><div class="workspace-meta-detail">${escapeHtml(nextCommands.length > 0 ? nextCommands[0] : "none")}</div></div>`,
+    `</div>`,
+    `<div class="workspace-meta">`,
     questionMetric("Mediation Status", latestPatchStatus, latestPatchReviewCompanionPath),
     questionMetric("Replay Chain", chainStatus, latestPatchRetryCommand),
+    `</div>`,
+    `<div class="workspace-actions">`,
+    `<div class="workspace-action-row"><code>${escapeHtml(latestPatchRetryCommand)}</code><button type="button" data-copy-command="${escapeHtml(latestPatchRetryCommand)}">Copy</button></div>`,
+    `<div class="workspace-action-row"><code>${escapeHtml(latestPatchReviewCompanionPath)}</code><button type="button" data-copy-command="${escapeHtml(latestPatchReviewCompanionPath)}">Copy</button></div>`,
+    `<div class="workspace-action-row"><code>${escapeHtml(latestExternalToolRequest || "npm run jispec-cli -- handoff adapter --from-handoff <path-or-session> --tool codex")}</code><button type="button" data-copy-command="${escapeHtml(latestExternalToolRequest || "npm run jispec-cli -- handoff adapter --from-handoff <path-or-session> --tool codex")}">Copy</button></div>`,
     `</div>`,
     latestPatchReviewCompanionSummary ? `<div class="drilldown"><div class="drilldown-summary"><span>Patch Review Companion</span><span class="drilldown-copy">${escapeHtml(latestPatchStatus)}</span></div><div class="drilldown-body"><span class="code-chip">${escapeHtml(latestPatchReviewCompanionSummary)}</span></div></div>` : "",
     latestExternalToolRequest ? `<div class="drilldown"><div class="drilldown-summary"><span>External Tool Request</span><span class="drilldown-copy">handoff</span></div><div class="drilldown-body"><span class="code-chip">${escapeHtml(latestExternalToolRequest)}</span></div></div>` : "",
@@ -1051,6 +1151,16 @@ function boundaryItem(label: string, value: string): string {
 
 function statusClass(status: ConsoleGovernanceStatus): string {
   return status;
+}
+
+function workspaceStatusClass(status: string): string {
+  if (status === "ready") {
+    return "ok";
+  }
+  if (status === "needs_patch" || status === "needs_external_tool" || status === "needs_handoff") {
+    return "attention";
+  }
+  return "unknown";
 }
 
 function objectStatusClass(status: ConsoleGovernanceObjectSnapshot["status"]): string {

@@ -84,10 +84,17 @@ function main(): void {
       assert.match(html, /Replay Chain/);
       assert.match(html, /handoff adapter/);
       assert.match(html, /implement --from-handoff/);
-      assert.match(html, /Workspace/);
+      assert.match(html, /Change Workspace/);
+      assert.match(html, /Current change session/);
       assert.match(html, /Active Change/);
+      assert.match(html, /Session Mode/);
+      assert.match(html, /Lane/);
+      assert.match(html, /Changed Paths/);
+      assert.match(html, /Next Commands/);
       assert.match(html, /Mediation Status/);
       assert.match(html, /Replay Chain/);
+      assert.match(html, /data-copy-command/);
+      assert.match(html, /workspace-actions/);
       assert.match(html, /Patch Review Companion/);
       assert.match(html, /patch-mediation\.md/);
       assert.match(html, /Patch mediation companion for session change-1/);
