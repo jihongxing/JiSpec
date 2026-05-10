@@ -16,8 +16,9 @@ Reference base plan:
 
 Close the remaining live gap between the current repository state and a `ready: true` North Star closeout by finishing the global-closure loop instead of adding unrelated new surfaces.
 
-Status:
-completed on 2026-05-06 for the declared North Star acceptance surface and the audit follow-up hygiene tracked by this plan.
+Status: complete
+
+Completed on 2026-05-06 for the declared North Star acceptance surface and the audit follow-up hygiene tracked by this plan.
 
 Evidence: `.spec/north-star/acceptance.json` now reports `ready: true`, `npm run jispec-cli -- doctor global --json` now reports `ready: true`, and `npm run verify -- --json` now reports `verdict: PASS`.
 
