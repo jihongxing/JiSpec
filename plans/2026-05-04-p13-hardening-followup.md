@@ -1,6 +1,6 @@
 # P13 Hardening Follow-Up
 
-Status: in_progress
+Status: complete
 
 Date: 2026-05-04
 
@@ -12,7 +12,7 @@ Close the remaining gap between the newly landed global-closure artifacts and th
 
 ## H1 Release Global Context In Verify Surfaces
 
-Status: in_progress
+Status: complete
 
 ### Objective
 
@@ -57,9 +57,13 @@ Modify:
 - all data comes from declared artifacts rather than source scanning
 - tests prove both ingestion and rendering paths
 
+Status: complete
+
+Evidence: `node --import tsx ./tools/jispec/tests/p13-release-global-context.ts` passes, and `npm run typecheck` passes.
+
 ## H2 Promotion Candidate Audit Evidence Health
 
-Status: proposed
+Status: complete
 
 ### Objective
 
@@ -87,8 +91,14 @@ Modify:
 - promotion readiness reflects real audit evidence health
 - deferred surfaces still remain diagnostics-only unless explicitly promoted
 
+Status: complete
+
+Evidence: `node --import tsx ./tools/jispec/tests/p13-deferred-surface-promotion.ts` passes, and `npm run typecheck` passes.
+
 ## Execution Order
 
 1. Finish `H1`
 2. Run targeted verification
 3. Start `H2`
+
+Status: complete
