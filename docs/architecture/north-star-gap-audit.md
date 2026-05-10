@@ -189,7 +189,7 @@ Evidence: `docs/development/collaboration-surface-freeze.md` states that these s
 
 ## Open Advisory Debt
 
-The North Star blocker set is closed, and the advisory items tracked by this gap audit are closed as well.
+The North Star blocker set is closed, and the advisory items tracked by this closeout audit are closed as well.
 
 - bootstrap historical spec debt is now closed as explicit audit-trail state, not silent deletion
 Evidence: `.spec/spec-debt/bootstrap-20260501T200659806Z/feature.json` now records `status: cancelled`, and `.spec/audit/events.jsonl` contains a `spec_debt_cancel` event for the same artifact.
@@ -200,7 +200,7 @@ Evidence: `.spec/contracts/behaviors.feature` now exists, and `npm run verify --
 - waiver and approval hygiene are now reconciled on the declared artifact chain
 Evidence: `.spec/console/governance-snapshot.json` now reports `activeWaivers: 0` and `approvalWorkflowStatus: approval_satisfied`.
 
-Documented operating posture outside this gap audit:
+Documented operating posture outside this closeout audit:
 
 - `repo-group.yaml` remains intentionally optional for JiSpec's single-repo baseline-authority aggregate path
 Evidence: `.spec/console/multi-repo-governance.json` reports `repoGroup.status: not_available_yet` while still emitting `contractDriftHintCount: 1` and `ownerActionCount: 1`.
