@@ -1061,13 +1061,12 @@ function countFixtureSeverities(
   precisionMisses: string[],
   behaviorMisses: string[],
 ): Record<"blocked" | "attention" | "ok", number> {
-  return entries.reduce(
-    (counts, entry) => {
-      counts[fixtureMissSeverity(entry, readinessMisses, precisionMisses, behaviorMisses)] += 1;
-      return counts;
-    },
-    { blocked: 0, attention: 0, ok: 0 },
-  );
+  const initialCounts: Record<"blocked" | "attention" | "ok", number> = { blocked: 0, attention: 0, ok: 0 };
+  return entries.reduce<Record<"blocked" | "attention" | "ok", number>>((counts, entry) => {
+    const severity = fixtureMissSeverity(entry, readinessMisses, precisionMisses, behaviorMisses);
+    counts[severity] += 1;
+    return counts;
+  }, initialCounts);
 }
 
 function renderSeverityCountPills(counts: Record<"blocked" | "attention" | "ok", number>): string {

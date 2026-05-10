@@ -277,6 +277,7 @@ function snapshot(input: {
       releaseDriftTrendComparisons: input.releaseDriftTrendComparisons ?? 0,
       approvalWorkflowStatus: input.approvalWorkflowStatus ?? "not_available_yet",
       latestAuditActor: input.latestAuditActor ?? "not_available_yet",
+      contractRefs: [],
     },
     governanceObjects: [],
   };

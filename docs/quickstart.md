@@ -61,7 +61,7 @@ For the empty-directory acceptance smoke that exercises the same Greenfield path
 ## What To Read Next
 
 - Full docs map: `docs/README.md`
-- Legacy takeover decisions: `docs/user-guide/takeover-guide.md`
+- Legacy takeover decisions: `docs/takeover-guide.md` and `docs/user-guide/takeover-guide.md`
 - Greenfield input rules: `docs/reference/greenfield-input-contract.md`
 - Execute-default workflow: `docs/execute-default-guide.md`
 - Governance dashboard: `docs/console-governance-guide.md`
