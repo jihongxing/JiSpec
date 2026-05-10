@@ -1,6 +1,6 @@
 # JiSpec Global Closure Advancement Plan V1
 
-Status: proposed
+Status: complete
 
 Date: 2026-05-04
 
@@ -577,10 +577,13 @@ Global closure V1 is complete when all of the following are true:
 5. Land `P13-T1` before `P13-T2`, because acceptance should consume real global-closure artifacts, not placeholders.
 6. Land `P13-T3` last, so the promotion contract is written against proven surfaces rather than aspirational ones.
 
-## Immediate Next Step
+## Execution Status
 
-If execution starts from this plan, the first implementation package should be:
+This plan is now a historical execution record.
 
-- `P11-T1 Source Diff As A First-Class CLI Surface`
+Evidence:
 
-That package has the best leverage because it closes the most visible command-surface gap while improving reviewer ergonomics without changing gate semantics.
+- `source diff` is shipped and covered by `tools/jispec/tests/p11-source-diff.ts`
+- `verify`, `doctor global`, and `north-star acceptance` all pass on the declared closeout surface
+- `plans/2026-05-04-p13-hardening-followup.md` is also complete
+- `docs/architecture/north-star-gap-audit.md` records the closeout as materially complete
