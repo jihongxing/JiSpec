@@ -20,7 +20,7 @@ function main(): void {
   const results: TestResult[] = [];
 
   results.push(record("stable contract documents P9 impact source-of-truth paths", () => {
-    const doc = readDoc(repoRoot, "docs/v1-mainline-stable-contract.md");
+    const doc = readDoc(repoRoot, "docs/reference/v1-mainline-stable-contract.md");
     assert.match(doc, /\.spec\/deltas\/<changeId>\/impact-graph\.json/);
     assert.match(doc, /\.spec\/deltas\/<changeId>\/impact-report\.md/);
     assert.match(doc, /\.spec\/deltas\/<changeId>\/verify-focus\.yaml/);
@@ -29,11 +29,23 @@ function main(): void {
   }));
 
   results.push(record("console read model documents multi-repo source of truth", () => {
-    const doc = readDoc(repoRoot, "docs/console-read-model-contract.md");
+    const doc = readDoc(repoRoot, "docs/reference/console-read-model-contract.md");
     assert.match(doc, /\.spec\/console\/multi-repo-governance\.json/);
     assert.match(doc, /source of truth/i);
     assert.match(doc, /\.spec\/console\/multi-repo-governance\.md/);
     assert.match(doc, /human-readable companion/i);
+  }));
+
+  results.push(record("truth contract documents system truth promotion and canonical encoding boundaries", () => {
+    const doc = readDoc(repoRoot, "docs/reference/truth-contract-and-canonical-encoding.md");
+    const index = readDoc(repoRoot, "docs/reference/README.md");
+
+    assert.match(doc, /`change` 是意图，不是真相/);
+    assert.match(doc, /只有成功执行 `source adopt` 才会把 proposed snapshot 提升为 active truth/);
+    assert.match(doc, /proposed snapshot 必须是以下输入的确定性函数/);
+    assert.match(doc, /truth_fingerprint = sha256\(canonical_bytes\(semantic_snapshot, replay_seed\)\)/);
+    assert.match(doc, /verifier 必须绑定/);
+    assert.match(index, /truth-contract-and-canonical-encoding\.md/);
   }));
 
   results.push(record("upgrade plan keeps GitNexus and Graphify as references, not runtime dependencies", () => {
@@ -57,15 +69,15 @@ function main(): void {
     const suite = TEST_SUITES.find((candidate) => candidate.file === "p9-baseline-contract.ts");
     assert.ok(suite);
     assert.equal(suite.area, "runtime-extended");
-    assert.equal(suite.expectedTests, 5);
+    assert.equal(suite.expectedTests, 6);
     assert.equal(suite.task, "P9-T1");
 
     const manifest = buildRegressionMatrixManifest();
     assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
     assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
     const runtime = manifest.areas.find((area) => area.area === "runtime-extended");
-    assert.equal(runtime?.suiteCount, 50);
-    assert.equal(runtime?.expectedTests, 218);
+    assert.equal(runtime?.suiteCount, 54);
+    assert.equal(runtime?.expectedTests, 239);
   }));
 
   printResults(results);

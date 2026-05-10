@@ -12,10 +12,11 @@ Read the guide when you need to decide accept, edit, defer, or reject.
 
 ## Policy And Governance
 
-- [policy-waiver-spec-debt-cookbook.md](./policy-waiver-spec-debt-cookbook.md): policy operations overview and next-command map
-- [policy-presets.md](./policy-presets.md): choose a starting posture for `.spec/policy.yaml`
-- [policy-approval-workflow.md](./policy-approval-workflow.md): approval record contract and CLI
+- [../reference/README.md](../reference/README.md): stable contracts and read model references
 - [../console-governance-guide.md](../console-governance-guide.md): dashboard, UI, actions, and export
+- [policy-presets.md](./policy-presets.md): starter policy posture and default governance shape
+- [policy-approval-workflow.md](./policy-approval-workflow.md): approval record contract and CLI flow
+- [policy-waiver-spec-debt-cookbook.md](./policy-waiver-spec-debt-cookbook.md): waiver, spec debt, release compare, and console follow-up
 
 ## Daily Delivery
 

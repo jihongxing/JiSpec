@@ -70,6 +70,11 @@ import {
   type GreenfieldSourceRefreshResult,
 } from "./greenfield/source-refresh";
 import {
+  renderGreenfieldSourceSnapshotVerificationText,
+  verifyGreenfieldSourceSnapshotFile,
+  type GreenfieldSourceSnapshotVerificationOptions,
+} from "./greenfield/snapshot-verifier";
+import {
   renderGreenfieldSourceAdoptText,
   renderGreenfieldSourceReviewListText,
   renderGreenfieldSourceReviewTransitionText,
@@ -175,6 +180,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli source diff [--change <id|latest>] [--json]",
     "  jispec-cli source review list|adopt|reject|defer|waive [--change <id|latest>] [--json]",
     "  jispec-cli source adopt [--change <id|latest>] [--json]",
+    "  jispec-cli source verify [--snapshot <path>] [--json]",
     "  jispec-cli change default-mode show|set|reset [--json]",
     "  jispec-cli review list|adopt|reject|defer|waive|brief [--json]",
     "  jispec-cli spec-debt repay|cancel|owner-review <id> [--json]",
@@ -1793,6 +1799,62 @@ function registerGreenfieldSourceCommand(program: Command): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`JiSpec source adopt failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+
+  source
+    .command("verify")
+    .description("Verify a source snapshot fingerprint, context, and version bindings.")
+    .option("--root <path>", "Repository root.", ".")
+    .option("--snapshot <path>", "Snapshot file to verify.", ".spec/greenfield/source-documents.active.yaml")
+    .option("--expected-fingerprint <hash>", "Expected truth fingerprint.")
+    .option("--canonicalization-version <version>", "Expected canonicalization version.")
+    .option("--canonicalization-schema-version <number>", "Expected canonicalization schema version.")
+    .option("--engine-version <version>", "Expected fingerprint engine version.")
+    .option("--ordering-key <key>", "Expected replay ordering key.")
+    .option("--json", "Emit machine-readable JSON output.", false)
+    .action((options: {
+      root: string;
+      snapshot: string;
+      expectedFingerprint?: string;
+      canonicalizationVersion?: string;
+      canonicalizationSchemaVersion?: string;
+      engineVersion?: string;
+      orderingKey?: string;
+      json: boolean;
+    }) => {
+      try {
+        const expectedContext: GreenfieldSourceSnapshotVerificationOptions["expectedContext"] = {};
+        if (options.canonicalizationVersion) {
+          expectedContext.canonicalization_version = options.canonicalizationVersion;
+        }
+        if (options.canonicalizationSchemaVersion) {
+          const schemaVersion = Number(options.canonicalizationSchemaVersion);
+          if (!Number.isFinite(schemaVersion)) {
+            throw new Error(`--canonicalization-schema-version is not a valid number: ${options.canonicalizationSchemaVersion}`);
+          }
+          expectedContext.canonicalization_schema_version = schemaVersion;
+        }
+        if (options.engineVersion) {
+          expectedContext.engine_version = options.engineVersion;
+        }
+        if (options.orderingKey) {
+          expectedContext.ordering_key = options.orderingKey;
+        }
+
+        const snapshotPath = path.isAbsolute(options.snapshot)
+          ? options.snapshot
+          : path.join(path.resolve(options.root), options.snapshot);
+        const result = verifyGreenfieldSourceSnapshotFile(snapshotPath, {
+          expectedTruthFingerprint: options.expectedFingerprint,
+          expectedContext: Object.keys(expectedContext).length > 0 ? expectedContext : undefined,
+        });
+        console.log(options.json ? JSON.stringify(result, null, 2) : renderGreenfieldSourceSnapshotVerificationText(result));
+        process.exitCode = result.valid ? 0 : 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec source verify failed: ${message}`);
         process.exitCode = 1;
       }
     });

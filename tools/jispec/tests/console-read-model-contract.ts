@@ -30,8 +30,8 @@ async function main(): Promise<void> {
   }
 
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
-  const docPath = path.join(repoRoot, "docs", "console-read-model-contract.md");
-  const stableContractPath = path.join(repoRoot, "docs", "v1-mainline-stable-contract.md");
+  const docPath = path.join(repoRoot, "docs", "reference", "console-read-model-contract.md");
+  const stableContractPath = path.join(repoRoot, "docs", "reference", "v1-mainline-stable-contract.md");
   const readmePath = path.join(repoRoot, "README.md");
   const zhReadmePath = path.join(repoRoot, "README.zh-CN.md");
   const doc = fs.readFileSync(docPath, "utf-8");
@@ -128,7 +128,7 @@ async function main(): Promise<void> {
     assert.ok(doc.includes("must not replace `verify`, `ci:verify`, policy evaluation, release compare, or any CLI gate"));
     assert.ok(doc.includes("must not require source upload"));
     assert.ok(stableContract.includes("Console Read Model Contract"));
-    assert.ok(stableContract.includes("docs/console-read-model-contract.md"));
+    assert.ok(stableContract.includes("docs/reference/console-read-model-contract.md"));
     assert.ok(readme.includes("Console read model contract"));
     assert.ok(zhReadme.includes("Console read model contract"));
   });

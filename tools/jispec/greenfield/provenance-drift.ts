@@ -464,7 +464,11 @@ function collectHeadingEvolution(
 function getManifestSourceDocuments(
   manifest: Record<string, unknown>,
 ): Record<SourceDocumentName, Record<string, unknown> | undefined> {
-  const sourceDocuments = isRecord(manifest.source_documents) ? manifest.source_documents : {};
+  const sourceDocuments = isRecord(manifest.source_documents)
+    ? manifest.source_documents
+    : isRecord(manifest.semantic_snapshot) && isRecord(manifest.semantic_snapshot.source_documents)
+      ? manifest.semantic_snapshot.source_documents
+      : {};
   return {
     requirements: isRecord(sourceDocuments.requirements) ? sourceDocuments.requirements : undefined,
     technical_solution: isRecord(sourceDocuments.technical_solution) ? sourceDocuments.technical_solution : undefined,

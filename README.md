@@ -58,6 +58,16 @@ Release notes:
 
 - [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
 
+## Frozen Truth Contract
+
+The Greenfield truth contract is now frozen and implemented end-to-end:
+
+- contract reference: [docs/reference/truth-contract-and-canonical-encoding.md](docs/reference/truth-contract-and-canonical-encoding.md)
+- implementation: `tools/jispec/greenfield/canonicalization.ts`, `tools/jispec/greenfield/truth-fingerprint.ts`, `tools/jispec/greenfield/snapshot-verifier.ts`, `tools/jispec/greenfield/source-governance.ts`
+- regression coverage: `tools/jispec/tests/greenfield-canonicalization.ts`, `tools/jispec/tests/greenfield-truth-fingerprint.ts`, `tools/jispec/tests/greenfield-snapshot-verifier.ts`, `tools/jispec/tests/greenfield-deterministic-fixtures.ts`
+
+That closes the deterministic snapshot / fingerprint / verifier loop for source truth promotion.
+
 ## Human-readable artifact gap
 
 The two `C8` runs exposed one more important product truth:
@@ -634,45 +644,31 @@ The `ordering` context includes one complete example slice:
   [docs/console-governance-guide.md](docs/console-governance-guide.md)
 - External coding tool adapters:
   [docs/external-coding-tool-adapters.md](docs/external-coding-tool-adapters.md)
-- Policy presets:
-  [docs/user-guide/policy-presets.md](docs/user-guide/policy-presets.md)
+- Policy and governance landing page:
+  [docs/user-guide/README.md](docs/user-guide/README.md)
 - North star:
   [docs/architecture/north-star.md](docs/architecture/north-star.md)
 - North Star acceptance suite:
   [docs/architecture/north-star-acceptance.md](docs/architecture/north-star-acceptance.md)
-- North Star closeout audit:
-  [docs/architecture/north-star-gap-audit.md](docs/architecture/north-star-gap-audit.md)
 - IDE trajectory:
   [docs/architecture/ide-trajectory.md](docs/architecture/ide-trajectory.md)
-- Post-release gate:
-  [docs/development/post-release-gate.md](docs/development/post-release-gate.md)
-- Retakeover regression pool:
-  [docs/architecture/retakeover-regression-pool.md](docs/architecture/retakeover-regression-pool.md)
 - Console read model contract:
   [docs/reference/console-read-model-contract.md](docs/reference/console-read-model-contract.md)
 - Collaboration surface freeze:
   [docs/development/collaboration-surface-freeze.md](docs/development/collaboration-surface-freeze.md)
 - V1 mainline stable contract:
   [docs/reference/v1-mainline-stable-contract.md](docs/reference/v1-mainline-stable-contract.md)
-- Greenfield input contract:
-  [docs/reference/greenfield-input-contract.md](docs/reference/greenfield-input-contract.md)
+- Reference landing page:
+  [docs/reference/README.md](docs/reference/README.md)
 - Pilot product package:
   [docs/pilot-product-package.md](docs/pilot-product-package.md)
 - Takeover guide:
   [docs/user-guide/takeover-guide.md](docs/user-guide/takeover-guide.md)
-- Execute-default guide:
-  [docs/execute-default-guide.md](docs/execute-default-guide.md)
-- Console governance guide:
-  [docs/console-governance-guide.md](docs/console-governance-guide.md)
-- Policy, waiver, and spec debt cookbook:
-  [docs/user-guide/policy-waiver-spec-debt-cookbook.md](docs/user-guide/policy-waiver-spec-debt-cookbook.md)
-- Value metrics:
-  [docs/architecture/value-metrics.md](docs/architecture/value-metrics.md)
-- Pilot readiness checklist:
-  [docs/development/pilot-readiness-checklist.md](docs/development/pilot-readiness-checklist.md)
+- Development landing page:
+  [docs/development/README.md](docs/development/README.md)
 - CI templates:
   [docs/ci-templates.md](docs/ci-templates.md)
-- V1 minimal sample repo:
-  [docs/development/v1-sample-repo.md](docs/development/v1-sample-repo.md)
 - Release notes:
   [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
+
+If you are trying to decide which docs are still active, start with [docs/doc-lifecycle.md](docs/doc-lifecycle.md).

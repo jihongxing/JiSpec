@@ -98,7 +98,28 @@ async function main(): Promise<void> {
       generatedAt: "2026-04-29T00:00:00.000Z",
     });
     const proposedSnapshot = yaml.load(fs.readFileSync(path.join(root, ".spec", "deltas", refresh.changeId, "source-documents.proposed.yaml"), "utf-8")) as {
-      snapshot?: { status?: string };
+      snapshot?: { id?: string; status?: string; generated_at?: string };
+      semantic_snapshot?: {
+        version?: number;
+        input_mode?: string;
+        source_documents?: {
+          requirements?: { checksum?: string };
+        };
+      };
+      replay_seed?: {
+        version?: number;
+        generated_at?: string;
+        engine_version?: string;
+        ordering_key?: string;
+      };
+      truth_fingerprint?: string;
+      truth_fingerprint_context?: {
+        version?: number;
+        canonicalization_version?: string;
+        canonicalization_schema_version?: number;
+        engine_version?: string;
+        ordering_key?: string;
+      };
       source_documents?: {
         requirements?: {
           checksum?: string;
@@ -106,7 +127,27 @@ async function main(): Promise<void> {
       };
     };
     const activeSnapshot = yaml.load(fs.readFileSync(path.join(root, ".spec", "greenfield", "source-documents.active.yaml"), "utf-8")) as {
-      snapshot?: { id?: string; status?: string; adopted_by_change?: string };
+      snapshot?: { id?: string; status?: string; adopted_by_change?: string; generated_at?: string };
+      semantic_snapshot?: {
+        version?: number;
+        source_documents?: {
+          requirements?: { checksum?: string };
+        };
+      };
+      replay_seed?: {
+        version?: number;
+        generated_at?: string;
+        engine_version?: string;
+        ordering_key?: string;
+      };
+      truth_fingerprint?: string;
+      truth_fingerprint_context?: {
+        version?: number;
+        canonicalization_version?: string;
+        canonicalization_schema_version?: number;
+        engine_version?: string;
+        ordering_key?: string;
+      };
       source_documents?: {
         requirements?: {
           checksum?: string;
@@ -119,14 +160,45 @@ async function main(): Promise<void> {
       last_adopted_change_id?: string;
       requirements?: Array<{ id?: string; status?: string; modified_by_change?: string | null }>;
     };
+    const adoptionRecord = yaml.load(fs.readFileSync(path.join(root, ".spec", "deltas", refresh.changeId, "adoption-record.yaml"), "utf-8")) as {
+      status?: string;
+      baseline_after?: string | null;
+      active_snapshot_id?: string;
+      truth_fingerprint?: string;
+      truth_fingerprint_context?: {
+        version?: number;
+        canonicalization_version?: string;
+        canonicalization_schema_version?: number;
+        engine_version?: string;
+        ordering_key?: string;
+      };
+      canonicalization_version?: string;
+      canonicalization_schema_version?: number;
+      engine_version?: string;
+      ordering_key?: string;
+      decisions?: Array<{ evolution_id?: string; status?: string; maps_to?: string[] }>;
+    };
     const baseline = yaml.load(fs.readFileSync(path.join(root, ".spec", "baselines", "current.yaml"), "utf-8")) as {
-      source_snapshot?: { active_snapshot_id?: string; lifecycle_registry_version?: number; last_adopted_change_id?: string | null };
+      source_snapshot?: {
+        active_snapshot_id?: string;
+        active_truth_fingerprint?: string;
+        active_truth_fingerprint_context?: {
+          version?: number;
+          canonicalization_version?: string;
+          canonicalization_schema_version?: number;
+          engine_version?: string;
+          ordering_key?: string;
+        };
+        lifecycle_registry_version?: number;
+        last_adopted_change_id?: string | null;
+      };
       requirement_lifecycle?: { registry_version?: number; last_adopted_change_id?: string | null };
       source_evolution?: { last_adopted_change_id?: string | null; source_review_path?: string };
       requirement_ids?: string[];
       applied_deltas?: string[];
     };
     const auditTypes = readAuditEvents(root).map((event) => event.type);
+    const sourceAdoptEvent = readAuditEvents(root).find((event) => event.type === "source_adopt");
 
     results.push(record("source refresh plus source adopt promote reviewed source truth into lifecycle and baseline metadata", () => {
       assert.equal(refresh.changeId, change.session.specDelta?.changeId);
@@ -135,11 +207,43 @@ async function main(): Promise<void> {
       assert.equal(refresh.comparison.addedRequirementIds.length, 0);
       assert.equal(refresh.comparison.removedRequirementIds.length, 0);
       assert.equal(proposedSnapshot.snapshot?.status, "proposed");
+      assert.equal(proposedSnapshot.semantic_snapshot?.version, 1);
+      assert.equal(proposedSnapshot.semantic_snapshot?.input_mode, "strict");
+      assert.equal(proposedSnapshot.semantic_snapshot?.source_documents?.requirements?.checksum, proposedSnapshot.source_documents?.requirements?.checksum);
+      assert.equal(proposedSnapshot.replay_seed?.version, 1);
+      assert.equal(proposedSnapshot.replay_seed?.generated_at, proposedSnapshot.snapshot?.generated_at);
+      assert.equal(proposedSnapshot.replay_seed?.engine_version, "greenfield-source-documents@1");
+      assert.equal(proposedSnapshot.replay_seed?.ordering_key, "stable-line-order-v1");
+      assert.equal(proposedSnapshot.snapshot?.id, proposedSnapshot.truth_fingerprint);
+      assert.equal(proposedSnapshot.truth_fingerprint_context?.version, 1);
+      assert.equal(proposedSnapshot.truth_fingerprint_context?.canonicalization_version, "greenfield-canonicalization@1");
+      assert.equal(proposedSnapshot.truth_fingerprint_context?.canonicalization_schema_version, 1);
+      assert.equal(proposedSnapshot.truth_fingerprint_context?.engine_version, "greenfield-source-documents@1");
+      assert.equal(proposedSnapshot.truth_fingerprint_context?.ordering_key, "stable-line-order-v1");
       assert.match(blockedAdoptMessage, /still need adopt, defer, or waive/i);
       assert.equal(review.decision.status, "adopted");
       assert.equal(adopted.changeId, refresh.changeId);
       assert.equal(activeSnapshot.snapshot?.status, "active");
       assert.equal(activeSnapshot.snapshot?.adopted_by_change, refresh.changeId);
+      assert.equal(activeSnapshot.semantic_snapshot?.version, 1);
+      assert.equal(activeSnapshot.semantic_snapshot?.source_documents?.requirements?.checksum, activeSnapshot.source_documents?.requirements?.checksum);
+      assert.equal(activeSnapshot.replay_seed?.generated_at, activeSnapshot.snapshot?.generated_at);
+      assert.equal(activeSnapshot.replay_seed?.engine_version, "greenfield-source-documents@1");
+      assert.equal(activeSnapshot.snapshot?.id, activeSnapshot.truth_fingerprint);
+      assert.equal(activeSnapshot.truth_fingerprint, proposedSnapshot.truth_fingerprint);
+      assert.equal(activeSnapshot.truth_fingerprint_context?.canonicalization_version, proposedSnapshot.truth_fingerprint_context?.canonicalization_version);
+      assert.equal(adoptionRecord.status, "adopted");
+      assert.equal(adoptionRecord.baseline_after, ".spec/baselines/current.yaml");
+      assert.equal(adoptionRecord.active_snapshot_id, activeSnapshot.snapshot?.id);
+      assert.equal(adoptionRecord.truth_fingerprint, activeSnapshot.truth_fingerprint);
+      assert.equal(adoptionRecord.truth_fingerprint_context?.canonicalization_version, activeSnapshot.truth_fingerprint_context?.canonicalization_version);
+      assert.equal(adoptionRecord.canonicalization_schema_version, 1);
+      assert.equal(adoptionRecord.engine_version, "greenfield-source-documents@1");
+      assert.equal(adoptionRecord.ordering_key, "stable-line-order-v1");
+      assert.equal(baseline.source_snapshot?.active_truth_fingerprint, activeSnapshot.truth_fingerprint);
+      assert.equal(baseline.source_snapshot?.active_truth_fingerprint_context?.canonicalization_version, activeSnapshot.truth_fingerprint_context?.canonicalization_version);
+      assert.equal(sourceAdoptEvent?.details && typeof sourceAdoptEvent.details === "object" ? (sourceAdoptEvent.details as { truthFingerprint?: string }).truthFingerprint : undefined, activeSnapshot.truth_fingerprint);
+      assert.equal(sourceAdoptEvent?.details && typeof sourceAdoptEvent.details === "object" ? (sourceAdoptEvent.details as { canonicalizationSchemaVersion?: number }).canonicalizationSchemaVersion : undefined, 1);
       assert.ok(fs.existsSync(refresh.sourceEvolutionPath));
       assert.ok(fs.existsSync(refresh.sourceEvolutionMarkdownPath));
       assert.match(fs.readFileSync(refresh.sourceEvolutionMarkdownPath, "utf-8"), /modified/);

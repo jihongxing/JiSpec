@@ -42,7 +42,7 @@ function main(): void {
       strongestEvidence: ["ranked evidence has package.json"],
       inferredEvidence: [],
       drift: [],
-      impact: ["contract: docs/v1-mainline-stable-contract.md"],
+      impact: ["contract: docs/reference/v1-mainline-stable-contract.md"],
       nextSteps: ["review adoption summary"],
       maxLines: 150,
     });
@@ -59,7 +59,7 @@ function main(): void {
       strongestEvidence: ["legacy routes map to domain scenarios"],
       inferredEvidence: ["feature vocabulary inferred from controller names"],
       drift: ["missing source snapshot: not_available_yet"],
-      impact: ["contract: docs/v1-mainline-stable-contract.md"],
+      impact: ["contract: docs/reference/v1-mainline-stable-contract.md"],
       nextSteps: ["open .spec/handoffs/adopt-summary.md"],
       maxLines: 150,
     });

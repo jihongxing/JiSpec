@@ -1645,7 +1645,7 @@ export class Doctor {
         "node --import tsx ./tools/jispec/tests/p13-deferred-surface-promotion.ts",
         stableUnique([
           "tools/jispec/runtime/deferred-surface-contract.ts",
-          "docs/collaboration-surface-freeze.md",
+          "docs/development/collaboration-surface-freeze.md",
           "tools/jispec/tests/p13-deferred-surface-promotion.ts",
           ...candidateIds.flatMap((candidateId) => {
             const health = readiness.candidates.find((candidate) => candidate.id === candidateId);
@@ -1666,7 +1666,7 @@ export class Doctor {
       details,
       [
         "tools/jispec/runtime/deferred-surface-contract.ts",
-        "docs/collaboration-surface-freeze.md",
+        "docs/development/collaboration-surface-freeze.md",
       ],
     );
   }

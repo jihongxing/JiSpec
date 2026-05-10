@@ -126,12 +126,12 @@ export function buildPilotProductPackage(options: PilotProductPackageOptions): P
     docs: [
       { path: "docs/install.md", role: "install" },
       { path: "docs/quickstart.md", role: "quickstart" },
-      { path: "docs/first-takeover-walkthrough.md", role: "legacy_takeover" },
+      { path: "docs/getting-started/first-takeover-walkthrough.md", role: "legacy_takeover" },
       { path: "docs/greenfield-walkthrough.md", role: "greenfield" },
       { path: "docs/ci-templates.md", role: "ci" },
       { path: "docs/console-governance-guide.md", role: "console" },
       { path: "docs/privacy-and-local-first.md", role: "privacy" },
-      { path: "docs/pilot-readiness-checklist.md", role: "pilot_gate" },
+      { path: "docs/development/pilot-readiness-checklist.md", role: "pilot_gate" },
     ],
   };
 }
@@ -269,7 +269,7 @@ function buildFirstBaselineStep(root: string): PilotAdoptionStep {
     command: "npm run jispec -- first-run --root .",
     ownerAction: complete ? "First takeover or Greenfield baseline is present." : "Complete bootstrap adopt or Greenfield init before inviting pilot reviewers.",
     evidence: existingArtifacts(root, [takeoverPath, greenfieldPath]),
-    docs: ["docs/first-takeover-walkthrough.md", "docs/greenfield-walkthrough.md"],
+    docs: ["docs/getting-started/first-takeover-walkthrough.md", "docs/greenfield-walkthrough.md"],
     writesLocalArtifacts: true,
     mainlineAuthority: true,
   });
@@ -354,7 +354,7 @@ function buildDoctorPilotStep(root: string): PilotAdoptionStep {
     command: "npm run pilot:ready",
     ownerAction: complete ? "Pilot readiness prerequisites are present; keep running this gate before sharing." : "Resolve package blockers, then run doctor pilot or pilot:ready.",
     evidence: existingArtifacts(root, [".spec/pilot/package.json"]),
-    docs: ["docs/pilot-readiness-checklist.md"],
+    docs: ["docs/development/pilot-readiness-checklist.md"],
     writesLocalArtifacts: false,
     mainlineAuthority: true,
   });

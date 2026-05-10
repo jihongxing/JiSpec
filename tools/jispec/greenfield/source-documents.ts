@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { computeGreenfieldSourceTruthFingerprint } from "./truth-fingerprint";
 
 export type GreenfieldInputMode = "strict" | "requirements-only" | "idea-only";
 export type GreenfieldInputContractStatus = "passed" | "failed" | "warning";
@@ -48,6 +49,41 @@ export interface GreenfieldSourceSnapshotOptions {
   generatedAt?: string;
   snapshotId?: string;
   openQuestions?: GreenfieldSourceSnapshotOpenQuestionsSummary;
+  replaySeed?: GreenfieldSourceReplaySeed;
+}
+
+export interface GreenfieldSourceReplaySeed {
+  version: 1;
+  generated_at: string;
+  engine_version: string;
+  ordering_key: string;
+}
+
+export interface GreenfieldSourceSemanticSnapshot {
+  version: 1;
+  input_contract: {
+    version: 1;
+    supported_modes: GreenfieldInputMode[];
+    requirements: GreenfieldInputContractGuidance["requirements"];
+    technical_solution: GreenfieldInputContractGuidance["technicalSolution"];
+    ji_spec_responsibilities: string[];
+    user_responsibilities: string[];
+  };
+  source_documents: {
+    requirements: Record<string, unknown>;
+    technical_solution: Record<string, unknown>;
+  };
+  input_mode: GreenfieldInputMode;
+  input_status: GreenfieldInputContractStatus;
+  blocking_issues: string[];
+  warnings: string[];
+  open_decisions: string[];
+  open_questions?: GreenfieldSourceSnapshotOpenQuestionsSummary;
+}
+
+export interface GreenfieldSourceSnapshotLayerModel {
+  semantic_snapshot: GreenfieldSourceSemanticSnapshot;
+  replay_seed: GreenfieldSourceReplaySeed;
 }
 
 export interface GreenfieldSourceSnapshotComparison {
@@ -181,7 +217,18 @@ export function buildGreenfieldSourceDocumentsManifest(
     options.technicalSolutionPath ?? inputContract.technicalSolution.path,
     "docs/input/technical-solution.md",
   );
-  const snapshotId = options.snapshotId ?? createGreenfieldSourceSnapshotId(inputContract, generatedAt);
+  const replaySeed = options.replaySeed ?? buildGreenfieldSourceReplaySeed(generatedAt);
+  const semanticSnapshot = buildGreenfieldSourceSemanticSnapshot(inputContract, {
+    requirementsPath,
+    technicalSolutionPath,
+    openQuestions: options.openQuestions,
+    generatedAt,
+  });
+  const truthFingerprint = computeGreenfieldSourceTruthFingerprint({
+    semantic_snapshot: semanticSnapshot,
+    replay_seed: replaySeed,
+  });
+  const snapshotId = options.snapshotId ?? truthFingerprint.truth_fingerprint;
 
   return {
     snapshot: {
@@ -190,29 +237,18 @@ export function buildGreenfieldSourceDocumentsManifest(
       status: options.snapshotStatus,
       generated_at: generatedAt,
     },
-    input_contract: {
-      version: inputContract.contractVersion,
-      supported_modes: inputContract.guidance.supportedModes,
-      requirements: inputContract.guidance.requirements,
-      technical_solution: inputContract.guidance.technicalSolution,
-      ji_spec_responsibilities: inputContract.guidance.jiSpecResponsibilities,
-      user_responsibilities: inputContract.guidance.userResponsibilities,
-    },
-    source_documents: {
-      requirements: buildManifestDocumentRecord(inputContract.requirements, requirementsPath),
-      technical_solution: buildManifestDocumentRecord(inputContract.technicalSolution, technicalSolutionPath),
-    },
-    input_mode: inputContract.mode,
-    input_status: inputContract.status,
-    blocking_issues: inputContract.blockingIssues,
-    warnings: inputContract.warnings,
-    open_decisions: inputContract.openDecisions,
-    ...(options.openQuestions ? {
-      open_questions: {
-        ...options.openQuestions,
-        generated_at: options.openQuestions.generated_at ?? generatedAt,
-      },
-    } : {}),
+    semantic_snapshot: semanticSnapshot,
+    replay_seed: replaySeed,
+    truth_fingerprint: truthFingerprint.truth_fingerprint,
+    truth_fingerprint_context: truthFingerprint.truth_fingerprint_context,
+    input_contract: semanticSnapshot.input_contract,
+    source_documents: semanticSnapshot.source_documents,
+    input_mode: semanticSnapshot.input_mode,
+    input_status: semanticSnapshot.input_status,
+    blocking_issues: semanticSnapshot.blocking_issues,
+    warnings: semanticSnapshot.warnings,
+    open_decisions: semanticSnapshot.open_decisions,
+    ...(semanticSnapshot.open_questions ? { open_questions: semanticSnapshot.open_questions } : {}),
     generated_at: generatedAt,
   };
 }
@@ -265,6 +301,54 @@ export function compareGreenfieldSourceManifests(
     addedRequirementIds: addedRequirementIds.sort(),
     removedRequirementIds: removedRequirementIds.sort(),
     changedRequirementIds: changedRequirementIds.sort(),
+  };
+}
+
+export function buildGreenfieldSourceSemanticSnapshot(
+  inputContract: GreenfieldInputContract,
+  options: {
+    requirementsPath: string;
+    technicalSolutionPath: string;
+    openQuestions?: GreenfieldSourceSnapshotOpenQuestionsSummary;
+    generatedAt?: string;
+  },
+): GreenfieldSourceSemanticSnapshot {
+  const openQuestions = options.openQuestions
+    ? {
+        ...options.openQuestions,
+        generated_at: options.openQuestions.generated_at ?? options.generatedAt,
+      }
+    : undefined;
+
+  return {
+    version: 1,
+    input_contract: {
+      version: inputContract.contractVersion,
+      supported_modes: inputContract.guidance.supportedModes,
+      requirements: inputContract.guidance.requirements,
+      technical_solution: inputContract.guidance.technicalSolution,
+      ji_spec_responsibilities: inputContract.guidance.jiSpecResponsibilities,
+      user_responsibilities: inputContract.guidance.userResponsibilities,
+    },
+    source_documents: {
+      requirements: buildManifestDocumentRecord(inputContract.requirements, options.requirementsPath),
+      technical_solution: buildManifestDocumentRecord(inputContract.technicalSolution, options.technicalSolutionPath),
+    },
+    input_mode: inputContract.mode,
+    input_status: inputContract.status,
+    blocking_issues: [...inputContract.blockingIssues],
+    warnings: [...inputContract.warnings],
+    open_decisions: [...inputContract.openDecisions],
+    ...(openQuestions ? { open_questions: openQuestions } : {}),
+  };
+}
+
+export function buildGreenfieldSourceReplaySeed(generatedAt: string): GreenfieldSourceReplaySeed {
+  return {
+    version: 1,
+    generated_at: generatedAt,
+    engine_version: "greenfield-source-documents@1",
+    ordering_key: "stable-line-order-v1",
   };
 }
 
@@ -502,6 +586,7 @@ function buildManifestDocumentRecord(
     status: document.status,
     checksum: document.checksum,
     line_count: document.lineCount,
+    exists: document.exists,
     ...(document.requirementIds ? { requirement_ids: document.requirementIds } : {}),
     anchors: document.anchors?.map((anchor) => ({
       id: anchor.id,
@@ -670,17 +755,6 @@ function checksumText(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-function createGreenfieldSourceSnapshotId(inputContract: GreenfieldInputContract, generatedAt: string): string {
-  const hashInput = [
-    generatedAt,
-    inputContract.mode,
-    inputContract.requirements.checksum ?? "missing",
-    inputContract.technicalSolution.checksum ?? "missing",
-  ].join("|");
-  const compactDate = generatedAt.replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-");
-  return `source-${compactDate}-${checksumText(hashInput).slice(0, 8)}`;
-}
-
 function resolveManifestDocumentPath(root: string | undefined, candidate: string | undefined, fallback: string): string {
   if (!candidate) {
     return fallback;
@@ -701,7 +775,11 @@ function resolveManifestDocumentPath(root: string | undefined, candidate: string
 function getManifestSourceDocuments(
   manifest: Record<string, unknown>,
 ): Record<"requirements" | "technical_solution", Record<string, unknown> | undefined> {
-  const sourceDocuments = isRecord(manifest.source_documents) ? manifest.source_documents : {};
+  const sourceDocuments = isRecord(manifest.source_documents)
+    ? manifest.source_documents
+    : isRecord(manifest.semantic_snapshot) && isRecord(manifest.semantic_snapshot.source_documents)
+      ? manifest.semantic_snapshot.source_documents
+      : {};
   return {
     requirements: isRecord(sourceDocuments.requirements) ? sourceDocuments.requirements : undefined,
     technical_solution: isRecord(sourceDocuments.technical_solution) ? sourceDocuments.technical_solution : undefined,

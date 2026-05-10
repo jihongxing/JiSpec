@@ -6,6 +6,11 @@ import { readChangeSession } from "../change/change-session";
 import { renderHumanDecisionSnapshotText } from "../human-decision-packet";
 import type { GreenfieldSourceEvolutionDiff, GreenfieldSourceEvolutionItem } from "./provenance-drift";
 import {
+  readGreenfieldSourceTruthFingerprintMetadata,
+  type GreenfieldSourceTruthFingerprintContext,
+  type GreenfieldSourceTruthFingerprintManifestMetadata,
+} from "./truth-fingerprint";
+import {
   buildInitialRequirementLifecycleRegistry,
   GREENFIELD_REQUIREMENT_LIFECYCLE_PATH,
   loadRequirementLifecycleRegistry,
@@ -132,6 +137,8 @@ export interface GreenfieldSourceAdoptResult {
   sourceEvolutionPath: string;
   sourceReviewPath: string;
   activeSnapshotId?: string;
+  activeTruthFingerprint?: string;
+  activeTruthFingerprintContext?: GreenfieldSourceTruthFingerprintContext;
   lifecycleVersion: number;
   adoptedRequirementCount: number;
   appliedDeltas: string[];
@@ -299,6 +306,7 @@ export function runGreenfieldSourceAdopt(options: GreenfieldSourceAdoptOptions):
   }
 
   const activeManifest = promoteProposedManifest(context.activeManifest, context.proposedManifest, context.changeId);
+  const fingerprintMetadata = readGreenfieldSourceTruthFingerprintMetadata(activeManifest);
   const activeSnapshotPath = path.join(root, ACTIVE_SOURCE_DOCUMENTS_PATH);
   const compatibilitySnapshotPath = path.join(root, COMPAT_SOURCE_DOCUMENTS_PATH);
   fs.mkdirSync(path.dirname(activeSnapshotPath), { recursive: true });
@@ -322,13 +330,13 @@ export function runGreenfieldSourceAdopt(options: GreenfieldSourceAdoptOptions):
 
   const currentBaselinePath = path.join(root, CURRENT_BASELINE_PATH);
   const currentBaseline = readYamlObject(currentBaselinePath);
-  const updatedBaseline = updateCurrentBaseline(currentBaseline, activeManifest, lifecycle, context);
+  const updatedBaseline = updateCurrentBaseline(currentBaseline, activeManifest, lifecycle, context, fingerprintMetadata);
   fs.mkdirSync(path.dirname(currentBaselinePath), { recursive: true });
   fs.writeFileSync(currentBaselinePath, dumpYaml(updatedBaseline), "utf-8");
 
   reviewRecord.updated_at = now;
   writeSourceReviewRecord(root, reviewRecord);
-  updateSpecDeltaAdoptionRecord(root, context.changeId, reviewRecord, actor, now);
+  updateSpecDeltaAdoptionRecord(root, context.changeId, reviewRecord, actor, now, readManifestSnapshotId(activeManifest), fingerprintMetadata);
 
   appendAuditEvent(root, {
     type: "source_adopt",
@@ -349,6 +357,12 @@ export function runGreenfieldSourceAdopt(options: GreenfieldSourceAdoptOptions):
     details: {
       changeId: context.changeId,
       activeSnapshotId: readManifestSnapshotId(activeManifest),
+      truthFingerprint: fingerprintMetadata?.truth_fingerprint,
+      truthFingerprintContext: fingerprintMetadata?.truth_fingerprint_context,
+      canonicalizationVersion: fingerprintMetadata?.truth_fingerprint_context?.canonicalization_version,
+      canonicalizationSchemaVersion: fingerprintMetadata?.truth_fingerprint_context?.canonicalization_schema_version,
+      engineVersion: fingerprintMetadata?.truth_fingerprint_context?.engine_version,
+      orderingKey: fingerprintMetadata?.truth_fingerprint_context?.ordering_key,
       lifecycleVersion: lifecycle.registry_version,
       requirementCount: lifecycle.requirements.length,
       appliedDeltas: stringArrayValue(updatedBaseline.applied_deltas),
@@ -365,6 +379,8 @@ export function runGreenfieldSourceAdopt(options: GreenfieldSourceAdoptOptions):
     sourceEvolutionPath: context.sourceEvolutionPath,
     sourceReviewPath: context.sourceReviewPath,
     activeSnapshotId: readManifestSnapshotId(activeManifest),
+    activeTruthFingerprint: fingerprintMetadata?.truth_fingerprint,
+    activeTruthFingerprintContext: fingerprintMetadata?.truth_fingerprint_context,
     lifecycleVersion: lifecycle.registry_version,
     adoptedRequirementCount: lifecycle.requirements.length,
     appliedDeltas: stringArrayValue(updatedBaseline.applied_deltas),
@@ -441,6 +457,7 @@ export function renderGreenfieldSourceAdoptText(result: GreenfieldSourceAdoptRes
     `Lifecycle: ${result.lifecyclePath}`,
     `Current baseline: ${result.currentBaselinePath}`,
     `Active snapshot ID: ${result.activeSnapshotId ?? "unknown"}`,
+    `Truth fingerprint: ${result.activeTruthFingerprint ?? "unknown"}`,
     `Lifecycle version: ${result.lifecycleVersion}`,
     `Applied deltas: ${result.appliedDeltas.length > 0 ? result.appliedDeltas.join(", ") : "none"}`,
     "",
@@ -854,6 +871,7 @@ function updateCurrentBaseline(
   activeManifest: Record<string, unknown>,
   lifecycle: GreenfieldRequirementLifecycleRegistry,
   context: SourceGovernanceContext,
+  fingerprintMetadata?: GreenfieldSourceTruthFingerprintManifestMetadata,
 ): Record<string, unknown> {
   const sourceSnapshot = isRecord(baseline.source_snapshot) ? baseline.source_snapshot : {};
   const requirementIds = readManifestRequirementIds(activeManifest);
@@ -869,6 +887,8 @@ function updateCurrentBaseline(
       active_manifest_path: ACTIVE_SOURCE_DOCUMENTS_PATH,
       compatibility_manifest_path: COMPAT_SOURCE_DOCUMENTS_PATH,
       active_snapshot_id: readManifestSnapshotId(activeManifest),
+      active_truth_fingerprint: fingerprintMetadata?.truth_fingerprint,
+      active_truth_fingerprint_context: fingerprintMetadata?.truth_fingerprint_context,
       lifecycle_registry_path: GREENFIELD_REQUIREMENT_LIFECYCLE_PATH,
       lifecycle_registry_version: lifecycle.registry_version,
       last_adopted_change_id: context.changeId,
@@ -896,6 +916,8 @@ function updateSpecDeltaAdoptionRecord(
   reviewRecord: GreenfieldSourceReviewRecord,
   actor: string,
   adoptedAt: string,
+  activeSnapshotId?: string,
+  fingerprintMetadata?: GreenfieldSourceTruthFingerprintManifestMetadata,
 ): void {
   const targetPath = path.join(root, DELTAS_ROOT, changeId, "adoption-record.yaml");
   if (!fs.existsSync(targetPath)) {
@@ -907,6 +929,13 @@ function updateSpecDeltaAdoptionRecord(
   record.adopted_at = adoptedAt;
   record.adopter = actor;
   record.baseline_after = CURRENT_BASELINE_PATH;
+  record.active_snapshot_id = activeSnapshotId;
+  record.truth_fingerprint = fingerprintMetadata?.truth_fingerprint;
+  record.truth_fingerprint_context = fingerprintMetadata?.truth_fingerprint_context;
+  record.canonicalization_version = fingerprintMetadata?.truth_fingerprint_context?.canonicalization_version;
+  record.canonicalization_schema_version = fingerprintMetadata?.truth_fingerprint_context?.canonicalization_schema_version;
+  record.engine_version = fingerprintMetadata?.truth_fingerprint_context?.engine_version;
+  record.ordering_key = fingerprintMetadata?.truth_fingerprint_context?.ordering_key;
   record.decisions = reviewRecord.items.map((item) => ({
     item_id: item.item_id,
     evolution_id: item.evolution_id,

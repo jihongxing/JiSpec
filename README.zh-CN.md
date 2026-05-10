@@ -57,6 +57,16 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 
 - [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
 
+## 已冻结的真相契约
+
+Greenfield 真相契约现在已经冻结，并完成端到端落地：
+
+- 契约参考：[docs/reference/truth-contract-and-canonical-encoding.md](docs/reference/truth-contract-and-canonical-encoding.md)
+- 实现：`tools/jispec/greenfield/canonicalization.ts`、`tools/jispec/greenfield/truth-fingerprint.ts`、`tools/jispec/greenfield/snapshot-verifier.ts`、`tools/jispec/greenfield/source-governance.ts`
+- 回归覆盖：`tools/jispec/tests/greenfield-canonicalization.ts`、`tools/jispec/tests/greenfield-truth-fingerprint.ts`、`tools/jispec/tests/greenfield-snapshot-verifier.ts`、`tools/jispec/tests/greenfield-deterministic-fixtures.ts`
+
+这意味着 source truth 的确定性快照、指纹和 verifier 闭环已经收口。
+
 ## 人类可读产物缺口
 
 两次 `C8` 还暴露出了另一个重要事实：
@@ -643,45 +653,31 @@ Package/bin 命令面：
   [docs/console-governance-guide.md](docs/console-governance-guide.md)
 - External coding tool adapters：
   [docs/external-coding-tool-adapters.md](docs/external-coding-tool-adapters.md)
-- Policy presets：
-  [docs/user-guide/policy-presets.md](docs/user-guide/policy-presets.md)
+- Policy and governance landing page：
+  [docs/user-guide/README.md](docs/user-guide/README.md)
 - 北极星：
   [docs/architecture/north-star.md](docs/architecture/north-star.md)
 - 北极星最终验收套件：
   [docs/architecture/north-star-acceptance.md](docs/architecture/north-star-acceptance.md)
-- 北极星收口审计：
-  [docs/architecture/north-star-gap-audit.md](docs/architecture/north-star-gap-audit.md)
 - IDE 演化路径：
   [docs/architecture/ide-trajectory.md](docs/architecture/ide-trajectory.md)
-- V1 后发布门禁：
-  [docs/development/post-release-gate.md](docs/development/post-release-gate.md)
-- Retakeover 回归池：
-  [docs/architecture/retakeover-regression-pool.md](docs/architecture/retakeover-regression-pool.md)
 - Console read model contract：
   [docs/reference/console-read-model-contract.md](docs/reference/console-read-model-contract.md)
 - Collaboration surface freeze：
   [docs/development/collaboration-surface-freeze.md](docs/development/collaboration-surface-freeze.md)
 - V1 主线稳定契约：
   [docs/reference/v1-mainline-stable-contract.md](docs/reference/v1-mainline-stable-contract.md)
-- Greenfield 输入契约：
-  [docs/reference/greenfield-input-contract.md](docs/reference/greenfield-input-contract.md)
+- Reference landing page：
+  [docs/reference/README.md](docs/reference/README.md)
 - Pilot product package：
   [docs/pilot-product-package.md](docs/pilot-product-package.md)
 - Takeover guide：
   [docs/user-guide/takeover-guide.md](docs/user-guide/takeover-guide.md)
-- Execute-default guide：
-  [docs/execute-default-guide.md](docs/execute-default-guide.md)
-- Console governance guide：
-  [docs/console-governance-guide.md](docs/console-governance-guide.md)
-- Policy、waiver、spec debt cookbook：
-  [docs/user-guide/policy-waiver-spec-debt-cookbook.md](docs/user-guide/policy-waiver-spec-debt-cookbook.md)
-- 价值指标：
-  [docs/architecture/value-metrics.md](docs/architecture/value-metrics.md)
-- 商业试点 readiness checklist：
-  [docs/development/pilot-readiness-checklist.md](docs/development/pilot-readiness-checklist.md)
+- Development landing page：
+  [docs/development/README.md](docs/development/README.md)
 - CI 模板：
   [docs/ci-templates.md](docs/ci-templates.md)
-- V1 最小样板仓库：
-  [docs/development/v1-sample-repo.md](docs/development/v1-sample-repo.md)
 - 发布说明：
   [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
+
+如果你想先判断哪些文档还在用，先看 [docs/doc-lifecycle.md](docs/doc-lifecycle.md)。

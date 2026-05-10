@@ -584,8 +584,8 @@ M7-T5 增加最终本地验收套件 `north-star acceptance`。它写出 `.spec/
 
 - 北极星：
   [docs/architecture/north-star.md](/D:/codeSpace/JiSpec/docs/architecture/north-star.md)
-- 最小接入样板：
-  [docs/development/v1-sample-repo.md](/D:/codeSpace/JiSpec/docs/development/v1-sample-repo.md)
+- 首次接管 walkthrough：
+  [docs/getting-started/first-takeover-walkthrough.md](/D:/codeSpace/JiSpec/docs/getting-started/first-takeover-walkthrough.md)
 - Greenfield 输入契约：
   [docs/reference/greenfield-input-contract.md](/D:/codeSpace/JiSpec/docs/reference/greenfield-input-contract.md)
 - Console read model contract：

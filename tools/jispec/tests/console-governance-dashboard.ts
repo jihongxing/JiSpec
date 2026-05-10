@@ -276,7 +276,7 @@ async function main(): Promise<void> {
         contract: {
           version: 1,
           scenarioSuite: "north-star-acceptance",
-          sourcePlan: "docs/north-star-acceptance.md",
+          sourcePlan: "docs/architecture/north-star-acceptance.md",
         },
         boundary: {
           localOnly: true,
