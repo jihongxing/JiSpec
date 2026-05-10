@@ -197,7 +197,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli policy list-presets [--json]",
     "  jispec-cli policy approval status|record [--json]",
     "  jispec-cli doctor mainline",
-    "  jispec-cli doctor global",
+    "  jispec-cli doctor global [--out <path>] [--json]",
     "  jispec-cli doctor runtime",
     "  jispec-cli doctor pilot",
     "  jispec-cli --version",
@@ -325,12 +325,14 @@ function registerDoctorCommands(program: Command): void {
     .command("global")
     .description("Check broader closure-loop readiness without changing doctor mainline semantics.")
     .option("--root <path>", "Repository root.", ".")
+    .option("--out <path>", "Output JSON path.", ".spec/doctor/global-readiness.json")
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; json: boolean }) => {
+    .action(async (options: { root: string; out: string; json: boolean }) => {
       try {
         const doctorInstance = new Doctor(path.resolve(options.root));
         const report = await doctorInstance.checkGlobalReadiness();
 
+        Doctor.writeJSONReport(report, path.resolve(options.root, options.out));
         if (options.json) {
           console.log(Doctor.formatJSON(report));
         } else {

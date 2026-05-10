@@ -67,6 +67,8 @@ function main(): void {
       assert.match(html, /Takeover readiness/);
       assert.match(html, /Contract precision/);
       assert.match(html, /Behavior strength/);
+      assert.match(html, /Broader closure/);
+      assert.match(html, /doctor_global_readiness/);
       assert.match(html, /orders-like/);
       assert.match(html, /steady-api/);
       assert.match(html, /class:frontend-backend-mixed-repo/);
@@ -348,6 +350,20 @@ function writeGovernanceFixture(root: string): void {
     replay: {
       replayable: true,
     },
+  });
+  writeJson(root, ".spec/doctor/global-readiness.json", {
+    profile: "global",
+    ready: true,
+    totalChecks: 8,
+    passedChecks: 8,
+    failedChecks: 0,
+    readinessSummary: {
+      profile: "global",
+      ready: true,
+      blockerCount: 0,
+      blockers: [],
+    },
+    checks: [],
   });
   writeText(root, ".spec/audit/events.jsonl", `${JSON.stringify({
     version: 1,

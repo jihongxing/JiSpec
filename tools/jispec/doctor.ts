@@ -54,6 +54,13 @@ export interface DoctorReport {
   };
 }
 
+export interface DoctorWriteResult {
+  root: string;
+  profile: DoctorProfile;
+  report: DoctorReport;
+  outPath: string;
+}
+
 interface RegressionMatrixManifest {
   schemaVersion: number;
   source: string;
@@ -2349,6 +2356,11 @@ export class Doctor {
    */
   static formatJSON(report: DoctorReport): string {
     return JSON.stringify(report, null, 2);
+  }
+
+  static writeJSONReport(report: DoctorReport, outPath: string): void {
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, `${Doctor.formatJSON(report)}\n`, "utf-8");
   }
 }
 

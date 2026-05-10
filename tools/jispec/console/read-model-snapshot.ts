@@ -259,6 +259,12 @@ function resolveArtifactRelativePaths(root: string, pathPattern: string): string
       .filter((relativePath) => relativePath.endsWith("-decision.md"));
   }
 
+  if (pathPattern === ".spec/doctor/global-readiness.json") {
+    return fs.existsSync(path.join(root, ".spec", "doctor", "global-readiness.json"))
+      ? [".spec/doctor/global-readiness.json"]
+      : [];
+  }
+
   if (pathPattern === ".jispec/handoff/*.json") {
     return listDirectFiles(root, ".jispec/handoff", ".json");
   }
@@ -478,6 +484,9 @@ function buildGovernanceSummary(
   }
   if (id === "north_star_acceptance") {
     return summarizeNorthStarAcceptance(sourceArtifacts);
+  }
+  if (id === "doctor_global_readiness") {
+    return summarizeDoctorGlobalReadiness(sourceArtifacts);
   }
   if (id === "approval_workflow") {
     return summarizeApprovalWorkflow(root);
@@ -927,6 +936,28 @@ function summarizeNorthStarAcceptance(sourceArtifacts: ConsoleSnapshotArtifact[]
     contractVersion: contract.version ?? "not_declared",
     boundary: acceptance.boundary ?? {},
     blockers: Array.isArray(acceptance.blockers) ? acceptance.blockers.length : "not_declared",
+  };
+}
+
+function summarizeDoctorGlobalReadiness(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const report = getFirstData(sourceArtifacts, "doctor-global-readiness");
+
+  if (!isRecord(report)) {
+    return { state: "not_available_yet" };
+  }
+
+  const summary = isRecord(report.readinessSummary) ? report.readinessSummary : {};
+  return {
+    state: "available",
+    profile: String(report.profile ?? "not_declared"),
+    ready: report.ready === true,
+    totalChecks: report.totalChecks ?? "not_declared",
+    passedChecks: report.passedChecks ?? "not_declared",
+    failedChecks: report.failedChecks ?? "not_declared",
+    blockerCount: summary.blockerCount ?? "not_declared",
+    blockerChecks: Array.isArray(summary.blockers)
+      ? summary.blockers.map((blocker) => isRecord(blocker) ? String(blocker.check ?? "unknown") : String(blocker))
+      : [],
   };
 }
 

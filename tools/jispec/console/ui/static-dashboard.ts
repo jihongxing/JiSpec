@@ -62,6 +62,7 @@ const GOVERNANCE_OBJECT_ORDER = [
   "implementation_mediation_outcomes",
   "approval_workflow",
   "audit_events",
+  "doctor_global_readiness",
 ] as const;
 
 export function buildLocalConsoleUiModel(options: LocalConsoleUiOptions): LocalConsoleUiModel {
@@ -113,6 +114,13 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     .map((id) => model.snapshot.governance.objects.find((object) => object.id === id))
     .filter((object): object is ConsoleGovernanceObjectSnapshot => Boolean(object));
   const suggestedActions = model.actions.actions.slice(0, 6);
+  const doctorGlobalReadiness = model.snapshot.governance.objects.find((object) => object.id === "doctor_global_readiness");
+  const doctorGlobalStatus = doctorGlobalReadiness?.status ?? "unknown";
+  const doctorGlobalAnswer = doctorGlobalReadiness?.summary.ready === true
+    ? `Doctor global ready: ${String(doctorGlobalReadiness.summary.passedChecks ?? "not available")}/${String(doctorGlobalReadiness.summary.totalChecks ?? "not available")} checks passed.`
+    : doctorGlobalReadiness?.summary.state === "not_available_yet"
+      ? "Doctor global readiness artifact is not available yet."
+      : `Doctor global blocker count: ${String(doctorGlobalReadiness?.summary.blockerCount ?? "not available")}.`;
 
   return `<!doctype html>
 <html lang="en">
@@ -623,6 +631,7 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
           ${headlineSignal("Risk", model.dashboard.headline.risk.level, model.dashboard.headline.risk.summary)}
           ${headlineSignal("Owner action", model.dashboard.headline.ownerAction.owner, model.dashboard.headline.ownerAction.command)}
           ${headlineSignal("Evidence source", model.dashboard.headline.evidence.primary, model.dashboard.headline.evidence.sources.slice(1, 3).join(", "))}
+          ${headlineSignal("Broader closure", doctorGlobalStatus, doctorGlobalAnswer)}
         </div>
         <p class="source-note">Source: ${escapeHtml(model.dashboard.headline.source)}</p>
       </div>

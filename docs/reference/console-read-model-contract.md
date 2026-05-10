@@ -50,6 +50,7 @@ Console reads the North Star acceptance package as the terminal local acceptance
 | North Star acceptance summary | `.spec/north-star/acceptance.md` | `north-star acceptance` | Markdown | human companion | Human companion for the terminal acceptance package |
 | North Star scenario packets | `.spec/north-star/scenarios/*.json` | `north-star acceptance` | JSON | local contract | Per-scenario machine artifact for the closeout acceptance suite |
 | North Star scenario decision packets | `.spec/north-star/scenarios/*-decision.md` | `north-star acceptance` | Markdown | human companion | Per-scenario human decision packet; Console may render it, but must not parse it as a gate |
+| Doctor global readiness | `.spec/doctor/global-readiness.json` | `doctor global --out <path>` | JSON | local contract | Broader closure-loop readiness report for Console and other local readers |
 | Retakeover metrics | `.spec/handoffs/retakeover-metrics.json` | retakeover regression | JSON | local contract | Single-repository takeover quality scorecard, risk notes, feature overclaim risk, and next action |
 | Retakeover pool metrics | `.spec/handoffs/retakeover-pool-metrics.json` | retakeover regression pool | JSON | local contract | Pool-level takeover quality trend across real and synthetic retakeover fixtures |
 | Value report | `.spec/metrics/value-report.json` | `metrics value-report` | JSON | local contract | Repo-local ROI and adoption metrics: manual sorting reduction, surfaced risks, waiver/debt aging, and execute mediation stop points |
@@ -80,6 +81,7 @@ Console snapshot groups declared artifacts into governance objects. These are di
 | Approval workflow | `.spec/policy.yaml`, `.spec/approvals/*.json`, `.spec/waivers/*.json`, `.spec/releases/compare/<from>-to-<to>/compare-report.json` | `not_available_yet` | Show approval missing, approval stale, or approval satisfied for policy, waiver, release drift, and execute-default changes |
 | Audit events | `.spec/audit/events.jsonl` | `not_available_yet` | Show who approved or changed policy, waivers, adoption decisions, release baselines, and patch intake, with source artifact and affected contract refs |
 | North Star acceptance | `.spec/north-star/acceptance.json`, `.spec/north-star/scenarios/*.json`, `.spec/north-star/scenarios/*-decision.md` | `not_available_yet` | Show final local acceptance posture without replacing `verify`, `ci:verify`, doctor profiles, or post-release gate |
+| Doctor global readiness | `.spec/doctor/global-readiness.json` | `not_available_yet` | Show the broader closure-loop readiness report without recomputing doctor global |
 
 ## Audit Event Ledger
 
@@ -112,6 +114,7 @@ The drill-down questions remain:
 - Where did execute mediation last stop?
 - Are policy approvals missing, stale, or satisfied?
 - Who approved the latest exception or boundary change?
+- Is the terminal North Star acceptance ready?
 
 The dashboard reads only declared Console artifacts, does not upload source, does not run or replace `verify`, and does not synthesize missing gate results. Missing inputs remain `unknown`/`not_available_yet` until the producing CLI command writes a local artifact.
 

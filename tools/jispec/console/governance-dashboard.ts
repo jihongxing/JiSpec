@@ -23,7 +23,9 @@ export type ConsoleGovernanceQuestionId =
   | "contract_drift_review"
   | "execute_mediation_status"
   | "approval_workflow_status"
-  | "audit_traceability";
+  | "audit_traceability"
+  | "global_closure_acceptance"
+  | "doctor_global_readiness";
 
 export type ConsoleGovernanceStatus = "ok" | "attention" | "blocked" | "unknown";
 
@@ -105,6 +107,8 @@ export function buildConsoleGovernanceDashboardFromSnapshot(
     buildImplementationQuestion(snapshot),
     buildApprovalQuestion(snapshot),
     buildAuditQuestion(snapshot),
+    buildGlobalClosureAcceptanceQuestion(snapshot),
+    buildDoctorGlobalReadinessQuestion(snapshot),
   ];
   const headline = buildHeadline(questions, actionPlan);
 
@@ -348,6 +352,8 @@ function questionForActionSourceObject(
     approval_workflow: "approval_workflow_status",
     audit_events: "audit_traceability",
     verify_trend: "mergeability",
+    north_star_acceptance: "global_closure_acceptance",
+    doctor_global_readiness: "doctor_global_readiness",
   };
   const questionId = questionIdBySourceObject[sourceObject];
   return questionId ? questions.find((question) => question.id === questionId) : undefined;
@@ -431,6 +437,12 @@ function ownerForQuestion(id: ConsoleGovernanceQuestionId): string {
   if (id === "audit_traceability") {
     return "governance owner";
   }
+  if (id === "global_closure_acceptance") {
+    return "global closure owner";
+  }
+  if (id === "doctor_global_readiness") {
+    return "global closure owner";
+  }
   return "repo owner";
 }
 
@@ -452,6 +464,12 @@ function fallbackCommandForQuestion(question: ConsoleGovernanceDashboardQuestion
   }
   if (question.id === "approval_workflow_status") {
     return "npm run jispec-cli -- policy approval record --subject-kind <kind> --actor <name> --role reviewer --reason <reason>";
+  }
+  if (question.id === "global_closure_acceptance") {
+    return "npm run jispec-cli -- north-star acceptance --json";
+  }
+  if (question.id === "doctor_global_readiness") {
+    return "npm run jispec-cli -- doctor global --out .spec/doctor/global-readiness.json --json";
   }
   return question.nextActions[0] ?? "not_available_yet";
 }
@@ -1077,6 +1095,102 @@ function buildAuditQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDa
       `Integrity: ${integrityStatus ?? "not_available_yet"}`,
       `Latest reason: ${latestReason ?? "not declared"}`,
       `Latest source artifact: ${stringValue(summary.latestSourceArtifact) ?? "not declared"}`,
+    ],
+    nextActions: [],
+  });
+}
+
+function buildGlobalClosureAcceptanceQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
+  const acceptance = governanceObject(snapshot, "north_star_acceptance");
+  const summary = acceptance?.summary ?? {};
+  const ready = summary.ready === true;
+  const scenarioCount = numberValue(summary.scenarioCount);
+  const passedScenarioCount = numberValue(summary.passedScenarioCount);
+  const blockingScenarioCount = numberValue(summary.blockingScenarioCount);
+
+  if (!acceptance || summary.state === "not_available_yet") {
+    return question({
+      id: "global_closure_acceptance",
+      label: "Is the terminal North Star acceptance ready?",
+      status: "unknown",
+      answer: "The terminal North Star acceptance package is not available yet.",
+      evidence: ["Missing .spec/north-star/acceptance.json"],
+      nextActions: ["Run npm run jispec-cli -- north-star acceptance --json to materialize the final local acceptance package."],
+    });
+  }
+
+  if (!ready || (blockingScenarioCount ?? 0) > 0) {
+    return question({
+      id: "global_closure_acceptance",
+      label: "Is the terminal North Star acceptance ready?",
+      status: "blocked",
+      answer: `No. ${blockingScenarioCount ?? "unknown"} blocking scenario(s) remain in the terminal acceptance package.`,
+      evidence: [
+        `North Star acceptance: ${passedScenarioCount ?? "not_available_yet"}/${scenarioCount ?? "not_available_yet"} scenarios passed`,
+        `Blocking scenarios: ${blockingScenarioCount ?? "not_available_yet"}`,
+      ],
+      nextActions: [
+        "Review .spec/north-star/acceptance.md and the scenario decision packets, then rerun npm run jispec-cli -- north-star acceptance --json.",
+      ],
+    });
+  }
+
+  return question({
+    id: "global_closure_acceptance",
+    label: "Is the terminal North Star acceptance ready?",
+    status: "ok",
+    answer: `Yes. The terminal acceptance package is ready with ${passedScenarioCount ?? "not_available_yet"}/${scenarioCount ?? "not_available_yet"} scenarios passed.`,
+    evidence: [
+      ".spec/north-star/acceptance.json",
+      `Blocking scenarios: ${blockingScenarioCount ?? 0}`,
+    ],
+    nextActions: [],
+  });
+}
+
+function buildDoctorGlobalReadinessQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceDashboardQuestion {
+  const readiness = governanceObject(snapshot, "doctor_global_readiness");
+  const summary = readiness?.summary ?? {};
+  const ready = summary.ready === true;
+  const blockerCount = numberValue(summary.blockerCount);
+  const totalChecks = numberValue(summary.totalChecks);
+  const passedChecks = numberValue(summary.passedChecks);
+  const profile = stringValue(summary.profile);
+
+  if (!readiness || summary.state === "not_available_yet") {
+    return question({
+      id: "doctor_global_readiness",
+      label: "Is broader closure-loop readiness written down?",
+      status: "unknown",
+      answer: "The reusable doctor global readiness report is not available yet.",
+      evidence: ["Missing .spec/doctor/global-readiness.json"],
+      nextActions: ["Run npm run jispec-cli -- doctor global --out .spec/doctor/global-readiness.json --json to materialize the broader closure readiness report."],
+    });
+  }
+
+  if (!ready || (blockerCount ?? 0) > 0) {
+    return question({
+      id: "doctor_global_readiness",
+      label: "Is broader closure-loop readiness written down?",
+      status: "blocked",
+      answer: `No. Doctor global profile ${profile ?? "not_available_yet"} still reports ${blockerCount ?? "unknown"} blocker(s).`,
+      evidence: [
+        `.spec/doctor/global-readiness.json`,
+        `Checks passed: ${passedChecks ?? "not_available_yet"}/${totalChecks ?? "not_available_yet"}`,
+        `Blocking checks: ${blockerCount ?? "not_available_yet"}`,
+      ],
+      nextActions: ["Fix the broader closure blockers, then rerun npm run jispec-cli -- doctor global --out .spec/doctor/global-readiness.json --json."],
+    });
+  }
+
+  return question({
+    id: "doctor_global_readiness",
+    label: "Is broader closure-loop readiness written down?",
+    status: "ok",
+    answer: `Yes. Doctor global profile ${profile ?? "not_available_yet"} is ready with ${passedChecks ?? "not_available_yet"}/${totalChecks ?? "not_available_yet"} checks passed.`,
+    evidence: [
+      ".spec/doctor/global-readiness.json",
+      `Blocking checks: ${blockerCount ?? 0}`,
     ],
     nextActions: [],
   });

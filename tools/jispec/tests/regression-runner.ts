@@ -199,7 +199,7 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Console Governance Export', file: 'console-governance-export.ts', expectedTests: 2, task: 'P3-T3' }),
   runtime({ name: 'P12 Console Source Evolution', file: 'p12-console-source-evolution.ts', expectedTests: 4, task: 'P12-T1' }),
   runtime({ name: 'P12 Multi-Repo Owner Loop', file: 'p12-multi-repo-owner-loop.ts', expectedTests: 7, task: 'P12-T2' }),
-  runtime({ name: 'P12 Doctor Global Profile', file: 'p12-doctor-global.ts', expectedTests: 5, task: 'P12-T3' }),
+  runtime({ name: 'P12 Doctor Global Profile', file: 'p12-doctor-global.ts', expectedTests: 6, task: 'P12-T3' }),
   runtime({ name: 'P13 Release Global Context', file: 'p13-release-global-context.ts', expectedTests: 4, task: 'P13-T1' }),
   runtime({ name: 'P13 Global Closure Acceptance', file: 'p13-global-closure-acceptance.ts', expectedTests: 3, task: 'P13-T2' }),
   runtime({ name: 'P13 Deferred Surface Promotion', file: 'p13-deferred-surface-promotion.ts', expectedTests: 3, task: 'P13-T3' }),

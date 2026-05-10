@@ -14,7 +14,8 @@ export type ConsoleGovernanceObjectId =
   | "audit_events"
   | "approval_workflow"
   | "multi_repo_export"
-  | "north_star_acceptance";
+  | "north_star_acceptance"
+  | "doctor_global_readiness";
 
 export interface ConsoleReadModelArtifact {
   id: string;
@@ -391,6 +392,18 @@ export const CONSOLE_READ_MODEL_ARTIFACTS: ConsoleReadModelArtifact[] = [
     sourceUploadRequired: false,
   },
   {
+    id: "doctor-global-readiness",
+    pathPattern: ".spec/doctor/global-readiness.json",
+    producer: "doctor global --out",
+    format: "json",
+    stability: "local-contract",
+    freshness: "project-state",
+    readModelUse: "Broader closure-loop readiness report for Console and other local readers.",
+    machineReadable: true,
+    parseMarkdown: false,
+    sourceUploadRequired: false,
+  },
+  {
     id: "north-star-acceptance-summary",
     pathPattern: ".spec/north-star/acceptance.md",
     producer: "north-star acceptance",
@@ -550,6 +563,15 @@ export const CONSOLE_GOVERNANCE_OBJECTS: ConsoleGovernanceObjectContract[] = [
     automationInputs: "json_yaml_jsonl_only",
     markdownDisplayOnly: true,
     readModelUse: "Show the final local acceptance package and scenario packet availability without making it a gate.",
+  },
+  {
+    id: "doctor_global_readiness",
+    label: "Doctor global readiness",
+    sourceArtifactIds: ["doctor-global-readiness"],
+    missingState: "not_available_yet",
+    automationInputs: "json_yaml_jsonl_only",
+    markdownDisplayOnly: true,
+    readModelUse: "Show the broader closure-loop readiness report without treating it as a gate or recomputing doctor results.",
   },
 ];
 

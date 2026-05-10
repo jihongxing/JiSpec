@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
 import { Doctor, type DoctorReport } from "../doctor";
+import { collectConsoleLocalSnapshot } from "../console/read-model-snapshot";
 import { TEST_SUITES } from "./regression-runner";
 
 interface TestResult {
@@ -119,11 +120,36 @@ async function main(): Promise<void> {
     }
   });
 
+  await runCase(results, "CLI can write a reusable doctor global readiness artifact for Console", async () => {
+    const root = createDoctorFixture("jispec-doctor-global-out-");
+    try {
+      writeGlobalReadyArtifacts(root);
+      const outputPath = ".spec/doctor/global-readiness.json";
+      const run = runCli(root, ["doctor", "global", "--root", root, "--out", outputPath, "--json"]);
+      assert.equal(run.status, 0, run.stderr);
+      assert.ok(fs.existsSync(path.join(root, outputPath)));
+
+      const report = JSON.parse(fs.readFileSync(path.join(root, outputPath), "utf-8")) as DoctorReport;
+      assert.equal(report.profile, "global");
+      assert.equal(report.ready, true);
+      assert.equal(report.readinessSummary?.blockerCount, 0);
+
+      const snapshot = collectConsoleLocalSnapshot(root);
+      const readiness = snapshot.governance.objects.find((object) => object.id === "doctor_global_readiness");
+      assert.ok(readiness);
+      assert.equal(readiness?.status, "available");
+      assert.equal(readiness?.summary.ready, true);
+      assert.equal(readiness?.summary.blockerCount, 0);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   await runCase(results, "P12-T3 suite is registered in runtime-extended", async () => {
     const suite = TEST_SUITES.find((candidate) => candidate.file === "p12-doctor-global.ts");
     assert.ok(suite);
     assert.equal(suite.area, "runtime-extended");
-    assert.equal(suite.expectedTests, 5);
+    assert.equal(suite.expectedTests, 6);
     assert.equal(suite.task, "P12-T3");
   });
 

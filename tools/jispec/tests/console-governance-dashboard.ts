@@ -34,6 +34,7 @@ async function main(): Promise<void> {
       assert.equal(dashboard.questions[0]?.id, "mergeability");
       assert.equal(dashboard.questions[0]?.status, "unknown");
       assert.equal(question(dashboard, "retakeover_pool_health").status, "unknown");
+      assert.equal(question(dashboard, "global_closure_acceptance").status, "unknown");
       assert.equal(dashboard.headline.status, "unknown");
       assert.equal(dashboard.headline.mergeability.status, "unknown");
       assert.equal(dashboard.headline.risk.level, "unknown");
@@ -201,6 +202,59 @@ async function main(): Promise<void> {
           },
         },
       });
+      writeJson(root, ".spec/north-star/acceptance.json", {
+        schemaVersion: 1,
+        kind: "jispec-north-star-acceptance",
+        generatedAt: "2026-05-06T00:00:00.000Z",
+        root,
+        contract: {
+          version: 1,
+          scenarioSuite: "north-star-acceptance",
+          sourcePlan: "docs/north-star-acceptance.md",
+        },
+        boundary: {
+          localOnly: true,
+          sourceUploadRequired: false,
+          llmBlockingDecisionSource: false,
+          deterministicLocalArtifactsOnly: true,
+          replacesVerify: false,
+          replacesDoctorV1: false,
+          replacesDoctorRuntime: false,
+          replacesDoctorPilot: false,
+          replacesPostReleaseGate: false,
+        },
+        summary: {
+          ready: true,
+          scenarioCount: 15,
+          passedScenarioCount: 15,
+          blockingScenarioCount: 0,
+        },
+        proofClaims: {
+          verifiable: true,
+          auditable: true,
+          blockable: true,
+          replayable: true,
+          localFirst: true,
+          externalToolsControlled: true,
+        },
+        scenarios: [],
+        blockers: [],
+        requiredExternalGates: [],
+      });
+      writeJson(root, ".spec/doctor/global-readiness.json", {
+        profile: "global",
+        ready: true,
+        totalChecks: 8,
+        passedChecks: 8,
+        failedChecks: 0,
+        readinessSummary: {
+          profile: "global",
+          ready: true,
+          blockerCount: 0,
+          blockers: [],
+        },
+        checks: [],
+      });
 
       const dashboard = buildConsoleGovernanceDashboard(root);
       assert.equal(question(dashboard, "mergeability").status, "attention");
@@ -214,6 +268,10 @@ async function main(): Promise<void> {
       assert.match(question(dashboard, "execute_mediation_status").answer, /post_verify/);
       assert.equal(question(dashboard, "audit_traceability").status, "ok");
       assert.match(question(dashboard, "audit_traceability").answer, /reviewer/);
+      assert.equal(question(dashboard, "global_closure_acceptance").status, "ok");
+      assert.match(question(dashboard, "global_closure_acceptance").answer, /15\/15/);
+      assert.equal(question(dashboard, "doctor_global_readiness").status, "ok");
+      assert.match(question(dashboard, "doctor_global_readiness").answer, /8\/8/);
       assert.equal(dashboard.headline.risk.level, "medium");
       assert.equal(dashboard.headline.ownerAction.owner, "contracts-team");
       assert.match(dashboard.headline.ownerAction.command, /waiver renew waiver-soon/);
