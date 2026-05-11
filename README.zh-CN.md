@@ -19,7 +19,7 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 - `JiSpec-Console`
   团队级 policy、audit、waiver 与 contract drift 控制平面
 
-当前仓库已经包含较深的协议层与流水线引擎能力。代码库仍然暴露 legacy `slice/context` 命令面，但主要产品方向已经收敛为：
+当前仓库已经包含较深的协议层与流水线引擎能力。主要产品方向已经收敛为：
 
 `bootstrap discover -> bootstrap draft -> adopt -> verify -> change -> implement`
 
@@ -55,7 +55,7 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 
 发布说明：
 
-- [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## 已冻结的真相契约
 
@@ -504,41 +504,6 @@ npm run jispec-cli -- doctor runtime
 
 当 `.spec/policy.yaml` 存在时，`verify` 会自动加载它。可以使用 `npm run jispec-cli -- verify --facts-out .spec/facts/latest-canonical.json` 来快照 policy evaluation 实际读取的 canonical facts 面。
 
-## 兼容命令面
-
-当前仓库仍然暴露一个可工作的 legacy protocol/runtime 层，围绕：
-
-- `slice`
-- `context`
-- `trace`
-- `artifact`
-- `agent`
-- `pipeline`
-- `template`
-- `dependency`
-
-示例：
-
-```bash
-npm run jispec-cli -- slice check ordering-checkout-v1
-npm run jispec-cli -- slice plan ordering-checkout-v1 --force
-npm run jispec-cli -- context board ordering
-npm run jispec-cli -- trace show ordering-checkout-v1
-npm run jispec-cli -- artifact derive-all ordering-checkout-v1 --force
-npm run jispec-cli -- pipeline run ordering-checkout-v1
-```
-
-这套命令面仍然有价值，也依然支持，但应被理解为较新的 `JiSpec-CLI` 产品方向之下的兼容/runtime 层，而不是首要用户入口。
-
-为旧工作流保留的兼容别名：
-
-```bash
-npm run jispec -- <command>
-npm run validate:repo
-npm run check:jispec
-npm run jispec-cli -- validate
-```
-
 ## Change And Implement
 
 `change` 与 `implement` 现在已经进入一等 CLI 工作流。
@@ -600,11 +565,11 @@ npm run verify
 npm run ci:verify
 ```
 
-兼容脚本：
+当前脚本：
 
 ```bash
-npm run validate:repo
-npm run check:jispec
+npm run verify
+npm run ci:verify
 ```
 
 Package/bin 命令面：
@@ -678,6 +643,6 @@ Package/bin 命令面：
 - CI 模板：
   [docs/ci-templates.md](docs/ci-templates.md)
 - 发布说明：
-  [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
+  [CHANGELOG.md](CHANGELOG.md)
 
 如果你想先判断哪些文档还在用，先看 [docs/doc-lifecycle.md](docs/doc-lifecycle.md)。

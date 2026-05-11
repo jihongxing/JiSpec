@@ -119,7 +119,7 @@ The aggregate shows:
 - latest audit actors
 - missing snapshot inputs
 
-North Star acceptance is the terminal local acceptance package. Console can display it for closeout review, but it stays read-only evidence and does not override `verify`, `ci:verify`, `doctor v1`, `doctor runtime`, `doctor pilot`, or `post-release:gate`.
+North Star acceptance is the terminal local acceptance package. Console can display it for closeout review, but it stays read-only evidence and does not override `verify`, `ci:verify`, `doctor mainline`, `doctor runtime`, `doctor pilot`, or `post-release:gate`.
 
 ## Audit Integrity
 

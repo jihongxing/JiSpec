@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import * as yaml from "js-yaml";
 import { evaluateChangeExecuteDefaultReadiness } from "../change/orchestration-config";
-import { cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
+import { cleanupVerifyFixture, createVerifyFixture, getRepoRoot } from "./verify-test-helpers";
 
 interface DoctorReport {
   checks?: Array<{ name?: string; status?: string; summary?: string; details?: string[] }>;
@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   let failed = 0;
 
   try {
-    const repoRoot = path.resolve(__dirname, "..", "..", "..");
+    const repoRoot = getRepoRoot();
     const cliEntry = path.join(repoRoot, "tools", "jispec", "cli.ts");
     const result = spawnSync(
       process.execPath,

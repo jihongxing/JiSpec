@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runBootstrapDiscover } from "../bootstrap/discover";
+import { getRepoRoot } from "./verify-test-helpers";
 
 interface TestResult {
   name: string;
@@ -11,7 +12,7 @@ interface TestResult {
 function main(): void {
   console.log("=== Bootstrap Discover Smoke Test ===\n");
 
-  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  const repoRoot = getRepoRoot();
   const graphPath = path.join(repoRoot, ".spec", "facts", "bootstrap", "evidence-graph.json");
   const summaryPath = path.join(repoRoot, ".spec", "facts", "bootstrap", "evidence-summary.txt");
   const bootstrapSummaryPath = path.join(repoRoot, ".spec", "facts", "bootstrap", "bootstrap-summary.md");

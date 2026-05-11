@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import * as yaml from "js-yaml";
+import { runChangeCommand, type ChangeCommandResult } from "../change/change-command";
 import { readArchivedChangeSession, readChangeSession } from "../change/change-session";
-import { cleanupVerifyFixture, createVerifyFixture, getRepoRoot } from "./verify-test-helpers";
+import { cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
 
 interface TestResult {
   name: string;
@@ -13,13 +14,7 @@ interface TestResult {
   error?: string;
 }
 
-interface CommandExecution {
-  status: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-function main(): void {
+async function main(): Promise<void> {
   console.log("=== Change Dual Mode Tests ===\n");
 
   let passed = 0;
@@ -32,58 +27,28 @@ function main(): void {
     initializeGitRepository(promptFixture);
     fs.appendFileSync(path.join(promptFixture, "README.md"), "\nDefault prompt mode docs-only change.\n", "utf-8");
 
-    const change = runCli([
-      "change",
-      "Document default prompt mode",
-      "--root",
-      promptFixture,
-      "--lane",
-      "fast",
-      "--json",
-    ]);
+    const payload = runChangeCommand({
+      root: promptFixture,
+      summary: "Document default prompt mode",
+      lane: "fast",
+      json: true,
+    }) as unknown as Promise<ChangeCommandResult>;
 
-    assert.equal(change.status, 0, `prompt mode exited with ${change.status}. stderr: ${change.stderr}`);
-    const payload = JSON.parse(change.stdout) as {
-      id?: string;
-      mode?: string;
-      orchestrationMode?: string;
-      modeResolution?: {
-        source?: string;
-      };
-      execution?: {
-        mode?: string;
-        state?: string;
-        boundary?: {
-          promptModeRecordsOnly?: boolean;
-          executeModeRunsMediationAndVerify?: boolean;
-          explicitCliModeOverridesProjectDefault?: boolean;
-          projectDefaultAppliesOnlyWhenModeOmitted?: boolean;
-          businessCodeGeneratedByJiSpec?: boolean;
-          adoptBoundary?: {
-            status?: string;
-            enforced?: boolean;
-          };
-        };
-      };
-      laneDecision?: {
-        lane?: string;
-      };
-    };
-
+    const result = await payload;
     const activeSession = readChangeSession(promptFixture);
 
-    assert.equal(payload.mode, "prompt");
-    assert.equal(payload.modeResolution?.source, "built_in_default");
-    assert.equal(payload.orchestrationMode, "prompt");
-    assert.equal(payload.execution?.mode, "prompt");
-    assert.equal(payload.execution?.state, "planned");
-    assert.equal(payload.execution?.boundary?.promptModeRecordsOnly, true);
-    assert.equal(payload.execution?.boundary?.executeModeRunsMediationAndVerify, true);
-    assert.equal(payload.execution?.boundary?.projectDefaultAppliesOnlyWhenModeOmitted, true);
-    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
-    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "not_applicable");
-    assert.equal(payload.laneDecision?.lane, "fast");
-    assert.equal(activeSession?.id, payload.id);
+    assert.equal(result.mode, "prompt");
+    assert.equal(result.modeResolution.source, "built_in_default");
+    assert.equal(result.session.orchestrationMode, "prompt");
+    assert.equal(result.execution.mode, "prompt");
+    assert.equal(result.execution.state, "planned");
+    assert.equal(result.execution.boundary.promptModeRecordsOnly, true);
+    assert.equal(result.execution.boundary.executeModeRunsMediationAndVerify, true);
+    assert.equal(result.execution.boundary.projectDefaultAppliesOnlyWhenModeOmitted, true);
+    assert.equal(result.execution.boundary.businessCodeGeneratedByJiSpec, false);
+    assert.equal(result.execution.boundary.adoptBoundary.status, "not_applicable");
+    assert.equal(result.session.laneDecision.lane, "fast");
+    assert.equal(activeSession?.id, result.session.id);
     assert.equal(activeSession?.orchestrationMode, "prompt");
     console.log("✓ Test 1: built-in default prompt mode records the change session without executing downstream steps");
     passed++;
@@ -102,44 +67,23 @@ function main(): void {
     initializeGitRepository(explicitPromptFixture);
     fs.appendFileSync(path.join(explicitPromptFixture, "README.md"), "\nExplicit prompt mode docs-only change.\n", "utf-8");
 
-    const change = runCli([
-      "change",
-      "Document explicit prompt mode",
-      "--root",
-      explicitPromptFixture,
-      "--lane",
-      "fast",
-      "--mode",
-      "prompt",
-      "--json",
-    ]);
+    const payload = runChangeCommand({
+      root: explicitPromptFixture,
+      summary: "Document explicit prompt mode",
+      lane: "fast",
+      mode: "prompt",
+      json: true,
+    }) as unknown as Promise<ChangeCommandResult>;
+    const result = await payload;
 
-    assert.equal(change.status, 0, `explicit prompt mode exited with ${change.status}. stderr: ${change.stderr}`);
-    const payload = JSON.parse(change.stdout) as {
-      mode?: string;
-      orchestrationMode?: string;
-      modeResolution?: {
-        source?: string;
-      };
-      execution?: {
-        mode?: string;
-        state?: string;
-        implement?: unknown;
-        boundary?: {
-          explicitCliModeOverridesProjectDefault?: boolean;
-          businessCodeGeneratedByJiSpec?: boolean;
-        };
-      };
-    };
-
-    assert.equal(payload.mode, "prompt");
-    assert.equal(payload.orchestrationMode, "prompt");
-    assert.equal(payload.modeResolution?.source, "cli");
-    assert.equal(payload.execution?.mode, "prompt");
-    assert.equal(payload.execution?.state, "planned");
-    assert.equal(payload.execution?.implement, undefined);
-    assert.equal(payload.execution?.boundary?.explicitCliModeOverridesProjectDefault, true);
-    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
+    assert.equal(result.mode, "prompt");
+    assert.equal(result.session.orchestrationMode, "prompt");
+    assert.equal(result.modeResolution.source, "cli");
+    assert.equal(result.execution.mode, "prompt");
+    assert.equal(result.execution.state, "planned");
+    assert.equal(result.execution.implement, undefined);
+    assert.equal(result.execution.boundary.explicitCliModeOverridesProjectDefault, true);
+    assert.equal(result.execution.boundary.businessCodeGeneratedByJiSpec, false);
     console.log("✓ Test 2: explicit prompt mode overrides project execute-default mediation");
     passed++;
   } catch (error) {
@@ -157,63 +101,31 @@ function main(): void {
     initializeGitRepository(configuredExecuteFixture);
     fs.appendFileSync(path.join(configuredExecuteFixture, "README.md"), "\nConfigured execute-default docs-only change.\n", "utf-8");
 
-    const change = runCli([
-      "change",
-      "Document configured execute default",
-      "--root",
-      configuredExecuteFixture,
-      "--lane",
-      "fast",
-      "--test-command",
-      'node -e "process.exit(0)"',
-      "--json",
-    ]);
+    const payload = runChangeCommand({
+      root: configuredExecuteFixture,
+      summary: "Document configured execute default",
+      lane: "fast",
+      testCommand: 'node -e "process.exit(0)"',
+      json: true,
+    }) as unknown as Promise<ChangeCommandResult>;
+    const result = await payload;
 
-    assert.equal(change.status, 0, `configured execute default exited with ${change.status}. stderr: ${change.stderr}`);
-    const payload = JSON.parse(change.stdout) as {
-      id?: string;
-      mode?: string;
-      orchestrationMode?: string;
-      modeResolution?: {
-        source?: string;
-      };
-      execution?: {
-        mode?: string;
-        state?: string;
-        implement?: {
-          lane?: string;
-          testsPassed?: boolean;
-          sessionArchived?: boolean;
-          postVerifyVerdict?: string;
-        };
-        boundary?: {
-          modeSource?: string;
-          explicitCliModeOverridesProjectDefault?: boolean;
-          projectDefaultAppliesOnlyWhenModeOmitted?: boolean;
-          businessCodeGeneratedByJiSpec?: boolean;
-          adoptBoundary?: {
-            status?: string;
-          };
-        };
-      };
-    };
-
-    assert.equal(payload.mode, "execute");
-    assert.equal(payload.orchestrationMode, "execute");
-    assert.equal(payload.modeResolution?.source, "project_config");
-    assert.equal(payload.execution?.mode, "execute");
-    assert.equal(payload.execution?.state, "implemented");
-    assert.equal(payload.execution?.implement?.lane, "fast");
-    assert.equal(payload.execution?.implement?.testsPassed, true);
-    assert.equal(payload.execution?.implement?.postVerifyVerdict, "PASS");
-    assert.equal(payload.execution?.implement?.sessionArchived, true);
-    assert.equal(payload.execution?.boundary?.modeSource, "project_config");
-    assert.equal(payload.execution?.boundary?.explicitCliModeOverridesProjectDefault, false);
-    assert.equal(payload.execution?.boundary?.projectDefaultAppliesOnlyWhenModeOmitted, true);
-    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
-    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "not_applicable");
-    assert.ok(payload.id);
-    assert.ok(readArchivedChangeSession(configuredExecuteFixture, payload.id ?? ""));
+    assert.equal(result.mode, "execute");
+    assert.equal(result.session.orchestrationMode, "execute");
+    assert.equal(result.modeResolution.source, "project_config");
+    assert.equal(result.execution.mode, "execute");
+    assert.equal(result.execution.state, "implemented");
+    assert.equal(result.execution.implement?.lane, "fast");
+    assert.equal(result.execution.implement?.testsPassed, true);
+    assert.equal(result.execution.implement?.postVerifyVerdict, "PASS");
+    assert.equal(result.execution.implement?.sessionArchived, true);
+    assert.equal(result.execution.boundary.modeSource, "project_config");
+    assert.equal(result.execution.boundary.explicitCliModeOverridesProjectDefault, false);
+    assert.equal(result.execution.boundary.projectDefaultAppliesOnlyWhenModeOmitted, true);
+    assert.equal(result.execution.boundary.businessCodeGeneratedByJiSpec, false);
+    assert.equal(result.execution.boundary.adoptBoundary.status, "not_applicable");
+    assert.ok(result.session.id);
+    assert.ok(readArchivedChangeSession(configuredExecuteFixture, result.session.id));
     console.log("✓ Test 3: project config can opt into execute-default mediation without --mode");
     passed++;
   } catch (error) {
@@ -231,58 +143,30 @@ function main(): void {
     initializeGitRepository(executeFastFixture);
     fs.appendFileSync(path.join(executeFastFixture, "README.md"), "\nExecute mode docs-only change.\n", "utf-8");
 
-    const change = runCli([
-      "change",
-      "Document execute mode",
-      "--root",
-      executeFastFixture,
-      "--lane",
-      "fast",
-      "--mode",
-      "execute",
-      "--test-command",
-      'node -e "process.exit(0)"',
-      "--json",
-    ]);
+    const payload = runChangeCommand({
+      root: executeFastFixture,
+      summary: "Document execute mode",
+      lane: "fast",
+      mode: "execute",
+      testCommand: 'node -e "process.exit(0)"',
+      json: true,
+    }) as unknown as Promise<ChangeCommandResult>;
+    const result = await payload;
 
-    assert.equal(change.status, 0, `execute fast mode exited with ${change.status}. stderr: ${change.stderr}`);
-    const payload = JSON.parse(change.stdout) as {
-      id?: string;
-      mode?: string;
-      execution?: {
-        mode?: string;
-        state?: string;
-        implement?: {
-          lane?: string;
-          testsPassed?: boolean;
-          sessionArchived?: boolean;
-          postVerifyVerdict?: string;
-          postVerifyCommand?: string;
-        };
-        boundary?: {
-          modeSource?: string;
-          explicitCliModeOverridesProjectDefault?: boolean;
-          adoptBoundary?: {
-            status?: string;
-          };
-        };
-      };
-    };
-
-    assert.equal(payload.mode, "execute");
-    assert.equal(payload.execution?.mode, "execute");
-    assert.equal(payload.execution?.state, "implemented");
-    assert.equal(payload.execution?.implement?.lane, "fast");
-    assert.equal(payload.execution?.implement?.testsPassed, true);
-    assert.equal(payload.execution?.implement?.postVerifyVerdict, "PASS");
-    assert.equal(payload.execution?.implement?.postVerifyCommand, "npm run jispec-cli -- verify --fast");
-    assert.equal(payload.execution?.implement?.sessionArchived, true);
-    assert.equal(payload.execution?.boundary?.modeSource, "cli");
-    assert.equal(payload.execution?.boundary?.explicitCliModeOverridesProjectDefault, true);
-    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "not_applicable");
+    assert.equal(result.mode, "execute");
+    assert.equal(result.execution.mode, "execute");
+    assert.equal(result.execution.state, "implemented");
+    assert.equal(result.execution.implement?.lane, "fast");
+    assert.equal(result.execution.implement?.testsPassed, true);
+    assert.equal(result.execution.implement?.postVerifyVerdict, "PASS");
+    assert.equal(result.execution.implement?.postVerifyCommand, "npm run jispec-cli -- verify --fast");
+    assert.equal(result.execution.implement?.sessionArchived, true);
+    assert.equal(result.execution.boundary.modeSource, "cli");
+    assert.equal(result.execution.boundary.explicitCliModeOverridesProjectDefault, true);
+    assert.equal(result.execution.boundary.adoptBoundary.status, "not_applicable");
     assert.equal(readChangeSession(executeFastFixture), null);
-    assert.ok(payload.id);
-    assert.ok(readArchivedChangeSession(executeFastFixture, payload.id ?? ""));
+    assert.ok(result.session.id);
+    assert.ok(readArchivedChangeSession(executeFastFixture, result.session.id));
     console.log("✓ Test 4: explicit execute mode runs the fast-lane implement flow and archives the session after post-implement verify passes");
     passed++;
   } catch (error) {
@@ -314,60 +198,30 @@ function main(): void {
     );
     fs.appendFileSync(path.join(strictFixture, "src", "domain", "order.ts"), "\nexport const touched = true;\n", "utf-8");
 
-    const change = runCli([
-      "change",
-      "Update order domain model",
-      "--root",
-      strictFixture,
-      "--lane",
-      "fast",
-      "--mode",
-      "execute",
-      "--json",
-    ]);
+    const payload = runChangeCommand({
+      root: strictFixture,
+      summary: "Update order domain model",
+      lane: "fast",
+      mode: "execute",
+      json: true,
+    }) as unknown as Promise<ChangeCommandResult>;
+    const result = await payload;
 
-    assert.equal(change.status, 0, `execute strict mode exited with ${change.status}. stderr: ${change.stderr}`);
-    const payload = JSON.parse(change.stdout) as {
-      id?: string;
-      laneDecision?: {
-        lane?: string;
-        autoPromoted?: boolean;
-      };
-      execution?: {
-        mode?: string;
-        state?: string;
-        blockedOn?: string;
-        openDraftSessionId?: string;
-        implement?: unknown;
-        boundary?: {
-          modeSource?: string;
-          businessCodeGeneratedByJiSpec?: boolean;
-          adoptBoundary?: {
-            enforced?: boolean;
-            status?: string;
-            openDraftSessionId?: string;
-            nextAction?: string;
-          };
-        };
-      };
-      nextCommands?: Array<{ command?: string }>;
-    };
-
-    assert.equal(payload.laneDecision?.lane, "strict");
-    assert.equal(payload.laneDecision?.autoPromoted, true);
-    assert.equal(payload.execution?.mode, "execute");
-    assert.equal(payload.execution?.state, "awaiting_adopt");
-    assert.equal(payload.execution?.blockedOn, "adopt");
-    assert.equal(payload.execution?.openDraftSessionId, "bootstrap-test");
-    assert.equal(payload.execution?.implement, undefined);
-    assert.equal(payload.execution?.boundary?.modeSource, "cli");
-    assert.equal(payload.execution?.boundary?.businessCodeGeneratedByJiSpec, false);
-    assert.equal(payload.execution?.boundary?.adoptBoundary?.enforced, true);
-    assert.equal(payload.execution?.boundary?.adoptBoundary?.status, "paused_open_bootstrap_draft");
-    assert.equal(payload.execution?.boundary?.adoptBoundary?.openDraftSessionId, "bootstrap-test");
-    assert.equal(payload.execution?.boundary?.adoptBoundary?.nextAction, "npm run jispec-cli -- adopt --interactive --session bootstrap-test");
-    assert.equal(payload.nextCommands?.[0]?.command, "npm run jispec-cli -- adopt --interactive --session bootstrap-test");
-    assert.equal(readChangeSession(strictFixture)?.id, payload.id);
+    assert.equal(result.session.laneDecision.lane, "strict");
+    assert.equal(result.session.laneDecision.autoPromoted, true);
+    assert.equal(result.execution.mode, "execute");
+    assert.equal(result.execution.state, "awaiting_adopt");
+    assert.equal(result.execution.blockedOn, "adopt");
+    assert.equal(result.execution.openDraftSessionId, "bootstrap-test");
+    assert.equal(result.execution.implement, undefined);
+    assert.equal(result.execution.boundary.modeSource, "cli");
+    assert.equal(result.execution.boundary.businessCodeGeneratedByJiSpec, false);
+    assert.equal(result.execution.boundary.adoptBoundary.enforced, true);
+    assert.equal(result.execution.boundary.adoptBoundary.status, "paused_open_bootstrap_draft");
+    assert.equal(result.execution.boundary.adoptBoundary.openDraftSessionId, "bootstrap-test");
+    assert.equal(result.execution.boundary.adoptBoundary.nextAction, "npm run jispec-cli -- adopt --interactive --session bootstrap-test");
+    assert.equal(result.session.nextCommands[0]?.command, "npm run jispec-cli -- adopt --interactive --session bootstrap-test");
+    assert.equal(readChangeSession(strictFixture)?.id, result.session.id);
     console.log("✓ Test 5: execute mode pauses at the adopt boundary when a strict-lane change still has an open bootstrap draft");
     passed++;
   } catch (error) {
@@ -429,21 +283,6 @@ function removeProjectDefaultMode(root: string): void {
     }
   }
   fs.writeFileSync(projectPath, yaml.dump(project, { lineWidth: 100, noRefs: true, sortKeys: false }), "utf-8");
-}
-
-function runCli(args: string[]): CommandExecution {
-  const repoRoot = getRepoRoot();
-  const cliPath = path.join(repoRoot, "tools", "jispec", "cli.ts");
-  const result = spawnSync(process.execPath, ["--import", "tsx", cliPath, ...args], {
-    cwd: repoRoot,
-    encoding: "utf-8",
-  });
-
-  return {
-    status: result.status,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
 }
 
 function seedDocsFixture(root: string): void {
@@ -518,4 +357,4 @@ function writeStarterPolicy(root: string): void {
   );
 }
 
-main();
+void main();

@@ -30,7 +30,7 @@ async function main(): Promise<void> {
     const tempParent = fs.mkdtempSync(path.join(os.tmpdir(), "jispec-p4-legacy-"));
     const workspace = path.join(tempParent, "minimal-legacy-takeover");
     try {
-      fs.cpSync(path.join(repoRoot, "examples", "minimal-legacy-takeover"), workspace, { recursive: true });
+      fs.cpSync(path.join(repoRoot, "examples", "minimal-legacy-takeover"), workspace, { recursive: true, dereference: true });
 
       const discover = runCli(repoRoot, ["bootstrap", "discover", "--root", workspace, "--init-project", "--json"]);
       assert.equal(discover.status, 0, discover.stderr);
@@ -115,7 +115,7 @@ async function main(): Promise<void> {
     const githubTemplate = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "jispec-verify-template.yml"), "utf-8");
     const gitlabTemplate = fs.readFileSync(path.join(repoRoot, ".gitlab-ci.jispec-template.yml"), "utf-8");
     const ciDocs = fs.readFileSync(path.join(repoRoot, "docs", "ci-templates.md"), "utf-8");
-    const walkthrough = fs.readFileSync(path.join(repoRoot, "docs", "first-takeover-walkthrough.md"), "utf-8");
+    const walkthrough = fs.readFileSync(path.join(repoRoot, "docs", "getting-started", "first-takeover-walkthrough.md"), "utf-8");
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf-8")) as { files?: string[] };
 
     assert.match(githubTemplate, /npm run ci:verify/);

@@ -29,15 +29,15 @@ function main(): void {
 
   try {
     const result = runCli(["slice", "list"]);
-    if (result.status !== 0) {
-      throw new Error(`Expected slice list to succeed, got status ${result.status}. stderr: ${result.stderr}`);
+    if (result.status === 0) {
+      throw new Error("slice list should no longer be a valid CLI command.");
     }
 
-    if (!result.stdout.includes("[JiSpec] `slice` is part of the legacy compatibility surface.")) {
-      throw new Error("Legacy hint did not appear for non-JSON slice command.");
+    if (result.stdout.includes("legacy compatibility surface") || result.stderr.includes("legacy compatibility surface")) {
+      throw new Error("Retired legacy hint should not appear anywhere in CLI output.");
     }
 
-    console.log("✓ Test 1: legacy commands print a compatibility hint in text mode");
+    console.log("✓ Test 1: retired legacy commands are rejected without emitting a compatibility hint");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -47,20 +47,14 @@ function main(): void {
 
   try {
     const result = runCli(["slice", "list", "--json"]);
-    if (result.status !== 0) {
-      throw new Error(`Expected slice list --json to succeed, got status ${result.status}. stderr: ${result.stderr}`);
+    if (result.status === 0) {
+      throw new Error("slice list --json should no longer be a valid CLI command.");
     }
 
-    if (result.stdout.includes("[JiSpec]")) {
-      throw new Error("Legacy hint should not appear in JSON mode.");
+    if (result.stdout.includes("[JiSpec]") || result.stderr.includes("[JiSpec]")) {
+      throw new Error("Legacy hint should not appear in any output mode.");
     }
-
-    const parsed = JSON.parse(result.stdout);
-    if (!parsed || typeof parsed !== "object") {
-      throw new Error("JSON mode did not produce an object payload.");
-    }
-
-    console.log("✓ Test 2: legacy hints do not pollute JSON output");
+    console.log("✓ Test 2: retired legacy commands stay absent in JSON mode too");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

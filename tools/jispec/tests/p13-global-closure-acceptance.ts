@@ -96,7 +96,7 @@ async function main(): Promise<void> {
         root,
         generatedAt: "2026-05-04T00:00:00.000Z",
       });
-      const doc = fs.readFileSync(path.join(repoRoot, "docs", "north-star-acceptance.md"), "utf-8");
+      const doc = fs.readFileSync(path.join(repoRoot, "docs", "architecture", "north-star-acceptance.md"), "utf-8");
 
       assert.match(fs.readFileSync(written.decisionPacketPath, "utf-8"), /Global Closure/);
       assert.match(

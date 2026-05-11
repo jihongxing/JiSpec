@@ -581,12 +581,12 @@ function buildManifestDocumentRecord(
 ): Record<string, unknown> {
   return {
     path: manifestPath,
-    original_path: document.path,
     role: document.role,
     status: document.status,
-    checksum: document.checksum,
     line_count: document.lineCount,
     exists: document.exists,
+    ...(document.path ? { original_path: document.path } : {}),
+    ...(document.checksum ? { checksum: document.checksum } : {}),
     ...(document.requirementIds ? { requirement_ids: document.requirementIds } : {}),
     anchors: document.anchors?.map((anchor) => ({
       id: anchor.id,

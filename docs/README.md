@@ -49,6 +49,7 @@ Use these to understand the bigger product shape:
 - Canonical section index: [architecture/README.md](./architecture/README.md)
 - [architecture/north-star.md](./architecture/north-star.md): product goal and sequencing rule
 - [architecture/north-star-acceptance.md](./architecture/north-star-acceptance.md): final local acceptance suite
+- [architecture/absolute-terminal-checklist.md](./architecture/absolute-terminal-checklist.md): code-level freeze-vs-history decision rulebook
 - [architecture/ide-trajectory.md](./architecture/ide-trajectory.md): long-term IDE evolution path
 
 ## Development And Operations
@@ -56,15 +57,9 @@ Use these to understand the bigger product shape:
 These are useful for maintainers and release owners:
 
 - Canonical section index: [development/README.md](./development/README.md)
-- [development/pilot-readiness-checklist.md](./development/pilot-readiness-checklist.md): pilot gate checklist
-- [development/releases/v0.1.0.md](./development/releases/v0.1.0.md): v0.1.0 release notes
-
-## Internal Or Historical
-
-These docs are still useful context, but they are not the first stop for day-to-day users:
-
 - [development/collaboration-surface-freeze.md](./development/collaboration-surface-freeze.md): frozen boundary statement for deferred collaboration surfaces
-- [development/superpowers-discipline-layer.md](./development/superpowers-discipline-layer.md): deeper internal discipline-layer notes
+- [development/pilot-readiness-checklist.md](./development/pilot-readiness-checklist.md): pilot gate checklist
+- [../CHANGELOG.md](../CHANGELOG.md): release history and baseline notes
 
 The files under [input/](./input/) are source-document examples used by Greenfield flows. They are not general product docs.
 
@@ -77,10 +72,9 @@ As of 2026-05-11, these docs were updated most recently and should be treated as
 - [getting-started/first-takeover-walkthrough.md](./getting-started/first-takeover-walkthrough.md)
 - [greenfield-walkthrough.md](./greenfield-walkthrough.md)
 
-These are still useful, but read them with more context because they are either dated, historical, or intentionally narrow:
+These are still useful, but read them with more context because they are intentionally narrow:
 
 - [development/collaboration-surface-freeze.md](./development/collaboration-surface-freeze.md)
-- [development/releases/v0.1.0.md](./development/releases/v0.1.0.md)
 
 ## Overlap Notes
 

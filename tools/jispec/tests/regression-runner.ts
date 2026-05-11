@@ -6,8 +6,10 @@
  * tracked separately from verify/CI, change/implement, and runtime surfaces.
  */
 
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import {
   DEFERRED_SURFACE_CONTRACT_VERSION,
   getDeferredRegressionSuites,
@@ -105,7 +107,7 @@ export const TEST_SUITES: TestSuite[] = [
   core({ name: 'Policy Engine Basic', file: 'policy-engine-basic.ts', expectedTests: 5, task: 'P2-T6/M5-T1' }),
   core({ name: 'Policy Unknown Fact', file: 'policy-unknown-fact.ts', expectedTests: 5, task: 'P2-T6' }),
   core({ name: 'Verify Policy Integration', file: 'verify-policy-integration.ts', expectedTests: 5, task: 'P2-T6' }),
-  core({ name: 'Policy Profile Next', file: 'policy-profile-next.ts', expectedTests: 5, task: 'P3-T1' }),
+  core({ name: 'Policy Profile Next', file: 'policy-profile-next.ts', expectedTests: 10, task: 'P3-T1' }),
   core({ name: 'Verify Report Contract', file: 'verify-report-contract.ts', expectedTests: 4, task: 'P1-T5' }),
   core({ name: 'Verify Issue Fingerprint Stability', file: 'verify-issue-fingerprint-stability.ts', expectedTests: 2 }),
   core({ name: 'V1 Mainline Golden Path', file: 'v1-mainline-golden-path.ts', expectedTests: 4 }),
@@ -134,7 +136,7 @@ export const TEST_SUITES: TestSuite[] = [
   bootstrap({ name: 'Bootstrap API Surface Classification', file: 'bootstrap-api-surface-classification.ts', expectedTests: 6, task: 'Task 6/14' }),
   bootstrap({ name: 'Bootstrap Proto Domain Mapping', file: 'bootstrap-proto-domain-mapping.ts', expectedTests: 4, task: 'Task 14' }),
   bootstrap({ name: 'Bootstrap Init Project', file: 'bootstrap-init-project.ts', expectedTests: 4, task: 'Task 8' }),
-  retakeover({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 15, task: 'P0-T1/P0-T2/N8' }),
+  retakeover({ name: 'Bootstrap Real Retakeover Regression Fixtures', file: 'bootstrap-retakeover-regression.ts', expectedTests: 16, task: 'P0-T1/P0-T2/N8' }),
   bootstrap({ name: 'Adopt CLI Surface', file: 'adopt-cli-surface.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Adopt Atomic', file: 'bootstrap-adopt-atomic.ts', expectedTests: 3 }),
   bootstrap({ name: 'Bootstrap Adopt Handoff', file: 'bootstrap-adopt-handoff.ts', expectedTests: 7, task: 'Task 7/P1-T4' }),
@@ -143,7 +145,7 @@ export const TEST_SUITES: TestSuite[] = [
   bootstrap({ name: 'P9 Evidence Provenance Labels', file: 'p9-evidence-provenance-labels.ts', expectedTests: 6, task: 'P9-T2' }),
   retakeover({ name: 'Bootstrap Synthetic Messy Legacy Takeover Stress', file: 'bootstrap-messy-legacy-takeover.ts', expectedTests: 5, task: 'N9' }),
   gates({ name: 'Verify Contract-Aware Core', file: 'verify-contract-aware-core.ts', expectedTests: 3 }),
-  gates({ name: 'Verify Bootstrap Takeover', file: 'verify-bootstrap-takeover.ts', expectedTests: 3 }),
+  gates({ name: 'Verify Bootstrap Takeover', file: 'verify-bootstrap-takeover.ts', expectedTests: 4 }),
   gates({ name: 'Verify Baseline Hardening', file: 'verify-baseline-hardening.ts', expectedTests: 3 }),
   gates({ name: 'Verify Waiver Hardening', file: 'verify-waiver-hardening.ts', expectedTests: 4, task: 'P2-T4' }),
   gates({ name: 'Verify Mitigation Stacking', file: 'verify-mitigation-stacking.ts', expectedTests: 2 }),
@@ -198,13 +200,13 @@ export const TEST_SUITES: TestSuite[] = [
   runtime({ name: 'Collaboration Locking MVP', file: 'collaboration-locking-mvp.ts', expectedTests: 3 }),
   runtime({ name: 'Collaboration Notifications MVP', file: 'collaboration-notifications-mvp.ts', expectedTests: 3 }),
   runtime({ name: 'Collaboration Analytics MVP', file: 'collaboration-analytics-mvp.ts', expectedTests: 3 }),
-  runtime({ name: 'Console Read Model Contract', file: 'console-read-model-contract.ts', expectedTests: 11, task: 'T3.1/P2-T1' }),
-  runtime({ name: 'Audit Event Ledger', file: 'audit-event-ledger.ts', expectedTests: 5, task: 'P2-T2/P6-T1' }),
-  runtime({ name: 'Console Governance Dashboard', file: 'console-governance-dashboard.ts', expectedTests: 4, task: 'P2-T3' }),
+  runtime({ name: 'Console Read Model Contract', file: 'console-read-model-contract.ts', expectedTests: 10, task: 'T3.1/P2-T1' }),
+  runtime({ name: 'Audit Event Ledger', file: 'audit-event-ledger.ts', expectedTests: 6, task: 'P2-T2/P6-T1' }),
+  runtime({ name: 'Console Governance Dashboard', file: 'console-governance-dashboard.ts', expectedTests: 7, task: 'P2-T3' }),
   runtime({ name: 'Console UI Smoke', file: 'console-ui-smoke.ts', expectedTests: 4, task: 'P5-T1' }),
   runtime({ name: 'Console Governance Actions', file: 'console-governance-actions.ts', expectedTests: 5, task: 'P2-T4' }),
   runtime({ name: 'Console Governance Export', file: 'console-governance-export.ts', expectedTests: 2, task: 'P3-T3' }),
-  runtime({ name: 'P12 Console Source Evolution', file: 'p12-console-source-evolution.ts', expectedTests: 4, task: 'P12-T1' }),
+  runtime({ name: 'P12 Console Source Evolution', file: 'p12-console-source-evolution.ts', expectedTests: 5, task: 'P12-T1' }),
   runtime({ name: 'P12 Multi-Repo Owner Loop', file: 'p12-multi-repo-owner-loop.ts', expectedTests: 7, task: 'P12-T2' }),
   runtime({ name: 'P12 Doctor Global Profile', file: 'p12-doctor-global.ts', expectedTests: 6, task: 'P12-T3' }),
   runtime({ name: 'P13 Release Global Context', file: 'p13-release-global-context.ts', expectedTests: 4, task: 'P13-T1' }),
@@ -388,14 +390,194 @@ interface TestResult {
   error?: string;
 }
 
-async function runTestSuite(suite: TestSuite): Promise<TestResult> {
-  const testPath = path.join(__dirname, suite.file);
+interface RegressionBuildWorkspace {
+  root: string;
+  preparedAt: number;
+  reused: boolean;
+}
+
+interface RegressionBuildManifest {
+  schemaVersion: 1;
+  signature: string;
+  preparedAt: string;
+}
+
+const REGRESSION_BUILD_SCHEMA_VERSION = 1;
+const REGRESSION_BUILD_DIR_NAME = '.tmp-regression-runtime';
+const REGRESSION_BUILD_MANIFEST = '.regression-build.json';
+const REGRESSION_WRITABLE_DIRS = ['tools', 'scripts'] as const;
+const REGRESSION_LINKED_DIRS = ['agents', 'bin', 'contexts', 'docs', 'examples', 'jiproject', 'schemas', 'templates'] as const;
+const REGRESSION_COPIED_FILES = [
+  '.gitlab-ci.jispec-template.yml',
+  'package.json',
+  'README.md',
+  'README.zh-CN.md',
+  'tsconfig.json',
+] as const;
+
+function getProjectRoot(): string {
+  return path.join(__dirname, '..', '..', '..');
+}
+
+function buildRootPath(projectRoot: string): string {
+  return path.join(projectRoot, REGRESSION_BUILD_DIR_NAME);
+}
+
+function buildManifestPath(buildRoot: string): string {
+  return path.join(buildRoot, REGRESSION_BUILD_MANIFEST);
+}
+
+function collectRegressionBuildSignature(projectRoot: string): string {
+  const trackedPaths = [
+    ...REGRESSION_WRITABLE_DIRS.map((entry) => path.join(projectRoot, entry)),
+    ...REGRESSION_COPIED_FILES.map((entry) => path.join(projectRoot, entry)),
+    path.join(projectRoot, 'node_modules', 'typescript', 'package.json'),
+  ];
+  const entries: string[] = [];
+
+  for (const trackedPath of trackedPaths) {
+    collectSignatureEntries(trackedPath, projectRoot, entries);
+  }
+
+  return entries.sort().join('\n');
+}
+
+function collectSignatureEntries(targetPath: string, projectRoot: string, entries: string[]): void {
+  if (!fs.existsSync(targetPath)) {
+    const relativePath = path.relative(projectRoot, targetPath).replace(/\\/g, '/');
+    entries.push(`missing:${relativePath}`);
+    return;
+  }
+
+  const stats = fs.statSync(targetPath);
+  const relativePath = path.relative(projectRoot, targetPath).replace(/\\/g, '/');
+
+  if (stats.isDirectory()) {
+    entries.push(`dir:${relativePath}`);
+    const children = fs.readdirSync(targetPath, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name));
+    for (const child of children) {
+      collectSignatureEntries(path.join(targetPath, child.name), projectRoot, entries);
+    }
+    return;
+  }
+
+  entries.push(`file:${relativePath}:${stats.size}:${Math.trunc(stats.mtimeMs)}`);
+}
+
+function readRegressionBuildManifest(buildRoot: string): RegressionBuildManifest | undefined {
+  const manifestPath = buildManifestPath(buildRoot);
+  if (!fs.existsSync(manifestPath)) {
+    return undefined;
+  }
 
   try {
-    const output = execSync(`npx tsx ${testPath}`, {
+    return JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as RegressionBuildManifest;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeRegressionBuildManifest(buildRoot: string, signature: string): void {
+  const manifest: RegressionBuildManifest = {
+    schemaVersion: REGRESSION_BUILD_SCHEMA_VERSION,
+    signature,
+    preparedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(buildManifestPath(buildRoot), `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
+}
+
+function ensureRegressionBuildWorkspace(projectRoot: string): RegressionBuildWorkspace {
+  const buildRoot = buildRootPath(projectRoot);
+  const signature = collectRegressionBuildSignature(projectRoot);
+  const existingManifest = readRegressionBuildManifest(buildRoot);
+  const compiledRunnerPath = path.join(buildRoot, 'tools', 'jispec', 'tests', 'regression-runner.js');
+
+  if (
+    existingManifest?.schemaVersion === REGRESSION_BUILD_SCHEMA_VERSION &&
+    existingManifest.signature === signature &&
+    fs.existsSync(compiledRunnerPath)
+  ) {
+    return {
+      root: buildRoot,
+      preparedAt: Date.now(),
+      reused: true,
+    };
+  }
+
+  fs.rmSync(buildRoot, { recursive: true, force: true });
+  fs.mkdirSync(buildRoot, { recursive: true });
+
+  for (const directory of REGRESSION_WRITABLE_DIRS) {
+    fs.cpSync(path.join(projectRoot, directory), path.join(buildRoot, directory), { recursive: true });
+  }
+
+  for (const directory of REGRESSION_LINKED_DIRS) {
+    const sourcePath = path.join(projectRoot, directory);
+    if (!fs.existsSync(sourcePath)) {
+      continue;
+    }
+    fs.symlinkSync(sourcePath, path.join(buildRoot, directory), process.platform === 'win32' ? 'junction' : 'dir');
+  }
+
+  const githubSource = path.join(projectRoot, '.github');
+  if (fs.existsSync(githubSource)) {
+    fs.symlinkSync(githubSource, path.join(buildRoot, '.github'), process.platform === 'win32' ? 'junction' : 'dir');
+  }
+
+  for (const file of REGRESSION_COPIED_FILES) {
+    const sourcePath = path.join(projectRoot, file);
+    if (!fs.existsSync(sourcePath)) {
+      continue;
+    }
+    fs.copyFileSync(sourcePath, path.join(buildRoot, file));
+  }
+
+  compileRegressionBuildWorkspace(buildRoot, projectRoot);
+  writeRegressionBuildManifest(buildRoot, signature);
+
+  return {
+    root: buildRoot,
+    preparedAt: Date.now(),
+    reused: false,
+  };
+}
+
+function compileRegressionBuildWorkspace(buildRoot: string, projectRoot: string): void {
+  const typescriptCli = path.join(projectRoot, 'node_modules', 'typescript', 'bin', 'tsc');
+  const result = spawnSync(
+    process.execPath,
+    [typescriptCli, '--outDir', '.', '--rootDir', '.', '--incremental', 'false', '--pretty', 'false'],
+    {
+      cwd: buildRoot,
       encoding: 'utf-8',
       stdio: 'pipe',
-      cwd: path.join(__dirname, '..', '..', '..'),  // Run from project root
+      shell: false,
+    },
+  );
+
+  if (result.error) {
+    throw new Error(`Failed to start regression build compiler: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || 'Regression build compiler exited with a non-zero status.');
+  }
+}
+
+function compiledSuitePath(workspaceRoot: string, suite: TestSuite): string {
+  return path.join(workspaceRoot, 'tools', 'jispec', 'tests', suite.file.replace(/\.ts$/, '.js'));
+}
+
+async function runTestSuite(suite: TestSuite, workspaceRoot?: string): Promise<TestResult> {
+  const testPath = workspaceRoot ? compiledSuitePath(workspaceRoot, suite) : path.join(__dirname, suite.file);
+  const cwd = workspaceRoot ?? getProjectRoot();
+  const args = workspaceRoot ? [testPath] : ['--import', 'tsx', testPath];
+
+  try {
+    const output = execFileSync(process.execPath, args, {
+      encoding: 'utf-8',
+      stdio: 'pipe',
+      cwd,
     });
 
     // Parse output for test count - try multiple patterns
@@ -500,12 +682,26 @@ async function main(options: { area?: RegressionArea } = {}) {
   const scopeSuffix = options.area ? ` (${options.area})` : '';
   console.log(`=== JiSpec Unified Regression Test Matrix${scopeSuffix} ===\n`);
 
+  const buildStartedAt = Date.now();
+  let workspace: RegressionBuildWorkspace | undefined;
+  try {
+    workspace = ensureRegressionBuildWorkspace(getProjectRoot());
+    const buildSeconds = ((Date.now() - buildStartedAt) / 1000).toFixed(1);
+    const workspaceStatus = workspace.reused ? 'reused' : 'prepared';
+    console.log(`Using compiled regression workspace (${workspaceStatus}) in ${buildSeconds}s\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const buildSeconds = ((Date.now() - buildStartedAt) / 1000).toFixed(1);
+    console.log(`Compiled regression workspace unavailable after ${buildSeconds}s; falling back to tsx.`);
+    console.log(`Reason: ${message}\n`);
+  }
+
   const results: TestResult[] = [];
 
   for (const suite of suites) {
     const taskSuffix = suite.task ? ` ${suite.task}` : '';
     process.stdout.write(`Running [${suite.area}${taskSuffix}] ${suite.name}... `);
-    const result = await runTestSuite(suite);
+    const result = await runTestSuite(suite, workspace?.root);
     results.push(result);
 
     if (result.passed) {

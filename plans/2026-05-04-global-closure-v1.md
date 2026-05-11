@@ -465,7 +465,7 @@ Extend North Star acceptance so it can verify the global closure loop, not only 
 Modify:
 
 - `tools/jispec/north-star/acceptance.ts`
-- `docs/north-star-acceptance.md`
+- `docs/architecture/north-star-acceptance.md`
 
 Create:
 
@@ -498,7 +498,7 @@ Define a hard promotion contract for support surfaces so only mature surfaces be
 
 Modify:
 
-- `docs/collaboration-surface-freeze.md`
+- `docs/development/collaboration-surface-freeze.md`
 - `tools/jispec/runtime/deferred-surface-contract.ts`
 - `tools/jispec/doctor.ts`
 

@@ -35,16 +35,6 @@ const gateSteps: GateStep[] = [
     args: [...npmStepCommand().args, ...npmStepArgs(["run", "typecheck"])],
   },
   {
-    name: "V1 mainline golden path",
-    command: nodeCommand,
-    args: ["--import", "tsx", "./tools/jispec/tests/v1-mainline-golden-path.ts"],
-  },
-  {
-    name: "Doctor V1 readiness",
-    command: nodeCommand,
-    args: ["--import", "tsx", "./tools/jispec/tests/doctor-mainline-readiness.ts"],
-  },
-  {
     name: "Unified regression runner",
     command: nodeCommand,
     args: ["--import", "tsx", "./tools/jispec/tests/regression-runner.ts"],

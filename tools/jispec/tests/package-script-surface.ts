@@ -114,18 +114,20 @@ function main(): void {
   }
 
   try {
-    assertEqual(scripts["validate:repo"], "node --import tsx ./tools/jispec/cli.ts verify", "compatibility script `validate:repo`");
-    assertEqual(scripts["check:jispec"], "node --import tsx ./scripts/check-jispec.ts", "compatibility script `check:jispec`");
     assertDefined(packageJson.dependencies?.tsx, "runtime dependency `tsx` for npm bin");
     if (packageJson.devDependencies?.tsx) {
       throw new Error("tsx must stay in dependencies so the npm bin can execute the TypeScript CLI after install.");
+    }
+
+    if ("validate:repo" in scripts || "check:jispec" in scripts) {
+      throw new Error("retired compatibility scripts must no longer be published");
     }
 
     if ("bootstrap" in scripts || "change" in scripts || "implement" in scripts) {
       throw new Error("roadmap-only commands should not exist as package scripts yet.");
     }
 
-    console.log("✓ Test 4: compatibility scripts remain available and runtime bin dependency is packaged");
+    console.log("✓ Test 4: retired compatibility scripts are absent and runtime bin dependency is packaged");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

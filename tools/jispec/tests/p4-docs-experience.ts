@@ -16,10 +16,10 @@ function main(): void {
   const repoRoot = getRepoRoot();
   const docs = {
     quickstart: readDoc(repoRoot, "quickstart.md"),
-    takeover: readDoc(repoRoot, "takeover-guide.md"),
+    takeover: readDoc(repoRoot, path.join("user-guide", "takeover-guide.md")),
     execute: readDoc(repoRoot, "execute-default-guide.md"),
     console: readDoc(repoRoot, "console-governance-guide.md"),
-    cookbook: readDoc(repoRoot, "policy-waiver-spec-debt-cookbook.md"),
+    cookbook: readDoc(repoRoot, path.join("user-guide", "policy-waiver-spec-debt-cookbook.md")),
   };
 
   const results: TestResult[] = [];
@@ -29,7 +29,7 @@ function main(): void {
     assert.match(docs.quickstart, /npm install/);
     assert.match(docs.quickstart, /doctor mainline/);
     assert.match(docs.quickstart, /bootstrap discover/);
-    assert.match(docs.quickstart, /docs\/takeover-guide\.md/);
+    assert.match(docs.quickstart, /docs\/user-guide\/takeover-guide\.md/);
     assert.match(docs.quickstart, /docs\/console-governance-guide\.md/);
   });
 

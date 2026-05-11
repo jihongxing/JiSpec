@@ -227,7 +227,7 @@ CLI 必须能在不上传源码的情况下工作。Console 应该增加 policy 
 当前与北极星对齐的发布焦点是：
 
 - [V1 主线稳定契约](../reference/v1-mainline-stable-contract.md)
-- [v0.1.0 发布说明](../development/releases/v0.1.0.md)
+- [CHANGELOG.md](../../CHANGELOG.md)
 
 这两份文档定义当前可对外承诺的主线命令、关键产物、验证边界和已知限制。
 

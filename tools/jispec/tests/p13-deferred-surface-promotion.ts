@@ -132,7 +132,7 @@ async function main(): Promise<void> {
 
   results.push(record("docs and regression registration expose the explicit promotion boundary", () => {
     const repoRoot = path.resolve(__dirname, "..", "..", "..");
-    const doc = fs.readFileSync(path.join(repoRoot, "docs", "collaboration-surface-freeze.md"), "utf-8");
+    const doc = fs.readFileSync(path.join(repoRoot, "docs", "development", "collaboration-surface-freeze.md"), "utf-8");
     const doctor = fs.readFileSync(path.join(repoRoot, "tools", "jispec", "doctor.ts"), "utf-8");
     const suite = TEST_SUITES.find((candidate) => candidate.file === "p13-deferred-surface-promotion.ts");
 

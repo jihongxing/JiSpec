@@ -3,7 +3,7 @@
 Status: P4-T2 deferred surface boundary, expanded by P13-T3 promotion contract.
 
 This document freezes the boundary for distributed execution, collaboration, and presence work after V1. These surfaces may keep regression coverage so old experiments do not rot, but they are not V1 product promises and they must not affect V1 readiness.
-`runtime-extended` is diagnostic-only: it can preserve regression coverage, but it must stay out of `doctor v1` and `doctor pilot` gating.
+`runtime-extended` is diagnostic-only: it can preserve regression coverage, but it must stay out of `doctor mainline` and `doctor pilot` gating.
 
 The code-level contract lives in `tools/jispec/runtime/deferred-surface-contract.ts`.
 

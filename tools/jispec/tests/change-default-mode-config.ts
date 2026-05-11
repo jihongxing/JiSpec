@@ -2,15 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import * as yaml from "js-yaml";
-import { cleanupVerifyFixture, createVerifyFixture, getRepoRoot } from "./verify-test-helpers";
-
-interface CommandExecution {
-  status: number | null;
-  stdout: string;
-  stderr: string;
-}
+import {
+  resetChangeDefaultMode,
+  setChangeDefaultMode,
+  showChangeDefaultMode,
+} from "../change/default-mode-command";
+import { cleanupVerifyFixture, createVerifyFixture } from "./verify-test-helpers";
 
 interface DefaultModePayload {
   action?: string;
@@ -54,9 +52,7 @@ function main(): void {
   const fixture = createVerifyFixture("change-default-mode-config");
   try {
     removeProjectDefaultMode(fixture);
-    const show = runCli(["change", "default-mode", "show", "--root", fixture, "--json"]);
-    assert.equal(show.status, 0, `show exited with ${show.status}. stderr: ${show.stderr}`);
-    const payload = JSON.parse(show.stdout) as DefaultModePayload;
+    const payload = showChangeDefaultMode(fixture) as DefaultModePayload;
     assert.equal(payload.action, "show");
     assert.equal(payload.currentMode, "prompt");
     assert.equal(payload.source, "built_in_default");
@@ -78,21 +74,12 @@ function main(): void {
 
   try {
     writeStarterPolicy(fixture);
-    const setExecute = runCli([
-      "change",
-      "default-mode",
-      "set",
-      "execute",
-      "--root",
-      fixture,
-      "--actor",
-      "n7-test",
-      "--reason",
-      "enable execute default",
-      "--json",
-    ]);
-    assert.equal(setExecute.status, 0, `set execute exited with ${setExecute.status}. stderr: ${setExecute.stderr}`);
-    const payload = JSON.parse(setExecute.stdout) as DefaultModePayload;
+    const payload = setChangeDefaultMode({
+      root: fixture,
+      mode: "execute",
+      actor: "n7-test",
+      reason: "enable execute default",
+    }) as DefaultModePayload;
     const project = readProject(fixture);
     assert.equal(payload.action, "set");
     assert.equal(payload.currentMode, "execute");
@@ -102,7 +89,10 @@ function main(): void {
     assert.equal(payload.readiness?.canSetExecuteDefault, true);
     assert.equal(payload.readiness?.boundary?.adoptBoundary?.status, "clear");
     assert.equal((project.change as Record<string, unknown>).default_mode, "execute");
-    assert.ok(payload.historyPath?.endsWith(".jispec/change-default-mode-history.jsonl"));
+    assert.equal(
+      payload.historyPath?.replace(/\\/g, "/").endsWith(".jispec/change-default-mode-history.jsonl"),
+      true,
+    );
     console.log("✓ Test 2: set execute writes project config and reports execute readiness");
     passed++;
   } catch (error) {
@@ -111,21 +101,12 @@ function main(): void {
 
   try {
     writeStarterPolicy(fixture);
-    const setPrompt = runCli([
-      "change",
-      "default-mode",
-      "set",
-      "prompt",
-      "--root",
-      fixture,
-      "--actor",
-      "n7-test",
-      "--reason",
-      "rollback to prompt",
-      "--json",
-    ]);
-    assert.equal(setPrompt.status, 0, `set prompt exited with ${setPrompt.status}. stderr: ${setPrompt.stderr}`);
-    const payload = JSON.parse(setPrompt.stdout) as DefaultModePayload;
+    const payload = setChangeDefaultMode({
+      root: fixture,
+      mode: "prompt",
+      actor: "n7-test",
+      reason: "rollback to prompt",
+    }) as DefaultModePayload;
     const project = readProject(fixture);
     assert.equal(payload.currentMode, "prompt");
     assert.equal(payload.previousMode, "execute");
@@ -140,20 +121,11 @@ function main(): void {
 
   try {
     writeStarterPolicy(fixture);
-    const reset = runCli([
-      "change",
-      "default-mode",
-      "reset",
-      "--root",
-      fixture,
-      "--actor",
-      "n7-test",
-      "--reason",
-      "return to built-in default",
-      "--json",
-    ]);
-    assert.equal(reset.status, 0, `reset exited with ${reset.status}. stderr: ${reset.stderr}`);
-    const payload = JSON.parse(reset.stdout) as DefaultModePayload;
+    const payload = resetChangeDefaultMode({
+      root: fixture,
+      actor: "n7-test",
+      reason: "return to built-in default",
+    }) as DefaultModePayload;
     const project = readProject(fixture);
     assert.equal(payload.action, "reset");
     assert.equal(payload.currentMode, "prompt");
@@ -200,17 +172,10 @@ function main(): void {
       "utf-8",
     );
     writeStarterPolicy(invalidConfigFixture);
-    const setExecute = runCli([
-      "change",
-      "default-mode",
-      "set",
-      "execute",
-      "--root",
-      invalidConfigFixture,
-      "--json",
-    ]);
-    assert.equal(setExecute.status, 1);
-    assert.match(setExecute.stderr, /Cannot enable execute-default until readiness blocker/);
+    assert.throws(
+      () => setChangeDefaultMode({ root: invalidConfigFixture, mode: "execute" }),
+      /Cannot enable execute-default until readiness blocker/,
+    );
     assert.equal(fs.existsSync(path.join(invalidConfigFixture, ".jispec", "change-default-mode-history.jsonl")), false);
     console.log("✓ Test 6: set execute is blocked when existing default-mode config has warnings");
     passed++;
@@ -224,17 +189,10 @@ function main(): void {
   try {
     writeStarterPolicy(openDraftFixture);
     writeOpenDraftManifest(openDraftFixture, "bootstrap-open");
-    const setExecute = runCli([
-      "change",
-      "default-mode",
-      "set",
-      "execute",
-      "--root",
-      openDraftFixture,
-      "--json",
-    ]);
-    assert.equal(setExecute.status, 0, `set execute with open draft exited with ${setExecute.status}. stderr: ${setExecute.stderr}`);
-    const payload = JSON.parse(setExecute.stdout) as DefaultModePayload;
+    const payload = setChangeDefaultMode({
+      root: openDraftFixture,
+      mode: "execute",
+    }) as DefaultModePayload;
     assert.equal(payload.currentMode, "execute");
     assert.equal(payload.readiness?.openDraftSessionId, "bootstrap-open");
     assert.equal(payload.readiness?.canSetExecuteDefault, true);
@@ -256,21 +214,6 @@ function main(): void {
   if (failed > 0) {
     process.exit(1);
   }
-}
-
-function runCli(args: string[]): CommandExecution {
-  const repoRoot = getRepoRoot();
-  const cliPath = path.join(repoRoot, "tools", "jispec", "cli.ts");
-  const result = spawnSync(process.execPath, ["--import", "tsx", cliPath, ...args], {
-    cwd: repoRoot,
-    encoding: "utf-8",
-  });
-
-  return {
-    status: result.status,
-    stdout: result.stdout,
-    stderr: result.stderr,
-  };
 }
 
 function readProject(root: string): Record<string, unknown> {

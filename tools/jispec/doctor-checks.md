@@ -2,8 +2,8 @@
 
 ## Overview
 
-`jispec doctor runtime` performs diagnostic-only health checks for the runtime and legacy compatibility surface.
-It does not promote runtime-extended or deferred surfaces into `doctor v1` or `doctor pilot` gating.
+`jispec doctor runtime` performs diagnostic-only health checks for the runtime and deferred surfaces.
+It does not promote runtime-extended or deferred surfaces into `doctor mainline` or `doctor pilot` gating.
 
 ## Check Categories
 

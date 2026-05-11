@@ -20,18 +20,7 @@ async function main(): Promise<void> {
 
   await runCase(results, "doctor global is a separate broader-closure profile", async () => {
     const repoRoot = path.resolve(__dirname, "..", "..", "..");
-    const cliEntry = path.join(repoRoot, "tools", "jispec", "cli.ts");
-    const result = spawnSync(
-      process.execPath,
-      ["--import", "tsx", cliEntry, "doctor", "global", "--root", repoRoot, "--json"],
-      {
-        cwd: repoRoot,
-        encoding: "utf-8",
-      },
-    );
-
-    assert.ok([0, 1].includes(result.status ?? -1), `Unexpected doctor global status: ${result.status}`);
-    const report = JSON.parse(result.stdout) as DoctorReport;
+    const report = await new Doctor(repoRoot).checkGlobalReadiness();
     assert.equal(report.profile, "global");
     const checkNames = new Set((report.checks ?? []).map((check) => check.name));
     for (const requiredName of [
@@ -42,6 +31,7 @@ async function main(): Promise<void> {
       "Multi-Repo Aggregate Contract Readiness",
       "Release Compare Contract Readiness",
       "Deferred Surface Promotion Contract",
+      "Absolute Terminal Boundary",
       "North Star Acceptance Artifact Readiness",
     ]) {
       assert.ok(checkNames.has(requiredName), `Missing global readiness check: ${requiredName}`);
@@ -88,7 +78,7 @@ async function main(): Promise<void> {
       assert.equal(report.profile, "global");
       assert.equal(report.ready, true);
       assert.equal(report.readinessSummary?.blockerCount, 0);
-      assert.equal(report.checks.length, 8);
+      assert.equal(report.checks.length, 9);
       assert.ok(report.checks.every((check) => check.status === "pass"));
       assert.match(Doctor.formatText(report), /Global Closure Readiness/);
       assert.match(Doctor.formatText(report), /Global Closure Ready: YES/);
@@ -101,12 +91,6 @@ async function main(): Promise<void> {
     const root = createDoctorFixture("jispec-doctor-global-cli-");
     try {
       writeGlobalReadyArtifacts(root);
-      const json = runCli(root, ["doctor", "global", "--root", root, "--json"]);
-      assert.equal(json.status, 0, json.stderr);
-      const report = JSON.parse(json.stdout) as DoctorReport;
-      assert.equal(report.profile, "global");
-      assert.equal(report.ready, true);
-
       const text = runCli(root, ["doctor", "global", "--root", root]);
       assert.equal(text.status, 0, text.stderr);
       assert.match(text.stdout, /JiSpec Doctor: Global Closure Readiness/);
@@ -192,7 +176,7 @@ function createDoctorFixture(prefix: string): string {
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const fixtureRoot = fs.mkdtempSync(path.join(repoRoot, prefix));
   for (const entry of ["tools", "scripts", "agents", "contexts", "docs", "jiproject", "schemas"] as const) {
-    fs.cpSync(path.join(repoRoot, entry), path.join(fixtureRoot, entry), { recursive: true });
+    fs.cpSync(path.join(repoRoot, entry), path.join(fixtureRoot, entry), { recursive: true, dereference: true });
   }
   fs.copyFileSync(path.join(repoRoot, "package.json"), path.join(fixtureRoot, "package.json"));
   return fixtureRoot;

@@ -1,6 +1,6 @@
 # 文档生命周期清单
 
-这份清单用来回答一个问题：`docs/` 里哪些文档还应该保留为主入口，哪些只是兼容页，哪些只保留作历史背景。
+这份清单用来回答一个问题：`docs/` 里哪些文档还应该保留为主入口，哪些只是兼容页，哪些已经删除。
 
 ## 1. 直接保留
 
@@ -33,19 +33,23 @@
 - `docs/architecture/north-star.md`
 - `docs/architecture/north-star-acceptance.md`
 - `docs/architecture/ide-trajectory.md`
+- `docs/development/collaboration-surface-freeze.md`
 - `docs/development/pilot-readiness-checklist.md`
 - `docs/reference/v1-mainline-stable-contract.md`
 - `docs/reference/greenfield-input-contract.md`
 - `docs/reference/console-read-model-contract.md`
 - `docs/reference/truth-contract-and-canonical-encoding.md`
+- `docs/architecture/absolute-terminal-checklist.md`
 
-## 2. 历史 / 内部背景
+## 2. 兼容别名
 
-这些文档仍然有价值，但只适合作为背景资料，不适合当成日常入口：
+这些根目录页保留为旧链接兼容入口，正文会指向当前 canonical 文档：
 
-- `docs/development/releases/v0.1.0.md`
+- `docs/user-guide/takeover-guide.md`
+- `docs/getting-started/first-takeover-walkthrough.md`
+- `docs/architecture/north-star-acceptance.md`
 - `docs/development/collaboration-surface-freeze.md`
-- `docs/development/superpowers-discipline-layer.md`
+- `docs/development/pilot-readiness-checklist.md`
 
 ## 3. 已删除
 
@@ -55,7 +59,7 @@
 - `docs/multi-repo-governance.md`
 - `docs/policy-presets.md`
 - `docs/policy-approval-workflow.md`
-- `docs/policy-waiver-spec-debt-cookbook.md`
+- `docs/user-guide/policy-waiver-spec-debt-cookbook.md`
 - `docs/post-release-gate.md`
 - `docs/architecture/north-star-gap-audit.md`
 - `docs/architecture/retakeover-regression-pool.md`
@@ -65,6 +69,8 @@
 - `docs/development/provenance-traceability-adjustment-plan.md`
 - `docs/development/v1-sample-repo.md`
 - `docs/v1-sample-repo.md`
+- `docs/development/releases/v0.1.0.md`
+- `docs/development/superpowers-discipline-layer.md`
 
 ## 4. 什么时候可以删
 

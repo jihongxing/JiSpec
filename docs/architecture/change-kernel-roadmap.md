@@ -83,7 +83,7 @@ external mutation
   - `change` 是唯一语义入口
   - `implement`、`verify`、`doctor`、`policy`、`console`、`bootstrap` 都是派生操作面
   - `npm run ci:verify` 维持为独立 CI wrapper，不升格为语义入口
-  - CLI help 已经显式分区：`Semantic entry surface`、`Derived operational surfaces`、`Legacy compatibility surface`、`Current CI wrapper`
+  - CLI help 已经显式分区：`Semantic entry surface`、`Derived operational surfaces`、`Mainline workflow shortcuts`、`Current CI wrapper`
 
 ## 收尾与维护
 

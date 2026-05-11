@@ -6,6 +6,7 @@
 
 import path from "node:path";
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import yaml from "js-yaml";
 import { FilesystemStorage } from "./filesystem-storage.js";
 import { encodeIdentity, decodeIdentity, identityEquals } from "./artifact-identity.js";
@@ -21,6 +22,7 @@ import {
   getDeferredSurfaceContracts,
   getDeferredSurfacePromotionContract,
 } from "./runtime/deferred-surface-contract";
+import { evaluateAbsoluteTerminalBoundary } from "./terminal/absolute-terminal-contract";
 
 export interface DoctorCheckResult {
   name: string;
@@ -141,6 +143,19 @@ export class Doctor {
   }
 
   /**
+   * Run only the runtime regression-boundary checks that consume the
+   * regression matrix manifest and transaction smoke contract.
+   */
+  async checkRuntimeRegressionBoundary(): Promise<DoctorReport> {
+    const checks: DoctorCheckResult[] = [];
+
+    checks.push(await this.checkRegressionEnvironment());
+    checks.push(await this.checkTransactionMode());
+
+    return this.buildReport("runtime", checks);
+  }
+
+  /**
    * Run mainline readiness checks without letting deferred collaboration
    * and distributed experiments block the core product path.
    */
@@ -197,6 +212,7 @@ export class Doctor {
     checks.push(await this.checkGlobalMultiRepoAggregateReadiness());
     checks.push(await this.checkGlobalReleaseCompareReadiness());
     checks.push(await this.checkGlobalDeferredSurfacePromotionReadiness());
+    checks.push(await this.checkGlobalAbsoluteTerminalBoundary());
     checks.push(await this.checkGlobalNorthStarAcceptanceReadiness());
 
     return this.buildReport("global", checks);
@@ -1671,6 +1687,47 @@ export class Doctor {
     );
   }
 
+  private async checkGlobalAbsoluteTerminalBoundary(): Promise<DoctorCheckResult> {
+    const boundary = evaluateAbsoluteTerminalBoundary(this.root);
+    const details = [
+      "The absolute terminal boundary keeps retained surfaces in the mainline and records deleted surfaces explicitly.",
+      ...boundary.details,
+      `Frozen surfaces: ${boundary.frozenSurfaces.join(", ")}`,
+      `Retained surfaces: ${boundary.retainedSurfaces.join(", ")}`,
+      `Deleted surfaces: ${boundary.deletedSurfaces.join(", ")}`,
+    ];
+
+    if (!boundary.ready) {
+      return doctorFail(
+        "Absolute Terminal Boundary",
+        "Terminal boundary contract is incomplete",
+        details.concat(boundary.issues.map((issue) => `Issue: ${issue}`)),
+        "Keep the terminal contract explicit and remove any new live references that blur retained surfaces with deleted surfaces.",
+        "npm run jispec-cli -- doctor global --root . --json",
+        [
+          "docs/architecture/absolute-terminal-checklist.md",
+          "docs/doc-lifecycle.md",
+          "docs/reference/v1-mainline-stable-contract.md",
+          "tools/jispec/cli.ts",
+          "tools/jispec/doctor.ts",
+        ],
+      );
+    }
+
+    return doctorPass(
+      "Absolute Terminal Boundary",
+      "Terminal boundary contract is explicit",
+      details,
+      [
+        "docs/architecture/absolute-terminal-checklist.md",
+        "docs/doc-lifecycle.md",
+        "docs/reference/v1-mainline-stable-contract.md",
+        "tools/jispec/cli.ts",
+        "tools/jispec/doctor.ts",
+      ],
+    );
+  }
+
   private async checkGlobalNorthStarAcceptanceReadiness(): Promise<DoctorCheckResult> {
     const acceptancePath = ".spec/north-star/acceptance.json";
     const acceptance = readJsonFile(path.join(this.root, acceptancePath));
@@ -1863,7 +1920,7 @@ export class Doctor {
       // Keep doctor runtime bounded: run a transaction smoke suite here and
       // leave the full matrix to the dedicated regression runner gate.
       try {
-        execSync("npx tsx tools/jispec/tests/stable-snapshot-gates.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "stable-snapshot-gates.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 120000,
@@ -1925,8 +1982,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/resource-management.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "resource-management.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 60000,
@@ -1976,8 +2032,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/fault-recovery.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "fault-recovery.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 90000,
@@ -2027,8 +2082,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/collaboration-mvp.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "collaboration-mvp.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 90000,
@@ -2078,8 +2132,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/conflict-resolution-mvp.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "conflict-resolution-mvp.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 90000,
@@ -2129,8 +2182,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/collaboration-awareness-mvp.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "collaboration-awareness-mvp.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 90000,
@@ -2180,8 +2232,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/collaboration-locking-mvp.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "collaboration-locking-mvp.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 90000,
@@ -2231,8 +2282,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/collaboration-notifications-mvp.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "collaboration-notifications-mvp.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 90000,
@@ -2282,8 +2332,7 @@ export class Doctor {
       }
 
       if (status === "pass") {
-        const { execSync } = await import("node:child_process");
-        execSync("npx tsx tools/jispec/tests/collaboration-analytics-mvp.ts", {
+        execFileSync(process.execPath, ["--import", "tsx", path.join(this.root, "tools", "jispec", "tests", "collaboration-analytics-mvp.ts")], {
           cwd: this.root,
           stdio: "pipe",
           timeout: 90000,

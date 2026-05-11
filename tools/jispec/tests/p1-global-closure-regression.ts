@@ -117,6 +117,7 @@ async function main(): Promise<void> {
       assert.equal(report.readinessSummary?.blockerCount, 0);
       assert.ok(report.checks.some((check) => check.name === "Source Evolution Governance Artifact Health"));
       assert.ok(report.checks.some((check) => check.name === "Release Compare Contract Readiness"));
+      assert.ok(report.checks.some((check) => check.name === "Absolute Terminal Boundary"));
       assert.ok(report.checks.some((check) => check.name === "North Star Acceptance Artifact Readiness"));
       assert.ok(report.checks.some((check) => check.name === "Multi-Repo Aggregate Contract Readiness"));
       assert.ok(!report.checks.some((check) => check.name === "Collaboration Engine"));
@@ -635,7 +636,7 @@ function createFixtureRoot(prefix: string, options?: { parentDir?: string }): st
   const repoRootPath = repoRoot();
   const fixtureRoot = fs.mkdtempSync(path.join(options?.parentDir ?? os.tmpdir(), prefix));
   for (const entry of ["tools", "scripts", "agents", "contexts", "docs", "jiproject", "schemas"] as const) {
-    fs.cpSync(path.join(repoRootPath, entry), path.join(fixtureRoot, entry), { recursive: true });
+    fs.cpSync(path.join(repoRootPath, entry), path.join(fixtureRoot, entry), { recursive: true, dereference: true });
   }
   fs.copyFileSync(path.join(repoRootPath, "package.json"), path.join(fixtureRoot, "package.json"));
   return fixtureRoot;

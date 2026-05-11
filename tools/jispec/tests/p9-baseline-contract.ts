@@ -77,7 +77,7 @@ function main(): void {
     assert.equal(manifest.totalExpectedTests, REGRESSION_MATRIX_TOTALS.totalExpectedTests);
     const runtime = manifest.areas.find((area) => area.area === "runtime-extended");
     assert.equal(runtime?.suiteCount, 54);
-    assert.equal(runtime?.expectedTests, 239);
+    assert.equal(runtime?.expectedTests, 243);
   }));
 
   printResults(results);

@@ -19,7 +19,7 @@ The product surface is converging on:
 - `JiSpec-Console`
   Team policy, audit, waiver, and contract-drift control plane
 
-Today, this repository already contains a deep protocol and pipeline engine. The current codebase still exposes a legacy `slice/context` command surface, but the primary product direction is:
+Today, this repository already contains a deep protocol and pipeline engine. The primary product direction is:
 
 `bootstrap discover -> bootstrap draft -> adopt -> verify -> change -> implement`
 
@@ -56,7 +56,7 @@ Not the wrong framing:
 
 Release notes:
 
-- [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## Frozen Truth Contract
 
@@ -504,32 +504,6 @@ For local and future CI/automation consumers, `npm run jispec-cli -- verify --js
 
 When `.spec/policy.yaml` exists, `verify` loads it automatically. Use `npm run jispec-cli -- verify --facts-out .spec/facts/latest-canonical.json` to snapshot the canonical facts surface that policy evaluation reads.
 
-## Compatibility surface
-
-This repository still exposes a working legacy protocol/runtime layer built around `slice`, `context`, `trace`, `artifact`, `agent`, `pipeline`, `template`, and `dependency`.
-
-Examples:
-
-```bash
-npm run jispec-cli -- slice check ordering-checkout-v1
-npm run jispec-cli -- slice plan ordering-checkout-v1 --force
-npm run jispec-cli -- context board ordering
-npm run jispec-cli -- trace show ordering-checkout-v1
-npm run jispec-cli -- artifact derive-all ordering-checkout-v1 --force
-npm run jispec-cli -- pipeline run ordering-checkout-v1
-```
-
-This surface is still valuable and supported, but it should be read as the compatibility/runtime layer behind the newer `JiSpec-CLI` product direction, not as the primary user entry point.
-
-Compatibility aliases still kept for older workflows:
-
-```bash
-npm run jispec -- <command>
-npm run validate:repo
-npm run check:jispec
-npm run jispec-cli -- validate
-```
-
 ## Change And Implement
 
 `change` and `implement` are now part of the first-class CLI workflow.
@@ -591,11 +565,11 @@ npm run verify
 npm run ci:verify
 ```
 
-Compatibility scripts:
+Current scripts:
 
 ```bash
-npm run validate:repo
-npm run check:jispec
+npm run verify
+npm run ci:verify
 ```
 
 Package/bin surface:
@@ -669,6 +643,6 @@ The `ordering` context includes one complete example slice:
 - CI templates:
   [docs/ci-templates.md](docs/ci-templates.md)
 - Release notes:
-  [docs/development/releases/v0.1.0.md](docs/development/releases/v0.1.0.md)
+  [CHANGELOG.md](CHANGELOG.md)
 
 If you are trying to decide which docs are still active, start with [docs/doc-lifecycle.md](docs/doc-lifecycle.md).

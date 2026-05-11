@@ -140,7 +140,7 @@ async function main(): Promise<void> {
 
   await runCase(results, "pilot checklist doc states boundary and blocker requirements", async () => {
     const repoRoot = path.resolve(__dirname, "..", "..", "..");
-    const doc = fs.readFileSync(path.join(repoRoot, "docs", "pilot-readiness-checklist.md"), "utf-8");
+    const doc = fs.readFileSync(path.join(repoRoot, "docs", "development", "pilot-readiness-checklist.md"), "utf-8");
     const cliHelp = runCli(["doctor", "--help"]);
 
     assert.match(doc, /不承诺自动理解旧仓库/);

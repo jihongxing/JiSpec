@@ -46,9 +46,11 @@ function main(): void {
 
     assertIncludes(help, "Semantic entry surface:", "help text");
     assertIncludes(help, "Derived operational surfaces:", "help text");
-    assertIncludes(help, "Legacy compatibility surface:", "help text");
     assertIncludes(help, "Mainline workflow shortcuts:", "help text");
-    console.log("✓ Test 1: help text is split into semantic entry, derived operational, compatibility, and workflow shortcut surfaces");
+    if (help.includes("Legacy compatibility surface:")) {
+      throw new Error("Legacy compatibility surface should no longer appear in CLI help.");
+    }
+    console.log("✓ Test 1: help text is split into semantic entry, derived operational, and workflow shortcut surfaces");
     passed++;
 
     const semanticSection = extractSection(help, "Semantic entry surface:");
@@ -90,13 +92,25 @@ function main(): void {
     console.log("✓ Test 2: change remains the only semantic entry while derived surfaces still enumerate operational commands");
     passed++;
 
-    assertIncludes(help, "jispec-cli slice ...", "legacy surface");
-    assertIncludes(help, "jispec-cli template ...", "legacy surface");
-    assertIncludes(help, "npm run validate:repo", "compatibility aliases");
+    if (
+      help.includes("jispec-cli slice ...") ||
+      help.includes("jispec-cli context ...") ||
+      help.includes("jispec-cli trace ...") ||
+      help.includes("jispec-cli artifact ...") ||
+      help.includes("jispec-cli agent ...") ||
+      help.includes("jispec-cli pipeline ...") ||
+      help.includes("jispec-cli template ...") ||
+      help.includes("jispec-cli dependency ...")
+    ) {
+      throw new Error("legacy surface commands must not appear in CLI help");
+    }
+    if (help.includes("npm run validate:repo") || help.includes("npm run check:jispec") || help.includes("jispec-cli validate") || help.includes("doctor v1")) {
+      throw new Error("compatibility aliases must be removed from CLI help");
+    }
     assertIncludes(help, "change --mode prompt -> follow next commands manually", "workflow shortcuts");
     assertIncludes(help, "change --mode execute -> orchestrate implementation mediation -> verify", "workflow shortcuts");
     assertIncludes(help, "implement --fast -> verify --fast", "workflow shortcuts");
-    console.log("✓ Test 3: compatibility surface, aliases, and workflow shortcuts are explicitly listed");
+    console.log("✓ Test 3: legacy surface is absent and workflow shortcuts remain explicit");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

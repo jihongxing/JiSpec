@@ -106,7 +106,7 @@ async function main(): Promise<void> {
     const repoRoot = path.resolve(__dirname, "..", "..", "..");
     const doc = fs.readFileSync(path.join(repoRoot, "docs", "pilot-product-package.md"), "utf-8");
     const quickstart = fs.readFileSync(path.join(repoRoot, "docs", "quickstart.md"), "utf-8");
-    const checklist = fs.readFileSync(path.join(repoRoot, "docs", "pilot-readiness-checklist.md"), "utf-8");
+    const checklist = fs.readFileSync(path.join(repoRoot, "docs", "development", "pilot-readiness-checklist.md"), "utf-8");
 
     assert.match(doc, /Mainline gates/i);
     assert.match(doc, /Governance companions/i);

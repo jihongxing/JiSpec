@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { Doctor, type DoctorReport } from "../doctor";
 import {
   REGRESSION_MATRIX_AREA_TOTALS,
   REGRESSION_MATRIX_TOTALS,
@@ -39,30 +40,15 @@ interface RegressionMatrixCliManifest {
   consistency: { valid: boolean; issues: string[] };
 }
 
-interface DoctorReport {
-  profile?: string;
-  ready?: boolean;
-  checks?: Array<{
-    name?: string;
-    status?: string;
-    details?: string[];
-  }>;
-  readinessSummary?: {
-    profile?: string;
-    ready?: boolean;
-    blockerCount?: number;
-  };
-}
-
 async function main(): Promise<void> {
   console.log("=== Regression Matrix Contract Tests ===\n");
 
   let passed = 0;
   let failed = 0;
 
-  function record(name: string, fn: () => void): void {
+  async function record(name: string, fn: () => void | Promise<void>): Promise<void> {
     try {
-      fn();
+      await fn();
       console.log(`✓ ${name}`);
       passed++;
     } catch (error) {
@@ -76,7 +62,7 @@ async function main(): Promise<void> {
   const repoRoot = path.resolve(__dirname, "..", "..", "..");
   const manifest = buildRegressionMatrixManifest();
 
-  record("manifest freezes the matrix totals and source contract", () => {
+  await record("manifest freezes the matrix totals and source contract", () => {
     assert.equal(manifest.schemaVersion, 1);
     assert.equal(manifest.source, "tools/jispec/tests/regression-runner.ts");
     assert.equal(manifest.totalSuites, REGRESSION_MATRIX_TOTALS.totalSuites);
@@ -84,7 +70,7 @@ async function main(): Promise<void> {
     assert.equal(manifest.areas.length, REGRESSION_AREA_ORDER.length);
   });
 
-  record("area summaries stay partitioned by product boundary", () => {
+  await record("area summaries stay partitioned by product boundary", () => {
     const areaMap = new Map(manifest.areas.map((area) => [area.area, area]));
     assert.deepEqual([...areaMap.keys()], REGRESSION_AREA_ORDER);
     assert.deepEqual(areaMap.get("core-mainline"), REGRESSION_MATRIX_AREA_TOTALS["core-mainline"]);
@@ -99,7 +85,7 @@ async function main(): Promise<void> {
     assert.equal(manifest.boundaries.pilotReadiness.regressionArea, "runtime-extended");
   });
 
-  record("deferred surface contracts stay diagnostic-only and pilot/global-forbidden", () => {
+  await record("deferred surface contracts stay diagnostic-only and pilot/global-forbidden", () => {
     const deferredSuites = getDeferredRegressionSuites();
     const contracts = getDeferredSurfaceContracts();
     assert.equal(deferredSuites.length, 10);
@@ -120,7 +106,7 @@ async function main(): Promise<void> {
     }
   });
 
-  record("manifest consistency is valid and every suite file exists", () => {
+  await record("manifest consistency is valid and every suite file exists", () => {
     assert.equal(manifest.consistency.valid, true);
     assert.deepEqual(manifest.consistency.issues, []);
     const files = new Set(TEST_SUITES.map((suite) => suite.file));
@@ -130,7 +116,7 @@ async function main(): Promise<void> {
     }
   });
 
-  record("CLI manifest-json and doctor runtime both read the same boundary contract", () => {
+  await record("CLI manifest-json and doctor runtime boundary checks read the same contract", async () => {
     const cli = spawnSync(
       process.execPath,
       ["--import", "tsx", path.join(repoRoot, "tools", "jispec", "tests", "regression-runner.ts"), "--manifest-json"],
@@ -149,22 +135,13 @@ async function main(): Promise<void> {
     assert.deepEqual(cliManifest.boundaries, manifest.boundaries);
     assert.deepEqual(cliManifest.areas, manifest.areas);
 
-    const doctor = spawnSync(
-      process.execPath,
-      ["--import", "tsx", path.join(repoRoot, "tools", "jispec", "cli.ts"), "doctor", "runtime", "--root", repoRoot, "--json"],
-      {
-        cwd: repoRoot,
-        encoding: "utf-8",
-      },
-    );
-
-    assert.equal(doctor.status, 0, doctor.stderr);
-    const report = JSON.parse(doctor.stdout) as DoctorReport;
+    const report = await new Doctor(repoRoot).checkRuntimeRegressionBoundary();
     assert.equal(report.profile, "runtime");
     assert.equal(report.ready, true);
     assert.equal(report.readinessSummary?.profile, "runtime");
     assert.equal(report.readinessSummary?.ready, true);
     assert.equal(report.readinessSummary?.blockerCount, 0);
+    assert.equal(report.checks.length, 2);
     const regressionCheck = report.checks?.find((check) => check.name === "Regression Environment");
     const transactionCheck = report.checks?.find((check) => check.name === "Transaction Mode");
     assert.ok(regressionCheck);

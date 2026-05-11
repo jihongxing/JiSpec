@@ -32,7 +32,7 @@
 - `implement`
 - `doctor mainline`
 
-本文档不覆盖 legacy `slice/context/trace/artifact/agent/pipeline/template/dependency` 兼容命令面的产品语义，它们仍可用，但不属于 V1 主线稳定契约。
+本文档只覆盖 V1 主线稳定契约；已删除的历史命令面不属于当前对外承诺。
 
 ## 2. 主线命令
 
@@ -539,7 +539,7 @@ LLM 可以辅助 draft、explanation 和 repair，但不能成为 blocking gate 
 - `JiSpec-Console` 的完整 UI / 治理面
 - 分布式执行、远程缓存、presence、多人协作的新产品承诺
 - 把 LLM 直接放进 verify blocking path
-- 用 legacy `slice/context` 兼容层替代主线 CLI 作为产品入口
+- 用历史兼容层替代主线 CLI 作为产品入口
 - 为了扩展远期能力而改写当前主线退出码语义
 - 把除 `verify --json` 外的所有 JSON 输出都宣称为同等级外部 API
 
@@ -594,5 +594,5 @@ M7-T5 增加最终本地验收套件 `north-star acceptance`。它写出 `.spec/
   [docs/development/collaboration-surface-freeze.md](/D:/codeSpace/JiSpec/docs/development/collaboration-surface-freeze.md)
 - North Star acceptance：
   [docs/architecture/north-star-acceptance.md](/D:/codeSpace/JiSpec/docs/architecture/north-star-acceptance.md)
-- v0.1.0 发布说明：
-  [docs/development/releases/v0.1.0.md](/D:/codeSpace/JiSpec/docs/development/releases/v0.1.0.md)
+- 发布历史：
+  [CHANGELOG.md](/D:/codeSpace/JiSpec/CHANGELOG.md)

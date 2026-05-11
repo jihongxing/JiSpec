@@ -71,6 +71,8 @@ const EXECUTE_DEFAULT_GOVERNANCE_ONLY_BLOCKERS = new Set([
   "POLICY_NO_BLOCKING_ISSUES",
 ]);
 
+const verifyStabilityPreconditionCache = new Map<string, ChangeExecuteDefaultPrecondition>();
+
 export function resolveChangeCommandMode(
   root: string,
   explicitMode?: ChangeSessionOrchestrationMode,
@@ -292,15 +294,23 @@ function evaluateVerifyStabilityPrecondition(
   root: string,
   openDraftSessionId?: string,
 ): ChangeExecuteDefaultPrecondition {
+  const cacheKey = buildVerifyStabilityCacheKey(root, openDraftSessionId);
+  const cached = verifyStabilityPreconditionCache.get(cacheKey);
+  if (cached) {
+    return { ...cached };
+  }
+
   const toolingRoot = resolveToolingRoot();
   const cliPath = path.join(toolingRoot, "tools", "jispec", "cli.ts");
   if (!fs.existsSync(cliPath)) {
-    return {
+    const result: ChangeExecuteDefaultPrecondition = {
       id: "verify_stability",
       status: "blocker",
       message: "JiSpec CLI entrypoint is missing, so verify stability could not be checked.",
       ownerAction: "Restore tools/jispec/cli.ts before changing the default mode.",
     };
+    verifyStabilityPreconditionCache.set(cacheKey, result);
+    return { ...result };
   }
 
   const run = spawnSync(
@@ -313,12 +323,14 @@ function evaluateVerifyStabilityPrecondition(
     },
   );
   if (run.error) {
-    return {
+    const result: ChangeExecuteDefaultPrecondition = {
       id: "verify_stability",
       status: "blocker",
       message: `verify --json could not run: ${run.error.message}`,
       ownerAction: "Run npm run jispec-cli -- verify --json and fix the runtime error before enabling execute-default.",
     };
+    verifyStabilityPreconditionCache.set(cacheKey, result);
+    return { ...result };
   }
 
   const parsed = parseVerifyJson(run.stdout);
@@ -333,35 +345,43 @@ function evaluateVerifyStabilityPrecondition(
     blockingIssueCodes.every((code) => EXECUTE_DEFAULT_GOVERNANCE_ONLY_BLOCKERS.has(code));
   if (run.status !== 0 || !ok) {
     if (governanceOnlyBlocking) {
-      return {
+      const result: ChangeExecuteDefaultPrecondition = {
         id: "verify_stability",
         status: "warning",
         message: `verify --json is failing only on governance blockers excluded from execute-default readiness (${blockingIssueCodes.join(", ")}).`,
         ownerAction: "Keep governance blockers visible in verify, but they do not block execute-default readiness for the mainline path.",
       };
+      verifyStabilityPreconditionCache.set(cacheKey, result);
+      return { ...result };
     }
     if (openDraftSessionId) {
-      return {
+      const result: ChangeExecuteDefaultPrecondition = {
         id: "verify_stability",
         status: "warning",
         message: `verify --json is not fully stable in the presence of open bootstrap draft ${openDraftSessionId} (exit=${run.status ?? "unknown"}, verdict=${verdict}).`,
         ownerAction: `Adopt or clear the open bootstrap draft ${openDraftSessionId}, then rerun verify before switching the default.`,
       };
+      verifyStabilityPreconditionCache.set(cacheKey, result);
+      return { ...result };
     }
-    return {
+    const result: ChangeExecuteDefaultPrecondition = {
       id: "verify_stability",
       status: "blocker",
       message: `verify --json is not stable enough for execute-default (exit=${run.status ?? "unknown"}, verdict=${verdict}).`,
       ownerAction: "Run npm run jispec-cli -- verify --json and resolve blocking verify issues before enabling execute-default.",
     };
+    verifyStabilityPreconditionCache.set(cacheKey, result);
+    return { ...result };
   }
 
-  return {
+  const result: ChangeExecuteDefaultPrecondition = {
     id: "verify_stability",
     status: "pass",
     message: `verify --json is currently non-blocking (${verdict}).`,
     ownerAction: "No action required.",
   };
+  verifyStabilityPreconditionCache.set(cacheKey, result);
+  return { ...result };
 }
 
 function evaluateExternalPatchMediationPrecondition(): ChangeExecuteDefaultPrecondition {
@@ -543,6 +563,50 @@ function validateChangeMode(mode: ChangeSessionOrchestrationMode): void {
   if (mode !== "prompt" && mode !== "execute") {
     throw new Error(`Invalid change mode: ${mode}. Expected prompt or execute.`);
   }
+}
+
+function buildVerifyStabilityCacheKey(root: string, openDraftSessionId?: string): string {
+  const normalizedRoot = path.resolve(root);
+  return [
+    normalizedRoot,
+    fileSignature(path.join(normalizedRoot, ".spec", "policy.yaml")),
+    fileSignature(path.join(normalizedRoot, "jiproject", "project.yaml")),
+    fileSignature(path.join(normalizedRoot, "package.json")),
+    draftSessionSignature(normalizedRoot),
+    `openDraft:${openDraftSessionId ?? "none"}`,
+  ].join("|");
+}
+
+function fileSignature(filePath: string): string {
+  if (!fs.existsSync(filePath)) {
+    return `${path.basename(filePath)}:missing`;
+  }
+  const stat = fs.statSync(filePath);
+  return `${path.basename(filePath)}:${stat.size}:${stat.mtimeMs}`;
+}
+
+function draftSessionSignature(root: string): string {
+  const sessionsRoot = path.join(root, ".spec", "sessions");
+  if (!fs.existsSync(sessionsRoot)) {
+    return "sessions:missing";
+  }
+
+  const manifests: string[] = [];
+  for (const entry of fs.readdirSync(sessionsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const manifestPath = path.join(sessionsRoot, entry.name, "manifest.json");
+    if (!fs.existsSync(manifestPath)) {
+      continue;
+    }
+    const stat = fs.statSync(manifestPath);
+    manifests.push(`${entry.name}:${stat.size}:${stat.mtimeMs}`);
+  }
+
+  return manifests.length > 0
+    ? `sessions:${manifests.sort((left, right) => left.localeCompare(right)).join(",")}`
+    : "sessions:empty";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
