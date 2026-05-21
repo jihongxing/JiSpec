@@ -42,6 +42,21 @@ What that does **not** mean:
 - `feature` drafts are still materially weaker than `domain` and `api` drafts on noisy repos
   and are review-gated when the supporting evidence is thin
 
+## Status reading guide
+
+Use these documents as the current-status anchors, not the north-star prose by itself:
+
+- [docs/reference/v1-mainline-stable-contract.md](docs/reference/v1-mainline-stable-contract.md)
+- [docs/architecture/absolute-terminal-checklist.md](docs/architecture/absolute-terminal-checklist.md)
+- [docs/development/collaboration-surface-freeze.md](docs/development/collaboration-surface-freeze.md)
+
+Current implementation state, in plain terms:
+
+- implemented: V1 mainline, `verify`, `ci:verify`, `change`, `implement`, `doctor mainline`, `doctor pilot`
+- implemented support: `doctor global`, `console export-governance`, `console aggregate-governance`, `north-star acceptance`
+- deferred: distributed execution, collaboration workspace, presence awareness, notifications, conflict resolution
+- roadmap only: full Console UI, richer multi-repo control room, broader OS-style control plane
+
 The right release framing for this build is:
 
 - `V1 mainline`

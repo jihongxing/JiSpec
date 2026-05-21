@@ -80,6 +80,7 @@ export interface ConsoleLocalSnapshot {
       missingObjects: number;
       invalidObjects: number;
     };
+    orgOperations: ConsoleOrgOperationsSummary;
   };
   summary: {
     totalArtifacts: number;
@@ -154,6 +155,7 @@ export function collectConsoleLocalSnapshot(rootInput: string, options: ConsoleL
     governance: {
       objects: governanceObjects,
       summary: governanceSummary,
+      orgOperations: summarizeOrgOperations(governanceObjects),
     },
     summary,
   };
@@ -275,6 +277,54 @@ function resolveArtifactRelativePaths(root: string, pathPattern: string): string
   if (pathPattern === ".spec/doctor/global-readiness.json") {
     return fs.existsSync(path.join(root, ".spec", "doctor", "global-readiness.json"))
       ? [".spec/doctor/global-readiness.json"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/org-responsibility-graph.json") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "org-responsibility-graph.json"))
+      ? [".spec/operations/org-responsibility-graph.json"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/org-responsibility-graph.md") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "org-responsibility-graph.md"))
+      ? [".spec/operations/org-responsibility-graph.md"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/async-review-inbox.json") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "async-review-inbox.json"))
+      ? [".spec/operations/async-review-inbox.json"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/async-review-inbox.md") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "async-review-inbox.md"))
+      ? [".spec/operations/async-review-inbox.md"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/ops-aging-ledger.json") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "ops-aging-ledger.json"))
+      ? [".spec/operations/ops-aging-ledger.json"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/ops-aging-ledger.md") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "ops-aging-ledger.md"))
+      ? [".spec/operations/ops-aging-ledger.md"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/release-train-packet.json") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "release-train-packet.json"))
+      ? [".spec/operations/release-train-packet.json"]
+      : [];
+  }
+
+  if (pathPattern === ".spec/operations/release-train-packet.md") {
+    return fs.existsSync(path.join(root, ".spec", "operations", "release-train-packet.md"))
+      ? [".spec/operations/release-train-packet.md"]
       : [];
   }
 
@@ -509,8 +559,26 @@ function buildGovernanceSummary(
   if (id === "implementation_workspace") {
     return summarizeImplementationWorkspace(sourceArtifacts);
   }
+  if (id === "mainline_recovery_drill") {
+    return summarizeMainlineRecoveryDrill(sourceArtifacts);
+  }
   if (id === "multi_repo_export") {
     return summarizeMultiRepoExport(sourceArtifacts);
+  }
+  if (id === "global_operations_packet") {
+    return summarizeGlobalOperationsPacket(sourceArtifacts);
+  }
+  if (id === "org_responsibility_graph") {
+    return summarizeOrgResponsibilityGraph(sourceArtifacts);
+  }
+  if (id === "async_review_inbox") {
+    return summarizeAsyncReviewInbox(sourceArtifacts);
+  }
+  if (id === "ops_aging_ledger") {
+    return summarizeOpsAgingLedger(sourceArtifacts);
+  }
+  if (id === "release_train_packet") {
+    return summarizeReleaseTrainPacket(sourceArtifacts);
   }
   if (id === "north_star_acceptance") {
     return summarizeNorthStarAcceptance(sourceArtifacts);
@@ -593,6 +661,59 @@ function summarizeSpecDebt(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<s
     greenfieldLedgerItems: ledgerItems.length,
     bootstrapDebtRecords: openBootstrapDebtRecords.length,
     bootstrapDebtRecordsTotal: bootstrapRecords.length,
+  };
+}
+
+export interface ConsoleOrgOperationsSummary {
+  state: "ready" | "attention" | "not_available_yet";
+  status: string;
+  ready: boolean;
+  sourceObjectIds: ConsoleGovernanceObjectId[];
+  availableObjectCount: number;
+  missingObjectCount: number;
+  responsibility: {
+    status: string;
+    teamCount: number;
+    repoCount: number;
+    ownerActionAssignmentCount: number;
+    reviewerCoverage: number;
+    escalationCoverage: number;
+  };
+  reviews: {
+    status: string;
+    reviewerCount: number;
+    totalItems: number;
+    pending: number;
+    blocked: number;
+    expired: number;
+    reviewersMissing: number;
+  };
+  sla: {
+    status: string;
+    totalItems: number;
+    dueSoon: number;
+    overdue: number;
+    escalated: number;
+    itemsMissingEscalationPath: number;
+  };
+  releaseTrain: {
+    status: string;
+    trainReady: boolean;
+    repoCount: number;
+    blockedRepoCount: number;
+    ownerAssignmentCount: number;
+    requiredReviewCount: number;
+    safeNextCommand: string;
+  };
+  boundary: {
+    readOnly: true;
+    sourceUploadRequired: false;
+    realtimeCollaborationRequired: false;
+    executesCommands: false;
+    replacesVerify: false;
+    replacesDoctorGlobal: false;
+    replacesPostReleaseGate: false;
+    localArtifactsOnly: true;
   };
 }
 
@@ -838,6 +959,7 @@ function summarizeTakeoverQuality(sourceArtifacts: ConsoleSnapshotArtifact[]): R
   const coverage = isRecord(pool) && isRecord(pool.coverage) ? pool.coverage : {};
   const classCoverage = isRecord(coverage.classCoverage) ? coverage.classCoverage : {};
   const qualityBaseline = isRecord(coverage.qualityBaseline) ? coverage.qualityBaseline : {};
+  const realismLadder = isRecord(coverage.realismLadder) ? coverage.realismLadder : {};
   const readinessScore = isRecord(qualityBaseline.readinessScore) ? qualityBaseline.readinessScore : {};
   const contractSignalPrecision = isRecord(qualityBaseline.contractSignalPrecision)
     ? qualityBaseline.contractSignalPrecision
@@ -883,6 +1005,14 @@ function summarizeTakeoverQuality(sourceArtifacts: ConsoleSnapshotArtifact[]): R
       : [],
     poolVerifyNonBlockingRate: numberValue(qualityBaseline.verifyNonBlockingRate) ?? "not_available_yet",
     poolOwnerReviewFixtureRate: numberValue(qualityBaseline.ownerReviewFixtureRate) ?? "not_available_yet",
+    realismLadderPhase: stringValue(realismLadder.phase) ?? "not_available_yet",
+    realismLadderReady: typeof realismLadder.ready === "boolean" ? realismLadder.ready : "not_available_yet",
+    realismLadderCoveredClassCount: numberValue(realismLadder.coveredRealismClassCount) ?? "not_available_yet",
+    realismLadderTargetClassCount: numberValue(realismLadder.targetRealismClassCount) ?? "not_available_yet",
+    realismLadderMissingClasses: Array.isArray(realismLadder.missingRealismClasses)
+      ? realismLadder.missingRealismClasses
+      : [],
+    realismLadderBlockers: Array.isArray(realismLadder.blockers) ? realismLadder.blockers : [],
     estimatedManualSortingMinutesSaved: headline.estimatedManualSortingMinutesSaved ?? manualSorting.estimatedMinutesSaved ?? "not_available_yet",
     blockingIssuesCaught: headline.blockingIssuesCaught ?? risks.blockingIssuesCaught ?? "not_available_yet",
     advisoryRisksSurfaced: headline.advisoryRisksSurfaced ?? risks.advisoryRisksSurfaced ?? "not_available_yet",
@@ -1031,6 +1161,35 @@ function summarizeImplementationWorkspace(sourceArtifacts: ConsoleSnapshotArtifa
   };
 }
 
+function summarizeMainlineRecoveryDrill(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const drill = getFirstData(sourceArtifacts, "mainline-recovery-drill");
+  if (!isRecord(drill)) {
+    return {
+      state: "not_available_yet",
+      status: "not_available_yet",
+      stepCount: 0,
+      topStepCurrentState: "not_available_yet",
+      topStepExpectedNextState: "not_available_yet",
+      topStepVerificationCommand: "not_available_yet",
+    };
+  }
+
+  const steps = Array.isArray(drill.steps) ? drill.steps.filter(isRecord) : [];
+  const topStep = steps[0];
+  return {
+    state: "available",
+    status: stringValue(drill.status) ?? "not_available_yet",
+    summary: stringValue(drill.summary) ?? "not_available_yet",
+    stepCount: steps.length,
+    topStepCurrentState: stringValue(topStep?.currentState) ?? "not_available_yet",
+    topStepOwnerAction: stringValue(topStep?.ownerAction) ?? "not_available_yet",
+    topStepCommand: stringValue(topStep?.command) ?? "not_available_yet",
+    topStepExpectedNextState: stringValue(topStep?.expectedNextState) ?? "not_available_yet",
+    topStepVerificationCommand: stringValue(topStep?.verificationCommand) ?? "not_available_yet",
+    sourceArtifact: ".jispec/recovery/mainline-drill.json",
+  };
+}
+
 function summarizeAuditEvents(root: string, sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
   const inspection = inspectAuditLedger(root);
   const events = inspection.events.filter(isRecord);
@@ -1091,6 +1250,276 @@ function summarizeMultiRepoExport(sourceArtifacts: ConsoleSnapshotArtifact[]): R
     releaseDriftStatus: aggregateHints.releaseDriftStatus ?? "not_declared",
     sourceEvolutionChangeId: aggregateHints.sourceEvolutionChangeId ?? "not_declared",
     sourceEvolutionBlockingOpenItems: aggregateHints.sourceEvolutionBlockingOpenItems ?? "not_declared",
+  };
+}
+
+function summarizeGlobalOperationsPacket(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const packet = getFirstData(sourceArtifacts, "global-operations-packet");
+  if (!isRecord(packet)) {
+    return {
+      state: "not_available_yet",
+      status: "not_available_yet",
+      ownerActionCount: 0,
+      crossRepoContractRefCount: 0,
+      referencedSupportSurfaceCount: 0,
+      asyncCollaborationEvidenceAvailable: 0,
+    };
+  }
+
+  const promotion = isRecord(packet.promotionReadiness) ? packet.promotionReadiness : {};
+  const privacy = isRecord(packet.privacyPosture) ? packet.privacyPosture : {};
+  const doctorGlobal = isRecord(packet.doctorGlobalReadiness) ? packet.doctorGlobalReadiness : {};
+  const asyncEvents = Array.isArray(packet.asyncCollaborationEvents) ? packet.asyncCollaborationEvents.filter(isRecord) : [];
+  const referencedSupportSurfaces = Array.isArray(promotion.referencedSupportSurfaces)
+    ? promotion.referencedSupportSurfaces.map(String)
+    : [];
+  return {
+    state: "available",
+    status: stringValue(packet.status) ?? "not_available_yet",
+    ownerActionCount: Array.isArray(packet.ownerActionLifecycle) ? packet.ownerActionLifecycle.length : 0,
+    crossRepoContractRefCount: Array.isArray(packet.crossRepoContractRefs) ? packet.crossRepoContractRefs.length : 0,
+    referencedSupportSurfaceCount: referencedSupportSurfaces.length,
+    referencedSupportSurfaces,
+    promotionReady: promotion.ready === true,
+    privacyStatus: stringValue(privacy.status) ?? "not_available_yet",
+    auditEvidenceRefCount: Array.isArray(packet.auditEvidenceRefs) ? packet.auditEvidenceRefs.length : 0,
+    asyncCollaborationEvidenceAvailable: asyncEvents.filter((event) => event.status === "available").length,
+    asyncCollaborationEvidenceTotal: asyncEvents.length,
+    doctorGlobalReady: doctorGlobal.ready === true,
+    boundaryReplacesVerify: isRecord(packet.boundary) ? packet.boundary.replacesVerify === true : false,
+  };
+}
+
+function summarizeOrgResponsibilityGraph(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const graph = getFirstData(sourceArtifacts, "org-responsibility-graph");
+  if (!isRecord(graph)) {
+    return {
+      state: "not_available_yet",
+      status: "not_available_yet",
+      teamCount: 0,
+      repoCount: 0,
+      ownerActionAssignmentCount: 0,
+      reviewerCoverage: 0,
+      escalationCoverage: 0,
+    };
+  }
+
+  const topology = isRecord(graph.orgTopology) ? graph.orgTopology : {};
+  const coverage = isRecord(graph.reviewerCoverage) ? graph.reviewerCoverage : {};
+  const totalOwnerActions = numberValue(coverage.totalOwnerActions) ?? 0;
+  const actionsWithReviewer = numberValue(coverage.actionsWithReviewer) ?? 0;
+  const actionsWithEscalation = numberValue(coverage.actionsWithEscalation) ?? 0;
+  return {
+    state: "available",
+    status: stringValue(graph.status) ?? "not_available_yet",
+    orgId: stringValue(topology.orgId) ?? "not_declared",
+    teamCount: numberValue(topology.teamCount) ?? (Array.isArray(topology.teams) ? topology.teams.length : 0),
+    repoCount: numberValue(topology.repoCount) ?? (Array.isArray(topology.repos) ? topology.repos.length : 0),
+    responsibilityEdgeCount: Array.isArray(graph.responsibilityEdges) ? graph.responsibilityEdges.length : 0,
+    ownerActionAssignmentCount: Array.isArray(graph.ownerActionAssignments) ? graph.ownerActionAssignments.length : 0,
+    reviewerCoverage: totalOwnerActions === 0 ? 0 : actionsWithReviewer / totalOwnerActions,
+    escalationCoverage: totalOwnerActions === 0 ? 0 : actionsWithEscalation / totalOwnerActions,
+    auditEvidenceRefCount: Array.isArray(graph.auditEvidenceRefs) ? graph.auditEvidenceRefs.length : 0,
+    boundaryReplacesVerify: isRecord(graph.boundary) ? graph.boundary.replacesVerify === true : false,
+    sourceUploadRequired: isRecord(graph.boundary) ? graph.boundary.sourceUploadRequired === true : false,
+    realtimeCollaborationRequired: isRecord(graph.boundary) ? graph.boundary.realtimeCollaborationRequired === true : false,
+  };
+}
+
+function summarizeAsyncReviewInbox(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const inbox = getFirstData(sourceArtifacts, "async-review-inbox");
+  if (!isRecord(inbox)) {
+    return {
+      state: "not_available_yet",
+      status: "not_available_yet",
+      reviewerCount: 0,
+      totalItems: 0,
+      pending: 0,
+      accepted: 0,
+      blocked: 0,
+      expired: 0,
+    };
+  }
+
+  const summary = isRecord(inbox.summary) ? inbox.summary : {};
+  return {
+    state: "available",
+    status: stringValue(inbox.status) ?? "not_available_yet",
+    reviewerCount: numberValue(summary.reviewerCount) ?? 0,
+    totalItems: numberValue(summary.totalItems) ?? 0,
+    pending: numberValue(summary.pending) ?? 0,
+    accepted: numberValue(summary.accepted) ?? 0,
+    blocked: numberValue(summary.blocked) ?? 0,
+    expired: numberValue(summary.expired) ?? 0,
+    reviewersMissing: numberValue(summary.reviewersMissing) ?? 0,
+    escalationReadyItems: numberValue(summary.escalationReadyItems) ?? 0,
+    auditEvidenceRefCount: Array.isArray(inbox.auditEvidenceRefs) ? inbox.auditEvidenceRefs.length : 0,
+    boundaryReplacesVerify: isRecord(inbox.boundary) ? inbox.boundary.replacesVerify === true : false,
+    sourceUploadRequired: isRecord(inbox.boundary) ? inbox.boundary.sourceUploadRequired === true : false,
+    realtimeCollaborationRequired: isRecord(inbox.boundary) ? inbox.boundary.realtimeCollaborationRequired === true : false,
+  };
+}
+
+function summarizeOpsAgingLedger(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const ledger = getFirstData(sourceArtifacts, "ops-aging-ledger");
+  if (!isRecord(ledger)) {
+    return {
+      state: "not_available_yet",
+      status: "not_available_yet",
+      totalItems: 0,
+      fresh: 0,
+      dueSoon: 0,
+      overdue: 0,
+      escalated: 0,
+    };
+  }
+
+  const summary = isRecord(ledger.summary) ? ledger.summary : {};
+  return {
+    state: "available",
+    status: stringValue(ledger.status) ?? "not_available_yet",
+    totalItems: numberValue(summary.totalItems) ?? 0,
+    fresh: numberValue(summary.fresh) ?? 0,
+    dueSoon: numberValue(summary.dueSoon) ?? 0,
+    overdue: numberValue(summary.overdue) ?? 0,
+    escalated: numberValue(summary.escalated) ?? 0,
+    itemsWithEscalationPath: numberValue(summary.itemsWithEscalationPath) ?? 0,
+    itemsMissingEscalationPath: numberValue(summary.itemsMissingEscalationPath) ?? 0,
+    auditEvidenceRefCount: Array.isArray(ledger.auditEvidenceRefs) ? ledger.auditEvidenceRefs.length : 0,
+    boundaryReplacesVerify: isRecord(ledger.boundary) ? ledger.boundary.replacesVerify === true : false,
+    sourceUploadRequired: isRecord(ledger.boundary) ? ledger.boundary.sourceUploadRequired === true : false,
+    realtimeCollaborationRequired: isRecord(ledger.boundary) ? ledger.boundary.realtimeCollaborationRequired === true : false,
+  };
+}
+
+function summarizeReleaseTrainPacket(sourceArtifacts: ConsoleSnapshotArtifact[]): Record<string, unknown> {
+  const packet = getFirstData(sourceArtifacts, "release-train-packet");
+  if (!isRecord(packet)) {
+    return {
+      state: "not_available_yet",
+      status: "not_available_yet",
+      trainReady: false,
+      blockedRepoCount: 0,
+      ownerAssignmentCount: 0,
+      requiredReviewCount: 0,
+    };
+  }
+
+  const train = isRecord(packet.trainReadiness) ? packet.trainReadiness : {};
+  const releaseCompare = isRecord(packet.releaseCompare) ? packet.releaseCompare : {};
+  return {
+    state: "available",
+    status: stringValue(packet.status) ?? "not_available_yet",
+    trainReady: train.ready === true,
+    repoCount: Array.isArray(packet.repos) ? packet.repos.length : 0,
+    blockedRepoCount: numberValue(train.blockedRepoCount) ?? 0,
+    ownerAssignmentCount: numberValue(train.ownerAssignmentCount) ?? 0,
+    requiredReviewCount: numberValue(train.requiredReviewCount) ?? 0,
+    dueSoonReviewCount: numberValue(train.dueSoonReviewCount) ?? 0,
+    overdueReviewCount: numberValue(train.overdueReviewCount) ?? 0,
+    escalatedReviewCount: numberValue(train.escalatedReviewCount) ?? 0,
+    safeNextCommand: stringValue(train.safeNextCommand) ?? "not_available_yet",
+    releaseCompareGlobalContextStatus: stringValue(releaseCompare.globalContextStatus) ?? "not_available_yet",
+    auditEvidenceRefCount: Array.isArray(packet.auditEvidenceRefs) ? packet.auditEvidenceRefs.length : 0,
+    boundaryReplacesVerify: isRecord(packet.boundary) ? packet.boundary.replacesVerify === true : false,
+    boundaryReplacesPostReleaseGate: isRecord(packet.boundary) ? packet.boundary.replacesPostReleaseGate === true : false,
+    sourceUploadRequired: isRecord(packet.boundary) ? packet.boundary.sourceUploadRequired === true : false,
+    realtimeCollaborationRequired: isRecord(packet.boundary) ? packet.boundary.realtimeCollaborationRequired === true : false,
+  };
+}
+
+function summarizeOrgOperations(objects: ConsoleGovernanceObjectSnapshot[]): ConsoleOrgOperationsSummary {
+  const sourceObjectIds: ConsoleGovernanceObjectId[] = [
+    "org_responsibility_graph",
+    "async_review_inbox",
+    "ops_aging_ledger",
+    "release_train_packet",
+  ];
+  const byId = new Map(objects.map((object) => [object.id, object]));
+  const orgGraph = byId.get("org_responsibility_graph");
+  const inbox = byId.get("async_review_inbox");
+  const aging = byId.get("ops_aging_ledger");
+  const train = byId.get("release_train_packet");
+  const sourceObjects = sourceObjectIds.map((id) => byId.get(id)).filter((object): object is ConsoleGovernanceObjectSnapshot => Boolean(object));
+  const availableObjectCount = sourceObjects.filter((object) => object.status === "available").length;
+  const missingObjectCount = sourceObjectIds.length - availableObjectCount;
+  const responsibility = {
+    status: stringValue(orgGraph?.summary.status) ?? "not_available_yet",
+    teamCount: numberValue(orgGraph?.summary.teamCount) ?? 0,
+    repoCount: numberValue(orgGraph?.summary.repoCount) ?? 0,
+    ownerActionAssignmentCount: numberValue(orgGraph?.summary.ownerActionAssignmentCount) ?? 0,
+    reviewerCoverage: numberValue(orgGraph?.summary.reviewerCoverage) ?? 0,
+    escalationCoverage: numberValue(orgGraph?.summary.escalationCoverage) ?? 0,
+  };
+  const reviews = {
+    status: stringValue(inbox?.summary.status) ?? "not_available_yet",
+    reviewerCount: numberValue(inbox?.summary.reviewerCount) ?? 0,
+    totalItems: numberValue(inbox?.summary.totalItems) ?? 0,
+    pending: numberValue(inbox?.summary.pending) ?? 0,
+    blocked: numberValue(inbox?.summary.blocked) ?? 0,
+    expired: numberValue(inbox?.summary.expired) ?? 0,
+    reviewersMissing: numberValue(inbox?.summary.reviewersMissing) ?? 0,
+  };
+  const sla = {
+    status: stringValue(aging?.summary.status) ?? "not_available_yet",
+    totalItems: numberValue(aging?.summary.totalItems) ?? 0,
+    dueSoon: numberValue(aging?.summary.dueSoon) ?? 0,
+    overdue: numberValue(aging?.summary.overdue) ?? 0,
+    escalated: numberValue(aging?.summary.escalated) ?? 0,
+    itemsMissingEscalationPath: numberValue(aging?.summary.itemsMissingEscalationPath) ?? 0,
+  };
+  const releaseTrain = {
+    status: stringValue(train?.summary.status) ?? "not_available_yet",
+    trainReady: train?.summary.trainReady === true,
+    repoCount: numberValue(train?.summary.repoCount) ?? 0,
+    blockedRepoCount: numberValue(train?.summary.blockedRepoCount) ?? 0,
+    ownerAssignmentCount: numberValue(train?.summary.ownerAssignmentCount) ?? 0,
+    requiredReviewCount: numberValue(train?.summary.requiredReviewCount) ?? 0,
+    safeNextCommand: stringValue(train?.summary.safeNextCommand) ?? "not_available_yet",
+  };
+  const boundaryViolation = sourceObjects.some((object) =>
+    object.summary.boundaryReplacesVerify === true
+    || object.summary.sourceUploadRequired === true
+    || object.summary.realtimeCollaborationRequired === true
+    || object.summary.boundaryReplacesPostReleaseGate === true
+  );
+  const ready = availableObjectCount === sourceObjectIds.length
+    && responsibility.status === "ready"
+    && reviews.status === "ready"
+    && sla.status === "ready"
+    && releaseTrain.status === "ready"
+    && releaseTrain.trainReady
+    && reviews.reviewersMissing === 0
+    && sla.itemsMissingEscalationPath === 0
+    && releaseTrain.blockedRepoCount === 0
+    && !boundaryViolation;
+  const state = ready
+    ? "ready"
+    : availableObjectCount === 0
+      ? "not_available_yet"
+      : "attention";
+
+  return {
+    state,
+    status: ready ? "ready" : state,
+    ready,
+    sourceObjectIds,
+    availableObjectCount,
+    missingObjectCount,
+    responsibility,
+    reviews,
+    sla,
+    releaseTrain,
+    boundary: {
+      readOnly: true,
+      sourceUploadRequired: false,
+      realtimeCollaborationRequired: false,
+      executesCommands: false,
+      replacesVerify: false,
+      replacesDoctorGlobal: false,
+      replacesPostReleaseGate: false,
+      localArtifactsOnly: true,
+    },
   };
 }
 

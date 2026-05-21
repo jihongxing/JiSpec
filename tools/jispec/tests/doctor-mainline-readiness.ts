@@ -50,6 +50,7 @@ async function main(): Promise<void> {
       "Facts & Policy Surface",
       "CI Verify Surface",
       "Change / Implement Mainline Surface",
+      "Mainline Flow Recovery",
       "Execute-Default Mediation Readiness",
       "V1 Regression Coverage",
     ]) {

@@ -36,6 +36,12 @@ export interface ConsoleGovernanceDecisionPacket {
   reviewerInstructions: string[];
 }
 
+export interface ConsoleGovernanceActionPriority {
+  rank: number;
+  bucket: "p0_blocking" | "p1_owner_review" | "p2_attention" | "p3_informational";
+  rationale: string;
+}
+
 export interface ConsoleGovernanceActionPacket {
   id: string;
   kind: ConsoleGovernanceActionKind;
@@ -54,10 +60,62 @@ export interface ConsoleGovernanceActionPacket {
   affectedContracts: string[];
   targetRefs: string[];
   commandWrites: string[];
+  priority: ConsoleGovernanceActionPriority;
   decisionPacket: ConsoleGovernanceDecisionPacket;
   writesLocalArtifacts: true;
   requiresAuditEvent: true;
   replacesCliGate: false;
+}
+
+export type ConsoleGovernanceRunbookStatus = "ready" | "needs_input" | "not_available_yet";
+export type ConsoleGovernanceRunbookStepStatus = "ready" | "needs_input" | "blocked" | "not_available_yet";
+
+export interface ConsoleGovernanceRunbookStep {
+  order: number;
+  id: string;
+  sourceActionId: string;
+  title: string;
+  owner: string;
+  status: ConsoleGovernanceRunbookStepStatus;
+  risk: ConsoleGovernanceActionPacket["risk"];
+  command: string;
+  expectedArtifact: string;
+  expectedCompletionSignal: string;
+  verificationCommand: string;
+  rollbackOption: string;
+  deferOption: string;
+  evidenceArtifacts: string[];
+  affectedContracts: string[];
+  valueReportImpact: string;
+}
+
+export interface ConsoleGovernanceRunbook {
+  version: 1;
+  phase: "north-star-score-optimization-phase-8";
+  status: ConsoleGovernanceRunbookStatus;
+  title: string;
+  summary: string;
+  boundary: {
+    readOnly: true;
+    executesCommands: false;
+    writesLocalArtifacts: false;
+    sourceUploadRequired: false;
+    replacesVerify: false;
+    actionWritesMustUseLocalCli: true;
+  };
+  topStep?: ConsoleGovernanceRunbookStep;
+  steps: ConsoleGovernanceRunbookStep[];
+  valueReportImpact: {
+    status: "ok" | "not_available_yet";
+    summary: string;
+    sourceArtifacts: string[];
+    metrics: {
+      estimatedManualSortingMinutesSaved: number | "not_available_yet";
+      blockingIssuesCaught: number | "not_available_yet";
+      advisoryRisksSurfaced: number | "not_available_yet";
+      executeStopsNeedingReview: number | "not_available_yet";
+    };
+  };
 }
 
 export interface ConsoleGovernanceActionPlan {
@@ -71,6 +129,7 @@ export interface ConsoleGovernanceActionPlan {
     writesLocalArtifacts: false;
     actionWritesMustUseLocalCli: true;
   };
+  runbook: ConsoleGovernanceRunbook;
   actions: ConsoleGovernanceActionPacket[];
 }
 
@@ -85,6 +144,14 @@ export function buildConsoleGovernanceActionPlanFromSnapshot(
   rootInput?: string,
 ): ConsoleGovernanceActionPlan {
   const root = path.resolve(rootInput ?? snapshot.root);
+  const actions = sortGovernanceActions([
+    ...buildPolicyActions(snapshot),
+    ...buildWaiverActions(snapshot),
+    ...buildSpecDebtActions(snapshot),
+    ...buildSourceEvolutionActions(snapshot),
+    ...buildReleaseDriftActions(snapshot),
+    ...buildApprovalActions(snapshot),
+  ]);
   return {
     version: 1,
     root,
@@ -96,14 +163,8 @@ export function buildConsoleGovernanceActionPlanFromSnapshot(
       writesLocalArtifacts: false,
       actionWritesMustUseLocalCli: true,
     },
-    actions: [
-      ...buildPolicyActions(snapshot),
-      ...buildWaiverActions(snapshot),
-      ...buildSpecDebtActions(snapshot),
-      ...buildSourceEvolutionActions(snapshot),
-      ...buildReleaseDriftActions(snapshot),
-      ...buildApprovalActions(snapshot),
-    ],
+    runbook: buildConsoleGovernanceRunbook(actions, snapshot),
+    actions,
   };
 }
 
@@ -118,8 +179,22 @@ export function renderConsoleGovernanceActionPlanText(plan: ConsoleGovernanceAct
     "=== JiSpec Governance Actions ===",
     "",
     `Actions: ${plan.actions.length}`,
+    `Runbook: ${plan.runbook.status} - ${plan.runbook.summary}`,
     "Boundary: read-only planner; run listed CLI commands explicitly to write local artifacts.",
   ];
+
+  if (plan.runbook.steps.length > 0) {
+    lines.push("");
+    lines.push("Runbook:");
+    for (const step of plan.runbook.steps) {
+      lines.push(`${step.order}. [${step.status.toUpperCase()}] ${step.title}`);
+      lines.push(`   Owner: ${step.owner}`);
+      lines.push(`   Command: ${step.command}`);
+      lines.push(`   Expected artifact: ${step.expectedArtifact}`);
+      lines.push(`   Verify: ${step.verificationCommand}`);
+      lines.push(`   Rollback/defer: ${step.rollbackOption} / ${step.deferOption}`);
+    }
+  }
 
   if (plan.actions.length === 0) {
     lines.push("");
@@ -140,6 +215,7 @@ export function renderConsoleGovernanceActionPlanText(plan: ConsoleGovernanceAct
       affectedArtifact: action.targetRefs[0] ?? action.sourceArtifacts[0],
     }).map((entry) => `- ${entry}`));
     lines.push(`Kind: ${action.kind}`);
+    lines.push(`Priority: ${action.priority.bucket} #${action.priority.rank} - ${action.priority.rationale}`);
     lines.push(`Owner: ${action.owner}`);
     lines.push(`Reason: ${action.reason}`);
     lines.push(`Risk: ${action.risk.level} - ${action.risk.summary}`);
@@ -540,9 +616,11 @@ function action(
   input: Omit<
     ConsoleGovernanceActionPacket,
     "id" | "recommendedCommand" | "decisionPacket" | "writesLocalArtifacts" | "requiresAuditEvent" | "replacesCliGate"
+    | "priority"
   >,
 ): ConsoleGovernanceActionPacket {
   const recommendedCommand = input.command;
+  const priority = buildActionPriority(input);
   const decisionPacket: ConsoleGovernanceDecisionPacket = {
     owner: input.owner,
     reason: input.reason,
@@ -557,12 +635,273 @@ function action(
 
   return {
     id: `${input.kind}:${input.targetRefs[0] ?? input.sourceObject}`,
+    priority,
     recommendedCommand,
     decisionPacket,
     writesLocalArtifacts: true,
     requiresAuditEvent: true,
     replacesCliGate: false,
     ...input,
+  };
+}
+
+function sortGovernanceActions(actions: ConsoleGovernanceActionPacket[]): ConsoleGovernanceActionPacket[] {
+  return [...actions].sort((left, right) =>
+    left.priority.rank - right.priority.rank ||
+    left.title.localeCompare(right.title) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function buildConsoleGovernanceRunbook(
+  actions: ConsoleGovernanceActionPacket[],
+  snapshot: ConsoleLocalSnapshot,
+): ConsoleGovernanceRunbook {
+  const steps = actions
+    .filter((action) => action.status !== "not_available")
+    .slice(0, 3)
+    .map((action, index) => buildRunbookStep(action, index + 1, snapshot));
+  const valueReportImpact = buildRunbookValueReportImpact(snapshot);
+  const status: ConsoleGovernanceRunbookStatus = steps.length === 0
+    ? "not_available_yet"
+    : steps.some((step) => step.status === "ready")
+      ? "ready"
+      : "needs_input";
+
+  return {
+    version: 1,
+    phase: "north-star-score-optimization-phase-8",
+    status,
+    title: "Console Governance Runbook",
+    summary: steps.length > 0
+      ? `Top ${steps.length} governance step(s) are ordered for owner execution and post-command verification.`
+      : "No governance runbook steps are available from the declared local artifacts.",
+    boundary: {
+      readOnly: true,
+      executesCommands: false,
+      writesLocalArtifacts: false,
+      sourceUploadRequired: false,
+      replacesVerify: false,
+      actionWritesMustUseLocalCli: true,
+    },
+    topStep: steps[0],
+    steps,
+    valueReportImpact,
+  };
+}
+
+function buildRunbookStep(
+  action: ConsoleGovernanceActionPacket,
+  order: number,
+  snapshot: ConsoleLocalSnapshot,
+): ConsoleGovernanceRunbookStep {
+  const expectedArtifact = expectedArtifactForAction(action);
+  return {
+    order,
+    id: `runbook-step-${order}:${action.id}`,
+    sourceActionId: action.id,
+    title: action.title,
+    owner: action.owner,
+    status: runbookStepStatus(action),
+    risk: action.risk,
+    command: action.recommendedCommand,
+    expectedArtifact,
+    expectedCompletionSignal: expectedCompletionSignalForAction(action, expectedArtifact),
+    verificationCommand: verificationCommandForAction(action),
+    rollbackOption: rollbackOptionForAction(action),
+    deferOption: deferOptionForAction(action),
+    evidenceArtifacts: stableUnique([
+      ...action.sourceArtifacts,
+      ...sourceArtifactsForValueReport(snapshot),
+    ]),
+    affectedContracts: action.affectedContracts,
+    valueReportImpact: valueReportImpactForAction(action, snapshot),
+  };
+}
+
+function runbookStepStatus(action: ConsoleGovernanceActionPacket): ConsoleGovernanceRunbookStepStatus {
+  if (action.status === "ready") {
+    return "ready";
+  }
+  if (action.status === "needs_input") {
+    return action.recommendedCommand.includes("<") ? "blocked" : "needs_input";
+  }
+  return "not_available_yet";
+}
+
+function expectedArtifactForAction(action: ConsoleGovernanceActionPacket): string {
+  return action.commandWrites[0]
+    ?? action.sourceArtifacts[0]
+    ?? action.affectedContracts[0]
+    ?? "not_available_yet";
+}
+
+function expectedCompletionSignalForAction(
+  action: ConsoleGovernanceActionPacket,
+  expectedArtifact: string,
+): string {
+  if (expectedArtifact === "not_available_yet") {
+    return "Console could not identify a declared artifact; collect the missing local artifact before treating the step as complete.";
+  }
+  if (action.kind === "compare_release_drift") {
+    return `A release compare report exists at ${expectedArtifact}, then Console and release drift review can read it.`;
+  }
+  if (action.kind === "review_cross_repo_contract_drift") {
+    return `The owning repo refreshes ${expectedArtifact}, then the repo group aggregate is regenerated.`;
+  }
+  return `${expectedArtifact} changes locally and the follow-up verification command reports the same or lower governance risk.`;
+}
+
+function verificationCommandForAction(action: ConsoleGovernanceActionPacket): string {
+  if (action.kind === "compare_release_drift") {
+    return "npm run jispec-cli -- release compare --from <ref> --to <ref>";
+  }
+  if (action.kind === "review_cross_repo_contract_drift") {
+    return "npm run jispec-cli -- console aggregate-governance --json";
+  }
+  if (action.kind === "source_review_adopt" || action.kind === "source_review_defer" || action.kind === "source_review_waive" || action.kind === "source_adopt") {
+    return "npm run ci:verify";
+  }
+  if (action.kind === "record_policy_approval" || action.kind === "migrate_policy") {
+    return "npm run ci:verify";
+  }
+  return "npm run ci:verify";
+}
+
+function rollbackOptionForAction(action: ConsoleGovernanceActionPacket): string {
+  if (action.kind === "renew_waiver") {
+    return "If the renewal is rejected, revoke the waiver instead and rerun verify.";
+  }
+  if (action.kind === "revoke_waiver") {
+    return "If the exception is still required, record a reviewed renewal with a new expiration and rerun verify.";
+  }
+  if (action.kind === "repay_spec_debt") {
+    return "If repayment is incomplete, restore the debt entry from VCS and request owner review instead.";
+  }
+  if (action.kind === "cancel_spec_debt") {
+    return "If cancellation was premature, restore the debt entry from VCS and record owner review.";
+  }
+  if (action.kind === "source_review_adopt" || action.kind === "source_adopt") {
+    return "If verification regresses, restore the source review or active source artifacts from VCS before rerunning verify.";
+  }
+  if (action.kind === "source_review_defer" || action.kind === "source_review_waive") {
+    return "If the defer or waiver is rejected, restore the source review artifact from VCS and adopt the item instead.";
+  }
+  if (action.kind === "compare_release_drift") {
+    return "If the refs are wrong, delete the generated local compare report and rerun release compare with corrected refs.";
+  }
+  if (action.kind === "record_policy_approval") {
+    return "If the approval subject is wrong, add a fresh approval for the current subject after policy review.";
+  }
+  if (action.kind === "review_cross_repo_contract_drift") {
+    return "If the owner action is wrong, update the repo-group declaration or the source repo export before aggregating again.";
+  }
+  return "If the resulting artifact is wrong, restore it from VCS and rerun the verification command.";
+}
+
+function deferOptionForAction(action: ConsoleGovernanceActionPacket): string {
+  if (action.kind === "source_review_defer") {
+    return action.recommendedCommand;
+  }
+  if (action.kind === "cancel_spec_debt") {
+    return action.recommendedCommand;
+  }
+  if (action.kind === "renew_waiver") {
+    return "Record an owner decision with a bounded expiration; otherwise revoke the waiver.";
+  }
+  if (action.kind === "revoke_waiver") {
+    return "Defer only by renewing the waiver with explicit owner, reason, and expiration.";
+  }
+  if (action.kind === "repay_spec_debt" || action.kind === "mark_spec_debt_owner_review") {
+    return "Record owner review with an explicit repayment owner and reason.";
+  }
+  if (action.kind === "review_cross_repo_contract_drift") {
+    return "Assign the drift owner and re-export governance after the owning repo decides.";
+  }
+  return "Record an explicit owner defer decision; do not treat defer as verification success.";
+}
+
+function buildRunbookValueReportImpact(snapshot: ConsoleLocalSnapshot): ConsoleGovernanceRunbook["valueReportImpact"] {
+  const takeoverQuality = governanceObject(snapshot, "takeover_quality_trend");
+  const summary = takeoverQuality?.summary ?? {};
+  const hasValueReport = summary.hasValueReport === true;
+  const metrics = {
+    estimatedManualSortingMinutesSaved: numberValue(summary.estimatedManualSortingMinutesSaved) ?? "not_available_yet" as const,
+    blockingIssuesCaught: numberValue(summary.blockingIssuesCaught) ?? "not_available_yet" as const,
+    advisoryRisksSurfaced: numberValue(summary.advisoryRisksSurfaced) ?? "not_available_yet" as const,
+    executeStopsNeedingReview: numberValue(summary.executeStopsNeedingReview) ?? "not_available_yet" as const,
+  };
+  return {
+    status: hasValueReport ? "ok" : "not_available_yet",
+    summary: hasValueReport
+      ? `Runbook is linked to local value evidence: ${metrics.estimatedManualSortingMinutesSaved} minute(s) saved, ${metrics.blockingIssuesCaught} blocking issue(s) caught, ${metrics.executeStopsNeedingReview} execute stop(s) needing review.`
+      : "Runbook value impact is not available until .spec/metrics/value-report.json is materialized.",
+    sourceArtifacts: sourceArtifactsForValueReport(snapshot),
+    metrics,
+  };
+}
+
+function valueReportImpactForAction(
+  action: ConsoleGovernanceActionPacket,
+  snapshot: ConsoleLocalSnapshot,
+): string {
+  const impact = buildRunbookValueReportImpact(snapshot);
+  if (impact.status !== "ok") {
+    return "Value report impact is not available yet; materialize .spec/metrics/value-report.json to connect this step to ROI and governance debt.";
+  }
+  if (action.risk.level === "high") {
+    return `High-risk step; value report currently shows ${impact.metrics.blockingIssuesCaught} blocking issue(s) caught.`;
+  }
+  if (action.status === "needs_input") {
+    return `Owner-review step; value report currently shows ${impact.metrics.executeStopsNeedingReview} execute stop(s) needing review.`;
+  }
+  return `Runbook step is tied to ${impact.metrics.estimatedManualSortingMinutesSaved} estimated manual sorting minute(s) saved.`;
+}
+
+function sourceArtifactsForValueReport(snapshot: ConsoleLocalSnapshot): string[] {
+  const takeoverQuality = governanceObject(snapshot, "takeover_quality_trend");
+  return takeoverQuality?.summary.hasValueReport === true
+    ? [".spec/metrics/value-report.json"]
+    : [];
+}
+
+function buildActionPriority(input: Pick<ConsoleGovernanceActionPacket, "kind" | "status" | "risk" | "sourceObject">): ConsoleGovernanceActionPriority {
+  const riskBase: Record<ConsoleGovernanceRiskLevel, number> = {
+    high: 10,
+    medium: 30,
+    low: 50,
+    unknown: 70,
+  };
+  const statusOffset: Record<ConsoleGovernanceActionStatus, number> = {
+    ready: 0,
+    needs_input: 6,
+    not_available: 24,
+  };
+  const kindOffset: Partial<Record<ConsoleGovernanceActionKind, number>> = {
+    revoke_waiver: 0,
+    repay_spec_debt: 1,
+    source_review_adopt: 2,
+    review_cross_repo_contract_drift: 3,
+    renew_waiver: 4,
+    record_policy_approval: 5,
+    compare_release_drift: 6,
+    source_adopt: 7,
+    source_review_defer: 8,
+    source_review_waive: 9,
+    mark_spec_debt_owner_review: 10,
+    migrate_policy: 11,
+    cancel_spec_debt: 12,
+  };
+  const rank = riskBase[input.risk.level] + statusOffset[input.status] + (kindOffset[input.kind] ?? 20);
+  const bucket: ConsoleGovernanceActionPriority["bucket"] =
+    rank < 20 ? "p0_blocking" :
+      rank < 40 ? "p1_owner_review" :
+        rank < 65 ? "p2_attention" :
+          "p3_informational";
+  return {
+    rank,
+    bucket,
+    rationale: `${input.risk.level} risk ${input.kind} action from ${input.sourceObject}; status=${input.status}`,
   };
 }
 
@@ -725,6 +1064,10 @@ function isPastDate(value: string | undefined): boolean {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

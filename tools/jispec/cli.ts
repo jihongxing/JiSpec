@@ -27,6 +27,12 @@ import {
   type WaiverRevokeResult,
 } from "./verify/waiver-store";
 import { runChangeCommand, renderChangeCommandJSON, type ChangeCommandOptions } from "./change/change-command";
+import { writeMainlineRecoveryDrill } from "./change/mainline-recovery-drill";
+import { writeGlobalOperationsPacket } from "./operations/global-operations-packet";
+import { writeOrgResponsibilityGraph } from "./operations/org-responsibility-graph";
+import { writeAsyncReviewInbox } from "./operations/async-review-inbox";
+import { writeOpsAgingLedger } from "./operations/ops-aging-ledger";
+import { writeReleaseTrainPacket } from "./operations/release-train-packet";
 import {
   renderChangeDefaultModeJSON,
   renderChangeDefaultModeText,
@@ -266,16 +272,23 @@ function registerDoctorCommands(program: Command): void {
     .command("mainline")
     .description("Check mainline readiness without blocking on deferred distributed or collaboration surfaces.")
     .option("--root <path>", "Repository root.", ".")
+    .option("--write-drill", "Write .jispec/recovery/mainline-drill.json and .md.", false)
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; json: boolean }) => {
+    .action(async (options: { root: string; writeDrill: boolean; json: boolean }) => {
       try {
-        const doctorInstance = new Doctor(path.resolve(options.root));
+        const root = path.resolve(options.root);
+        const doctorInstance = new Doctor(root);
         const report = await doctorInstance.checkMainlineReadiness();
+        const drillWrite = options.writeDrill ? writeMainlineRecoveryDrill(root) : undefined;
 
         if (options.json) {
-          console.log(Doctor.formatJSON(report));
+          console.log(JSON.stringify(drillWrite ? { ...report, recoveryDrillWrite: drillWrite } : report, null, 2));
         } else {
           console.log(Doctor.formatText(report));
+          if (drillWrite) {
+            console.log(`Recovery drill written: ${drillWrite.jsonPath}`);
+            console.log(`Recovery drill companion: ${drillWrite.markdownPath}`);
+          }
         }
 
         process.exitCode = report.ready ? 0 : 1;
@@ -291,17 +304,65 @@ function registerDoctorCommands(program: Command): void {
     .description("Check broader closure-loop readiness without changing doctor mainline semantics.")
     .option("--root <path>", "Repository root.", ".")
     .option("--out <path>", "Output JSON path.", ".spec/doctor/global-readiness.json")
+    .option("--write-operations", "Write .spec/operations/global-operations-packet.json and .md.", false)
+    .option("--write-org-graph", "Write .spec/operations/org-responsibility-graph.json and .md.", false)
+    .option("--write-review-inbox", "Write .spec/operations/async-review-inbox.json and .md.", false)
+    .option("--write-aging-ledger", "Write .spec/operations/ops-aging-ledger.json and .md.", false)
+    .option("--write-release-train", "Write .spec/operations/release-train-packet.json and .md.", false)
     .option("--json", "Emit machine-readable JSON output.", false)
-    .action(async (options: { root: string; out: string; json: boolean }) => {
+    .action(async (options: { root: string; out: string; writeOperations: boolean; writeOrgGraph: boolean; writeReviewInbox: boolean; writeAgingLedger: boolean; writeReleaseTrain: boolean; json: boolean }) => {
       try {
-        const doctorInstance = new Doctor(path.resolve(options.root));
+        const root = path.resolve(options.root);
+        const doctorInstance = new Doctor(root);
         const report = await doctorInstance.checkGlobalReadiness();
-
-        Doctor.writeJSONReport(report, path.resolve(options.root, options.out));
+        Doctor.writeJSONReport(report, path.resolve(root, options.out));
+        const operationsWrite = options.writeOperations
+          ? writeGlobalOperationsPacket(root, ".spec/operations/global-operations-packet.json", {
+              doctorGlobalReport: report as unknown as Record<string, unknown>,
+            })
+          : undefined;
+        const orgGraphWrite = options.writeOrgGraph
+          ? writeOrgResponsibilityGraph(root)
+          : undefined;
+        const reviewInboxWrite = options.writeReviewInbox
+          ? writeAsyncReviewInbox(root)
+          : undefined;
+        const agingLedgerWrite = options.writeAgingLedger
+          ? writeOpsAgingLedger(root)
+          : undefined;
+        const releaseTrainWrite = options.writeReleaseTrain
+          ? writeReleaseTrainPacket(root)
+          : undefined;
         if (options.json) {
-          console.log(Doctor.formatJSON(report));
+          console.log(JSON.stringify(
+            operationsWrite || orgGraphWrite || reviewInboxWrite || agingLedgerWrite || releaseTrainWrite
+              ? { ...report, globalOperationsWrite: operationsWrite, orgResponsibilityGraphWrite: orgGraphWrite, asyncReviewInboxWrite: reviewInboxWrite, opsAgingLedgerWrite: agingLedgerWrite, releaseTrainPacketWrite: releaseTrainWrite }
+              : report,
+            null,
+            2,
+          ));
         } else {
           console.log(Doctor.formatText(report));
+          if (operationsWrite) {
+            console.log(`Global operations packet written: ${operationsWrite.packetPath}`);
+            console.log(`Global operations companion: ${operationsWrite.summaryPath}`);
+          }
+          if (orgGraphWrite) {
+            console.log(`Org responsibility graph written: ${orgGraphWrite.graphPath}`);
+            console.log(`Org responsibility graph companion: ${orgGraphWrite.summaryPath}`);
+          }
+          if (reviewInboxWrite) {
+            console.log(`Async review inbox written: ${reviewInboxWrite.inboxPath}`);
+            console.log(`Async review inbox companion: ${reviewInboxWrite.summaryPath}`);
+          }
+          if (agingLedgerWrite) {
+            console.log(`Ops aging ledger written: ${agingLedgerWrite.ledgerPath}`);
+            console.log(`Ops aging ledger companion: ${agingLedgerWrite.summaryPath}`);
+          }
+          if (releaseTrainWrite) {
+            console.log(`Release train packet written: ${releaseTrainWrite.packetPath}`);
+            console.log(`Release train companion: ${releaseTrainWrite.summaryPath}`);
+          }
         }
 
         process.exitCode = report.ready ? 0 : 1;

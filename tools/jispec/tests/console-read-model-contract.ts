@@ -46,7 +46,7 @@ async function main(): Promise<void> {
     assert.equal(contract.boundary.replacesCliGate, false);
     assert.equal(contract.boundary.sourceUploadRequired, false);
     assert.equal(contract.boundary.localArtifactsAreSourceOfTruth, true);
-    assert.equal(contract.governanceObjects.length, 16);
+    assert.equal(contract.governanceObjects.length, 22);
   });
 
   record("contract includes required machine-readable read model artifacts and governance sources", () => {
@@ -72,6 +72,12 @@ async function main(): Promise<void> {
       ".jispec/change-session.json",
       ".jispec/handoff/*.json",
       ".jispec/implement/<session-id>/patch-mediation.json",
+      ".jispec/recovery/mainline-drill.json",
+      ".spec/operations/global-operations-packet.json",
+      ".spec/operations/org-responsibility-graph.json",
+      ".spec/operations/async-review-inbox.json",
+      ".spec/operations/ops-aging-ledger.json",
+      ".spec/operations/release-train-packet.json",
       ".spec/approvals/*.json",
       ".spec/audit/events.jsonl",
     ]) {
@@ -93,9 +99,15 @@ async function main(): Promise<void> {
       "takeover_quality_trend",
       "implementation_mediation_outcomes",
       "implementation_workspace",
+      "mainline_recovery_drill",
       "audit_events",
       "approval_workflow",
       "multi_repo_export",
+      "global_operations_packet",
+      "org_responsibility_graph",
+      "async_review_inbox",
+      "ops_aging_ledger",
+      "release_train_packet",
       "north_star_acceptance",
       "doctor_global_readiness",
     ]);
@@ -149,6 +161,9 @@ async function main(): Promise<void> {
       assert.equal(snapshot.governance.summary.totalObjects, CONSOLE_GOVERNANCE_OBJECTS.length);
       assert.equal(snapshot.governance.summary.missingObjects, CONSOLE_GOVERNANCE_OBJECTS.length);
       assert.ok(snapshot.governance.objects.every((object) => object.status === "not_available_yet"));
+      assert.equal(snapshot.governance.orgOperations.state, "not_available_yet");
+      assert.equal(snapshot.governance.orgOperations.boundary.realtimeCollaborationRequired, false);
+      assert.equal(snapshot.governance.orgOperations.boundary.replacesPostReleaseGate, false);
     } finally {
       fs.rmSync(fixtureRoot, { recursive: true, force: true });
     }

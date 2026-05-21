@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { appendAuditEvent } from "../audit/event-ledger";
+import { writeGlobalOperationsPacket } from "../operations/global-operations-packet";
+import { writeOrgResponsibilityGraph } from "../operations/org-responsibility-graph";
+import { writeAsyncReviewInbox } from "../operations/async-review-inbox";
+import { writeOpsAgingLedger } from "../operations/ops-aging-ledger";
+import { writeReleaseTrainPacket } from "../operations/release-train-packet";
+import { writeLocalConsoleUi } from "../console/ui/static-dashboard";
 import { buildNorthStarAcceptance, writeNorthStarAcceptance } from "../north-star/acceptance";
 
 interface TestResult {
@@ -29,13 +36,19 @@ async function main(): Promise<void> {
       });
 
       assert.equal(acceptance.summary.ready, true);
-      assert.equal(acceptance.summary.scenarioCount, 15);
+      assert.equal(acceptance.summary.scenarioCount, 22);
       assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "source_evolution_adopted")?.status, "passed");
       assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "source_evolution_deferred_repaid")?.status, "passed");
       assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "console_source_evolution")?.status, "passed");
       assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "multi_repo_owner_action")?.status, "passed");
       assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "release_compare_global_context")?.status, "passed");
       assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "doctor_global_health")?.status, "passed");
+      assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "global_operations_packet")?.status, "passed");
+      assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "org_responsibility_graph")?.status, "passed");
+      assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "async_review_inbox")?.status, "passed");
+      assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "ops_aging_ledger")?.status, "passed");
+      assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "release_train_packet")?.status, "passed");
+      assert.equal(acceptance.scenarios.find((scenario) => scenario.id === "org_operations_console")?.status, "passed");
       assert.equal(
         acceptance.scenarios.find((scenario) => scenario.id === "multi_repo_owner_action")?.evidence?.aggregateOwnerActionCount,
         1,
@@ -46,6 +59,10 @@ async function main(): Promise<void> {
       );
       assert.equal(
         acceptance.scenarios.find((scenario) => scenario.id === "doctor_global_health")?.evidence?.doctorGlobalReady,
+        true,
+      );
+      assert.equal(
+        acceptance.scenarios.find((scenario) => scenario.id === "global_operations_packet")?.evidence?.globalOperationsDeferredSurfacesDiagnosticOnly,
         true,
       );
     });
@@ -69,6 +86,7 @@ async function main(): Promise<void> {
       const ownerAction = requiredScenario(acceptance, "multi_repo_owner_action");
       const releaseCompare = requiredScenario(acceptance, "release_compare_global_context");
       const doctorGlobal = requiredScenario(acceptance, "doctor_global_health");
+      const operationsPacket = requiredScenario(acceptance, "global_operations_packet");
 
       assert.equal(adopted.status, "blocking");
       assert.ok(adopted.blockingReasons.some((reason) => reason.includes("Not every source review item is adopted yet")));
@@ -80,6 +98,8 @@ async function main(): Promise<void> {
       assert.ok(releaseCompare.blockingReasons.some((reason) => reason.includes("globalContext")));
       assert.equal(doctorGlobal.status, "blocking");
       assert.ok(doctorGlobal.blockingReasons.length >= 3);
+      assert.equal(operationsPacket.status, "blocking");
+      assert.ok(operationsPacket.blockingReasons.some((reason) => reason.includes("status is blocked")));
     });
   }));
 
@@ -102,6 +122,10 @@ async function main(): Promise<void> {
       assert.match(
         fs.readFileSync(path.join(root, ".spec/north-star/scenarios/doctor_global_health-decision.md"), "utf-8"),
         /Doctor global prerequisites healthy: true/,
+      );
+      assert.match(
+        fs.readFileSync(path.join(root, ".spec/north-star/scenarios/global_operations_packet-decision.md"), "utf-8"),
+        /Global operations packet: ready/,
       );
       assert.match(
         fs.readFileSync(path.join(root, ".spec/north-star/scenarios/source_evolution_deferred_repaid-decision.md"), "utf-8"),
@@ -153,6 +177,45 @@ function writeFixture(
   writeText(root, ".spec/handoffs/bootstrap-takeover.json", JSON.stringify({ status: "committed" }, null, 2));
   writeText(root, ".spec/greenfield/initialization-summary.md", "# Greenfield summary\n");
   writeText(root, ".jispec/change-session.json", JSON.stringify({ id: "change-1", mode: "execute" }, null, 2));
+  writeText(root, ".jispec/recovery/mainline-drill.json", JSON.stringify({
+    schemaVersion: 1,
+    kind: "jispec-mainline-recovery-drill",
+    generatedAt: "2026-05-04T00:00:00.000Z",
+    root: root.replace(/\\/g, "/"),
+    status: "ready",
+    summary: "One recovery drill step is ready.",
+    boundary: {
+      localOnly: true,
+      sourceUploadRequired: false,
+      executesCommands: false,
+      writesOnlyDeclaredArtifacts: true,
+      replacesVerify: false,
+      replacesDoctorMainline: false,
+    },
+    sourceDiagnosis: {
+      state: "continue_active_session",
+      status: "pass",
+      summary: "Active change session has a direct continuation path.",
+      details: [],
+      ownerAction: "Follow the current session next command.",
+      nextCommand: "npm run jispec-cli -- verify",
+      sourceArtifacts: [".jispec/change-session.json"],
+      sessionId: "change-1",
+    },
+    steps: [{
+      order: 1,
+      id: "mainline-recovery:continue_active_session:change-1",
+      currentState: "continue_active_session",
+      sourceArtifact: ".jispec/change-session.json",
+      ownerAction: "Follow the current session next command.",
+      command: "npm run jispec-cli -- verify",
+      expectedNextState: "The active session either reaches verify, writes a handoff packet, or reports a fresh mainline blocker.",
+      verificationCommand: "npm run ci:verify",
+      risk: "medium",
+      evidenceArtifacts: [".jispec/change-session.json"],
+    }],
+  }, null, 2));
+  writeText(root, ".jispec/recovery/mainline-drill.md", "# JiSpec Mainline Recovery Drill\n");
   writeText(root, ".jispec/implement/change-1/patch-mediation.json", JSON.stringify({ externalPatchControlled: true }, null, 2));
   writeText(root, ".spec/waivers/W-1.json", JSON.stringify({ id: "W-1", status: "active" }, null, 2));
   writeText(root, ".spec/audit/events.jsonl", `${JSON.stringify({ type: "verify", actor: "ci" })}\n`);
@@ -347,10 +410,28 @@ function writeFixture(
       ownerActionCount: options.includeOwnerActions ? 1 : 0,
       latestAuditActors: ["ci"],
     },
+    promotionReadiness: options.includeOwnerActions ? readyPromotionReadiness() : blockedPromotionReadiness(),
     repoGroup: {
       status: "available",
       sourcePath: ".spec/console/repo-group.yaml",
-      repos: [],
+      repos: options.includeOwnerActions ? [
+        {
+          id: "payments",
+          role: "upstream",
+          owner: "payments-team",
+          snapshotStatus: "available",
+          upstreamContractRefs: [],
+          downstreamContractRefs: [".spec/contracts/orders.yaml"],
+        },
+        {
+          id: "orders",
+          role: "downstream",
+          owner: "platform",
+          snapshotStatus: "available",
+          upstreamContractRefs: [".spec/contracts/orders.yaml"],
+          downstreamContractRefs: [],
+        },
+      ] : [],
       warnings: [],
     },
     repos: [],
@@ -458,6 +539,107 @@ function writeFixture(
           status: "not_available_yet",
         },
   }, null, 2));
+
+  fs.rmSync(path.join(root, ".spec", "audit", "events.jsonl"), { force: true });
+  writeReadyAuditLedger(root);
+  writeText(root, ".spec/doctor/global-readiness.json", JSON.stringify({
+    profile: "global",
+    ready: options.reviewStatus === "adopted" && options.includeOwnerActions && options.includeReleaseGlobalContext,
+    readinessSummary: {
+      profile: "global",
+      ready: options.reviewStatus === "adopted" && options.includeOwnerActions && options.includeReleaseGlobalContext,
+      blockerCount: options.reviewStatus === "adopted" && options.includeOwnerActions && options.includeReleaseGlobalContext ? 0 : 1,
+      blockers: [],
+    },
+    checks: [],
+  }, null, 2));
+  writeGlobalOperationsPacket(root, ".spec/operations/global-operations-packet.json", {
+    doctorGlobalReport: {
+      profile: "global",
+      ready: options.reviewStatus === "adopted" && options.includeOwnerActions && options.includeReleaseGlobalContext,
+      readinessSummary: {
+        profile: "global",
+        ready: options.reviewStatus === "adopted" && options.includeOwnerActions && options.includeReleaseGlobalContext,
+        blockerCount: options.reviewStatus === "adopted" && options.includeOwnerActions && options.includeReleaseGlobalContext ? 0 : 1,
+        blockers: [],
+      },
+      checks: [],
+    },
+  });
+  if (options.includeOwnerActions) {
+    writeOrgTopology(root);
+    writeOrgResponsibilityGraph(root);
+    writeAsyncReviewInbox(root);
+    writeOpsAgingLedger(root);
+    writeReleaseTrainPacket(root);
+    writeLocalConsoleUi({ root });
+  }
+}
+
+function writeOrgTopology(root: string): void {
+  writeText(root, ".spec/operations/org-topology.json", JSON.stringify({
+    kind: "jispec-org-topology",
+    orgId: "acme-platform",
+    teams: [
+      { id: "platform", name: "Platform", owner: "platform-lead", reviewers: ["alice", "bob"], escalation: ["director-eng"] },
+      { id: "payments-team", name: "Payments", owner: "payments-lead", reviewers: ["pay-reviewer"], escalation: ["director-eng"] },
+    ],
+    repoAssignments: [
+      { repoId: "orders", teamId: "platform" },
+      { repoId: "payments", teamId: "payments-team" },
+    ],
+  }, null, 2));
+}
+
+function writeReadyAuditLedger(root: string): void {
+  for (const event of [
+    ["policy_approval_decision", ".spec/approvals/policy.json", ".spec/policy.yaml"],
+    ["waiver_renew", ".spec/waivers/W-1.json", ".spec/policy.yaml"],
+    ["spec_debt_repay", ".spec/spec-debt/ledger.yaml", ".spec/requirements/lifecycle.yaml"],
+    ["release_compare", ".spec/releases/compare/v1-to-current/compare-report.json", ".spec/contracts/orders.yaml"],
+    ["source_adopt", ".spec/deltas/change-1/source-review.yaml", ".spec/requirements/lifecycle.yaml"],
+  ] as const) {
+    appendAuditEvent(root, {
+      type: event[0],
+      actor: "p13-global-closure",
+      sourceArtifact: { kind: path.extname(event[1]).slice(1) || "artifact", path: event[1] },
+      affectedContracts: [event[2]],
+    });
+  }
+}
+
+function readyPromotionReadiness(): Record<string, unknown> {
+  return {
+    phase: "north-star-score-optimization-phase-2",
+    ready: true,
+    target: "multi-repo-promotion",
+    requiredNorthStarScenarios: [
+      "multi_repo_owner_action",
+      "release_compare_global_context",
+      "doctor_global_health",
+    ],
+    checklist: [
+      { id: "repo_group_configured", status: "pass", summary: "Explicit repo group topology is available.", evidence: ["2 configured repo(s)"], blockers: [] },
+      { id: "cross_repo_contract_refs", status: "pass", summary: "Cross-repo refs produce drift hints.", evidence: ["1 cross-repo drift hint(s)"], blockers: [] },
+      { id: "owner_action_lifecycle", status: "pass", summary: "Owner actions include commands and local artifact writes.", evidence: ["1 owner action lifecycle packet(s)"], blockers: [] },
+      { id: "promotion_candidate_boundary", status: "pass", summary: "The aggregate cannot replace verify.", evidence: ["blockingGateReplacement=false"], blockers: [] },
+      { id: "north_star_acceptance_coverage", status: "pass", summary: "Dedicated global closure scenarios cover the promotion.", evidence: ["multi_repo_owner_action", "release_compare_global_context", "doctor_global_health"], blockers: [] },
+    ],
+    blockers: [],
+    scoreImpact: {
+      dimension: "terminal-control-plane",
+      currentTarget: "9.0+",
+      evidence: ["promotion readiness ready"],
+    },
+  };
+}
+
+function blockedPromotionReadiness(): Record<string, unknown> {
+  return {
+    ...readyPromotionReadiness(),
+    ready: false,
+    blockers: ["cross_repo_drift_hint_missing", "owner_action_lifecycle_incomplete"],
+  };
 }
 
 function normalize(filePath: string): string {

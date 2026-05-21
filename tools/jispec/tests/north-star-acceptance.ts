@@ -3,11 +3,15 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { appendAuditEvent } from "../audit/event-ledger";
 import {
   buildNorthStarAcceptance,
   writeNorthStarAcceptance,
   type NorthStarAcceptance,
 } from "../north-star/acceptance";
+import { writeOpsAgingLedger } from "../operations/ops-aging-ledger";
+import { writeReleaseTrainPacket } from "../operations/release-train-packet";
+import { writeLocalConsoleUi } from "../console/ui/static-dashboard";
 
 interface TestResult {
   name: string;
@@ -32,7 +36,7 @@ async function main(): Promise<void> {
       assert.equal(acceptance.kind, "jispec-north-star-acceptance");
       assert.equal(acceptance.contract.version, 1);
       assert.equal(acceptance.summary.ready, true);
-      assert.equal(acceptance.summary.scenarioCount, 15);
+      assert.equal(acceptance.summary.scenarioCount, 22);
       assert.equal(acceptance.summary.blockingScenarioCount, 0);
       assert.deepEqual(acceptance.boundary, {
         localOnly: true,
@@ -49,6 +53,7 @@ async function main(): Promise<void> {
         "legacy_takeover",
         "greenfield",
         "daily_change",
+        "mainline_recovery_drill",
         "external_patch_mediation",
         "policy_waiver",
         "release_drift",
@@ -61,12 +66,24 @@ async function main(): Promise<void> {
         "multi_repo_owner_action",
         "release_compare_global_context",
         "doctor_global_health",
+        "global_operations_packet",
+        "org_responsibility_graph",
+        "async_review_inbox",
+        "ops_aging_ledger",
+        "release_train_packet",
+        "org_operations_console",
       ]);
       const releaseDrift = acceptance.scenarios.find((scenario) => scenario.id === "release_drift");
       const sourceAdopted = acceptance.scenarios.find((scenario) => scenario.id === "source_evolution_adopted");
       const deferredRepaid = acceptance.scenarios.find((scenario) => scenario.id === "source_evolution_deferred_repaid");
       const releaseCompareContext = acceptance.scenarios.find((scenario) => scenario.id === "release_compare_global_context");
       const doctorGlobal = acceptance.scenarios.find((scenario) => scenario.id === "doctor_global_health");
+      const operationsPacket = acceptance.scenarios.find((scenario) => scenario.id === "global_operations_packet");
+      const orgGraph = acceptance.scenarios.find((scenario) => scenario.id === "org_responsibility_graph");
+      const asyncInbox = acceptance.scenarios.find((scenario) => scenario.id === "async_review_inbox");
+      const opsAgingLedger = acceptance.scenarios.find((scenario) => scenario.id === "ops_aging_ledger");
+      const releaseTrain = acceptance.scenarios.find((scenario) => scenario.id === "release_train_packet");
+      const orgOperationsConsole = acceptance.scenarios.find((scenario) => scenario.id === "org_operations_console");
       assert.equal(releaseDrift?.evidence?.governedRequirementEvolution, true);
       assert.match(releaseDrift?.evidence?.summary ?? "", /lifecycle\.yaml/);
       assert.match(releaseDrift?.evidence?.summary ?? "", /last adopted change change-1/);
@@ -74,6 +91,25 @@ async function main(): Promise<void> {
       assert.match(deferredRepaid?.evidence?.summary ?? "", /defer\s*->\s*adopt/i);
       assert.equal(releaseCompareContext?.evidence?.releaseCompareGlobalContextStatus, "available");
       assert.equal(doctorGlobal?.evidence?.doctorGlobalReady, true);
+      assert.equal(operationsPacket?.evidence?.globalOperationsPacketStatus, "ready");
+      assert.equal(operationsPacket?.evidence?.globalOperationsAsyncEvidenceAvailable, 5);
+      assert.equal(operationsPacket?.evidence?.globalOperationsDeferredSurfacesDiagnosticOnly, true);
+      assert.equal(operationsPacket?.evidence?.globalOperationsSourceUploadRequired, false);
+      assert.equal(orgGraph?.evidence?.orgResponsibilityGraphStatus, "ready");
+      assert.equal(orgGraph?.evidence?.orgResponsibilityReviewerCoverage, 1);
+      assert.equal(orgGraph?.evidence?.orgResponsibilityEscalationCoverage, 1);
+      assert.equal(asyncInbox?.evidence?.asyncReviewInboxStatus, "ready");
+      assert.equal(asyncInbox?.evidence?.asyncReviewReviewerCount, 2);
+      assert.equal(asyncInbox?.evidence?.asyncReviewRealtimeCollaborationRequired, false);
+      assert.equal(opsAgingLedger?.evidence?.opsAgingLedgerStatus, "ready");
+      assert.equal(opsAgingLedger?.evidence?.opsAgingTotalItems, 2);
+      assert.equal(opsAgingLedger?.evidence?.opsAgingRealtimeCollaborationRequired, false);
+      assert.equal(releaseTrain?.evidence?.releaseTrainPacketStatus, "ready");
+      assert.equal(releaseTrain?.evidence?.releaseTrainRequiredReviewCount, 2);
+      assert.equal(releaseTrain?.evidence?.releaseTrainBoundaryReplacesPostReleaseGate, false);
+      assert.equal(orgOperationsConsole?.evidence?.orgOperationsConsoleStatus, "ready");
+      assert.equal(orgOperationsConsole?.evidence?.orgOperationsAvailableObjectCount, 4);
+      assert.equal(orgOperationsConsole?.evidence?.orgOperationsRealtimeCollaborationRequired, false);
       assert.ok(acceptance.proofClaims.verifiable);
       assert.ok(acceptance.proofClaims.auditable);
       assert.ok(acceptance.proofClaims.blockable);
@@ -111,10 +147,16 @@ async function main(): Promise<void> {
               "release_drift",
               "multi_repo_aggregation",
               "privacy_report",
+              "global_operations_packet",
+              "org_responsibility_graph",
+              "async_review_inbox",
+              "ops_aging_ledger",
+              "release_train_packet",
+              "org_operations_console",
             ].includes(blocker.scenarioId),
           )
           .map((blocker) => blocker.task?.id),
-        ["W2-T1", "W2-T2", "W3-T1", "W3-T2", "W4-T1", "W4-T2", "W5-T1"],
+        ["W2-T1", "W2-T2", "W3-T1", "W3-T2", "W4-T1", "W4-T2", "W5-T1", "North-Star-Score-Phase-10", "North-Star-Score-Phase-11", "North-Star-Score-Phase-12", "North-Star-Score-Phase-13", "North-Star-Score-Phase-14", "North-Star-Score-Phase-15"],
       );
       assert.ok(
         acceptance.blockers
@@ -127,6 +169,12 @@ async function main(): Promise<void> {
               "release_drift",
               "multi_repo_aggregation",
               "privacy_report",
+              "global_operations_packet",
+              "org_responsibility_graph",
+              "async_review_inbox",
+              "ops_aging_ledger",
+              "release_train_packet",
+              "org_operations_console",
             ].includes(blocker.scenarioId),
           )
           .every((blocker) => Boolean(blocker.task?.acceptanceCommand)),
@@ -158,10 +206,28 @@ async function main(): Promise<void> {
       const greenfieldScenario = saved.scenarios.find((scenario) => scenario.id === "greenfield");
       const dailyChangeScenario = saved.scenarios.find((scenario) => scenario.id === "daily_change");
       const releaseDriftScenario = saved.scenarios.find((scenario) => scenario.id === "release_drift");
+      const operationsScenario = saved.scenarios.find((scenario) => scenario.id === "global_operations_packet");
+      const orgGraphScenario = saved.scenarios.find((scenario) => scenario.id === "org_responsibility_graph");
+      const asyncInboxScenario = saved.scenarios.find((scenario) => scenario.id === "async_review_inbox");
+      const opsAgingScenario = saved.scenarios.find((scenario) => scenario.id === "ops_aging_ledger");
+      const releaseTrainScenario = saved.scenarios.find((scenario) => scenario.id === "release_train_packet");
+      const orgOperationsScenario = saved.scenarios.find((scenario) => scenario.id === "org_operations_console");
       assert.equal(greenfieldScenario?.task?.id, "W2-T1");
       assert.equal(dailyChangeScenario?.task?.id, "W2-T2");
       assert.equal(releaseDriftScenario?.evidence?.lifecycleRegistryPath, ".spec/requirements/lifecycle.yaml");
       assert.equal(releaseDriftScenario?.evidence?.lifecycleRegistryVersion, 2);
+      assert.equal(operationsScenario?.task?.id, "North-Star-Score-Phase-10");
+      assert.equal(operationsScenario?.evidence?.globalOperationsPacketStatus, "ready");
+      assert.equal(orgGraphScenario?.task?.id, "North-Star-Score-Phase-11");
+      assert.equal(orgGraphScenario?.evidence?.orgResponsibilityGraphStatus, "ready");
+      assert.equal(asyncInboxScenario?.task?.id, "North-Star-Score-Phase-12");
+      assert.equal(asyncInboxScenario?.evidence?.asyncReviewInboxStatus, "ready");
+      assert.equal(opsAgingScenario?.task?.id, "North-Star-Score-Phase-13");
+      assert.equal(opsAgingScenario?.evidence?.opsAgingLedgerStatus, "ready");
+      assert.equal(releaseTrainScenario?.task?.id, "North-Star-Score-Phase-14");
+      assert.equal(releaseTrainScenario?.evidence?.releaseTrainPacketStatus, "ready");
+      assert.equal(orgOperationsScenario?.task?.id, "North-Star-Score-Phase-15");
+      assert.equal(orgOperationsScenario?.evidence?.orgOperationsConsoleStatus, "ready");
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/greenfield-decision.md"), "utf-8"), /Task ID: W2-T1/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/daily_change-decision.md"), "utf-8"), /Task ID: W2-T2/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_drift-decision.md"), "utf-8"), /Scenario Evidence/);
@@ -173,6 +239,30 @@ async function main(): Promise<void> {
       assert.match(
         fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_compare_global_context-decision.md"), "utf-8"),
         /Release compare global context: available/,
+      );
+      assert.match(
+        fs.readFileSync(path.join(root, ".spec/north-star/scenarios/global_operations_packet-decision.md"), "utf-8"),
+        /Global operations deferred surfaces diagnostic-only: true/,
+      );
+      assert.match(
+        fs.readFileSync(path.join(root, ".spec/north-star/scenarios/org_responsibility_graph-decision.md"), "utf-8"),
+        /Org responsibility graph: ready/,
+      );
+      assert.match(
+        fs.readFileSync(path.join(root, ".spec/north-star/scenarios/async_review_inbox-decision.md"), "utf-8"),
+        /Async review inbox: ready/,
+      );
+      assert.match(
+        fs.readFileSync(path.join(root, ".spec/north-star/scenarios/ops_aging_ledger-decision.md"), "utf-8"),
+        /Ops aging ledger: ready/,
+      );
+      assert.match(
+        fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_train_packet-decision.md"), "utf-8"),
+        /Release train packet: ready/,
+      );
+      assert.match(
+        fs.readFileSync(path.join(root, ".spec/north-star/scenarios/org_operations_console-decision.md"), "utf-8"),
+        /Org operations console: ready/,
       );
 
       const cli = runCli(["north-star", "acceptance", "--root", root, "--json"]);
@@ -201,6 +291,12 @@ async function main(): Promise<void> {
       const ownerActionScenario = saved.scenarios.find((scenario) => scenario.id === "multi_repo_owner_action");
       const releaseCompareScenario = saved.scenarios.find((scenario) => scenario.id === "release_compare_global_context");
       const doctorGlobalScenario = saved.scenarios.find((scenario) => scenario.id === "doctor_global_health");
+      const operationsScenario = saved.scenarios.find((scenario) => scenario.id === "global_operations_packet");
+      const orgGraphScenario = saved.scenarios.find((scenario) => scenario.id === "org_responsibility_graph");
+      const asyncInboxScenario = saved.scenarios.find((scenario) => scenario.id === "async_review_inbox");
+      const opsAgingScenario = saved.scenarios.find((scenario) => scenario.id === "ops_aging_ledger");
+      const releaseTrainScenario = saved.scenarios.find((scenario) => scenario.id === "release_train_packet");
+      const orgOperationsScenario = saved.scenarios.find((scenario) => scenario.id === "org_operations_console");
 
       assert.equal(consoleSourceEvolution?.status, "passed");
       assert.equal(consoleSourceEvolution?.evidence?.currentChangeState, "adopted");
@@ -213,11 +309,35 @@ async function main(): Promise<void> {
       assert.equal(releaseCompareScenario?.evidence?.releaseCompareRelevantOwnerActionCount, 1);
       assert.equal(doctorGlobalScenario?.evidence?.doctorGlobalReady, true);
       assert.equal(doctorGlobalScenario?.evidence?.doctorGlobalBlockerCount, 0);
+      assert.equal(operationsScenario?.status, "passed");
+      assert.equal(operationsScenario?.evidence?.globalOperationsSupportSurfaceCount, 4);
+      assert.equal(operationsScenario?.evidence?.globalOperationsBoundaryReplacesVerify, false);
+      assert.equal(orgGraphScenario?.status, "passed");
+      assert.equal(orgGraphScenario?.evidence?.orgResponsibilityTeamCount, 2);
+      assert.equal(orgGraphScenario?.evidence?.orgResponsibilityBoundaryReplacesVerify, false);
+      assert.equal(asyncInboxScenario?.status, "passed");
+      assert.equal(asyncInboxScenario?.evidence?.asyncReviewTotalItems, 2);
+      assert.equal(asyncInboxScenario?.evidence?.asyncReviewRealtimeCollaborationRequired, false);
+      assert.equal(opsAgingScenario?.status, "passed");
+      assert.equal(opsAgingScenario?.evidence?.opsAgingTotalItems, 2);
+      assert.equal(opsAgingScenario?.evidence?.opsAgingBoundaryReplacesVerify, false);
+      assert.equal(releaseTrainScenario?.status, "passed");
+      assert.equal(releaseTrainScenario?.evidence?.releaseTrainReady, true);
+      assert.equal(releaseTrainScenario?.evidence?.releaseTrainBoundaryReplacesPostReleaseGate, false);
+      assert.equal(orgOperationsScenario?.status, "passed");
+      assert.equal(orgOperationsScenario?.evidence?.orgOperationsReady, true);
+      assert.equal(orgOperationsScenario?.evidence?.orgOperationsBoundaryReplacesVerify, false);
 
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/console_source_evolution-decision.md"), "utf-8"), /Current change state: adopted/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/multi_repo_owner_action-decision.md"), "utf-8"), /Aggregate owner actions: 1/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_compare_global_context-decision.md"), "utf-8"), /Release compare global context: available/);
       assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/doctor_global_health-decision.md"), "utf-8"), /Doctor global prerequisites healthy: true/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/global_operations_packet-decision.md"), "utf-8"), /Global operations packet: ready/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/org_responsibility_graph-decision.md"), "utf-8"), /Org responsibility graph: ready/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/async_review_inbox-decision.md"), "utf-8"), /Async review inbox: ready/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/ops_aging_ledger-decision.md"), "utf-8"), /Ops aging ledger: ready/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/release_train_packet-decision.md"), "utf-8"), /Release train packet: ready/);
+      assert.match(fs.readFileSync(path.join(root, ".spec/north-star/scenarios/org_operations_console-decision.md"), "utf-8"), /Org operations console: ready/);
 
       const help = runCli(["north-star", "acceptance", "--help"]);
       assert.match(help.stdout, /Usage:\s+jispec-cli\s+north-star\s+acceptance\s+\[options\]/i);
@@ -267,6 +387,45 @@ function writeNorthStarFixture(root: string): void {
   writeText(root, ".spec/handoffs/bootstrap-takeover.json", JSON.stringify({ status: "committed" }, null, 2));
   writeText(root, ".spec/greenfield/initialization-summary.md", "# Greenfield summary\n");
   writeText(root, ".jispec/change-session.json", JSON.stringify({ id: "change-1", mode: "execute" }, null, 2));
+  writeText(root, ".jispec/recovery/mainline-drill.json", JSON.stringify({
+    schemaVersion: 1,
+    kind: "jispec-mainline-recovery-drill",
+    generatedAt: "2026-05-02T00:00:00.000Z",
+    root,
+    status: "ready",
+    summary: "One recovery drill step is ready.",
+    boundary: {
+      localOnly: true,
+      sourceUploadRequired: false,
+      executesCommands: false,
+      writesOnlyDeclaredArtifacts: true,
+      replacesVerify: false,
+      replacesDoctorMainline: false,
+    },
+    sourceDiagnosis: {
+      state: "continue_active_session",
+      status: "pass",
+      summary: "Active change session has a direct continuation path.",
+      details: [],
+      ownerAction: "Follow the current session's next command.",
+      nextCommand: "npm run jispec-cli -- verify --fast",
+      sourceArtifacts: [".jispec/change-session.json"],
+      sessionId: "change-1",
+    },
+    steps: [{
+      order: 1,
+      id: "mainline-recovery:continue_active_session:change-1",
+      currentState: "continue_active_session",
+      sourceArtifact: ".jispec/change-session.json",
+      ownerAction: "Follow the current session's next command.",
+      command: "npm run jispec-cli -- verify --fast",
+      expectedNextState: "The active session either reaches verify, writes a handoff packet, or reports a fresh mainline blocker.",
+      verificationCommand: "npm run ci:verify",
+      risk: "medium",
+      evidenceArtifacts: [".jispec/change-session.json"],
+    }],
+  }, null, 2));
+  writeText(root, ".jispec/recovery/mainline-drill.md", "# JiSpec Mainline Recovery Drill\n");
   writeText(root, ".jispec/implement/change-1/patch-mediation.json", JSON.stringify({ externalPatchControlled: true }, null, 2));
   writeText(root, ".spec/waivers/W-1.json", JSON.stringify({ id: "W-1", status: "active" }, null, 2));
   writeText(root, ".spec/releases/drift-trend.json", JSON.stringify({
@@ -486,10 +645,28 @@ function writeNorthStarFixture(root: string): void {
       ownerActionCount: 1,
       latestAuditActors: ["ci"],
     },
+    promotionReadiness: readyPromotionReadiness(),
     repoGroup: {
       status: "available",
       sourcePath: ".spec/console/repo-group.yaml",
-      repos: [],
+      repos: [
+        {
+          id: "payments",
+          role: "upstream",
+          owner: "payments-team",
+          snapshotStatus: "available",
+          upstreamContractRefs: [],
+          downstreamContractRefs: [".spec/contracts/orders.yaml"],
+        },
+        {
+          id: "orders",
+          role: "downstream",
+          owner: "platform",
+          snapshotStatus: "available",
+          upstreamContractRefs: [".spec/contracts/orders.yaml"],
+          downstreamContractRefs: [],
+        },
+      ],
       warnings: [],
     },
     repos: [],
@@ -593,10 +770,322 @@ function writeNorthStarFixture(root: string): void {
     kind: "jispec-privacy-report",
     summary: { highSeverityFindingCount: 0 },
   }, null, 2));
-  writeText(root, ".spec/audit/events.jsonl", `${JSON.stringify({ type: "verify", actor: "ci" })}\n`);
+  writeReadyAuditLedger(root);
+  writeText(root, ".spec/doctor/global-readiness.json", JSON.stringify({
+    profile: "global",
+    ready: true,
+    readinessSummary: {
+      profile: "global",
+      ready: true,
+      blockerCount: 0,
+      blockers: [],
+    },
+    checks: [],
+  }, null, 2));
+  writeText(root, ".spec/operations/global-operations-packet.json", JSON.stringify({
+    schemaVersion: 1,
+    kind: "jispec-global-operations-packet",
+    generatedAt: "2026-05-02T00:00:00.000Z",
+    root: root.replace(/\\/g, "/"),
+    status: "ready",
+    boundary: {
+      localOnly: true,
+      sourceUploadRequired: false,
+      realtimeCollaborationRequired: false,
+      executesCommands: false,
+      replacesVerify: false,
+      replacesDoctorGlobal: false,
+      deferredSurfacesDiagnosticOnly: true,
+    },
+    repoGroupTopology: {
+      status: "available",
+      sourcePath: ".spec/console/repo-group.yaml",
+      repoCount: 2,
+      repos: [
+        {
+          id: "payments",
+          role: "upstream",
+          owner: "payments-team",
+          snapshotStatus: "available",
+          upstreamContractRefs: [],
+          downstreamContractRefs: [".spec/contracts/orders.yaml"],
+        },
+        {
+          id: "orders",
+          role: "downstream",
+          owner: "platform",
+          snapshotStatus: "available",
+          upstreamContractRefs: [".spec/contracts/orders.yaml"],
+          downstreamContractRefs: [],
+        },
+      ],
+    },
+    crossRepoContractRefs: [
+      {
+        upstreamRepoId: "payments",
+        downstreamRepoId: "orders",
+        contractRef: ".spec/contracts/orders.yaml",
+        ownerActionId: "owner-action:orders:.spec/contracts/orders.yaml",
+        evidence: { downstreamSourceEvolutionChangeId: "change-1" },
+      },
+    ],
+    ownerActionLifecycle: [
+      {
+        id: "owner-action:orders:.spec/contracts/orders.yaml",
+        status: "ready",
+        owner: "platform",
+        repoId: "orders",
+        command: "npm run jispec-cli -- change --root .",
+        followupCommands: [],
+        affectedContracts: [".spec/contracts/orders.yaml"],
+      },
+    ],
+    promotionReadiness: {
+      ready: true,
+      phase: "north-star-score-optimization-phase-2",
+      checklistPassed: 5,
+      checklistTotal: 5,
+      blockers: [],
+      referencedSupportSurfaces: [
+        "audit_event_ledger",
+        "doctor_global_readiness",
+        "multi_repo_governance_aggregate",
+        "privacy_redaction_posture",
+      ],
+    },
+    privacyPosture: {
+      status: "available",
+      highSeverityFindingCount: 0,
+      sourceArtifact: ".spec/privacy/privacy-report.json",
+    },
+    auditEvidenceRefs: [
+      { type: "policy_approval_decision", actor: "platform", sourceArtifact: ".spec/approvals/policy.json", affectedContracts: [".spec/policy.yaml"] },
+      { type: "waiver_renew", actor: "platform", sourceArtifact: ".spec/waivers/W-1.json", affectedContracts: [".spec/policy.yaml"] },
+      { type: "spec_debt_repay", actor: "architect", sourceArtifact: ".spec/spec-debt/ledger.yaml", affectedContracts: [".spec/requirements/lifecycle.yaml"] },
+      { type: "release_compare", actor: "release", sourceArtifact: ".spec/releases/compare/v1-to-current/compare-report.json", affectedContracts: [".spec/contracts/orders.yaml"] },
+      { type: "source_adopt", actor: "architect", sourceArtifact: ".spec/deltas/change-1/source-review.yaml", affectedContracts: [".spec/requirements/lifecycle.yaml"] },
+    ],
+    asyncCollaborationEvents: [
+      { kind: "reviewer_acknowledged", status: "available", evidenceArtifact: ".spec/audit/events.jsonl" },
+      { kind: "waiver_approved", status: "available", evidenceArtifact: ".spec/audit/events.jsonl" },
+      { kind: "debt_repaid", status: "available", evidenceArtifact: ".spec/audit/events.jsonl" },
+      { kind: "drift_owner_assigned", status: "available", evidenceArtifact: ".spec/audit/events.jsonl" },
+      { kind: "promotion_accepted", status: "available", evidenceArtifact: ".spec/audit/events.jsonl" },
+      { kind: "promotion_rejected", status: "missing", evidenceArtifact: ".spec/audit/events.jsonl" },
+    ],
+    verifyBoundaryStatement: "Global operations packet is local read-only evidence. It does not run verify, replace ci:verify, override doctor global, upload source, or promote deferred collaboration surfaces into global gates.",
+    doctorGlobalReadiness: {
+      ready: true,
+      blockerCount: 0,
+      sourceArtifact: ".spec/doctor/global-readiness.json",
+    },
+    blockers: [],
+  }, null, 2));
+  writeText(root, ".spec/operations/global-operations-packet.md", "# JiSpec Global Operations Packet\n");
+  writeText(root, ".spec/operations/org-responsibility-graph.json", JSON.stringify({
+    schemaVersion: 1,
+    kind: "jispec-org-responsibility-graph",
+    generatedAt: "2026-05-02T00:00:00.000Z",
+    root: root.replace(/\\/g, "/"),
+    status: "ready",
+    boundary: {
+      localOnly: true,
+      sourceUploadRequired: false,
+      realtimeCollaborationRequired: false,
+      executesCommands: false,
+      replacesVerify: false,
+      replacesDoctorGlobal: false,
+      deferredSurfacesDiagnosticOnly: true,
+    },
+    orgTopology: {
+      orgId: "acme-platform",
+      sourcePath: ".spec/operations/org-topology.json",
+      teamCount: 2,
+      repoCount: 2,
+      teams: [
+        { id: "platform", name: "Platform", owner: "platform-lead", reviewers: ["alice", "bob"], escalation: ["director-eng"] },
+        { id: "payments-team", name: "Payments", owner: "payments-lead", reviewers: ["pay-reviewer"], escalation: ["director-eng"] },
+      ],
+      repos: [
+        { id: "orders", ownerTeamId: "platform", owner: "platform", role: "downstream" },
+        { id: "payments", ownerTeamId: "payments-team", owner: "payments-team", role: "upstream" },
+      ],
+    },
+    responsibilityEdges: [
+      { repoId: "orders", teamId: "platform", owner: "platform-lead", reviewers: ["alice", "bob"], escalationPath: ["director-eng"], source: "org-topology" },
+      { repoId: "payments", teamId: "payments-team", owner: "payments-lead", reviewers: ["pay-reviewer"], escalationPath: ["director-eng"], source: "org-topology" },
+    ],
+    ownerActionAssignments: [
+      {
+        actionId: "owner-action:orders:.spec/contracts/orders.yaml",
+        repoId: "orders",
+        teamId: "platform",
+        owner: "platform",
+        reviewers: ["alice", "bob"],
+        escalationPath: ["director-eng"],
+        command: "npm run jispec-cli -- change --root .",
+        affectedContracts: [".spec/contracts/orders.yaml"],
+      },
+    ],
+    reviewerCoverage: {
+      totalOwnerActions: 1,
+      actionsWithOwner: 1,
+      actionsWithReviewer: 1,
+      actionsWithEscalation: 1,
+    },
+    auditEvidenceRefs: [
+      { type: "release_compare", actor: "release", sourceArtifact: ".spec/releases/compare/v1-to-current/compare-report.json", affectedContracts: [".spec/contracts/orders.yaml"] },
+    ],
+    verifyBoundaryStatement: "Org responsibility graph is local read-only evidence. It does not execute owner action commands, upload source, replace verify, override doctor global, or require real-time collaboration.",
+    blockers: [],
+  }, null, 2));
+  writeText(root, ".spec/operations/org-responsibility-graph.md", "# JiSpec Org Responsibility Graph\n");
+  writeText(root, ".spec/operations/async-review-inbox.json", JSON.stringify({
+    schemaVersion: 1,
+    kind: "jispec-async-review-inbox",
+    generatedAt: "2026-05-02T00:00:00.000Z",
+    root: root.replace(/\\/g, "/"),
+    status: "ready",
+    boundary: {
+      localOnly: true,
+      sourceUploadRequired: false,
+      realtimeCollaborationRequired: false,
+      executesCommands: false,
+      replacesVerify: false,
+      replacesDoctorGlobal: false,
+      deferredSurfacesDiagnosticOnly: true,
+    },
+    sourceGraph: {
+      status: "ready",
+      sourcePath: ".spec/operations/org-responsibility-graph.json",
+      teamCount: 2,
+      repoCount: 2,
+      ownerActionAssignmentCount: 1,
+    },
+    summary: {
+      reviewerCount: 2,
+      totalItems: 2,
+      pending: 2,
+      accepted: 0,
+      blocked: 0,
+      expired: 0,
+      reviewersMissing: 0,
+      escalationReadyItems: 2,
+    },
+    reviewers: [
+      { reviewer: "alice", ownerTeams: ["platform"], pending: ["review:alice:owner-action:orders:.spec/contracts/orders.yaml"], accepted: [], blocked: [], expired: [], escalationPath: ["director-eng"] },
+      { reviewer: "bob", ownerTeams: ["platform"], pending: ["review:bob:owner-action:orders:.spec/contracts/orders.yaml"], accepted: [], blocked: [], expired: [], escalationPath: ["director-eng"] },
+    ],
+    items: [
+      {
+        requestId: "review:alice:owner-action:orders:.spec/contracts/orders.yaml",
+        kind: "owner_action_review",
+        status: "pending",
+        reviewer: "alice",
+        owner: "platform",
+        teamId: "platform",
+        repoId: "orders",
+        openedAt: "2026-05-02T00:00:00.000Z",
+        dueAt: "2099-01-01T00:00:00.000Z",
+        actionId: "owner-action:orders:.spec/contracts/orders.yaml",
+        command: "npm run jispec-cli -- change --root .",
+        affectedContracts: [".spec/contracts/orders.yaml"],
+        escalationPath: ["director-eng"],
+        sourceArtifact: ".spec/operations/org-responsibility-graph.json",
+      },
+      {
+        requestId: "review:bob:owner-action:orders:.spec/contracts/orders.yaml",
+        kind: "owner_action_review",
+        status: "pending",
+        reviewer: "bob",
+        owner: "platform",
+        teamId: "platform",
+        repoId: "orders",
+        openedAt: "2026-05-02T00:00:00.000Z",
+        dueAt: "2099-01-01T00:00:00.000Z",
+        actionId: "owner-action:orders:.spec/contracts/orders.yaml",
+        command: "npm run jispec-cli -- change --root .",
+        affectedContracts: [".spec/contracts/orders.yaml"],
+        escalationPath: ["director-eng"],
+        sourceArtifact: ".spec/operations/org-responsibility-graph.json",
+      },
+    ],
+    auditEvidenceRefs: [
+      { type: "release_compare", actor: "release", sourceArtifact: ".spec/releases/compare/v1-to-current/compare-report.json", affectedContracts: [".spec/contracts/orders.yaml"] },
+    ],
+    verifyBoundaryStatement: "Async review inbox is local read-only evidence. It does not notify remote services, require real-time collaboration, execute review commands, upload source, replace verify, or override doctor global.",
+    blockers: [],
+  }, null, 2));
+  writeText(root, ".spec/operations/async-review-inbox.md", "# JiSpec Async Review Inbox\n");
+  writeOpsAgingLedger(root);
+  writeReleaseTrainPacket(root);
+  writeLocalConsoleUi({ root });
   writeText(root, ".spec/replay/provenance-baseline.json", JSON.stringify({ replayable: true }, null, 2));
   writeText(root, ".jispec-ci/verify-report.json", JSON.stringify({ verdict: "PASS", ok: true }, null, 2));
   writeText(root, ".spec/pilot/package.json", JSON.stringify({ kind: "jispec-pilot-product-package" }, null, 2));
+}
+
+function readyPromotionReadiness(): Record<string, unknown> {
+  return {
+    phase: "north-star-score-optimization-phase-2",
+    ready: true,
+    target: "multi-repo-promotion",
+    requiredNorthStarScenarios: [
+      "multi_repo_owner_action",
+      "release_compare_global_context",
+      "doctor_global_health",
+    ],
+    checklist: [
+      { id: "repo_group_configured", status: "pass", summary: "Explicit repo group topology is available.", evidence: ["2 configured repo(s)"], blockers: [] },
+      { id: "cross_repo_contract_refs", status: "pass", summary: "Cross-repo refs produce drift hints.", evidence: ["1 cross-repo drift hint(s)"], blockers: [] },
+      { id: "owner_action_lifecycle", status: "pass", summary: "Owner actions include commands and local artifact writes.", evidence: ["1 owner action lifecycle packet(s)"], blockers: [] },
+      { id: "promotion_candidate_boundary", status: "pass", summary: "The aggregate cannot replace verify.", evidence: ["blockingGateReplacement=false"], blockers: [] },
+      { id: "north_star_acceptance_coverage", status: "pass", summary: "Dedicated global closure scenarios cover the promotion.", evidence: ["multi_repo_owner_action", "release_compare_global_context", "doctor_global_health"], blockers: [] },
+    ],
+    blockers: [],
+    scoreImpact: {
+      dimension: "terminal-control-plane",
+      currentTarget: "9.0+",
+      evidence: ["promotion readiness ready"],
+    },
+  };
+}
+
+function writeReadyAuditLedger(root: string): void {
+  for (const event of [
+    {
+      type: "policy_approval_decision" as const,
+      actor: "platform",
+      sourceArtifact: { kind: "json", path: ".spec/approvals/policy.json" },
+      affectedContracts: [".spec/policy.yaml"],
+    },
+    {
+      type: "waiver_renew" as const,
+      actor: "platform",
+      sourceArtifact: { kind: "json", path: ".spec/waivers/W-1.json" },
+      affectedContracts: [".spec/policy.yaml"],
+    },
+    {
+      type: "spec_debt_repay" as const,
+      actor: "architect",
+      sourceArtifact: { kind: "yaml", path: ".spec/spec-debt/ledger.yaml" },
+      affectedContracts: [".spec/requirements/lifecycle.yaml"],
+    },
+    {
+      type: "release_compare" as const,
+      actor: "release",
+      sourceArtifact: { kind: "json", path: ".spec/releases/compare/v1-to-current/compare-report.json" },
+      affectedContracts: [".spec/contracts/orders.yaml"],
+    },
+    {
+      type: "source_adopt" as const,
+      actor: "architect",
+      sourceArtifact: { kind: "yaml", path: ".spec/deltas/change-1/source-review.yaml" },
+      affectedContracts: [".spec/requirements/lifecycle.yaml"],
+    },
+  ]) {
+    appendAuditEvent(root, event);
+  }
 }
 
 function writeText(root: string, relativePath: string, content: string): void {

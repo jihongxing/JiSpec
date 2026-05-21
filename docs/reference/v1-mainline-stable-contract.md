@@ -91,7 +91,7 @@ npm run jispec-cli -- doctor mainline
 | `release snapshot --version <version>` | 冻结当前 baseline，并写出 contract graph、static collector、policy snapshot 和可读摘要 |
 | `release compare --from <ref> --to <ref>` | 比较两个 baseline/ref，写出机器可读 compare report、可读 drift summary，并刷新 release drift trend |
 | `console export-governance` | 导出当前 repo 的治理 snapshot，供未来多 repo Console 汇总使用 |
-| `doctor mainline` | 只回答 V1 主线 readiness，不让 deferred surfaces 拖红 |
+| `doctor mainline` | 回答 V1 主线 readiness，并给出当前 mainline flow recovery 的 owner、next command、source artifacts；不让 deferred surfaces 拖红 |
 
 ## 3. 退出码契约
 
@@ -123,13 +123,61 @@ npm run jispec-cli -- doctor mainline
 | `implement` | outcome 为 `preflight_passed` 或 `patch_verified`，且 post-implement verify 不 blocking | outcome 为 `external_patch_received`、`patch_rejected_out_of_scope`、`budget_exhausted`、`stall_detected`、`verify_blocked`，或命令运行异常 |
 | `implement --fast` | 同 `implement` | 同 `implement` |
 | `implement --from-handoff <path-or-session>` | replay context 已恢复，且本轮 outcome 满足 `implement` 成功条件 | handoff 不存在、不可回放、存在其它 active session、或本轮 outcome 满足 `implement` 失败条件 |
-| `doctor mainline` | V1 readiness 为 ready | V1 readiness 不 ready，或 doctor 运行失败 |
+| `doctor mainline` | V1 readiness 为 ready，且当前 flow recovery 没有 malformed/stale/patch-recovery blocker | V1 readiness 不 ready、当前 flow recovery 发现 malformed/stale/patch-recovery blocker，或 doctor 运行失败 |
 
 额外约定：
 
 - `change --mode execute` 在 strict lane 遇到 open bootstrap draft 时，`execution.state = "awaiting_adopt"` 是设计内暂停，不算命令失败，退出码仍为 `0`。
 - `change.default_mode: execute` 只改变未显式传入 `--mode` 的默认编排入口，不表示 JiSpec 生成业务代码，也不绕过 adopt 边界。
 - `verify` 的 verdict 与退出码不是一一映射的多值关系；当前只有 `FAIL_BLOCKING` 会把退出码抬到 `1`。
+
+### 3.3 Mainline Flow Recovery
+
+`doctor mainline` 现在包含 `Mainline Flow Recovery` 检查。它读取本地已声明的主线恢复产物，不扫描业务源码，也不替代 `verify`。
+
+该检查稳定回答：
+
+- 当前是否有 active `.jispec/change-session.json`
+- 是否可以直接继续 active session
+- 是否应从 `.jispec/handoff/<change-session-id>.json` replay
+- 是否应从 `.jispec/implement/<change-session-id>/patch-mediation.json` 重新提交 patch
+- 是否因为 stale impact artifact 或 malformed session 必须先恢复元数据
+
+每个非 idle 诊断都必须尽量输出：
+
+- `ownerAction`
+- `nextCommand`
+- `sourceArtifacts`
+
+当前稳定状态包括：
+
+| 状态 | 含义 | 典型 next command |
+| --- | --- | --- |
+| `idle` | 没有 active session，也没有 replayable handoff | 无 |
+| `continue_active_session` | active session 暴露可继续的 `nextCommands` | session 的第一条 next command |
+| `resume_from_handoff` | 可从 replayable handoff 恢复 | `npm run jispec-cli -- implement --from-handoff .jispec/handoff/<id>.json` |
+| `resume_patch_mediation` | patch mediation scope/apply 失败，需要重新提交 patch | `npm run jispec-cli -- implement --from-handoff .jispec/handoff/<id>.json --external-patch <path>` |
+| `stale_artifact` | active session 指向 stale impact artifact，必须刷新后再继续 | impact summary 的 replay command |
+| `malformed_session` | `.jispec/change-session.json` 不可解析或没有恢复命令 | `npm run jispec-cli -- change "<summary>" --json` |
+
+### 3.4 Mainline Recovery Drill
+
+`doctor mainline --write-drill` materializes the current flow recovery diagnosis as explicit drill artifacts:
+
+- `.jispec/recovery/mainline-drill.json`
+- `.jispec/recovery/mainline-drill.md`
+
+The JSON packet is the machine API. The Markdown file is a human companion only. Each drill step records:
+
+- `currentState`
+- `sourceArtifact`
+- `ownerAction`
+- `command`
+- `expectedNextState`
+- `verificationCommand`
+- `evidenceArtifacts`
+
+The drill does not execute commands, does not upload source, does not replace `verify`, and does not replace `doctor mainline`. It exists so a reviewer can rehearse the recovery path and confirm the expected next state before continuing.
 
 ## 4. 关键落盘文件
 
@@ -333,6 +381,59 @@ Waiver 只是一种可审计 mitigation，不是永久忽略规则。匹配到�
 | `issues` | `array` | 稳定排序后的 issue 列表 |
 | `metadata` | `object` | 附加上下文，例如 facts contract、policy、baseline、waiver、observe、lane 等 |
 
+`metadata.gateCoverage` 是阶段 5 后新增的稳定 read model。它只补充门禁覆盖证据，不改变 `verdict`、`ok`、`exit_code` 或 issue severity 的权威性。
+
+稳定字段包括：
+
+| 字段 | 类型 | 语义 |
+| --- | --- | --- |
+| `phase` | `north-star-score-optimization-phase-5` | 当前门禁覆盖模型版本锚点 |
+| `status` | `ok \| attention \| blocked \| not_available_yet` | 覆盖面自身状态；不是 verify verdict |
+| `stackCoverage` | `object` | Node/TypeScript、Python、Go/Java 三类仓库表面的检测结果与 evidence |
+| `artifactFreshness` | `array` | CI report、policy、baseline、release compare、impact graph 的 fresh/stale/missing/invalid/not_available_yet 状态 |
+| `policyStableFactGuard` | `object` | blocking policy rule 是否只使用 stable facts，以及 unknown/unstable fact 计数 |
+| `issueNextActions` | `array` | 每个 verify issue 的 owner、source artifact、rationale 和 deterministic next command |
+| `topNextCommand` | `string` | 当前最优先的本地下一步命令 |
+
+稳定覆盖类：
+
+- `stackCoverage.requiredClassCoverage` 固定为 `node_typescript`、`python`、`go_or_java`。
+- `artifactFreshness[].id` 当前固定覆盖 `ci_report`、`policy`、`baseline`、`release_compare`、`impact_graph`。
+- `policyStableFactGuard.factsContractVersion` 与 facts contract 当前版本保持一致。
+- `issueNextActions[]` 不改变 issue 本身，只为修复/复核提供确定性动作包。
+- 缺失 freshness artifact 会进入 gate coverage context，但不会单独把 `PASS` 改成 `FAIL_BLOCKING`；真正 gate 仍由 verify issues 决定。
+
+`metadata.gateGapLedger` 是阶段 7 后新增的稳定 read model。它把 `gateCoverage` 中的 missing/stale/invalid/not_available_yet artifact、policy stable-fact guard 和 verify issue next actions 汇总成可持续追踪的 gate gap ledger。
+
+稳定字段包括：
+
+| 字段 | 类型 | 语义 |
+| --- | --- | --- |
+| `phase` | `north-star-score-optimization-phase-7` | 当前 gate gap ledger 模型版本锚点 |
+| `path` | `.spec/gates/gap-ledger.json` | 本地账本 artifact |
+| `total` | `number` | 账本 entry 总数 |
+| `unresolved` | `number` | 当前仍未解决的 gap 数 |
+| `resolved` | `number` | 历史已解决的 gap 数 |
+| `new` | `number` | 本次 verify 新出现的 unresolved gap 数 |
+| `persistent` | `number` | 跨 verify 仍存在的 unresolved gap 数 |
+| `blocking` / `attention` / `informational` | `number` | 当前 unresolved gap 的 posture 计数 |
+| `topNextCommand` | `string` | 当前最优先的本地下一步命令 |
+| `unresolvedEntryIds` | `string[]` | 当前 unresolved entry id 列表 |
+
+`.spec/gates/gap-ledger.json` 稳定包含：
+
+- `version: 1`
+- `phase: north-star-score-optimization-phase-7`
+- `generatedAt`
+- `sourceCoveragePhase`
+- `summary`
+- `topNextCommand`
+- `entries[]`
+
+每条 `entries[]` 稳定包含 `id`、`source`、`posture`、`status`、`owner`、`sourceArtifact`、`reason`、`nextCommand`、`firstSeenAt`、`lastSeenAt`、可选 `resolvedAt` 和 `occurrenceCount`。
+
+该账本只追踪 gate coverage debt 的生命周期；它不改变 `verify` verdict、issue severity 或退出码。
+
 ### 5.3 Issue 字段
 
 每个 `issues[]` 元素稳定包含：
@@ -472,6 +573,8 @@ Policy migration 会把已知 deprecated key 迁到当前结构：
 | unknown policy key | `verify` 产生 nonblocking `POLICY_UNKNOWN_KEY` |
 | deprecated policy key | `verify` 产生 nonblocking `POLICY_DEPRECATED_KEY`，并在 details 中给出 replacement |
 | blocking rule 使用 unstable fact | `verify` 产生 nonblocking `POLICY_BLOCKING_RULE_USES_UNSTABLE_FACT` |
+
+阶段 5 后，`metadata.gateCoverage.policyStableFactGuard` 会同步暴露同一批 policy posture：blocking rule 数、unstable blocking rule 数、unknown fact 数、受检 rule 列表和下一步命令。它是 policy 审计 read model，不是第二套 policy evaluator；稳定错误行为仍以 verify issue code 为准。
 
 ## 8. Change / Implement 串联语义
 

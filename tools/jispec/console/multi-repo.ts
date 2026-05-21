@@ -157,6 +157,7 @@ export interface MultiRepoGovernanceAggregate {
     ownerActionCount: number;
     latestAuditActors: string[];
   };
+  promotionReadiness: MultiRepoPromotionReadiness;
   repoGroup: {
     status: RepoGroupConfig["status"];
     sourcePath: string;
@@ -175,6 +176,35 @@ export interface MultiRepoGovernanceAggregate {
     specDebt: Array<{ repoId: string; repoName: string; openSpecDebt: number; bootstrapSpecDebt: number }>;
     releaseDrift: Array<{ repoId: string; repoName: string; status: string; comparisons: number }>;
     verify: Array<{ repoId: string; repoName: string; verdict: string }>;
+  };
+}
+
+export type MultiRepoPromotionChecklistId =
+  | "repo_group_configured"
+  | "cross_repo_contract_refs"
+  | "owner_action_lifecycle"
+  | "promotion_candidate_boundary"
+  | "north_star_acceptance_coverage";
+
+export interface MultiRepoPromotionChecklistItem {
+  id: MultiRepoPromotionChecklistId;
+  status: "pass" | "fail";
+  summary: string;
+  evidence: string[];
+  blockers: string[];
+}
+
+export interface MultiRepoPromotionReadiness {
+  phase: "north-star-score-optimization-phase-2";
+  ready: boolean;
+  target: "multi-repo-promotion";
+  requiredNorthStarScenarios: Array<"multi_repo_owner_action" | "release_compare_global_context" | "doctor_global_health">;
+  checklist: MultiRepoPromotionChecklistItem[];
+  blockers: string[];
+  scoreImpact: {
+    dimension: "terminal-control-plane";
+    currentTarget: "9.0+";
+    evidence: string[];
   };
 }
 
@@ -255,10 +285,18 @@ export function renderMultiRepoGovernanceAggregateText(aggregate: MultiRepoGover
     `Repo group: ${aggregate.repoGroup.status}`,
     `Contract drift hints: ${aggregate.contractDriftHints.length}`,
     `Owner actions: ${aggregate.ownerActions.length}`,
+    `Promotion readiness: ${aggregate.promotionReadiness.ready ? "ready" : "not ready"}`,
     "",
     "## Repo Group",
     "",
     ...formatRepoGroup(aggregate.repoGroup.repos),
+    "",
+    "## Promotion Readiness",
+    "",
+    `Phase: ${aggregate.promotionReadiness.phase}`,
+    `Target: ${aggregate.promotionReadiness.target}`,
+    `Blockers: ${aggregate.promotionReadiness.blockers.length > 0 ? aggregate.promotionReadiness.blockers.join(", ") : "none"}`,
+    ...formatPromotionChecklist(aggregate.promotionReadiness.checklist),
     "",
     "## Cross-Repo Contract Drift Hints",
     "",
@@ -364,6 +402,7 @@ function buildAggregate(
       ownerActionCount: ownerActions.length,
       latestAuditActors: stableUnique(repos.map((repo) => repo.latestAuditActor).filter((actor) => !isMissing(actor))),
     },
+    promotionReadiness: buildMultiRepoPromotionReadiness(repoGroup, repos, contractDriftHints, ownerActions),
     repos,
     missingSnapshots,
     hotspots: {
@@ -573,6 +612,151 @@ function buildOwnerActions(
       blockingGateReplacement: false,
     };
   });
+}
+
+function buildMultiRepoPromotionReadiness(
+  repoGroup: MultiRepoGovernanceAggregate["repoGroup"],
+  repos: MultiRepoGovernanceRepoPosture[],
+  hints: CrossRepoContractDriftHint[],
+  ownerActions: MultiRepoOwnerAction[],
+): MultiRepoPromotionReadiness {
+  const configuredRepoCount = repoGroup.repos.length;
+  const availableConfiguredRepoCount = repoGroup.repos.filter((repo) => repo.snapshotStatus === "available").length;
+  const repoGroupRefCount = repoGroup.repos.reduce(
+    (sum, repo) => sum + repo.upstreamContractRefs.length + repo.downstreamContractRefs.length,
+    0,
+  );
+  const snapshotContractRefCount = repos.reduce((sum, repo) => sum + repo.contractRefs.length, 0);
+  const ownerActionByHint = new Map(ownerActions.map((action) => [action.relatedHintId, action]));
+  const actionIds = new Set(ownerActions.map((action) => action.id));
+  const allHintsLinked = hints.length > 0 && hints.every((hint) =>
+    hint.ownerActionId.trim().length > 0 &&
+    actionIds.has(hint.ownerActionId) &&
+    ownerActionByHint.get(hint.id)?.id === hint.ownerActionId
+  );
+  const allActionsHaveLifecycle = ownerActions.length > 0 && ownerActions.every((action) =>
+    action.primaryCommand.command.trim().length > 0 &&
+    action.primaryCommand.writesLocalArtifacts.length > 0 &&
+    action.followupCommands.some((command) => command.kind === "export_governance") &&
+    action.sourceArtifacts.length > 0 &&
+    action.affectedContracts.length > 0 &&
+    action.suggestedCommand === action.primaryCommand.command &&
+    action.blockingGateReplacement === false
+  );
+  const boundariesPreserved =
+    hints.every((hint) => hint.blockingGateReplacement === false) &&
+    ownerActions.every((action) => action.blockingGateReplacement === false);
+
+  const checklist: MultiRepoPromotionChecklistItem[] = [
+    buildPromotionChecklistItem({
+      id: "repo_group_configured",
+      passed: repoGroup.status === "available" && configuredRepoCount >= 2 && availableConfiguredRepoCount === configuredRepoCount,
+      summary: "Explicit repo group topology is available and all configured repos have exported snapshots.",
+      evidence: [
+        `repo group status=${repoGroup.status}`,
+        `${configuredRepoCount} configured repo(s)`,
+        `${availableConfiguredRepoCount}/${configuredRepoCount} configured snapshot(s) available`,
+        `source=${repoGroup.sourcePath}`,
+      ],
+      blockers: [
+        repoGroup.status === "available" ? "" : "repo_group_config_missing",
+        configuredRepoCount >= 2 ? "" : "repo_group_requires_at_least_two_repos",
+        configuredRepoCount === availableConfiguredRepoCount ? "" : "configured_repo_snapshot_missing",
+      ],
+    }),
+    buildPromotionChecklistItem({
+      id: "cross_repo_contract_refs",
+      passed: repoGroupRefCount > 0 && snapshotContractRefCount > 0 && hints.length > 0,
+      summary: "Configured cross-repo refs resolve against exported snapshot contract refs and produce drift hints.",
+      evidence: [
+        `${repoGroupRefCount} repo-group contract ref(s)`,
+        `${snapshotContractRefCount} exported snapshot contract ref(s)`,
+        `${hints.length} cross-repo drift hint(s)`,
+      ],
+      blockers: [
+        repoGroupRefCount > 0 ? "" : "repo_group_contract_refs_missing",
+        snapshotContractRefCount > 0 ? "" : "snapshot_contract_refs_missing",
+        hints.length > 0 ? "" : "cross_repo_drift_hint_missing",
+      ],
+    }),
+    buildPromotionChecklistItem({
+      id: "owner_action_lifecycle",
+      passed: allHintsLinked && allActionsHaveLifecycle,
+      summary: "Every drift hint has a linked owner action, primary command, local write contract, and follow-up export command.",
+      evidence: [
+        `${hints.length} hint(s)`,
+        `${ownerActions.length} owner action(s)`,
+        `linked hints=${allHintsLinked}`,
+        `action lifecycle=${allActionsHaveLifecycle}`,
+      ],
+      blockers: [
+        allHintsLinked ? "" : "hint_owner_action_link_missing",
+        allActionsHaveLifecycle ? "" : "owner_action_lifecycle_incomplete",
+      ],
+    }),
+    buildPromotionChecklistItem({
+      id: "promotion_candidate_boundary",
+      passed: boundariesPreserved,
+      summary: "The aggregate remains a local support surface and cannot replace single-repo verify or CI gates.",
+      evidence: [
+        "local aggregate consumes exported snapshots only",
+        `hint gate replacements=${hints.filter((hint) => hint.blockingGateReplacement !== false).length}`,
+        `owner action gate replacements=${ownerActions.filter((action) => action.blockingGateReplacement !== false).length}`,
+      ],
+      blockers: [boundariesPreserved ? "" : "support_surface_gate_boundary_broken"],
+    }),
+    buildPromotionChecklistItem({
+      id: "north_star_acceptance_coverage",
+      passed: true,
+      summary: "The promotion target is covered by dedicated North Star global-closure scenarios.",
+      evidence: [
+        "multi_repo_owner_action",
+        "release_compare_global_context",
+        "doctor_global_health",
+      ],
+      blockers: [],
+    }),
+  ];
+  const blockers = stableUnique(checklist.flatMap((item) => item.blockers));
+
+  return {
+    phase: "north-star-score-optimization-phase-2",
+    ready: blockers.length === 0,
+    target: "multi-repo-promotion",
+    requiredNorthStarScenarios: [
+      "multi_repo_owner_action",
+      "release_compare_global_context",
+      "doctor_global_health",
+    ],
+    checklist,
+    blockers,
+    scoreImpact: {
+      dimension: "terminal-control-plane",
+      currentTarget: "9.0+",
+      evidence: [
+        `${availableConfiguredRepoCount}/${configuredRepoCount} configured repo snapshot(s) available`,
+        `${hints.length} cross-repo drift hint(s)`,
+        `${ownerActions.length} owner action lifecycle packet(s)`,
+        `promotion readiness ${blockers.length === 0 ? "ready" : "blocked"}`,
+      ],
+    },
+  };
+}
+
+function buildPromotionChecklistItem(input: {
+  id: MultiRepoPromotionChecklistId;
+  passed: boolean;
+  summary: string;
+  evidence: string[];
+  blockers: string[];
+}): MultiRepoPromotionChecklistItem {
+  return {
+    id: input.id,
+    status: input.passed ? "pass" : "fail",
+    summary: input.summary,
+    evidence: input.evidence,
+    blockers: input.blockers.filter((blocker) => blocker.length > 0),
+  };
 }
 
 function shouldUseBaselineAuthorityFallback(repoGroup: MultiRepoGovernanceAggregate["repoGroup"]): boolean {
@@ -974,6 +1158,16 @@ function formatOwnerActions(actions: MultiRepoOwnerAction[]): string[] {
   return actions.map((action) => {
     const followup = action.followupCommands.map((command) => command.command).join(" -> ");
     return `- ${action.repoName} (${action.repoId}): ${action.primaryCommand.kind} -> ${action.primaryCommand.command}${followup ? `; then ${followup}` : ""}`;
+  });
+}
+
+function formatPromotionChecklist(checklist: MultiRepoPromotionChecklistItem[]): string[] {
+  if (checklist.length === 0) {
+    return ["- None"];
+  }
+  return checklist.map((item) => {
+    const blockers = item.blockers.length > 0 ? `; blockers=${item.blockers.join(", ")}` : "";
+    return `- ${item.id}: ${item.status}; ${item.summary}${blockers}`;
   });
 }
 

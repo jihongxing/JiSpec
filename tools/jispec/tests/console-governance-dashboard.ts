@@ -266,6 +266,14 @@ async function main(): Promise<void> {
             verifyNonBlockingRate: 1,
             ownerReviewFixtureRate: 1,
           },
+          realismLadder: {
+            phase: "north-star-score-optimization-phase-6",
+            ready: true,
+            targetRealismClassCount: 5,
+            coveredRealismClassCount: 5,
+            missingRealismClasses: [],
+            blockers: [],
+          },
         },
       });
       writeJson(root, ".spec/north-star/acceptance.json", {
@@ -329,7 +337,9 @@ async function main(): Promise<void> {
       assert.equal(question(dashboard, "spec_debt_attention").status, "attention");
       assert.equal(question(dashboard, "retakeover_pool_health").status, "ok");
       assert.match(question(dashboard, "retakeover_pool_health").answer, /non-blocking/);
+      assert.match(question(dashboard, "retakeover_pool_health").answer, /realism ladder is ready/);
       assert.match(question(dashboard, "retakeover_pool_health").answer, /20%/);
+      assert.ok(question(dashboard, "retakeover_pool_health").evidence.some((entry) => entry.includes("Realism ladder: 5/5")));
       assert.ok(question(dashboard, "retakeover_pool_health").evidence.some((entry) => entry.includes("synthetic-contract-drift")));
       assert.equal(question(dashboard, "handoff_replay_status").status, "attention");
       assert.match(question(dashboard, "handoff_replay_status").answer, /external tool handoff/);

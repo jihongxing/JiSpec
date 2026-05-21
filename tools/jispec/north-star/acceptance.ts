@@ -16,6 +16,7 @@ export type NorthStarScenarioId =
   | "legacy_takeover"
   | "greenfield"
   | "daily_change"
+  | "mainline_recovery_drill"
   | "external_patch_mediation"
   | "policy_waiver"
   | "release_drift"
@@ -27,7 +28,13 @@ export type NorthStarScenarioId =
   | "console_source_evolution"
   | "multi_repo_owner_action"
   | "release_compare_global_context"
-  | "doctor_global_health";
+  | "doctor_global_health"
+  | "global_operations_packet"
+  | "org_responsibility_graph"
+  | "async_review_inbox"
+  | "ops_aging_ledger"
+  | "release_train_packet"
+  | "org_operations_console";
 
 export type NorthStarProofClaim =
   | "verifiable"
@@ -92,6 +99,8 @@ export interface NorthStarScenarioEvidence {
   }>;
   aggregateContractDriftHintCount?: number;
   aggregateOwnerActionCount?: number;
+  aggregatePromotionReady?: boolean;
+  aggregatePromotionPhase?: string;
   releaseCompareReportPath?: string;
   releaseCompareGlobalContextStatus?: string;
   releaseCompareOwnerReviewRecommendationCount?: number;
@@ -99,6 +108,77 @@ export interface NorthStarScenarioEvidence {
   releaseCompareRelevantOwnerActionCount?: number;
   doctorGlobalReady?: boolean;
   doctorGlobalBlockerCount?: number;
+  globalOperationsPacketStatus?: string;
+  globalOperationsOwnerActionCount?: number;
+  globalOperationsCrossRepoRefCount?: number;
+  globalOperationsSupportSurfaceCount?: number;
+  globalOperationsAsyncEvidenceAvailable?: number;
+  globalOperationsAsyncEvidenceTotal?: number;
+  globalOperationsPrivacyStatus?: string;
+  globalOperationsBoundaryReplacesVerify?: boolean;
+  globalOperationsDeferredSurfacesDiagnosticOnly?: boolean;
+  globalOperationsSourceUploadRequired?: boolean;
+  globalOperationsRealtimeCollaborationRequired?: boolean;
+  orgResponsibilityGraphStatus?: string;
+  orgResponsibilityTeamCount?: number;
+  orgResponsibilityRepoCount?: number;
+  orgResponsibilityOwnerActionCount?: number;
+  orgResponsibilityReviewerCoverage?: number;
+  orgResponsibilityEscalationCoverage?: number;
+  orgResponsibilityBoundaryReplacesVerify?: boolean;
+  orgResponsibilitySourceUploadRequired?: boolean;
+  orgResponsibilityRealtimeCollaborationRequired?: boolean;
+  asyncReviewInboxStatus?: string;
+  asyncReviewReviewerCount?: number;
+  asyncReviewTotalItems?: number;
+  asyncReviewPending?: number;
+  asyncReviewAccepted?: number;
+  asyncReviewBlocked?: number;
+  asyncReviewExpired?: number;
+  asyncReviewReviewersMissing?: number;
+  asyncReviewEscalationReadyItems?: number;
+  asyncReviewBoundaryReplacesVerify?: boolean;
+  asyncReviewSourceUploadRequired?: boolean;
+  asyncReviewRealtimeCollaborationRequired?: boolean;
+  opsAgingLedgerStatus?: string;
+  opsAgingTotalItems?: number;
+  opsAgingFresh?: number;
+  opsAgingDueSoon?: number;
+  opsAgingOverdue?: number;
+  opsAgingEscalated?: number;
+  opsAgingItemsWithEscalationPath?: number;
+  opsAgingItemsMissingEscalationPath?: number;
+  opsAgingBoundaryReplacesVerify?: boolean;
+  opsAgingSourceUploadRequired?: boolean;
+  opsAgingRealtimeCollaborationRequired?: boolean;
+  releaseTrainPacketStatus?: string;
+  releaseTrainReady?: boolean;
+  releaseTrainRepoCount?: number;
+  releaseTrainBlockedRepoCount?: number;
+  releaseTrainOwnerAssignmentCount?: number;
+  releaseTrainRequiredReviewCount?: number;
+  releaseTrainSafeNextCommand?: string;
+  releaseTrainGlobalContextStatus?: string;
+  releaseTrainBoundaryReplacesVerify?: boolean;
+  releaseTrainBoundaryReplacesPostReleaseGate?: boolean;
+  releaseTrainSourceUploadRequired?: boolean;
+  releaseTrainRealtimeCollaborationRequired?: boolean;
+  orgOperationsConsoleStatus?: string;
+  orgOperationsReady?: boolean;
+  orgOperationsAvailableObjectCount?: number;
+  orgOperationsMissingObjectCount?: number;
+  orgOperationsResponsibilityAssignments?: number;
+  orgOperationsReviewItems?: number;
+  orgOperationsSlaAttentionCount?: number;
+  orgOperationsBlockedRepoCount?: number;
+  orgOperationsBoundaryReplacesVerify?: boolean;
+  orgOperationsBoundaryReplacesPostReleaseGate?: boolean;
+  orgOperationsSourceUploadRequired?: boolean;
+  orgOperationsRealtimeCollaborationRequired?: boolean;
+  mainlineRecoveryDrillStatus?: string;
+  mainlineRecoveryDrillStepCount?: number;
+  mainlineRecoveryDrillExpectedNextState?: string;
+  mainlineRecoveryDrillVerificationCommand?: string;
   governedRequirementEvolution: boolean;
 }
 
@@ -220,6 +300,21 @@ const SCENARIOS: ScenarioDefinition[] = [
     ownerAction: "Record a daily change plan and refresh the verify report.",
     nextCommand: "npm run jispec -- change \"<summary>\" --mode execute --json",
     proofClaims: ["verifiable", "blockable", "replayable"],
+  },
+  {
+    id: "mainline_recovery_drill",
+    title: "Mainline recovery drill",
+    task: {
+      id: "North-Star-Score-Phase-9",
+      week: "Score Optimization",
+      priority: "P0",
+      owner: "Change / Implement Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/mainline-recovery-drill.ts",
+    },
+    requiredArtifacts: [".jispec/recovery/mainline-drill.json"],
+    ownerAction: "Materialize the mainline recovery drill and review the expected next state before continuing.",
+    nextCommand: "npm run jispec-cli -- doctor mainline --write-drill --json",
+    proofClaims: ["verifiable", "blockable", "replayable", "localFirst"],
   },
   {
     id: "external_patch_mediation",
@@ -394,6 +489,96 @@ const SCENARIOS: ScenarioDefinition[] = [
     ownerAction: "Keep the artifact chain healthy enough that doctor global would see a coherent closure loop instead of partial evidence.",
     nextCommand: "npm run jispec -- doctor global --root . --json",
     proofClaims: ["verifiable", "auditable", "localFirst"],
+  },
+  {
+    id: "global_operations_packet",
+    title: "Global operations packet",
+    task: {
+      id: "North-Star-Score-Phase-10",
+      week: "Score Optimization",
+      priority: "P0",
+      owner: "Global Operations Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/global-operations-packet.ts",
+    },
+    requiredArtifacts: [".spec/operations/global-operations-packet.json"],
+    ownerAction: "Materialize the local-first operations packet after refreshing multi-repo, privacy, audit, and doctor global artifacts.",
+    nextCommand: "npm run jispec-cli -- doctor global --write-operations --json",
+    proofClaims: ["verifiable", "auditable", "blockable", "localFirst", "externalToolsControlled"],
+  },
+  {
+    id: "org_responsibility_graph",
+    title: "Org responsibility graph",
+    task: {
+      id: "North-Star-Score-Phase-11",
+      week: "Score Optimization",
+      priority: "P0",
+      owner: "Global Operations Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/org-responsibility-graph.ts",
+    },
+    requiredArtifacts: [".spec/operations/org-responsibility-graph.json"],
+    ownerAction: "Materialize the org responsibility graph after refreshing global operations, org topology, reviewers, escalation paths, and audit evidence.",
+    nextCommand: "npm run jispec-cli -- doctor global --write-operations --write-org-graph --json",
+    proofClaims: ["verifiable", "auditable", "blockable", "localFirst", "externalToolsControlled"],
+  },
+  {
+    id: "async_review_inbox",
+    title: "Async review inbox",
+    task: {
+      id: "North-Star-Score-Phase-12",
+      week: "Score Optimization",
+      priority: "P0",
+      owner: "Global Operations Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/async-review-inbox.ts",
+    },
+    requiredArtifacts: [".spec/operations/async-review-inbox.json"],
+    ownerAction: "Materialize the local async review inbox after refreshing org responsibility graph reviewer assignments and audit evidence.",
+    nextCommand: "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --json",
+    proofClaims: ["verifiable", "auditable", "blockable", "localFirst", "externalToolsControlled"],
+  },
+  {
+    id: "ops_aging_ledger",
+    title: "Ops aging ledger",
+    task: {
+      id: "North-Star-Score-Phase-13",
+      week: "Score Optimization",
+      priority: "P0",
+      owner: "Global Operations Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/ops-aging-ledger.ts",
+    },
+    requiredArtifacts: [".spec/operations/ops-aging-ledger.json"],
+    ownerAction: "Materialize the ops aging ledger after refreshing async review inbox and escalation paths.",
+    nextCommand: "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --write-aging-ledger --json",
+    proofClaims: ["verifiable", "auditable", "blockable", "localFirst", "externalToolsControlled"],
+  },
+  {
+    id: "release_train_packet",
+    title: "Release train packet",
+    task: {
+      id: "North-Star-Score-Phase-14",
+      week: "Score Optimization",
+      priority: "P0",
+      owner: "Global Operations Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/release-train-packet.ts",
+    },
+    requiredArtifacts: [".spec/operations/release-train-packet.json"],
+    ownerAction: "Materialize the release train packet after refreshing promotion readiness, release compare context, org responsibility graph, and ops aging ledger.",
+    nextCommand: "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --write-aging-ledger --write-release-train --json",
+    proofClaims: ["verifiable", "auditable", "blockable", "localFirst", "externalToolsControlled"],
+  },
+  {
+    id: "org_operations_console",
+    title: "Org operations console",
+    task: {
+      id: "North-Star-Score-Phase-15",
+      week: "Score Optimization",
+      priority: "P0",
+      owner: "Global Operations Owner",
+      acceptanceCommand: "node --import tsx ./tools/jispec/tests/org-operations-console.ts",
+    },
+    requiredArtifacts: [".spec/console/ui/index.html"],
+    ownerAction: "Render the local static Console after refreshing org responsibility, async review, SLA aging, and release train artifacts.",
+    nextCommand: "npm run jispec-cli -- console ui --root . --json",
+    proofClaims: ["verifiable", "auditable", "blockable", "localFirst", "externalToolsControlled"],
   },
 ];
 
@@ -683,6 +868,12 @@ function renderScenarioDecisionPacket(acceptance: NorthStarAcceptance, scenario:
       scenario.evidence.aggregateOwnerActionCount !== undefined
         ? `- Aggregate owner actions: ${scenario.evidence.aggregateOwnerActionCount}`
         : undefined,
+      scenario.evidence.aggregatePromotionReady !== undefined
+        ? `- Aggregate promotion readiness: ${scenario.evidence.aggregatePromotionReady}`
+        : undefined,
+      scenario.evidence.aggregatePromotionPhase
+        ? `- Aggregate promotion phase: ${scenario.evidence.aggregatePromotionPhase}`
+        : undefined,
       scenario.evidence.releaseCompareReportPath
         ? `- Release compare report: ${scenario.evidence.releaseCompareReportPath}`
         : undefined,
@@ -703,6 +894,201 @@ function renderScenarioDecisionPacket(acceptance: NorthStarAcceptance, scenario:
         : undefined,
       scenario.evidence.doctorGlobalBlockerCount !== undefined
         ? `- Doctor global blocker count: ${scenario.evidence.doctorGlobalBlockerCount}`
+        : undefined,
+      scenario.evidence.globalOperationsPacketStatus
+        ? `- Global operations packet: ${scenario.evidence.globalOperationsPacketStatus}`
+        : undefined,
+      scenario.evidence.globalOperationsOwnerActionCount !== undefined
+        ? `- Global operations owner actions: ${scenario.evidence.globalOperationsOwnerActionCount}`
+        : undefined,
+      scenario.evidence.globalOperationsCrossRepoRefCount !== undefined
+        ? `- Global operations cross-repo refs: ${scenario.evidence.globalOperationsCrossRepoRefCount}`
+        : undefined,
+      scenario.evidence.globalOperationsSupportSurfaceCount !== undefined
+        ? `- Global operations support surfaces: ${scenario.evidence.globalOperationsSupportSurfaceCount}`
+        : undefined,
+      scenario.evidence.globalOperationsAsyncEvidenceAvailable !== undefined
+        ? `- Global operations async evidence: ${scenario.evidence.globalOperationsAsyncEvidenceAvailable}/${scenario.evidence.globalOperationsAsyncEvidenceTotal ?? "not recorded"}`
+        : undefined,
+      scenario.evidence.globalOperationsPrivacyStatus
+        ? `- Global operations privacy posture: ${scenario.evidence.globalOperationsPrivacyStatus}`
+        : undefined,
+      scenario.evidence.globalOperationsBoundaryReplacesVerify !== undefined
+        ? `- Global operations replaces verify: ${scenario.evidence.globalOperationsBoundaryReplacesVerify}`
+        : undefined,
+      scenario.evidence.globalOperationsSourceUploadRequired !== undefined
+        ? `- Global operations source upload required: ${scenario.evidence.globalOperationsSourceUploadRequired}`
+        : undefined,
+      scenario.evidence.globalOperationsRealtimeCollaborationRequired !== undefined
+        ? `- Global operations realtime collaboration required: ${scenario.evidence.globalOperationsRealtimeCollaborationRequired}`
+        : undefined,
+      scenario.evidence.globalOperationsDeferredSurfacesDiagnosticOnly !== undefined
+        ? `- Global operations deferred surfaces diagnostic-only: ${scenario.evidence.globalOperationsDeferredSurfacesDiagnosticOnly}`
+        : undefined,
+      scenario.evidence.orgResponsibilityGraphStatus
+        ? `- Org responsibility graph: ${scenario.evidence.orgResponsibilityGraphStatus}`
+        : undefined,
+      scenario.evidence.orgResponsibilityTeamCount !== undefined
+        ? `- Org responsibility teams: ${scenario.evidence.orgResponsibilityTeamCount}`
+        : undefined,
+      scenario.evidence.orgResponsibilityRepoCount !== undefined
+        ? `- Org responsibility repos: ${scenario.evidence.orgResponsibilityRepoCount}`
+        : undefined,
+      scenario.evidence.orgResponsibilityOwnerActionCount !== undefined
+        ? `- Org responsibility owner actions: ${scenario.evidence.orgResponsibilityOwnerActionCount}`
+        : undefined,
+      scenario.evidence.orgResponsibilityReviewerCoverage !== undefined
+        ? `- Org responsibility reviewer coverage: ${scenario.evidence.orgResponsibilityReviewerCoverage}`
+        : undefined,
+      scenario.evidence.orgResponsibilityEscalationCoverage !== undefined
+        ? `- Org responsibility escalation coverage: ${scenario.evidence.orgResponsibilityEscalationCoverage}`
+        : undefined,
+      scenario.evidence.orgResponsibilityBoundaryReplacesVerify !== undefined
+        ? `- Org responsibility replaces verify: ${scenario.evidence.orgResponsibilityBoundaryReplacesVerify}`
+        : undefined,
+      scenario.evidence.orgResponsibilitySourceUploadRequired !== undefined
+        ? `- Org responsibility source upload required: ${scenario.evidence.orgResponsibilitySourceUploadRequired}`
+        : undefined,
+      scenario.evidence.orgResponsibilityRealtimeCollaborationRequired !== undefined
+        ? `- Org responsibility realtime collaboration required: ${scenario.evidence.orgResponsibilityRealtimeCollaborationRequired}`
+        : undefined,
+      scenario.evidence.asyncReviewInboxStatus
+        ? `- Async review inbox: ${scenario.evidence.asyncReviewInboxStatus}`
+        : undefined,
+      scenario.evidence.asyncReviewReviewerCount !== undefined
+        ? `- Async review reviewers: ${scenario.evidence.asyncReviewReviewerCount}`
+        : undefined,
+      scenario.evidence.asyncReviewTotalItems !== undefined
+        ? `- Async review total items: ${scenario.evidence.asyncReviewTotalItems}`
+        : undefined,
+      scenario.evidence.asyncReviewPending !== undefined
+        ? `- Async review pending: ${scenario.evidence.asyncReviewPending}`
+        : undefined,
+      scenario.evidence.asyncReviewAccepted !== undefined
+        ? `- Async review accepted: ${scenario.evidence.asyncReviewAccepted}`
+        : undefined,
+      scenario.evidence.asyncReviewBlocked !== undefined
+        ? `- Async review blocked: ${scenario.evidence.asyncReviewBlocked}`
+        : undefined,
+      scenario.evidence.asyncReviewExpired !== undefined
+        ? `- Async review expired: ${scenario.evidence.asyncReviewExpired}`
+        : undefined,
+      scenario.evidence.asyncReviewReviewersMissing !== undefined
+        ? `- Async review reviewers missing: ${scenario.evidence.asyncReviewReviewersMissing}`
+        : undefined,
+      scenario.evidence.asyncReviewEscalationReadyItems !== undefined
+        ? `- Async review escalation-ready items: ${scenario.evidence.asyncReviewEscalationReadyItems}`
+        : undefined,
+      scenario.evidence.asyncReviewBoundaryReplacesVerify !== undefined
+        ? `- Async review replaces verify: ${scenario.evidence.asyncReviewBoundaryReplacesVerify}`
+        : undefined,
+      scenario.evidence.asyncReviewSourceUploadRequired !== undefined
+        ? `- Async review source upload required: ${scenario.evidence.asyncReviewSourceUploadRequired}`
+        : undefined,
+      scenario.evidence.asyncReviewRealtimeCollaborationRequired !== undefined
+        ? `- Async review realtime collaboration required: ${scenario.evidence.asyncReviewRealtimeCollaborationRequired}`
+        : undefined,
+      scenario.evidence.opsAgingLedgerStatus
+        ? `- Ops aging ledger: ${scenario.evidence.opsAgingLedgerStatus}`
+        : undefined,
+      scenario.evidence.opsAgingTotalItems !== undefined
+        ? `- Ops aging total items: ${scenario.evidence.opsAgingTotalItems}`
+        : undefined,
+      scenario.evidence.opsAgingFresh !== undefined
+        ? `- Ops aging fresh: ${scenario.evidence.opsAgingFresh}`
+        : undefined,
+      scenario.evidence.opsAgingDueSoon !== undefined
+        ? `- Ops aging due soon: ${scenario.evidence.opsAgingDueSoon}`
+        : undefined,
+      scenario.evidence.opsAgingOverdue !== undefined
+        ? `- Ops aging overdue: ${scenario.evidence.opsAgingOverdue}`
+        : undefined,
+      scenario.evidence.opsAgingEscalated !== undefined
+        ? `- Ops aging escalated: ${scenario.evidence.opsAgingEscalated}`
+        : undefined,
+      scenario.evidence.opsAgingItemsWithEscalationPath !== undefined
+        ? `- Ops aging items with escalation path: ${scenario.evidence.opsAgingItemsWithEscalationPath}`
+        : undefined,
+      scenario.evidence.opsAgingItemsMissingEscalationPath !== undefined
+        ? `- Ops aging items missing escalation path: ${scenario.evidence.opsAgingItemsMissingEscalationPath}`
+        : undefined,
+      scenario.evidence.opsAgingBoundaryReplacesVerify !== undefined
+        ? `- Ops aging replaces verify: ${scenario.evidence.opsAgingBoundaryReplacesVerify}`
+        : undefined,
+      scenario.evidence.opsAgingSourceUploadRequired !== undefined
+        ? `- Ops aging source upload required: ${scenario.evidence.opsAgingSourceUploadRequired}`
+        : undefined,
+      scenario.evidence.opsAgingRealtimeCollaborationRequired !== undefined
+        ? `- Ops aging realtime collaboration required: ${scenario.evidence.opsAgingRealtimeCollaborationRequired}`
+        : undefined,
+      scenario.evidence.releaseTrainPacketStatus
+        ? `- Release train packet: ${scenario.evidence.releaseTrainPacketStatus}`
+        : undefined,
+      scenario.evidence.releaseTrainReady !== undefined
+        ? `- Release train ready: ${scenario.evidence.releaseTrainReady}`
+        : undefined,
+      scenario.evidence.releaseTrainRepoCount !== undefined
+        ? `- Release train repos: ${scenario.evidence.releaseTrainRepoCount}`
+        : undefined,
+      scenario.evidence.releaseTrainBlockedRepoCount !== undefined
+        ? `- Release train blocked repos: ${scenario.evidence.releaseTrainBlockedRepoCount}`
+        : undefined,
+      scenario.evidence.releaseTrainOwnerAssignmentCount !== undefined
+        ? `- Release train owner assignments: ${scenario.evidence.releaseTrainOwnerAssignmentCount}`
+        : undefined,
+      scenario.evidence.releaseTrainRequiredReviewCount !== undefined
+        ? `- Release train required reviews: ${scenario.evidence.releaseTrainRequiredReviewCount}`
+        : undefined,
+      scenario.evidence.releaseTrainSafeNextCommand
+        ? `- Release train safe next command: ${scenario.evidence.releaseTrainSafeNextCommand}`
+        : undefined,
+      scenario.evidence.releaseTrainGlobalContextStatus
+        ? `- Release train global context: ${scenario.evidence.releaseTrainGlobalContextStatus}`
+        : undefined,
+      scenario.evidence.releaseTrainBoundaryReplacesVerify !== undefined
+        ? `- Release train replaces verify: ${scenario.evidence.releaseTrainBoundaryReplacesVerify}`
+        : undefined,
+      scenario.evidence.releaseTrainBoundaryReplacesPostReleaseGate !== undefined
+        ? `- Release train replaces post-release gate: ${scenario.evidence.releaseTrainBoundaryReplacesPostReleaseGate}`
+        : undefined,
+      scenario.evidence.releaseTrainSourceUploadRequired !== undefined
+        ? `- Release train source upload required: ${scenario.evidence.releaseTrainSourceUploadRequired}`
+        : undefined,
+      scenario.evidence.releaseTrainRealtimeCollaborationRequired !== undefined
+        ? `- Release train realtime collaboration required: ${scenario.evidence.releaseTrainRealtimeCollaborationRequired}`
+        : undefined,
+      scenario.evidence.orgOperationsConsoleStatus
+        ? `- Org operations console: ${scenario.evidence.orgOperationsConsoleStatus}`
+        : undefined,
+      scenario.evidence.orgOperationsReady !== undefined
+        ? `- Org operations ready: ${scenario.evidence.orgOperationsReady}`
+        : undefined,
+      scenario.evidence.orgOperationsAvailableObjectCount !== undefined
+        ? `- Org operations objects available: ${scenario.evidence.orgOperationsAvailableObjectCount}`
+        : undefined,
+      scenario.evidence.orgOperationsResponsibilityAssignments !== undefined
+        ? `- Org operations responsibility assignments: ${scenario.evidence.orgOperationsResponsibilityAssignments}`
+        : undefined,
+      scenario.evidence.orgOperationsReviewItems !== undefined
+        ? `- Org operations review items: ${scenario.evidence.orgOperationsReviewItems}`
+        : undefined,
+      scenario.evidence.orgOperationsSlaAttentionCount !== undefined
+        ? `- Org operations SLA attention: ${scenario.evidence.orgOperationsSlaAttentionCount}`
+        : undefined,
+      scenario.evidence.orgOperationsBlockedRepoCount !== undefined
+        ? `- Org operations blocked repos: ${scenario.evidence.orgOperationsBlockedRepoCount}`
+        : undefined,
+      scenario.evidence.orgOperationsBoundaryReplacesVerify !== undefined
+        ? `- Org operations replaces verify: ${scenario.evidence.orgOperationsBoundaryReplacesVerify}`
+        : undefined,
+      scenario.evidence.orgOperationsBoundaryReplacesPostReleaseGate !== undefined
+        ? `- Org operations replaces post-release gate: ${scenario.evidence.orgOperationsBoundaryReplacesPostReleaseGate}`
+        : undefined,
+      scenario.evidence.orgOperationsSourceUploadRequired !== undefined
+        ? `- Org operations source upload required: ${scenario.evidence.orgOperationsSourceUploadRequired}`
+        : undefined,
+      scenario.evidence.orgOperationsRealtimeCollaborationRequired !== undefined
+        ? `- Org operations realtime collaboration required: ${scenario.evidence.orgOperationsRealtimeCollaborationRequired}`
         : undefined,
     ].filter((line): line is string => Boolean(line)) : []),
     "",
@@ -792,9 +1178,515 @@ function evaluateScenarioSemantics(
       return evaluateReleaseCompareGlobalContextScenario(root);
     case "doctor_global_health":
       return evaluateDoctorGlobalHealthScenario(root, context);
+    case "mainline_recovery_drill":
+      return evaluateMainlineRecoveryDrillScenario(context);
+    case "global_operations_packet":
+      return evaluateGlobalOperationsPacketScenario(root, context);
+    case "org_responsibility_graph":
+      return evaluateOrgResponsibilityGraphScenario(root, context);
+    case "async_review_inbox":
+      return evaluateAsyncReviewInboxScenario(root, context);
+    case "ops_aging_ledger":
+      return evaluateOpsAgingLedgerScenario(root, context);
+    case "release_train_packet":
+      return evaluateReleaseTrainPacketScenario(root, context);
+    case "org_operations_console":
+      return evaluateOrgOperationsConsoleScenario(root, context);
     default:
       return { blockingReasons: [] };
   }
+}
+
+function evaluateGlobalOperationsPacketScenario(
+  root: string,
+  context: ScenarioContext,
+): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
+  const packet = readJsonObject(path.join(root, ".spec", "operations", "global-operations-packet.json"));
+  const operationObject = findGovernanceObject(context.snapshot, "global_operations_packet");
+  const summary = operationObject?.summary ?? {};
+  const promotion = isRecord(packet?.promotionReadiness) ? packet.promotionReadiness : {};
+  const privacy = isRecord(packet?.privacyPosture) ? packet.privacyPosture : {};
+  const boundary = isRecord(packet?.boundary) ? packet.boundary : {};
+  const ownerActions = Array.isArray(packet?.ownerActionLifecycle) ? packet.ownerActionLifecycle : [];
+  const crossRepoRefs = Array.isArray(packet?.crossRepoContractRefs) ? packet.crossRepoContractRefs : [];
+  const auditRefs = Array.isArray(packet?.auditEvidenceRefs) ? packet.auditEvidenceRefs : [];
+  const asyncEvents = Array.isArray(packet?.asyncCollaborationEvents) ? packet.asyncCollaborationEvents.filter(isRecord) : [];
+  const supportSurfaces = Array.isArray(promotion.referencedSupportSurfaces)
+    ? promotion.referencedSupportSurfaces.map(String)
+    : [];
+  const availableAsyncEvents = asyncEvents.filter((event) => event.status === "available").length;
+  const blockingReasons: string[] = [];
+  const status = stringValue(packet?.status);
+
+  if (!packet || packet.kind !== "jispec-global-operations-packet") {
+    blockingReasons.push("Global operations packet is missing or invalid.");
+  }
+  if (status !== "ready") {
+    blockingReasons.push(`Global operations packet status is ${status ?? "not_declared"}.`);
+  }
+  if (ownerActions.length === 0) {
+    blockingReasons.push("Global operations packet does not expose owner action lifecycle evidence.");
+  }
+  if (crossRepoRefs.length === 0) {
+    blockingReasons.push("Global operations packet does not expose cross-repo contract refs.");
+  }
+  if (supportSurfaces.length < 2) {
+    blockingReasons.push("Global operations packet references fewer than two support surfaces.");
+  }
+  if (privacy.status !== "available") {
+    blockingReasons.push(`Global operations packet privacy posture is ${stringValue(privacy.status) ?? "not_declared"}.`);
+  }
+  if (auditRefs.length === 0) {
+    blockingReasons.push("Global operations packet does not reference audit evidence.");
+  }
+  if (availableAsyncEvents < 4) {
+    blockingReasons.push(`Global operations packet only has ${availableAsyncEvents} async collaboration evidence class(es).`);
+  }
+  if (boundary.replacesVerify !== false) {
+    blockingReasons.push("Global operations packet boundary must not replace verify.");
+  }
+  if (boundary.sourceUploadRequired !== false) {
+    blockingReasons.push("Global operations packet boundary must not require source upload.");
+  }
+  if (boundary.realtimeCollaborationRequired !== false) {
+    blockingReasons.push("Global operations packet boundary must not require real-time collaboration.");
+  }
+  if (boundary.deferredSurfacesDiagnosticOnly !== true) {
+    blockingReasons.push("Global operations packet must keep deferred collaboration surfaces diagnostic-only.");
+  }
+
+  return {
+    evidence: {
+      summary: status === "ready"
+        ? `Global operations packet is ready with ${ownerActions.length} owner action(s), ${crossRepoRefs.length} cross-repo ref(s), and ${availableAsyncEvents}/${asyncEvents.length} async evidence class(es).`
+        : "Global operations packet is not ready yet.",
+      aggregateOwnerActionCount: numberValue(summary.ownerActionCount) ?? ownerActions.length,
+      globalOperationsPacketStatus: status,
+      globalOperationsOwnerActionCount: numberValue(summary.ownerActionCount) ?? ownerActions.length,
+      globalOperationsCrossRepoRefCount: numberValue(summary.crossRepoContractRefCount) ?? crossRepoRefs.length,
+      globalOperationsSupportSurfaceCount: numberValue(summary.referencedSupportSurfaceCount) ?? supportSurfaces.length,
+      globalOperationsAsyncEvidenceAvailable: numberValue(summary.asyncCollaborationEvidenceAvailable) ?? availableAsyncEvents,
+      globalOperationsAsyncEvidenceTotal: numberValue(summary.asyncCollaborationEvidenceTotal) ?? asyncEvents.length,
+      globalOperationsPrivacyStatus: stringValue(summary.privacyStatus) ?? stringValue(privacy.status),
+      globalOperationsBoundaryReplacesVerify: boundary.replacesVerify === true,
+      globalOperationsSourceUploadRequired: boundary.sourceUploadRequired === true,
+      globalOperationsRealtimeCollaborationRequired: boundary.realtimeCollaborationRequired === true,
+      globalOperationsDeferredSurfacesDiagnosticOnly: boundary.deferredSurfacesDiagnosticOnly === true,
+      governedRequirementEvolution: true,
+    },
+    blockingReasons,
+  };
+}
+
+function evaluateOrgResponsibilityGraphScenario(
+  root: string,
+  context: ScenarioContext,
+): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
+  const graph = readJsonObject(path.join(root, ".spec", "operations", "org-responsibility-graph.json"));
+  const graphObject = findGovernanceObject(context.snapshot, "org_responsibility_graph");
+  const summary = graphObject?.summary ?? {};
+  const topology = isRecord(graph?.orgTopology) ? graph.orgTopology : {};
+  const coverage = isRecord(graph?.reviewerCoverage) ? graph.reviewerCoverage : {};
+  const boundary = isRecord(graph?.boundary) ? graph.boundary : {};
+  const assignments = Array.isArray(graph?.ownerActionAssignments) ? graph.ownerActionAssignments : [];
+  const edges = Array.isArray(graph?.responsibilityEdges) ? graph.responsibilityEdges : [];
+  const auditRefs = Array.isArray(graph?.auditEvidenceRefs) ? graph.auditEvidenceRefs : [];
+  const status = stringValue(graph?.status);
+  const teamCount = numberValue(summary.teamCount) ?? numberValue(topology.teamCount) ?? 0;
+  const repoCount = numberValue(summary.repoCount) ?? numberValue(topology.repoCount) ?? 0;
+  const ownerActionCount = numberValue(summary.ownerActionAssignmentCount) ?? assignments.length;
+  const reviewerCoverage = numberValue(summary.reviewerCoverage)
+    ?? coverageRatio(coverage.actionsWithReviewer, coverage.totalOwnerActions);
+  const escalationCoverage = numberValue(summary.escalationCoverage)
+    ?? coverageRatio(coverage.actionsWithEscalation, coverage.totalOwnerActions);
+  const blockingReasons: string[] = [];
+
+  if (!graph || graph.kind !== "jispec-org-responsibility-graph") {
+    blockingReasons.push("Org responsibility graph is missing or invalid.");
+  }
+  if (status !== "ready") {
+    blockingReasons.push(`Org responsibility graph status is ${status ?? "not_declared"}.`);
+  }
+  if (teamCount <= 0 || repoCount <= 0 || edges.length <= 0) {
+    blockingReasons.push("Org responsibility graph does not expose team/repo responsibility edges.");
+  }
+  if (ownerActionCount <= 0) {
+    blockingReasons.push("Org responsibility graph does not assign owner actions.");
+  }
+  if (reviewerCoverage < 1) {
+    blockingReasons.push("Org responsibility graph reviewer coverage is incomplete.");
+  }
+  if (escalationCoverage < 1) {
+    blockingReasons.push("Org responsibility graph escalation coverage is incomplete.");
+  }
+  if (auditRefs.length === 0) {
+    blockingReasons.push("Org responsibility graph does not reference audit evidence.");
+  }
+  if (boundary.replacesVerify !== false) {
+    blockingReasons.push("Org responsibility graph boundary must not replace verify.");
+  }
+  if (boundary.sourceUploadRequired !== false) {
+    blockingReasons.push("Org responsibility graph boundary must not require source upload.");
+  }
+  if (boundary.realtimeCollaborationRequired !== false) {
+    blockingReasons.push("Org responsibility graph boundary must not require real-time collaboration.");
+  }
+
+  return {
+    evidence: {
+      summary: status === "ready"
+        ? `Org responsibility graph is ready with ${teamCount} team(s), ${repoCount} repo(s), and ${ownerActionCount} owner action assignment(s).`
+        : "Org responsibility graph is not ready yet.",
+      orgResponsibilityGraphStatus: status,
+      orgResponsibilityTeamCount: teamCount,
+      orgResponsibilityRepoCount: repoCount,
+      orgResponsibilityOwnerActionCount: ownerActionCount,
+      orgResponsibilityReviewerCoverage: reviewerCoverage,
+      orgResponsibilityEscalationCoverage: escalationCoverage,
+      orgResponsibilityBoundaryReplacesVerify: boundary.replacesVerify === true,
+      orgResponsibilitySourceUploadRequired: boundary.sourceUploadRequired === true,
+      orgResponsibilityRealtimeCollaborationRequired: boundary.realtimeCollaborationRequired === true,
+      governedRequirementEvolution: true,
+    },
+    blockingReasons,
+  };
+}
+
+function coverageRatio(value: unknown, total: unknown): number {
+  const numerator = numberValue(value) ?? 0;
+  const denominator = numberValue(total) ?? 0;
+  return denominator <= 0 ? 0 : numerator / denominator;
+}
+
+function evaluateAsyncReviewInboxScenario(
+  root: string,
+  context: ScenarioContext,
+): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
+  const inbox = readJsonObject(path.join(root, ".spec", "operations", "async-review-inbox.json"));
+  const inboxObject = findGovernanceObject(context.snapshot, "async_review_inbox");
+  const summary = inboxObject?.summary ?? {};
+  const rawSummary = isRecord(inbox?.summary) ? inbox.summary : {};
+  const boundary = isRecord(inbox?.boundary) ? inbox.boundary : {};
+  const reviewers = Array.isArray(inbox?.reviewers) ? inbox.reviewers : [];
+  const items = Array.isArray(inbox?.items) ? inbox.items : [];
+  const auditRefs = Array.isArray(inbox?.auditEvidenceRefs) ? inbox.auditEvidenceRefs : [];
+  const status = stringValue(inbox?.status);
+  const reviewerCount = numberValue(summary.reviewerCount) ?? numberValue(rawSummary.reviewerCount) ?? reviewers.length;
+  const totalItems = numberValue(summary.totalItems) ?? numberValue(rawSummary.totalItems) ?? items.length;
+  const pending = numberValue(summary.pending) ?? numberValue(rawSummary.pending) ?? 0;
+  const accepted = numberValue(summary.accepted) ?? numberValue(rawSummary.accepted) ?? 0;
+  const blocked = numberValue(summary.blocked) ?? numberValue(rawSummary.blocked) ?? 0;
+  const expired = numberValue(summary.expired) ?? numberValue(rawSummary.expired) ?? 0;
+  const reviewersMissing = numberValue(summary.reviewersMissing) ?? numberValue(rawSummary.reviewersMissing) ?? 0;
+  const escalationReadyItems = numberValue(summary.escalationReadyItems) ?? numberValue(rawSummary.escalationReadyItems) ?? 0;
+  const blockingReasons: string[] = [];
+
+  if (!inbox || inbox.kind !== "jispec-async-review-inbox") {
+    blockingReasons.push("Async review inbox is missing or invalid.");
+  }
+  if (status !== "ready") {
+    blockingReasons.push(`Async review inbox status is ${status ?? "not_declared"}.`);
+  }
+  if (reviewerCount <= 0 || totalItems <= 0) {
+    blockingReasons.push("Async review inbox does not expose reviewer queues.");
+  }
+  if (reviewersMissing > 0) {
+    blockingReasons.push("Async review inbox has owner actions without reviewers.");
+  }
+  if (escalationReadyItems < totalItems) {
+    blockingReasons.push("Async review inbox escalation coverage is incomplete.");
+  }
+  if (auditRefs.length === 0) {
+    blockingReasons.push("Async review inbox does not reference audit evidence.");
+  }
+  if (boundary.replacesVerify !== false) {
+    blockingReasons.push("Async review inbox boundary must not replace verify.");
+  }
+  if (boundary.sourceUploadRequired !== false) {
+    blockingReasons.push("Async review inbox boundary must not require source upload.");
+  }
+  if (boundary.realtimeCollaborationRequired !== false) {
+    blockingReasons.push("Async review inbox boundary must not require real-time collaboration.");
+  }
+
+  return {
+    evidence: {
+      summary: status === "ready"
+        ? `Async review inbox is ready with ${reviewerCount} reviewer(s), ${totalItems} item(s), and ${pending} pending review(s).`
+        : "Async review inbox is not ready yet.",
+      asyncReviewInboxStatus: status,
+      asyncReviewReviewerCount: reviewerCount,
+      asyncReviewTotalItems: totalItems,
+      asyncReviewPending: pending,
+      asyncReviewAccepted: accepted,
+      asyncReviewBlocked: blocked,
+      asyncReviewExpired: expired,
+      asyncReviewReviewersMissing: reviewersMissing,
+      asyncReviewEscalationReadyItems: escalationReadyItems,
+      asyncReviewBoundaryReplacesVerify: boundary.replacesVerify === true,
+      asyncReviewSourceUploadRequired: boundary.sourceUploadRequired === true,
+      asyncReviewRealtimeCollaborationRequired: boundary.realtimeCollaborationRequired === true,
+      governedRequirementEvolution: true,
+    },
+    blockingReasons,
+  };
+}
+
+function evaluateOpsAgingLedgerScenario(
+  root: string,
+  context: ScenarioContext,
+): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
+  const ledger = readJsonObject(path.join(root, ".spec", "operations", "ops-aging-ledger.json"));
+  const ledgerObject = findGovernanceObject(context.snapshot, "ops_aging_ledger");
+  const summary = ledgerObject?.summary ?? {};
+  const rawSummary = isRecord(ledger?.summary) ? ledger.summary : {};
+  const boundary = isRecord(ledger?.boundary) ? ledger.boundary : {};
+  const entries = Array.isArray(ledger?.entries) ? ledger.entries : [];
+  const auditRefs = Array.isArray(ledger?.auditEvidenceRefs) ? ledger.auditEvidenceRefs : [];
+  const status = stringValue(ledger?.status);
+  const totalItems = numberValue(summary.totalItems) ?? numberValue(rawSummary.totalItems) ?? entries.length;
+  const fresh = numberValue(summary.fresh) ?? numberValue(rawSummary.fresh) ?? 0;
+  const dueSoon = numberValue(summary.dueSoon) ?? numberValue(rawSummary.dueSoon) ?? 0;
+  const overdue = numberValue(summary.overdue) ?? numberValue(rawSummary.overdue) ?? 0;
+  const escalated = numberValue(summary.escalated) ?? numberValue(rawSummary.escalated) ?? 0;
+  const itemsWithEscalationPath = numberValue(summary.itemsWithEscalationPath) ?? numberValue(rawSummary.itemsWithEscalationPath) ?? 0;
+  const itemsMissingEscalationPath = numberValue(summary.itemsMissingEscalationPath) ?? numberValue(rawSummary.itemsMissingEscalationPath) ?? 0;
+  const blockingReasons: string[] = [];
+
+  if (!ledger || ledger.kind !== "jispec-ops-aging-ledger") {
+    blockingReasons.push("Ops aging ledger is missing or invalid.");
+  }
+  if (status !== "ready") {
+    blockingReasons.push(`Ops aging ledger status is ${status ?? "not_declared"}.`);
+  }
+  if (totalItems <= 0 || entries.length <= 0) {
+    blockingReasons.push("Ops aging ledger does not expose SLA entries.");
+  }
+  if (itemsMissingEscalationPath > 0 || itemsWithEscalationPath < totalItems) {
+    blockingReasons.push("Ops aging ledger escalation path coverage is incomplete.");
+  }
+  if (auditRefs.length === 0) {
+    blockingReasons.push("Ops aging ledger does not reference audit evidence.");
+  }
+  if (boundary.replacesVerify !== false) {
+    blockingReasons.push("Ops aging ledger boundary must not replace verify.");
+  }
+  if (boundary.sourceUploadRequired !== false) {
+    blockingReasons.push("Ops aging ledger boundary must not require source upload.");
+  }
+  if (boundary.realtimeCollaborationRequired !== false) {
+    blockingReasons.push("Ops aging ledger boundary must not require real-time collaboration.");
+  }
+
+  return {
+    evidence: {
+      summary: status === "ready"
+        ? `Ops aging ledger is ready with ${totalItems} item(s): fresh=${fresh}, due-soon=${dueSoon}, overdue=${overdue}, escalated=${escalated}.`
+        : "Ops aging ledger is not ready yet.",
+      opsAgingLedgerStatus: status,
+      opsAgingTotalItems: totalItems,
+      opsAgingFresh: fresh,
+      opsAgingDueSoon: dueSoon,
+      opsAgingOverdue: overdue,
+      opsAgingEscalated: escalated,
+      opsAgingItemsWithEscalationPath: itemsWithEscalationPath,
+      opsAgingItemsMissingEscalationPath: itemsMissingEscalationPath,
+      opsAgingBoundaryReplacesVerify: boundary.replacesVerify === true,
+      opsAgingSourceUploadRequired: boundary.sourceUploadRequired === true,
+      opsAgingRealtimeCollaborationRequired: boundary.realtimeCollaborationRequired === true,
+      governedRequirementEvolution: true,
+    },
+    blockingReasons,
+  };
+}
+
+function evaluateReleaseTrainPacketScenario(
+  root: string,
+  context: ScenarioContext,
+): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
+  const packet = readJsonObject(path.join(root, ".spec", "operations", "release-train-packet.json"));
+  const packetObject = findGovernanceObject(context.snapshot, "release_train_packet");
+  const summary = packetObject?.summary ?? {};
+  const train = isRecord(packet?.trainReadiness) ? packet.trainReadiness : {};
+  const releaseCompare = isRecord(packet?.releaseCompare) ? packet.releaseCompare : {};
+  const boundary = isRecord(packet?.boundary) ? packet.boundary : {};
+  const repos = Array.isArray(packet?.repos) ? packet.repos : [];
+  const ownerAssignments = Array.isArray(packet?.ownerAssignments) ? packet.ownerAssignments : [];
+  const requiredReviews = Array.isArray(packet?.requiredReviews) ? packet.requiredReviews : [];
+  const auditRefs = Array.isArray(packet?.auditEvidenceRefs) ? packet.auditEvidenceRefs : [];
+  const status = stringValue(packet?.status);
+  const trainReady = summary.trainReady === true || train.ready === true;
+  const repoCount = numberValue(summary.repoCount) ?? repos.length;
+  const blockedRepoCount = numberValue(summary.blockedRepoCount) ?? numberValue(train.blockedRepoCount) ?? 0;
+  const ownerAssignmentCount = numberValue(summary.ownerAssignmentCount) ?? numberValue(train.ownerAssignmentCount) ?? ownerAssignments.length;
+  const requiredReviewCount = numberValue(summary.requiredReviewCount) ?? numberValue(train.requiredReviewCount) ?? requiredReviews.length;
+  const safeNextCommand = stringValue(summary.safeNextCommand) ?? stringValue(train.safeNextCommand);
+  const globalContextStatus = stringValue(summary.releaseCompareGlobalContextStatus) ?? stringValue(releaseCompare.globalContextStatus);
+  const blockingReasons: string[] = [];
+
+  if (!packet || packet.kind !== "jispec-release-train-packet") {
+    blockingReasons.push("Release train packet is missing or invalid.");
+  }
+  if (status !== "ready") {
+    blockingReasons.push(`Release train packet status is ${status ?? "not_declared"}.`);
+  }
+  if (!trainReady) {
+    blockingReasons.push("Release train readiness is not true.");
+  }
+  if (repoCount <= 0) {
+    blockingReasons.push("Release train packet does not expose repo coordination.");
+  }
+  if (ownerAssignmentCount <= 0 || ownerAssignments.length <= 0) {
+    blockingReasons.push("Release train packet does not expose owner assignments.");
+  }
+  if (requiredReviewCount <= 0 || requiredReviews.length <= 0) {
+    blockingReasons.push("Release train packet does not expose required reviews.");
+  }
+  if (!safeNextCommand || safeNextCommand === "not_available_yet") {
+    blockingReasons.push("Release train packet does not expose a safe next command.");
+  }
+  if (globalContextStatus !== "available") {
+    blockingReasons.push("Release train packet does not include available release compare global context.");
+  }
+  if (auditRefs.length === 0) {
+    blockingReasons.push("Release train packet does not reference audit evidence.");
+  }
+  if (boundary.replacesVerify !== false) {
+    blockingReasons.push("Release train packet boundary must not replace verify.");
+  }
+  if (boundary.replacesPostReleaseGate !== false) {
+    blockingReasons.push("Release train packet boundary must not replace post-release gate.");
+  }
+  if (boundary.sourceUploadRequired !== false) {
+    blockingReasons.push("Release train packet boundary must not require source upload.");
+  }
+  if (boundary.realtimeCollaborationRequired !== false) {
+    blockingReasons.push("Release train packet boundary must not require real-time collaboration.");
+  }
+
+  return {
+    evidence: {
+      summary: status === "ready"
+        ? `Release train packet is ready with ${repoCount} repo(s), ${ownerAssignmentCount} owner assignment(s), ${requiredReviewCount} required review(s), and ${blockedRepoCount} blocked repo(s).`
+        : "Release train packet is not ready yet.",
+      releaseTrainPacketStatus: status,
+      releaseTrainReady: trainReady,
+      releaseTrainRepoCount: repoCount,
+      releaseTrainBlockedRepoCount: blockedRepoCount,
+      releaseTrainOwnerAssignmentCount: ownerAssignmentCount,
+      releaseTrainRequiredReviewCount: requiredReviewCount,
+      releaseTrainSafeNextCommand: safeNextCommand,
+      releaseTrainGlobalContextStatus: globalContextStatus,
+      releaseTrainBoundaryReplacesVerify: boundary.replacesVerify === true,
+      releaseTrainBoundaryReplacesPostReleaseGate: boundary.replacesPostReleaseGate === true,
+      releaseTrainSourceUploadRequired: boundary.sourceUploadRequired === true,
+      releaseTrainRealtimeCollaborationRequired: boundary.realtimeCollaborationRequired === true,
+      governedRequirementEvolution: true,
+    },
+    blockingReasons,
+  };
+}
+
+function evaluateOrgOperationsConsoleScenario(
+  root: string,
+  context: ScenarioContext,
+): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
+  const htmlPath = path.join(root, ".spec", "console", "ui", "index.html");
+  const html = fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, "utf-8") : "";
+  const orgOps = context.snapshot.governance.orgOperations;
+  const boundary = orgOps.boundary;
+  const slaAttentionCount = orgOps.sla.dueSoon + orgOps.sla.overdue + orgOps.sla.escalated;
+  const blockingReasons: string[] = [];
+
+  if (!html) {
+    blockingReasons.push("Org operations static Console HTML is missing.");
+  }
+  if (!html.includes("Org Operations")) {
+    blockingReasons.push("Static Console does not render the org operations panel.");
+  }
+  if (!orgOps.ready) {
+    blockingReasons.push(`Org operations summary is ${orgOps.status}.`);
+  }
+  if (orgOps.availableObjectCount < orgOps.sourceObjectIds.length) {
+    blockingReasons.push("Org operations summary does not include all four local org operations objects.");
+  }
+  if (orgOps.releaseTrain.blockedRepoCount > 0) {
+    blockingReasons.push("Org operations release train has blocked repos.");
+  }
+  if (boundary.replacesVerify !== false) {
+    blockingReasons.push("Org operations console boundary must not replace verify.");
+  }
+  if (boundary.replacesPostReleaseGate !== false) {
+    blockingReasons.push("Org operations console boundary must not replace post-release gate.");
+  }
+  if (boundary.sourceUploadRequired !== false) {
+    blockingReasons.push("Org operations console boundary must not require source upload.");
+  }
+  if (boundary.realtimeCollaborationRequired !== false) {
+    blockingReasons.push("Org operations console boundary must not require real-time collaboration.");
+  }
+
+  return {
+    evidence: {
+      summary: orgOps.ready
+        ? `Org operations console is ready with ${orgOps.availableObjectCount}/${orgOps.sourceObjectIds.length} local org operations object(s).`
+        : "Org operations console is not ready yet.",
+      orgOperationsConsoleStatus: orgOps.status,
+      orgOperationsReady: orgOps.ready,
+      orgOperationsAvailableObjectCount: orgOps.availableObjectCount,
+      orgOperationsMissingObjectCount: orgOps.missingObjectCount,
+      orgOperationsResponsibilityAssignments: orgOps.responsibility.ownerActionAssignmentCount,
+      orgOperationsReviewItems: orgOps.reviews.totalItems,
+      orgOperationsSlaAttentionCount: slaAttentionCount,
+      orgOperationsBlockedRepoCount: orgOps.releaseTrain.blockedRepoCount,
+      orgOperationsBoundaryReplacesVerify: false,
+      orgOperationsBoundaryReplacesPostReleaseGate: false,
+      orgOperationsSourceUploadRequired: false,
+      orgOperationsRealtimeCollaborationRequired: false,
+      governedRequirementEvolution: true,
+    },
+    blockingReasons,
+  };
+}
+
+function evaluateMainlineRecoveryDrillScenario(
+  context: ScenarioContext,
+): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
+  const drill = findGovernanceObject(context.snapshot, "mainline_recovery_drill");
+  const summary = drill?.summary ?? {};
+  const state = stringValue(summary.state);
+  const status = stringValue(summary.status);
+  const stepCount = numberValue(summary.stepCount) ?? 0;
+  const expectedNextState = stringValue(summary.topStepExpectedNextState);
+  const verificationCommand = stringValue(summary.topStepVerificationCommand);
+  const blockingReasons: string[] = [];
+
+  if (!drill || state !== "available") {
+    blockingReasons.push("Mainline recovery drill artifact is missing.");
+  }
+  if (status !== "idle" && stepCount <= 0) {
+    blockingReasons.push("Mainline recovery drill does not contain any drill step for a non-idle state.");
+  }
+  if (status !== "idle" && (!expectedNextState || expectedNextState === "not_available_yet")) {
+    blockingReasons.push("Mainline recovery drill top step is missing expected next state.");
+  }
+  if (status !== "idle" && (!verificationCommand || verificationCommand === "not_available_yet")) {
+    blockingReasons.push("Mainline recovery drill top step is missing verification command.");
+  }
+
+  return {
+    evidence: {
+      summary: status === "idle"
+        ? "Mainline recovery drill is idle; no recovery action is required."
+        : `Mainline recovery drill has ${stepCount} step(s), expected next state: ${expectedNextState ?? "not_available_yet"}.`,
+      mainlineRecoveryDrillStatus: status,
+      mainlineRecoveryDrillStepCount: stepCount,
+      mainlineRecoveryDrillExpectedNextState: expectedNextState,
+      mainlineRecoveryDrillVerificationCommand: verificationCommand,
+      governedRequirementEvolution: false,
+    },
+    blockingReasons,
+  };
 }
 
 function evaluateReleaseDriftScenario(root: string): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
@@ -1007,11 +1899,14 @@ function evaluateMultiRepoOwnerActionScenario(
 ): { evidence?: NorthStarScenarioEvidence; blockingReasons: string[] } {
   const aggregate = readJsonObject(path.join(root, ".spec", "console", "multi-repo-governance.json"));
   const summary = isRecord(aggregate?.summary) ? aggregate.summary : {};
+  const promotionReadiness = isRecord(aggregate?.promotionReadiness) ? aggregate.promotionReadiness : {};
   const ownerActions = Array.isArray(aggregate?.ownerActions) ? aggregate.ownerActions : [];
   const contractDriftHints = Array.isArray(aggregate?.contractDriftHints) ? aggregate.contractDriftHints : [];
   const blockingReasons: string[] = [];
   const summaryOwnerActionCount = numberValue(summary.ownerActionCount);
   const summaryContractDriftHintCount = numberValue(summary.contractDriftHintCount);
+  const aggregatePromotionReady = promotionReadiness.ready === true;
+  const aggregatePromotionPhase = stringValue(promotionReadiness.phase);
   if (!aggregate || aggregate.kind !== "jispec-multi-repo-governance-aggregate") {
     blockingReasons.push("Multi-repo governance aggregate is missing or invalid.");
   }
@@ -1033,18 +1928,26 @@ function evaluateMultiRepoOwnerActionScenario(
   if (summaryContractDriftHintCount !== undefined && summaryContractDriftHintCount !== contractDriftHints.length) {
     blockingReasons.push(`Aggregate contract drift hint count ${summaryContractDriftHintCount} does not match the exported hint list (${contractDriftHints.length}).`);
   }
+  if (aggregatePromotionPhase !== "north-star-score-optimization-phase-2") {
+    blockingReasons.push("Aggregate does not expose the phase-2 multi-repo promotion readiness contract.");
+  }
+  if (!aggregatePromotionReady) {
+    blockingReasons.push("Aggregate phase-2 multi-repo promotion readiness is not ready.");
+  }
 
   const sourceEvolution = findGovernanceObject(context.snapshot, "source_evolution_governance");
   return {
     evidence: {
       summary: ownerActions.length > 0
-        ? `Aggregate exposes ${ownerActions.length} owner action(s) and ${contractDriftHints.length} cross-repo drift hint(s) from the exported summary.`
+        ? `Aggregate exposes ${ownerActions.length} owner action(s), ${contractDriftHints.length} cross-repo drift hint(s), and promotion readiness ${aggregatePromotionReady ? "ready" : "not ready"}.`
         : "Aggregate exists but does not yet expose owner-action loop output.",
       lifecycleRegistryPath: stringValue(sourceEvolution?.summary.lifecyclePath),
       sourceEvolutionPath: stringValue(sourceEvolution?.summary.sourceEvolutionPath),
       sourceReviewPath: stringValue(sourceEvolution?.summary.sourceReviewPath),
       aggregateContractDriftHintCount: summaryContractDriftHintCount ?? contractDriftHints.length,
       aggregateOwnerActionCount: summaryOwnerActionCount ?? ownerActions.length,
+      aggregatePromotionReady,
+      aggregatePromotionPhase,
       governedRequirementEvolution: Boolean(sourceEvolution && sourceEvolution.status === "available"),
     },
     blockingReasons,

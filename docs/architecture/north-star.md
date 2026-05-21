@@ -6,6 +6,17 @@ JiSpec 要成为 **AI 原生软件交付的契约驱动流水线**，并在此�
 
 AI 编程工具加速代码生产。JiSpec 控制 AI 原生软件交付。
 
+## 状态说明
+
+这份文档同时包含当前已实现的主线能力和更远的终局目标。
+如果你要判断“项目现在做到哪一步了”，请优先看：
+
+- [docs/reference/v1-mainline-stable-contract.md](../reference/v1-mainline-stable-contract.md)
+- [docs/architecture/absolute-terminal-checklist.md](absolute-terminal-checklist.md)
+- [docs/development/collaboration-surface-freeze.md](../development/collaboration-surface-freeze.md)
+
+这里的北极星叙述不等于当前完成度结论。
+
 ## 中文定位
 
 JiSpec 的北极星目标是：

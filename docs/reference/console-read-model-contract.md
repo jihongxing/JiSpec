@@ -1,8 +1,8 @@
 # Console Read Model Contract
 
-Status: P4-T1 local contract prelude.
+Status: P4-T1 local contract prelude; M6-T1 local decision-console extension.
 
-This document defines the local artifacts that a future JiSpec Console may read. It does not define a Console UI, remote execution service, or upload protocol.
+This document defines the local artifacts that JiSpec Console may read. It covers the local read-only dashboard and static HTML decision console, but it does not define a remote execution service, remote sync protocol, or upload protocol.
 
 Console is a read-only view over local JiSpec artifacts:
 
@@ -16,6 +16,7 @@ The code-level contract lives in `tools/jispec/console/read-model-contract.ts`.
 The local snapshot collector lives in `tools/jispec/console/read-model-snapshot.ts`; it reads only the declared artifacts below and returns missing inputs as `not_available_yet`.
 The governance dashboard shell lives in `tools/jispec/console/governance-dashboard.ts` and is exposed by `jispec-cli console dashboard`.
 The governance action planner lives in `tools/jispec/console/governance-actions.ts` and is exposed by `jispec-cli console actions`.
+The local static decision console lives in `tools/jispec/console/ui/static-dashboard.ts` and is exposed by `jispec-cli console ui`.
 The governance export command lives in `tools/jispec/console/governance-export.ts` and is exposed by `jispec-cli console export-governance`.
 The final North Star acceptance package lives in `tools/jispec/north-star/acceptance.ts` and is exposed by `jispec-cli north-star acceptance`.
 Console reads the North Star acceptance package as the terminal local acceptance artifact. It may display the package and its scenario packets, but it must not treat them as a gate or as a replacement for `verify`, `ci:verify`, doctor profiles, or `post-release:gate`.
@@ -47,6 +48,16 @@ Console reads the North Star acceptance package as the terminal local acceptance
 | Multi-repo governance snapshot summary | `.spec/console/governance-snapshot.md` | `console export-governance` | Markdown | human companion | Render the exported repo-level governance snapshot summary |
 | Multi-repo governance aggregate | `.spec/console/multi-repo-governance.json` | `console aggregate-governance` | JSON | source of truth | Aggregate-level multi-repo governance source of truth; includes passive `contractDriftHints`, richer `ownerActions`, and explicit missing repo snapshots |
 | Multi-repo governance aggregate summary | `.spec/console/multi-repo-governance.md` | `console aggregate-governance` | Markdown | human-readable companion | Reviewer summary for the aggregate; Console may display it but gates must not parse it |
+| Global operations packet | `.spec/operations/global-operations-packet.json` | `doctor global --write-operations` | JSON | local contract | Team-operable local-first packet for repo topology, cross-repo contract refs, owner action lifecycle, promotion readiness, privacy posture, audit evidence, and verify boundary |
+| Global operations packet summary | `.spec/operations/global-operations-packet.md` | `doctor global --write-operations` | Markdown | human companion | Human companion for the operations packet; Console may render it, but must not parse it as a machine API |
+| Org responsibility graph | `.spec/operations/org-responsibility-graph.json` | `doctor global --write-org-graph` | JSON | local contract | Local-first organization graph for team topology, repo ownership, reviewer coverage, escalation paths, owner action assignments, audit evidence, and verify boundary |
+| Org responsibility graph summary | `.spec/operations/org-responsibility-graph.md` | `doctor global --write-org-graph` | Markdown | human companion | Human companion for the org responsibility graph; Console may render it, but must not parse it as a machine API |
+| Async review inbox | `.spec/operations/async-review-inbox.json` | `doctor global --write-review-inbox` | JSON | local contract | Local-first async review inbox for reviewer queues, pending/accepted/blocked/expired items, missing reviewer coverage, escalation readiness, and verify boundary |
+| Async review inbox summary | `.spec/operations/async-review-inbox.md` | `doctor global --write-review-inbox` | Markdown | human companion | Human companion for the async review inbox; Console may render it, but must not parse it as a machine API |
+| Ops aging ledger | `.spec/operations/ops-aging-ledger.json` | `doctor global --write-aging-ledger` | JSON | local contract | Local-first SLA aging ledger for fresh, due-soon, overdue, escalated buckets, escalation path coverage, audit evidence, and verify boundary |
+| Ops aging ledger summary | `.spec/operations/ops-aging-ledger.md` | `doctor global --write-aging-ledger` | Markdown | human companion | Human companion for the ops aging ledger; Console may render it, but must not parse it as a machine API |
+| Release train packet | `.spec/operations/release-train-packet.json` | `doctor global --write-release-train` | JSON | local contract | Local-first release train coordination packet for promotion readiness, release compare context, blocked repos, owner assignments, required reviews, safe next command, and post-release gate boundary |
+| Release train packet summary | `.spec/operations/release-train-packet.md` | `doctor global --write-release-train` | Markdown | human companion | Human companion for the release train packet; Console may render it, but must not parse it as a machine API |
 | North Star acceptance | `.spec/north-star/acceptance.json` | `north-star acceptance` | JSON | final local acceptance contract | Terminal acceptance package for the mainline closeout; Console may display it, but it remains read-only evidence |
 | North Star acceptance summary | `.spec/north-star/acceptance.md` | `north-star acceptance` | Markdown | human companion | Human companion for the terminal acceptance package |
 | North Star scenario packets | `.spec/north-star/scenarios/*.json` | `north-star acceptance` | JSON | local contract | Per-scenario machine artifact for the closeout acceptance suite |
@@ -54,11 +65,13 @@ Console reads the North Star acceptance package as the terminal local acceptance
 | Doctor global readiness | `.spec/doctor/global-readiness.json` | `doctor global --out <path>` | JSON | local contract | Broader closure-loop readiness report for Console and other local readers |
 | Retakeover metrics | `.spec/handoffs/retakeover-metrics.json` | retakeover regression | JSON | local contract | Single-repository takeover quality scorecard, risk notes, feature overclaim risk, and next action |
 | Retakeover pool metrics | `.spec/handoffs/retakeover-pool-metrics.json` | retakeover regression pool | JSON | local contract | Pool-level takeover quality trend across real and synthetic retakeover fixtures |
-| Value report | `.spec/metrics/value-report.json` | `metrics value-report` | JSON | local contract | Repo-local ROI and adoption metrics: manual sorting reduction, surfaced risks, waiver/debt aging, and execute mediation stop points |
+| Value report | `.spec/metrics/value-report.json` | `metrics value-report` | JSON | local contract | Repo-local ROI and adoption metrics surfaced by the Console decision deck and local HTML panel: manual sorting reduction, surfaced risks, waiver/debt aging, and execute mediation stop points |
 | Active change session | `.jispec/change-session.json` | `change` | JSON | local contract | Current active change session with lane decision, changed paths, next commands, and replay context for handoff orchestration |
 | Implementation handoff packets | `.jispec/handoff/*.json` | `implement` | JSON | local contract | Execute/implement outcomes, stop points, replay state, next-action owner, and external handoff requests |
 | Implementation patch mediation | `.jispec/implement/<session-id>/patch-mediation.json` | `implement --external-patch` | JSON | local contract | External patch scope, apply, test, and verify intake records |
 | Implementation patch mediation summary | `.jispec/implement/<session-id>/patch-mediation.md` | `implement --external-patch` | Markdown | human companion | Human companion for patch scope, local acceptance, test, verify, and replay review |
+| Mainline recovery drill | `.jispec/recovery/mainline-drill.json` | `doctor mainline --write-drill` | JSON | local contract | Machine-readable mainline recovery drill with current state, owner action, command, expected next state, verification command, and evidence artifacts |
+| Mainline recovery drill summary | `.jispec/recovery/mainline-drill.md` | `doctor mainline --write-drill` | Markdown | human companion | Human companion for the recovery drill; Console may render it, but must not parse it as a machine API |
 | Policy approvals | `.spec/approvals/*.json` | `policy approval record` | JSON | local contract | Structured local approval decisions for policy, waiver, release drift, and execute-default changes |
 | Audit event ledger | `.spec/audit/events.jsonl` | governance commands | JSONL | local contract | Append-only local audit events for approvals, exceptions, boundary changes, release comparisons, and patch intake |
 | North Star acceptance | `.spec/north-star/acceptance.json` | `north-star acceptance` | JSON | final local acceptance contract | Cross-scenario acceptance status for legacy takeover, Greenfield, daily change, external patch mediation, policy waiver, release drift, Console governance, multi-repo aggregation, and privacy report |
@@ -83,6 +96,8 @@ Console snapshot groups declared artifacts into governance objects. These are di
 | Takeover quality trend | `.spec/handoffs/retakeover-metrics.json`, `.spec/handoffs/retakeover-pool-metrics.json`, `.spec/metrics/value-report.json` | `not_available_yet` | Show retakeover quality scorecards, value metrics, adoption trend, and next actions |
 | Implementation mediation outcomes | `.jispec/handoff/*.json`, `.jispec/implement/<session-id>/patch-mediation.json`, `.jispec/implement/<session-id>/patch-mediation.md` | `not_available_yet` | Show execute/implement outcomes, stop points, replayability, and patch mediation posture |
 | Implementation workspace | `.jispec/change-session.json`, `.jispec/handoff/*.json`, `.jispec/implement/<session-id>/patch-mediation.json`, `.jispec/implement/<session-id>/patch-mediation.md` | `not_available_yet` | Show the active change session, replay-ready handoff packet, external-tool request path, and patch mediation return path in one workspace view |
+| Mainline recovery drill | `.jispec/recovery/mainline-drill.json`, `.jispec/recovery/mainline-drill.md` | `not_available_yet` | Show the latest explicit mainline recovery drill packet without executing its commands or replacing doctor mainline |
+| Global operations packet | `.spec/operations/global-operations-packet.json`, `.spec/operations/global-operations-packet.md` | `not_available_yet` | Show the local-first global operations packet without executing commands, uploading source, replacing verify, or promoting deferred collaboration surfaces into gates |
 | Approval workflow | `.spec/policy.yaml`, `.spec/approvals/*.json`, `.spec/waivers/*.json`, `.spec/releases/compare/<from>-to-<to>/compare-report.json` | `not_available_yet` | Show approval missing, approval stale, or approval satisfied for policy, waiver, release drift, and execute-default changes |
 | Audit events | `.spec/audit/events.jsonl` | `not_available_yet` | Show who approved or changed policy, waivers, adoption decisions, release baselines, and patch intake, with source artifact and affected contract refs |
 | North Star acceptance | `.spec/north-star/acceptance.json`, `.spec/north-star/scenarios/*.json`, `.spec/north-star/scenarios/*-decision.md` | `not_available_yet` | Show final local acceptance posture without replacing `verify`, `ci:verify`, doctor profiles, or post-release gate |
@@ -124,6 +139,21 @@ The drill-down questions remain:
 
 The dashboard reads only declared Console artifacts, does not upload source, does not run or replace `verify`, and does not synthesize missing gate results. Missing inputs remain `unknown`/`not_available_yet` until the producing CLI command writes a local artifact.
 
+The dashboard model includes a `decisionDeck` object for first-screen consumption. It is a read model, not a gate. It contains:
+
+- `mergeability`: current merge answer derived from existing verify and governance artifacts.
+- `topRisk`: the highest visible governance risk and its evidence-backed reason.
+- `owner`: the person or role expected to act next.
+- `nextCommand`: one explicit local CLI command to run next, when available.
+- `evidence`: the declared local artifact backing the recommendation.
+- `valueReport`: local ROI and governance outcome metrics from `.spec/metrics/value-report.json`, or `not_available_yet` when that artifact is missing.
+
+The decision deck may also include `runbook`, a first-screen summary of the top governance runbook step(s). It is derived from the same action planner and value-report read models. `runbook.topStep` points to the highest-priority owner action, while `runbook.valueReportImpact` links the step ordering to local ROI and governance-debt evidence.
+
+The local static HTML console may render the same decision deck and may embed a JSON payload containing `decisionDeck`, `runbook`, and `actionPriorities`. This payload is for local inspection and automation-friendly snapshots only. It must not execute the listed commands, upload source, or bypass `verify`.
+
+The snapshot also exposes `governance.orgOperations`, a local summary derived from `org_responsibility_graph`, `async_review_inbox`, `ops_aging_ledger`, and `release_train_packet`. It gives the Console first screen a single organization-operations answer across responsibility, review queue, SLA aging, and release train readiness. The summary is read-only, local-artifact-only, and cannot replace `verify`, doctor global, or post-release gate.
+
 ## Governance Action Planner
 
 P2-T4 adds a read-only action planner for the governance dashboard. It generates explicit local CLI commands and decision packets for:
@@ -138,6 +168,29 @@ P2-T4 adds a read-only action planner for the governance dashboard. It generates
 
 `jispec-cli console actions` does not execute commands and does not write artifacts. It only tells a human which local CLI command to run. The write path remains explicit and auditable through commands such as `waiver renew`, `waiver revoke`, `spec-debt repay`, `spec-debt cancel`, `spec-debt owner-review`, `source review adopt`, `source review defer`, `source review waive`, `source adopt`, `policy migrate`, and `release compare`.
 
+Each action packet includes an explicit `priority` with a stable bucket, numeric rank, and rationale. Current buckets are:
+
+- `p0_blocking`: ready blocking work such as high-risk waiver revocation.
+- `p1_owner_review`: work that needs a named owner or reviewer before closure.
+- `p2_attention`: important but non-blocking governance cleanup.
+- `p3_informational`: low-risk or informational next steps.
+
+Action priority is advisory ordering for humans. It must not become a hidden gate and must not override the underlying verify, policy, approval, waiver, release, or source-review artifacts.
+
+The action plan also contains a `runbook` read model for Console Runbook Mode. This model orders the highest-priority actionable steps and, for each step, records:
+
+- `owner`
+- `command`
+- `expectedArtifact`
+- `expectedCompletionSignal`
+- `verificationCommand`
+- `rollbackOption`
+- `deferOption`
+- `evidenceArtifacts`
+- `valueReportImpact`
+
+The runbook is executable only in the human sense: a reviewer can copy the command and run it explicitly in the local CLI. Console itself does not execute the command, does not write the expected artifact, does not upload source, and does not replace `verify`, `ci:verify`, policy review, waiver lifecycle, or release compare.
+
 `jispec-cli console export-governance` writes a local repo-level governance snapshot for future multi-repo aggregation. It does not upload source, does not run verify, and does not replace any CLI gate.
 
 `jispec-cli console aggregate-governance` consumes those exported snapshots only. The aggregate JSON includes loaded snapshot counts plus explicit `missingSnapshots` entries for requested snapshot paths that do not exist. Missing governance facts inside a loaded snapshot use `not_available_yet`; missing explicit snapshot files use `snapshot_not_found`.
@@ -151,7 +204,7 @@ Those owner actions are advisory planning artifacts only. They never replace a s
 
 ## Non-Goals
 
-- No Console UI is promised by this contract.
+- No remote Console UI, hosted service, or source-upload workflow is promised by this contract.
 - No source-code upload is required.
 - No Markdown artifact becomes a machine API.
 - No remote Console decision may override a local blocking verify result.

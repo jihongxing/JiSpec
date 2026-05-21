@@ -39,6 +39,7 @@ export interface LocalConsoleUiModel {
   dashboard: ConsoleGovernanceDashboard;
   snapshot: ConsoleLocalSnapshot;
   actions: ConsoleGovernanceActionPlan;
+  orgOperations: ConsoleLocalSnapshot["governance"]["orgOperations"];
 }
 
 export interface LocalConsoleUiWriteResult {
@@ -61,6 +62,12 @@ const GOVERNANCE_OBJECT_ORDER = [
   "takeover_quality_trend",
   "implementation_mediation_outcomes",
   "implementation_workspace",
+  "mainline_recovery_drill",
+  "global_operations_packet",
+  "org_responsibility_graph",
+  "async_review_inbox",
+  "ops_aging_ledger",
+  "release_train_packet",
   "approval_workflow",
   "audit_events",
   "doctor_global_readiness",
@@ -92,6 +99,7 @@ export function buildLocalConsoleUiModel(options: LocalConsoleUiOptions): LocalC
     dashboard,
     snapshot,
     actions,
+    orgOperations: snapshot.governance.orgOperations,
   };
 }
 
@@ -115,9 +123,11 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     .map((id) => model.snapshot.governance.objects.find((object) => object.id === id))
     .filter((object): object is ConsoleGovernanceObjectSnapshot => Boolean(object));
   const suggestedActions = model.actions.actions.slice(0, 6);
+  const runbookSteps = model.actions.runbook.steps.slice(0, 3);
   const doctorGlobalReadiness = model.snapshot.governance.objects.find((object) => object.id === "doctor_global_readiness");
   const workspace = model.snapshot.governance.objects.find((object) => object.id === "implementation_workspace");
   const doctorGlobalStatus = doctorGlobalReadiness?.status ?? "unknown";
+  const orgOps = model.orgOperations;
   const doctorGlobalAnswer = doctorGlobalReadiness?.summary.ready === true
     ? `Doctor global ready: ${String(doctorGlobalReadiness.summary.passedChecks ?? "not available")}/${String(doctorGlobalReadiness.summary.totalChecks ?? "not available")} checks passed.`
     : doctorGlobalReadiness?.summary.state === "not_available_yet"
@@ -714,6 +724,7 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
           ${headlineSignal("Owner action", model.dashboard.headline.ownerAction.owner, model.dashboard.headline.ownerAction.command)}
           ${headlineSignal("Evidence source", model.dashboard.headline.evidence.primary, model.dashboard.headline.evidence.sources.slice(1, 3).join(", "))}
           ${headlineSignal("Broader closure", doctorGlobalStatus, doctorGlobalAnswer)}
+          ${headlineSignal("Org operations", orgOps.status, `${orgOps.availableObjectCount}/${orgOps.sourceObjectIds.length} local object(s), release train ${orgOps.releaseTrain.status}`)}
         </div>
         <p class="source-note">Source: ${escapeHtml(model.dashboard.headline.source)}</p>
       </div>
@@ -730,6 +741,18 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
             ${metric("Missing", String(model.snapshot.summary.missingArtifacts))}
             ${metric("Invalid", String(model.snapshot.summary.invalidArtifacts + model.snapshot.summary.unreadableArtifacts))}
           </div>
+        </div>
+        <div class="panel">
+          <h2>Org Operations</h2>
+          ${renderOrgOperationsPanel(model)}
+        </div>
+        <div class="panel">
+          <h2>Top Runbook</h2>
+          ${renderRunbookPanel(model)}
+        </div>
+        <div class="panel">
+          <h2>Value Report</h2>
+          ${renderValueReportPanel(model)}
         </div>
       </div>
     </section>
@@ -752,7 +775,7 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
       <h2 id="actions">Suggested Local Commands</h2>
       <p class="small">These are read-only suggestions from Console. The UI does not execute commands.</p>
       <div class="grid-2" style="margin-top: 12px;">
-        ${suggestedActions.length > 0 ? suggestedActions.map(renderAction).join("\n") : "<p>No governance actions suggested from current artifacts.</p>"}
+        ${runbookSteps.length > 0 ? runbookSteps.map(renderRunbookStep).join("\n") : suggestedActions.length > 0 ? suggestedActions.map(renderAction).join("\n") : "<p>No governance actions suggested from current artifacts.</p>"}
       </div>
     </section>
 
@@ -771,8 +794,12 @@ export function renderLocalConsoleUiHtml(model: LocalConsoleUiModel): string {
     generatedAt: model.generatedAt,
     boundary: model.boundary,
     headline: model.dashboard.headline,
+    decisionDeck: model.dashboard.decisionDeck,
+    runbook: model.actions.runbook,
     questions: model.dashboard.questions,
     governanceSummary: model.snapshot.governance.summary,
+    orgOperations: model.orgOperations,
+    actionPriorities: model.actions.actions.map((action) => ({ id: action.id, priority: action.priority })),
     actionDecisionPackets: model.actions.actions.map((action) => action.decisionPacket),
   }))}</script>
   <script>
@@ -803,6 +830,9 @@ export function renderLocalConsoleUiResultJSON(result: LocalConsoleUiWriteResult
     bytesWritten: result.bytesWritten,
     boundary: result.model.boundary,
     headline: result.model.dashboard.headline,
+    decisionDeck: result.model.dashboard.decisionDeck,
+    runbook: result.model.actions.runbook,
+    orgOperations: result.model.orgOperations,
   }, null, 2);
 }
 
@@ -811,6 +841,9 @@ export function renderLocalConsoleUiResultText(result: LocalConsoleUiWriteResult
     "Local Console UI written.",
     `Path: ${result.relativeOutPath}`,
     `Headline: ${result.model.dashboard.headline.status.toUpperCase()} - ${result.model.dashboard.headline.title}`,
+    `Runbook: ${result.model.actions.runbook.status} - ${result.model.actions.runbook.summary}`,
+    `Value report: ${result.model.dashboard.decisionDeck.valueReport.status}`,
+    `Org operations: ${result.model.orgOperations.status} - ${result.model.orgOperations.availableObjectCount}/${result.model.orgOperations.sourceObjectIds.length} local object(s) available`,
     "Boundary: read-only, offline-capable, no source upload, does not override verify.",
   ].join("\n");
 }
@@ -1125,8 +1158,157 @@ function renderAction(action: ConsoleGovernanceActionPlan["actions"][number]): s
     <code>${escapeHtml(packet.recommendedCommand)}</code>
     <button type="button" data-copy-command="${escapeHtml(packet.recommendedCommand)}">Copy</button>
   </div>
-  <p class="small">Status: ${escapeHtml(action.status)} · Kind: ${escapeHtml(action.kind)} · Writes if run: ${escapeHtml(formatList(packet.commandWrites))}</p>
+  <p class="small">Priority: ${escapeHtml(action.priority.bucket)} #${escapeHtml(String(action.priority.rank))} · Status: ${escapeHtml(action.status)} · Kind: ${escapeHtml(action.kind)} · Writes if run: ${escapeHtml(formatList(packet.commandWrites))}</p>
 </article>`;
+}
+
+function renderRunbookPanel(model: LocalConsoleUiModel): string {
+  const runbook = model.actions.runbook;
+  const topStep = runbook.topStep;
+  if (!topStep) {
+    return `<div class="workspace-stack">
+    <div class="status-row">
+      <span class="badge unknown">${escapeHtml(runbook.status)}</span>
+      <span class="small">read-only runbook</span>
+    </div>
+    <p class="summary">${escapeHtml(runbook.summary)}</p>
+    <p class="small">${escapeHtml(runbook.valueReportImpact.summary)}</p>
+  </div>`;
+  }
+
+  return `<div class="workspace-stack">
+    <div class="status-row">
+      <span class="badge ${statusClass(runbookStatusClass(topStep.status))}">${escapeHtml(topStep.status)}</span>
+      <span class="small">Step ${escapeHtml(String(topStep.order))} of ${escapeHtml(String(runbook.steps.length))}</span>
+    </div>
+    <p class="summary">${escapeHtml(topStep.title)}</p>
+    <div class="workspace-meta">
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Owner</div>
+        <div class="workspace-meta-value">${escapeHtml(topStep.owner)}</div>
+        <div class="workspace-meta-detail">${escapeHtml(topStep.risk.level)} risk</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Expected Artifact</div>
+        <div class="workspace-meta-value">${escapeHtml(topStep.expectedArtifact)}</div>
+        <div class="workspace-meta-detail">proof after command</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Value Impact</div>
+        <div class="workspace-meta-value">${escapeHtml(String(runbook.valueReportImpact.metrics.blockingIssuesCaught))}</div>
+        <div class="workspace-meta-detail">blocking issue(s) caught</div>
+      </div>
+    </div>
+    <div class="workspace-action-row">
+      <code>${escapeHtml(topStep.command)}</code>
+      <button type="button" data-copy-command="${escapeHtml(topStep.command)}">Copy</button>
+    </div>
+    <div class="workspace-action-row">
+      <code>${escapeHtml(topStep.verificationCommand)}</code>
+      <button type="button" data-copy-command="${escapeHtml(topStep.verificationCommand)}">Copy</button>
+    </div>
+    <p class="small">${escapeHtml(topStep.expectedCompletionSignal)}</p>
+  </div>`;
+}
+
+function renderOrgOperationsPanel(model: LocalConsoleUiModel): string {
+  const orgOps = model.orgOperations;
+  const status = orgOps.ready ? "ok" : orgOps.state === "attention" ? "attention" : "unknown";
+  return `<div class="workspace-stack">
+    <div class="status-row">
+      <span class="badge ${status}">${escapeHtml(orgOps.status)}</span>
+      <span class="small">local org operations</span>
+    </div>
+    <p class="summary">Responsibility, review, SLA, and release train signals are summarized from declared local artifacts only.</p>
+    <div class="workspace-meta">
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Responsibility</div>
+        <div class="workspace-meta-value">${escapeHtml(String(orgOps.responsibility.ownerActionAssignmentCount))}</div>
+        <div class="workspace-meta-detail">${escapeHtml(`${orgOps.responsibility.teamCount} team(s), ${orgOps.responsibility.repoCount} repo(s)`)}</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Reviews</div>
+        <div class="workspace-meta-value">${escapeHtml(String(orgOps.reviews.pending))}</div>
+        <div class="workspace-meta-detail">${escapeHtml(`${orgOps.reviews.reviewerCount} reviewer(s), ${orgOps.reviews.blocked} blocked`)}</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">SLA</div>
+        <div class="workspace-meta-value">${escapeHtml(String(orgOps.sla.dueSoon + orgOps.sla.overdue + orgOps.sla.escalated))}</div>
+        <div class="workspace-meta-detail">${escapeHtml(`${orgOps.sla.dueSoon} due soon, ${orgOps.sla.overdue} overdue, ${orgOps.sla.escalated} escalated`)}</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Release Train</div>
+        <div class="workspace-meta-value">${escapeHtml(orgOps.releaseTrain.trainReady ? "ready" : orgOps.releaseTrain.status)}</div>
+        <div class="workspace-meta-detail">${escapeHtml(`${orgOps.releaseTrain.blockedRepoCount} blocked repo(s), ${orgOps.releaseTrain.requiredReviewCount} review(s)`)}</div>
+      </div>
+    </div>
+    <div class="workspace-action-row">
+      <code>${escapeHtml(orgOps.releaseTrain.safeNextCommand)}</code>
+      <button type="button" data-copy-command="${escapeHtml(orgOps.releaseTrain.safeNextCommand)}">Copy</button>
+    </div>
+    <p class="small">Boundary: read-only, no realtime collaboration, no source upload, no command execution, no verify or post-release gate replacement.</p>
+  </div>`;
+}
+
+function renderRunbookStep(step: ConsoleGovernanceActionPlan["runbook"]["steps"][number]): string {
+  return `<article class="action">
+  <h3>${escapeHtml(`${step.order}. ${step.title}`)}</h3>
+  <p>${escapeHtml(step.expectedCompletionSignal)}</p>
+  <div class="action-meta">
+    <div><p class="small">Owner</p><p>${escapeHtml(step.owner)}</p></div>
+    <div><p class="small">Risk</p><p>${escapeHtml(step.risk.level)} - ${escapeHtml(step.risk.summary)}</p></div>
+    <div><p class="small">Affected</p><p>${escapeHtml(formatList(step.affectedContracts))}</p></div>
+    <div><p class="small">Source</p><p>${escapeHtml(formatList(step.evidenceArtifacts))}</p></div>
+  </div>
+  <p class="small">Expected Artifact: ${escapeHtml(step.expectedArtifact)}</p>
+  <div class="command-row">
+    <code>${escapeHtml(step.command)}</code>
+    <button type="button" data-copy-command="${escapeHtml(step.command)}">Copy</button>
+  </div>
+  <div class="command-row">
+    <code>${escapeHtml(step.verificationCommand)}</code>
+    <button type="button" data-copy-command="${escapeHtml(step.verificationCommand)}">Copy</button>
+  </div>
+  <p class="small">Rollback: ${escapeHtml(step.rollbackOption)}</p>
+  <p class="small">Defer: ${escapeHtml(step.deferOption)}</p>
+</article>`;
+}
+
+function renderValueReportPanel(model: LocalConsoleUiModel): string {
+  const value = model.dashboard.decisionDeck.valueReport;
+  return `<div class="workspace-stack">
+    <div class="status-row">
+      <span class="badge ${statusClass(value.status)}">${escapeHtml(value.status)}</span>
+      <span class="small">${escapeHtml(value.sourceArtifacts[0] ?? ".spec/metrics/value-report.json")}</span>
+    </div>
+    <p class="summary">${escapeHtml(value.answer)}</p>
+    <div class="workspace-meta">
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Manual Sorting Saved</div>
+        <div class="workspace-meta-value">${escapeHtml(String(value.metrics.estimatedManualSortingMinutesSaved))}</div>
+        <div class="workspace-meta-detail">estimated minute(s)</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Blocking Caught</div>
+        <div class="workspace-meta-value">${escapeHtml(String(value.metrics.blockingIssuesCaught))}</div>
+        <div class="workspace-meta-detail">verify risk surfaced</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Advisory Surfaced</div>
+        <div class="workspace-meta-value">${escapeHtml(String(value.metrics.advisoryRisksSurfaced))}</div>
+        <div class="workspace-meta-detail">review before merge</div>
+      </div>
+      <div class="workspace-meta-item">
+        <div class="workspace-meta-label">Execute Stops</div>
+        <div class="workspace-meta-value">${escapeHtml(String(value.metrics.executeStopsNeedingReview))}</div>
+        <div class="workspace-meta-detail">needs owner review</div>
+      </div>
+    </div>
+    <div class="workspace-action-row">
+      <code>${escapeHtml(value.status === "ok" ? ".spec/metrics/value-report.json" : "npm run jispec-cli -- metrics value-report --root . --json")}</code>
+      <button type="button" data-copy-command="${escapeHtml(value.status === "ok" ? ".spec/metrics/value-report.json" : "npm run jispec-cli -- metrics value-report --root . --json")}">Copy</button>
+    </div>
+  </div>`;
 }
 
 function headlineSignal(label: string, value: string, detail?: string): string {
@@ -1151,6 +1333,19 @@ function boundaryItem(label: string, value: string): string {
 
 function statusClass(status: ConsoleGovernanceStatus): string {
   return status;
+}
+
+function runbookStatusClass(status: ConsoleGovernanceActionPlan["runbook"]["steps"][number]["status"]): ConsoleGovernanceStatus {
+  if (status === "ready") {
+    return "attention";
+  }
+  if (status === "blocked") {
+    return "blocked";
+  }
+  if (status === "needs_input") {
+    return "attention";
+  }
+  return "unknown";
 }
 
 function workspaceStatusClass(status: string): string {

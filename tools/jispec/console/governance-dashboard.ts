@@ -5,6 +5,7 @@ import {
   type ConsoleGovernanceActionPacket,
   type ConsoleGovernanceActionPlan,
   type ConsoleGovernanceActionStatus,
+  type ConsoleGovernanceRunbook,
   type ConsoleGovernanceRiskLevel,
 } from "./governance-actions";
 import {
@@ -66,6 +67,46 @@ export interface ConsoleGovernanceDashboardQuestion {
   nextActions: string[];
 }
 
+export interface ConsoleGovernanceDecisionDeck {
+  mergeability: {
+    status: ConsoleGovernanceStatus;
+    answer: string;
+    evidence: string[];
+  };
+  topRisk: {
+    level: ConsoleGovernanceRiskLevel;
+    summary: string;
+  };
+  owner: {
+    name: string;
+    actionStatus: ConsoleGovernanceActionStatus | "not_available";
+    actionSummary: string;
+  };
+  nextCommand: string;
+  evidence: {
+    primary: string;
+    sources: string[];
+  };
+  valueReport: {
+    status: ConsoleGovernanceStatus;
+    answer: string;
+    metrics: {
+      estimatedManualSortingMinutesSaved: number | "not_available_yet";
+      blockingIssuesCaught: number | "not_available_yet";
+      advisoryRisksSurfaced: number | "not_available_yet";
+      executeStopsNeedingReview: number | "not_available_yet";
+    };
+    sourceArtifacts: string[];
+  };
+  runbook: {
+    status: ConsoleGovernanceRunbook["status"];
+    summary: string;
+    topStep?: ConsoleGovernanceRunbook["topStep"];
+    stepCount: number;
+    valueReportImpact: ConsoleGovernanceRunbook["valueReportImpact"];
+  };
+}
+
 export interface ConsoleGovernanceDashboard {
   version: 1;
   root: string;
@@ -79,6 +120,7 @@ export interface ConsoleGovernanceDashboard {
     firstScreen: "governance_status";
   };
   headline: ConsoleGovernanceDashboardHeadline;
+  decisionDeck: ConsoleGovernanceDecisionDeck;
   questions: ConsoleGovernanceDashboardQuestion[];
   snapshot: {
     createdAt: string;
@@ -113,6 +155,7 @@ export function buildConsoleGovernanceDashboardFromSnapshot(
     buildDoctorGlobalReadinessQuestion(snapshot),
   ];
   const headline = buildHeadline(questions, actionPlan);
+  const decisionDeck = buildDecisionDeck(snapshot, headline, actionPlan);
 
   return {
     version: 1,
@@ -127,6 +170,7 @@ export function buildConsoleGovernanceDashboardFromSnapshot(
       firstScreen: "governance_status",
     },
     headline,
+    decisionDeck,
     questions,
     snapshot: {
       createdAt: snapshot.createdAt,
@@ -143,11 +187,15 @@ export function renderConsoleGovernanceDashboardText(dashboard: ConsoleGovernanc
     `Status: ${dashboard.headline.status.toUpperCase()}`,
     dashboard.headline.title,
     dashboard.headline.summary,
+    "",
+    "Decision Deck:",
     `Mergeability: ${dashboard.headline.mergeability.answer}`,
     `Risk: ${dashboard.headline.risk.level} - ${dashboard.headline.risk.summary}`,
     `Owner action: ${dashboard.headline.ownerAction.owner} - ${dashboard.headline.ownerAction.summary}`,
     `Recommended command: ${dashboard.headline.ownerAction.command}`,
+    `Top runbook: ${dashboard.decisionDeck.runbook.topStep ? `${dashboard.decisionDeck.runbook.topStep.owner} - ${dashboard.decisionDeck.runbook.topStep.command}` : dashboard.decisionDeck.runbook.summary}`,
     `Evidence source: ${dashboard.headline.source}`,
+    `Value report: ${dashboard.decisionDeck.valueReport.answer}`,
     "",
     "Governance Questions:",
   ];
@@ -450,6 +498,52 @@ function ownerForQuestion(id: ConsoleGovernanceQuestionId): string {
     return "global closure owner";
   }
   return "repo owner";
+}
+
+function buildDecisionDeck(
+  snapshot: ConsoleLocalSnapshot,
+  headline: ConsoleGovernanceDashboardHeadline,
+  actionPlan: ConsoleGovernanceActionPlan,
+): ConsoleGovernanceDecisionDeck {
+  const takeoverQuality = governanceObject(snapshot, "takeover_quality_trend");
+  const summary = takeoverQuality?.summary ?? {};
+  const hasValueReport = summary.hasValueReport === true;
+  const valueMetrics = {
+    estimatedManualSortingMinutesSaved: numberValue(summary.estimatedManualSortingMinutesSaved) ?? "not_available_yet" as const,
+    blockingIssuesCaught: numberValue(summary.blockingIssuesCaught) ?? "not_available_yet" as const,
+    advisoryRisksSurfaced: numberValue(summary.advisoryRisksSurfaced) ?? "not_available_yet" as const,
+    executeStopsNeedingReview: numberValue(summary.executeStopsNeedingReview) ?? "not_available_yet" as const,
+  };
+  return {
+    mergeability: {
+      status: headline.mergeability.status,
+      answer: headline.mergeability.answer,
+      evidence: headline.mergeability.evidence,
+    },
+    topRisk: headline.risk,
+    owner: {
+      name: headline.ownerAction.owner,
+      actionStatus: headline.ownerAction.status,
+      actionSummary: headline.ownerAction.summary,
+    },
+    nextCommand: headline.ownerAction.command,
+    evidence: headline.evidence,
+    valueReport: {
+      status: hasValueReport ? "ok" : "unknown",
+      answer: hasValueReport
+        ? `Value report available: ${valueMetrics.estimatedManualSortingMinutesSaved} minute(s) saved, ${valueMetrics.blockingIssuesCaught} blocking issue(s) caught, ${valueMetrics.executeStopsNeedingReview} execute stop(s) needing review.`
+        : "Value report is not available yet; run metrics value-report to materialize the local ROI view.",
+      metrics: valueMetrics,
+      sourceArtifacts: hasValueReport ? [".spec/metrics/value-report.json"] : ["Missing .spec/metrics/value-report.json"],
+    },
+    runbook: {
+      status: actionPlan.runbook.status,
+      summary: actionPlan.runbook.summary,
+      topStep: actionPlan.runbook.topStep,
+      stepCount: actionPlan.runbook.steps.length,
+      valueReportImpact: actionPlan.runbook.valueReportImpact,
+    },
+  };
 }
 
 function fallbackCommandForQuestion(question: ConsoleGovernanceDashboardQuestion): string {
@@ -795,6 +889,15 @@ function buildRetakeoverPoolQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
     : [];
   const verifyNonBlockingRate = numberValue(summary.poolVerifyNonBlockingRate);
   const ownerReviewFixtureRate = numberValue(summary.poolOwnerReviewFixtureRate);
+  const realismLadderReady = summary.realismLadderReady;
+  const realismCoveredClasses = numberValue(summary.realismLadderCoveredClassCount);
+  const realismTargetClasses = numberValue(summary.realismLadderTargetClassCount);
+  const realismBlockers = Array.isArray(summary.realismLadderBlockers)
+    ? summary.realismLadderBlockers.map(String)
+    : [];
+  const realismMissingClasses = Array.isArray(summary.realismLadderMissingClasses)
+    ? summary.realismLadderMissingClasses.map(String)
+    : [];
   const baselineMissCount = readinessMisses.length + precisionMisses.length + behaviorMisses.length;
 
   if (!takeoverTrend || summary.state === "not_available_yet" || !hasPoolMetrics) {
@@ -813,11 +916,14 @@ function buildRetakeoverPoolQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
   return question({
     id: "retakeover_pool_health",
     label: "Is the retakeover regression pool healthy?",
-    status: "ok",
-    answer: `Pool metrics are available and non-blocking; coverage is ${formatPercent(coverageRate)}.`,
+    status: realismBlockers.length > 0 || realismLadderReady === false ? "attention" : "ok",
+    answer: `Pool metrics are available and non-blocking; coverage is ${formatPercent(coverageRate)}; realism ladder is ${realismLadderReady === true ? "ready" : "not ready"}.`,
     evidence: [
       `Fixture catalog: ${catalogCount} entry(ies); pooled fixtures: ${fixtureCount}`,
       `Class coverage: ${coveredClasses ?? "unknown"}/${knownClasses ?? "unknown"}`,
+      ...(realismCoveredClasses !== undefined || realismTargetClasses !== undefined
+        ? [`Realism ladder: ${realismCoveredClasses ?? "unknown"}/${realismTargetClasses ?? "unknown"} class(es)`]
+        : []),
       ...(readinessThreshold !== undefined ? [`Readiness floor: ${readinessThreshold}/100`] : []),
       ...(precisionThreshold !== undefined ? [`Contract precision floor: ${formatPercent(precisionThreshold)}`] : []),
       ...(behaviorThreshold !== undefined ? [`Behavior strength floor: ${formatPercent(behaviorThreshold)}`] : []),
@@ -827,8 +933,12 @@ function buildRetakeoverPoolQuestion(snapshot: ConsoleLocalSnapshot): ConsoleGov
       ...(readinessMisses.length > 0 ? [`Readiness misses: ${readinessMisses.join(", ")}`] : []),
       ...(precisionMisses.length > 0 ? [`Contract precision misses: ${precisionMisses.join(", ")}`] : []),
       ...(behaviorMisses.length > 0 ? [`Behavior strength misses: ${behaviorMisses.join(", ")}`] : []),
+      ...(realismMissingClasses.length > 0 ? [`Missing realism classes: ${realismMissingClasses.join(", ")}`] : []),
+      ...(realismBlockers.length > 0 ? [`Realism budget blockers: ${realismBlockers.join(", ")}`] : []),
     ],
-    nextActions: [],
+    nextActions: realismBlockers.length > 0
+      ? ["Run node --import tsx ./tools/jispec/tests/retakeover-realism-ladder.ts and reduce correction budget misses."]
+      : [],
   });
 }
 

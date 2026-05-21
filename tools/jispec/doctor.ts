@@ -16,6 +16,31 @@ import { createFactsContract } from "./facts/facts-contract";
 import { loadVerifyPolicy, policyFileExists } from "./policy/policy-loader";
 import { validatePolicyAgainstFactsContract } from "./policy/policy-schema";
 import { evaluateChangeExecuteDefaultReadiness } from "./change/orchestration-config";
+import { diagnoseMainlineFlow } from "./change/mainline-flow";
+import {
+  buildMainlineRecoveryDrill,
+  type MainlineRecoveryDrillPacket,
+} from "./change/mainline-recovery-drill";
+import {
+  buildGlobalOperationsPacket,
+  type GlobalOperationsPacket,
+} from "./operations/global-operations-packet";
+import {
+  buildOrgResponsibilityGraph,
+  type OrgResponsibilityGraph,
+} from "./operations/org-responsibility-graph";
+import {
+  buildAsyncReviewInbox,
+  type AsyncReviewInbox,
+} from "./operations/async-review-inbox";
+import {
+  buildOpsAgingLedger,
+  type OpsAgingLedger,
+} from "./operations/ops-aging-ledger";
+import {
+  buildReleaseTrainPacket,
+  type ReleaseTrainPacket,
+} from "./operations/release-train-packet";
 import { collectConsoleLocalSnapshot, type ConsoleGovernanceObjectSnapshot } from "./console/read-model-snapshot";
 import {
   assessDeferredSurfacePromotionReadiness,
@@ -32,6 +57,64 @@ export interface DoctorCheckResult {
   ownerAction?: string;
   nextCommand?: string;
   sourceArtifacts?: string[];
+  recoveryDrill?: {
+    status: MainlineRecoveryDrillPacket["status"];
+    summary: string;
+    artifactPaths: string[];
+    steps: MainlineRecoveryDrillPacket["steps"];
+    boundary: MainlineRecoveryDrillPacket["boundary"];
+  };
+  globalOperationsPacket?: {
+    status: GlobalOperationsPacket["status"];
+    summary: string;
+    artifactPaths: string[];
+    referencedSupportSurfaces: string[];
+    ownerActionCount: number;
+    asyncCollaborationEvents: GlobalOperationsPacket["asyncCollaborationEvents"];
+    boundary: GlobalOperationsPacket["boundary"];
+  };
+  orgResponsibilityGraph?: {
+    status: OrgResponsibilityGraph["status"];
+    summary: string;
+    artifactPaths: string[];
+    teamCount: number;
+    repoCount: number;
+    ownerActionCount: number;
+    reviewerCoverage: OrgResponsibilityGraph["reviewerCoverage"];
+    boundary: OrgResponsibilityGraph["boundary"];
+  };
+  asyncReviewInbox?: {
+    status: AsyncReviewInbox["status"];
+    summary: string;
+    artifactPaths: string[];
+    reviewerCount: number;
+    totalItems: number;
+    pending: number;
+    blocked: number;
+    expired: number;
+    boundary: AsyncReviewInbox["boundary"];
+  };
+  opsAgingLedger?: {
+    status: OpsAgingLedger["status"];
+    summary: string;
+    artifactPaths: string[];
+    totalItems: number;
+    fresh: number;
+    dueSoon: number;
+    overdue: number;
+    escalated: number;
+    boundary: OpsAgingLedger["boundary"];
+  };
+  releaseTrainPacket?: {
+    status: ReleaseTrainPacket["status"];
+    summary: string;
+    artifactPaths: string[];
+    blockedRepoCount: number;
+    ownerAssignmentCount: number;
+    requiredReviewCount: number;
+    safeNextCommand: string;
+    boundary: ReleaseTrainPacket["boundary"];
+  };
 }
 
 export type DoctorProfile = "runtime" | "mainline" | "pilot" | "global";
@@ -168,6 +251,7 @@ export class Doctor {
     checks.push(await this.checkFactsAndPolicySurface());
     checks.push(await this.checkCiVerifySurface());
     checks.push(await this.checkChangeImplementMainlineSurface());
+    checks.push(await this.checkMainlineFlowRecovery());
     checks.push(await this.checkExecuteDefaultMediationReadiness());
     checks.push(await this.checkV1RegressionCoverage());
 
@@ -214,6 +298,11 @@ export class Doctor {
     checks.push(await this.checkGlobalDeferredSurfacePromotionReadiness());
     checks.push(await this.checkGlobalAbsoluteTerminalBoundary());
     checks.push(await this.checkGlobalNorthStarAcceptanceReadiness());
+    checks.push(await this.checkGlobalOperationsPacketReadiness(this.buildReport("global", checks)));
+    checks.push(await this.checkOrgResponsibilityGraphReadiness());
+    checks.push(await this.checkAsyncReviewInboxReadiness());
+    checks.push(await this.checkOpsAgingLedgerReadiness());
+    checks.push(await this.checkReleaseTrainPacketReadiness());
 
     return this.buildReport("global", checks);
   }
@@ -1066,6 +1155,45 @@ export class Doctor {
     }
   }
 
+  private async checkMainlineFlowRecovery(): Promise<DoctorCheckResult> {
+    try {
+      const diagnosis = diagnoseMainlineFlow(this.root);
+      const drill = buildMainlineRecoveryDrill(this.root);
+      return {
+        name: "Mainline Flow Recovery",
+        status: diagnosis.status,
+        summary: diagnosis.summary,
+        details: [
+          ...diagnosis.details,
+          `Recovery drill: ${drill.status} - ${drill.summary}`,
+          "Recovery drill artifact: .jispec/recovery/mainline-drill.json",
+          "Recovery drill companion: .jispec/recovery/mainline-drill.md",
+        ],
+        ownerAction: diagnosis.ownerAction,
+        nextCommand: diagnosis.nextCommand,
+        sourceArtifacts: stableUnique([
+          ...diagnosis.sourceArtifacts,
+          ".jispec/recovery/mainline-drill.json",
+          ".jispec/recovery/mainline-drill.md",
+        ]),
+        recoveryDrill: {
+          status: drill.status,
+          summary: drill.summary,
+          artifactPaths: [".jispec/recovery/mainline-drill.json", ".jispec/recovery/mainline-drill.md"],
+          steps: drill.steps,
+          boundary: drill.boundary,
+        },
+      };
+    } catch (error: any) {
+      return {
+        name: "Mainline Flow Recovery",
+        status: "fail",
+        summary: "Check failed",
+        details: [error.message],
+      };
+    }
+  }
+
   private async checkPilotInstallationEntry(): Promise<DoctorCheckResult> {
     const packagePath = path.join(this.root, "package.json");
     if (!fs.existsSync(packagePath)) {
@@ -1531,6 +1659,8 @@ export class Doctor {
 
     const boundary = isRecord(aggregate.boundary) ? aggregate.boundary : {};
     const summary = isRecord(aggregate.summary) ? aggregate.summary : {};
+    const promotionReadiness = isRecord(aggregate.promotionReadiness) ? aggregate.promotionReadiness : {};
+    const promotionChecklist = Array.isArray(promotionReadiness.checklist) ? promotionReadiness.checklist : [];
     const details = [
       `Kind: ${String(aggregate.kind ?? "not_declared")}`,
       `Schema version: ${String(aggregate.schemaVersion ?? "not_declared")}`,
@@ -1538,6 +1668,9 @@ export class Doctor {
       `Contract drift hints: ${String(summary.contractDriftHintCount ?? "not_declared")}`,
       `Owner actions: ${String(summary.ownerActionCount ?? "not_declared")}`,
       `Missing snapshots: ${String(summary.missingSnapshotCount ?? "not_declared")}`,
+      `Promotion phase: ${String(promotionReadiness.phase ?? "not_declared")}`,
+      `Promotion ready: ${promotionReadiness.ready === true ? "yes" : "no"}`,
+      `Promotion checklist: ${promotionChecklist.length} item(s)`,
     ];
     const valid =
       aggregate.kind === "jispec-multi-repo-governance-aggregate" &&
@@ -1548,14 +1681,17 @@ export class Doctor {
       boundary.replacesCliGate === false &&
       Array.isArray(aggregate.contractDriftHints) &&
       Array.isArray(aggregate.ownerActions) &&
-      aggregate.singleRepoGateReplacement === false;
+      aggregate.singleRepoGateReplacement === false &&
+      promotionReadiness.phase === "north-star-score-optimization-phase-2" &&
+      promotionReadiness.ready === true &&
+      promotionChecklist.length >= 5;
 
     if (!valid) {
       return doctorFail(
         "Multi-Repo Aggregate Contract Readiness",
-        "Multi-repo aggregate contract is incomplete",
+        "Multi-repo aggregate contract or phase-2 promotion readiness is incomplete",
         details,
-        "Regenerate the aggregate from exported repo snapshots until drift hints and owner actions are present under the local-only contract.",
+        "Regenerate the aggregate from an explicit repo group and exported repo snapshots until drift hints, owner actions, and phase-2 promotion readiness are healthy.",
         "npm run jispec -- console aggregate-governance --dir . --root .",
         [aggregatePath],
       );
@@ -1776,6 +1912,357 @@ export class Doctor {
     }
 
     return doctorPass("North Star Acceptance Artifact Readiness", "North Star acceptance ready", details, [acceptancePath]);
+  }
+
+  private async checkGlobalOperationsPacketReadiness(doctorGlobalReport?: DoctorReport): Promise<DoctorCheckResult> {
+    try {
+      const packet = buildGlobalOperationsPacket(this.root, doctorGlobalReport
+        ? { doctorGlobalReport: doctorGlobalReport as unknown as Record<string, unknown> }
+        : {});
+      const details = [
+        `Operations packet status: ${packet.status}`,
+        `Repo group: ${packet.repoGroupTopology.status} (${packet.repoGroupTopology.repoCount} repo(s))`,
+        `Cross-repo refs: ${packet.crossRepoContractRefs.length}`,
+        `Owner actions: ${packet.ownerActionLifecycle.length}`,
+        `Promotion ready: ${packet.promotionReadiness.ready ? "yes" : "no"}`,
+        `Privacy posture: ${packet.privacyPosture.status}`,
+        `Audit evidence refs: ${packet.auditEvidenceRefs.length}`,
+        `Async collaboration evidence: ${packet.asyncCollaborationEvents.filter((event) => event.status === "available").length}/${packet.asyncCollaborationEvents.length}`,
+        `Referenced support surfaces: ${packet.promotionReadiness.referencedSupportSurfaces.join(", ") || "none"}`,
+        `Boundary: ${packet.verifyBoundaryStatement}`,
+      ];
+      if (packet.blockers.length > 0) {
+        details.push(`Blockers: ${packet.blockers.join(", ")}`);
+      }
+
+      if (packet.status !== "ready") {
+        return doctorFail(
+          "Global Operations Packet Readiness",
+          "Global operations packet is not ready",
+          details,
+          "Materialize the local operations packet after refreshing multi-repo, privacy, audit, and doctor global artifacts.",
+          "npm run jispec-cli -- doctor global --write-operations --json",
+          [
+            ".spec/operations/global-operations-packet.json",
+            ".spec/console/multi-repo-governance.json",
+            ".spec/privacy/privacy-report.json",
+            ".spec/audit/events.jsonl",
+            ".spec/doctor/global-readiness.json",
+          ],
+        );
+      }
+
+      return doctorPass(
+        "Global Operations Packet Readiness",
+        "Global operations packet ready",
+        details,
+        [
+          ".spec/operations/global-operations-packet.json",
+          ".spec/console/multi-repo-governance.json",
+          ".spec/privacy/privacy-report.json",
+          ".spec/audit/events.jsonl",
+          ".spec/doctor/global-readiness.json",
+        ],
+        { globalOperationsPacket: {
+          status: packet.status,
+          summary: `${packet.ownerActionLifecycle.length} owner action(s), ${packet.crossRepoContractRefs.length} cross-repo ref(s), ${packet.auditEvidenceRefs.length} audit evidence ref(s).`,
+          artifactPaths: [".spec/operations/global-operations-packet.json", ".spec/operations/global-operations-packet.md"],
+          referencedSupportSurfaces: packet.promotionReadiness.referencedSupportSurfaces,
+          ownerActionCount: packet.ownerActionLifecycle.length,
+          asyncCollaborationEvents: packet.asyncCollaborationEvents,
+          boundary: packet.boundary,
+        } },
+      );
+    } catch (error: any) {
+      return doctorFail(
+        "Global Operations Packet Readiness",
+        "Check failed",
+        [error.message],
+        "Review the local operations packet inputs and rerun doctor global.",
+        "npm run jispec-cli -- doctor global --write-operations --json",
+        [".spec/operations/global-operations-packet.json"],
+      );
+    }
+  }
+
+  private async checkOrgResponsibilityGraphReadiness(): Promise<DoctorCheckResult> {
+    try {
+      const graph = buildOrgResponsibilityGraph(this.root);
+      const details = [
+        `Org graph status: ${graph.status}`,
+        `Org: ${graph.orgTopology.orgId}`,
+        `Teams: ${graph.orgTopology.teamCount}`,
+        `Repos: ${graph.orgTopology.repoCount}`,
+        `Responsibility edges: ${graph.responsibilityEdges.length}`,
+        `Owner action assignments: ${graph.ownerActionAssignments.length}`,
+        `Reviewer coverage: ${graph.reviewerCoverage.actionsWithReviewer}/${graph.reviewerCoverage.totalOwnerActions}`,
+        `Escalation coverage: ${graph.reviewerCoverage.actionsWithEscalation}/${graph.reviewerCoverage.totalOwnerActions}`,
+        `Audit evidence refs: ${graph.auditEvidenceRefs.length}`,
+        `Boundary: ${graph.verifyBoundaryStatement}`,
+      ];
+      if (graph.blockers.length > 0) {
+        details.push(`Blockers: ${graph.blockers.join(", ")}`);
+      }
+
+      if (graph.status !== "ready") {
+        return doctorFail(
+          "Org Responsibility Graph Readiness",
+          "Org responsibility graph is not ready",
+          details,
+          "Materialize org topology, reviewers, escalation paths, and the global operations packet before treating org operations as complete.",
+          "npm run jispec-cli -- doctor global --write-operations --write-org-graph --json",
+          [
+            ".spec/operations/org-responsibility-graph.json",
+            ".spec/operations/org-topology.json",
+            ".spec/operations/global-operations-packet.json",
+            ".spec/audit/events.jsonl",
+          ],
+        );
+      }
+
+      return doctorPass(
+        "Org Responsibility Graph Readiness",
+        "Org responsibility graph ready",
+        details,
+        [
+          ".spec/operations/org-responsibility-graph.json",
+          ".spec/operations/org-responsibility-graph.md",
+          ".spec/operations/global-operations-packet.json",
+          ".spec/audit/events.jsonl",
+        ],
+        { orgResponsibilityGraph: {
+          status: graph.status,
+          summary: `${graph.orgTopology.teamCount} team(s), ${graph.orgTopology.repoCount} repo(s), ${graph.ownerActionAssignments.length} owner action assignment(s).`,
+          artifactPaths: [".spec/operations/org-responsibility-graph.json", ".spec/operations/org-responsibility-graph.md"],
+          teamCount: graph.orgTopology.teamCount,
+          repoCount: graph.orgTopology.repoCount,
+          ownerActionCount: graph.ownerActionAssignments.length,
+          reviewerCoverage: graph.reviewerCoverage,
+          boundary: graph.boundary,
+        } },
+      );
+    } catch (error: any) {
+      return doctorFail(
+        "Org Responsibility Graph Readiness",
+        "Check failed",
+        [error.message],
+        "Review org responsibility graph inputs and rerun doctor global.",
+        "npm run jispec-cli -- doctor global --write-operations --write-org-graph --json",
+        [".spec/operations/org-responsibility-graph.json"],
+      );
+    }
+  }
+
+  private async checkAsyncReviewInboxReadiness(): Promise<DoctorCheckResult> {
+    try {
+      const inbox = buildAsyncReviewInbox(this.root);
+      const details = [
+        `Async review inbox status: ${inbox.status}`,
+        `Source graph: ${inbox.sourceGraph.status}`,
+        `Reviewers: ${inbox.summary.reviewerCount}`,
+        `Review items: ${inbox.summary.totalItems}`,
+        `Pending: ${inbox.summary.pending}`,
+        `Accepted: ${inbox.summary.accepted}`,
+        `Blocked: ${inbox.summary.blocked}`,
+        `Expired: ${inbox.summary.expired}`,
+        `Reviewers missing: ${inbox.summary.reviewersMissing}`,
+        `Escalation-ready items: ${inbox.summary.escalationReadyItems}/${inbox.summary.totalItems}`,
+        `Audit evidence refs: ${inbox.auditEvidenceRefs.length}`,
+        `Boundary: ${inbox.verifyBoundaryStatement}`,
+      ];
+      if (inbox.blockers.length > 0) {
+        details.push(`Blockers: ${inbox.blockers.join(", ")}`);
+      }
+
+      if (inbox.status !== "ready") {
+        return doctorFail(
+          "Async Review Inbox Readiness",
+          "Async review inbox is not ready",
+          details,
+          "Materialize the org responsibility graph and reviewer assignments before treating async review operations as complete.",
+          "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --json",
+          [
+            ".spec/operations/async-review-inbox.json",
+            ".spec/operations/org-responsibility-graph.json",
+            ".spec/audit/events.jsonl",
+          ],
+        );
+      }
+
+      return doctorPass(
+        "Async Review Inbox Readiness",
+        "Async review inbox ready",
+        details,
+        [
+          ".spec/operations/async-review-inbox.json",
+          ".spec/operations/async-review-inbox.md",
+          ".spec/operations/org-responsibility-graph.json",
+          ".spec/audit/events.jsonl",
+        ],
+        { asyncReviewInbox: {
+          status: inbox.status,
+          summary: `${inbox.summary.reviewerCount} reviewer(s), ${inbox.summary.totalItems} review item(s), ${inbox.summary.pending} pending.`,
+          artifactPaths: [".spec/operations/async-review-inbox.json", ".spec/operations/async-review-inbox.md"],
+          reviewerCount: inbox.summary.reviewerCount,
+          totalItems: inbox.summary.totalItems,
+          pending: inbox.summary.pending,
+          blocked: inbox.summary.blocked,
+          expired: inbox.summary.expired,
+          boundary: inbox.boundary,
+        } },
+      );
+    } catch (error: any) {
+      return doctorFail(
+        "Async Review Inbox Readiness",
+        "Check failed",
+        [error.message],
+        "Review async review inbox inputs and rerun doctor global.",
+        "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --json",
+        [".spec/operations/async-review-inbox.json"],
+      );
+    }
+  }
+
+  private async checkOpsAgingLedgerReadiness(): Promise<DoctorCheckResult> {
+    try {
+      const ledger = buildOpsAgingLedger(this.root);
+      const details = [
+        `Ops aging ledger status: ${ledger.status}`,
+        `Source inbox: ${ledger.sourceInbox.status}`,
+        `Items: ${ledger.summary.totalItems}`,
+        `Fresh: ${ledger.summary.fresh}`,
+        `Due soon: ${ledger.summary.dueSoon}`,
+        `Overdue: ${ledger.summary.overdue}`,
+        `Escalated: ${ledger.summary.escalated}`,
+        `Escalation paths: ${ledger.summary.itemsWithEscalationPath}/${ledger.summary.totalItems}`,
+        `Audit evidence refs: ${ledger.auditEvidenceRefs.length}`,
+        `Boundary: ${ledger.verifyBoundaryStatement}`,
+      ];
+      if (ledger.blockers.length > 0) {
+        details.push(`Blockers: ${ledger.blockers.join(", ")}`);
+      }
+
+      if (ledger.status !== "ready") {
+        return doctorFail(
+          "Ops Aging Ledger Readiness",
+          "Ops aging ledger is not ready",
+          details,
+          "Materialize async review inbox and escalation paths before treating org operations SLA coverage as complete.",
+          "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --write-aging-ledger --json",
+          [
+            ".spec/operations/ops-aging-ledger.json",
+            ".spec/operations/async-review-inbox.json",
+            ".spec/audit/events.jsonl",
+          ],
+        );
+      }
+
+      return doctorPass(
+        "Ops Aging Ledger Readiness",
+        "Ops aging ledger ready",
+        details,
+        [
+          ".spec/operations/ops-aging-ledger.json",
+          ".spec/operations/ops-aging-ledger.md",
+          ".spec/operations/async-review-inbox.json",
+          ".spec/audit/events.jsonl",
+        ],
+        { opsAgingLedger: {
+          status: ledger.status,
+          summary: `${ledger.summary.totalItems} item(s), ${ledger.summary.dueSoon} due soon, ${ledger.summary.overdue} overdue, ${ledger.summary.escalated} escalated.`,
+          artifactPaths: [".spec/operations/ops-aging-ledger.json", ".spec/operations/ops-aging-ledger.md"],
+          totalItems: ledger.summary.totalItems,
+          fresh: ledger.summary.fresh,
+          dueSoon: ledger.summary.dueSoon,
+          overdue: ledger.summary.overdue,
+          escalated: ledger.summary.escalated,
+          boundary: ledger.boundary,
+        } },
+      );
+    } catch (error: any) {
+      return doctorFail(
+        "Ops Aging Ledger Readiness",
+        "Check failed",
+        [error.message],
+        "Review ops aging ledger inputs and rerun doctor global.",
+        "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --write-aging-ledger --json",
+        [".spec/operations/ops-aging-ledger.json"],
+      );
+    }
+  }
+
+  private async checkReleaseTrainPacketReadiness(): Promise<DoctorCheckResult> {
+    try {
+      const packet = buildReleaseTrainPacket(this.root);
+      const details = [
+        `Release train packet status: ${packet.status}`,
+        `Promotion ready: ${packet.sourceAggregate.promotionReady}`,
+        `Release compare global context: ${packet.releaseCompare.globalContextStatus}`,
+        `Repos: ${packet.repos.length}`,
+        `Blocked repos: ${packet.trainReadiness.blockedRepoCount}`,
+        `Owner assignments: ${packet.trainReadiness.ownerAssignmentCount}`,
+        `Required reviews: ${packet.trainReadiness.requiredReviewCount}`,
+        `Due soon reviews: ${packet.trainReadiness.dueSoonReviewCount}`,
+        `Overdue reviews: ${packet.trainReadiness.overdueReviewCount}`,
+        `Escalated reviews: ${packet.trainReadiness.escalatedReviewCount}`,
+        `Safe next command: ${packet.trainReadiness.safeNextCommand}`,
+        `Audit evidence refs: ${packet.auditEvidenceRefs.length}`,
+        `Boundary: ${packet.verifyBoundaryStatement}`,
+      ];
+      if (packet.blockers.length > 0) {
+        details.push(`Blockers: ${packet.blockers.join(", ")}`);
+      }
+
+      if (packet.status !== "ready") {
+        return doctorFail(
+          "Release Train Packet Readiness",
+          "Release train packet is not ready",
+          details,
+          "Materialize multi-repo promotion, release compare, org responsibility graph, and ops aging ledger before treating release train coordination as complete.",
+          "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --write-aging-ledger --write-release-train --json",
+          [
+            ".spec/operations/release-train-packet.json",
+            ".spec/console/multi-repo-governance.json",
+            ".spec/releases/compare/v1-to-current/compare-report.json",
+            ".spec/operations/org-responsibility-graph.json",
+            ".spec/operations/ops-aging-ledger.json",
+          ],
+        );
+      }
+
+      return doctorPass(
+        "Release Train Packet Readiness",
+        "Release train packet ready",
+        details,
+        [
+          ".spec/operations/release-train-packet.json",
+          ".spec/operations/release-train-packet.md",
+          ".spec/console/multi-repo-governance.json",
+          ".spec/releases/compare/v1-to-current/compare-report.json",
+          ".spec/operations/org-responsibility-graph.json",
+          ".spec/operations/ops-aging-ledger.json",
+        ],
+        { releaseTrainPacket: {
+          status: packet.status,
+          summary: `${packet.repos.length} repo(s), ${packet.trainReadiness.blockedRepoCount} blocked, ${packet.trainReadiness.requiredReviewCount} required review(s).`,
+          artifactPaths: [".spec/operations/release-train-packet.json", ".spec/operations/release-train-packet.md"],
+          blockedRepoCount: packet.trainReadiness.blockedRepoCount,
+          ownerAssignmentCount: packet.trainReadiness.ownerAssignmentCount,
+          requiredReviewCount: packet.trainReadiness.requiredReviewCount,
+          safeNextCommand: packet.trainReadiness.safeNextCommand,
+          boundary: packet.boundary,
+        } },
+      );
+    } catch (error: any) {
+      return doctorFail(
+        "Release Train Packet Readiness",
+        "Check failed",
+        [error.message],
+        "Review release train packet inputs and rerun doctor global.",
+        "npm run jispec-cli -- doctor global --write-operations --write-org-graph --write-review-inbox --write-aging-ledger --write-release-train --json",
+        [".spec/operations/release-train-packet.json"],
+      );
+    }
   }
 
   /**
@@ -2383,6 +2870,33 @@ export class Doctor {
       if (check.nextCommand) {
         lines.push(`  Next command: ${check.nextCommand}`);
       }
+      if (check.sourceArtifacts && check.sourceArtifacts.length > 0) {
+        lines.push(`  Source artifacts: ${check.sourceArtifacts.join(", ")}`);
+      }
+      if (check.recoveryDrill) {
+        lines.push(`  Recovery drill: ${check.recoveryDrill.status} - ${check.recoveryDrill.summary}`);
+        lines.push(`  Recovery drill artifacts: ${check.recoveryDrill.artifactPaths.join(", ")}`);
+      }
+      if (check.globalOperationsPacket) {
+        lines.push(`  Global operations packet: ${check.globalOperationsPacket.status} - ${check.globalOperationsPacket.summary}`);
+        lines.push(`  Global operations artifacts: ${check.globalOperationsPacket.artifactPaths.join(", ")}`);
+      }
+      if (check.orgResponsibilityGraph) {
+        lines.push(`  Org responsibility graph: ${check.orgResponsibilityGraph.status} - ${check.orgResponsibilityGraph.summary}`);
+        lines.push(`  Org responsibility artifacts: ${check.orgResponsibilityGraph.artifactPaths.join(", ")}`);
+      }
+      if (check.asyncReviewInbox) {
+        lines.push(`  Async review inbox: ${check.asyncReviewInbox.status} - ${check.asyncReviewInbox.summary}`);
+        lines.push(`  Async review artifacts: ${check.asyncReviewInbox.artifactPaths.join(", ")}`);
+      }
+      if (check.opsAgingLedger) {
+        lines.push(`  Ops aging ledger: ${check.opsAgingLedger.status} - ${check.opsAgingLedger.summary}`);
+        lines.push(`  Ops aging artifacts: ${check.opsAgingLedger.artifactPaths.join(", ")}`);
+      }
+      if (check.releaseTrainPacket) {
+        lines.push(`  Release train packet: ${check.releaseTrainPacket.status} - ${check.releaseTrainPacket.summary}`);
+        lines.push(`  Release train artifacts: ${check.releaseTrainPacket.artifactPaths.join(", ")}`);
+      }
       lines.push("");
     }
 
@@ -2433,6 +2947,7 @@ function doctorPass(
   summary: string,
   details: string[],
   sourceArtifacts: string[] = [],
+  extra: Pick<DoctorCheckResult, "globalOperationsPacket" | "orgResponsibilityGraph" | "asyncReviewInbox" | "opsAgingLedger" | "releaseTrainPacket"> = {},
 ): DoctorCheckResult {
   return {
     name,
@@ -2440,6 +2955,7 @@ function doctorPass(
     summary,
     details,
     sourceArtifacts,
+    ...extra,
   };
 }
 

@@ -67,6 +67,15 @@ export function renderCiSummaryText(report: VerifyReport): string {
     lines.push("");
   }
 
+  const gateGap = renderGateGapLedgerText(report);
+  if (gateGap.length > 0) {
+    lines.push("Gate Gap Ledger:");
+    for (const line of gateGap) {
+      lines.push(`  ${line}`);
+    }
+    lines.push("");
+  }
+
   // Highlighted issues
   if (report.counts.total > 0) {
     lines.push("Top Issues:");
@@ -160,6 +169,14 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
     lines.push("");
   }
 
+  const gateGap = renderGateGapLedgerText(report);
+  if (gateGap.length > 0) {
+    lines.push("## Gate Gap Ledger");
+    lines.push("");
+    lines.push(...gateGap.map((line) => `- ${line}`));
+    lines.push("");
+  }
+
   // Highlighted issues
   if (report.counts.total > 0) {
     lines.push("## Top Issues");
@@ -227,6 +244,33 @@ export function renderCiSummaryMarkdown(report: VerifyReport): string {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function renderGateGapLedgerText(report: VerifyReport): string[] {
+  const ledger = report.modes?.gateGapLedger as {
+    phase?: string;
+    path?: string;
+    unresolved?: number;
+    resolved?: number;
+    new?: number;
+    persistent?: number;
+    blocking?: number;
+    attention?: number;
+    informational?: number;
+    topNextCommand?: string;
+  } | undefined;
+
+  if (!ledger?.phase) {
+    return [];
+  }
+
+  return [
+    `Phase: ${ledger.phase}`,
+    `Ledger: ${ledger.path ?? ".spec/gates/gap-ledger.json"}`,
+    `Trend: ${ledger.unresolved ?? 0} unresolved, ${ledger.resolved ?? 0} resolved, ${ledger.new ?? 0} new, ${ledger.persistent ?? 0} persistent`,
+    `Posture: ${ledger.blocking ?? 0} blocking, ${ledger.attention ?? 0} attention, ${ledger.informational ?? 0} informational`,
+    `Top next command: ${ledger.topNextCommand ?? "npm run jispec-cli -- verify"}`,
+  ];
 }
 
 /**

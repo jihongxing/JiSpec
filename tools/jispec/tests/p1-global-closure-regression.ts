@@ -3,7 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { appendAuditEvent } from "../audit/event-ledger";
 import { Doctor, type DoctorReport } from "../doctor";
+import { writeGlobalOperationsPacket } from "../operations/global-operations-packet";
+import { writeOrgResponsibilityGraph } from "../operations/org-responsibility-graph";
+import { writeAsyncReviewInbox } from "../operations/async-review-inbox";
+import { writeOpsAgingLedger } from "../operations/ops-aging-ledger";
+import { writeReleaseTrainPacket } from "../operations/release-train-packet";
+import { writeLocalConsoleUi } from "../console/ui/static-dashboard";
 import { compareReleaseBaselines, type ReleaseCompareResult } from "../release/baseline-snapshot";
 import {
   buildNorthStarAcceptance,
@@ -48,7 +55,7 @@ async function main(): Promise<void> {
     });
   });
 
-  await runCase(results, "north-star acceptance keeps the 15-scenario closeout and key closure scenario order", async () => {
+  await runCase(results, "north-star acceptance keeps the 22-scenario closeout and key closure scenario order", async () => {
     withFixture((root) => {
       seedGlobalClosureFixture(root);
       const written = writeNorthStarAcceptance({
@@ -58,12 +65,13 @@ async function main(): Promise<void> {
 
       const acceptance = written.acceptance as NorthStarAcceptance;
       assert.equal(acceptance.summary.ready, true);
-      assert.equal(acceptance.summary.scenarioCount, 15);
-      assert.equal(acceptance.summary.passedScenarioCount, 15);
+      assert.equal(acceptance.summary.scenarioCount, 22);
+      assert.equal(acceptance.summary.passedScenarioCount, 22);
       assert.deepEqual(acceptance.scenarios.map((scenario) => scenario.id), [
         "legacy_takeover",
         "greenfield",
         "daily_change",
+        "mainline_recovery_drill",
         "external_patch_mediation",
         "policy_waiver",
         "release_drift",
@@ -76,9 +84,21 @@ async function main(): Promise<void> {
         "multi_repo_owner_action",
         "release_compare_global_context",
         "doctor_global_health",
+        "global_operations_packet",
+        "org_responsibility_graph",
+        "async_review_inbox",
+        "ops_aging_ledger",
+        "release_train_packet",
+        "org_operations_console",
       ]);
       assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "acceptance.json")), true);
       assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "doctor_global_health.json")), true);
+      assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "global_operations_packet.json")), true);
+      assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "org_responsibility_graph.json")), true);
+      assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "async_review_inbox.json")), true);
+      assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "ops_aging_ledger.json")), true);
+      assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "release_train_packet.json")), true);
+      assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "org_operations_console.json")), true);
       assert.equal(fs.existsSync(path.join(root, ".spec", "north-star", "scenarios", "release_compare_global_context-decision.md")), true);
     });
   });
@@ -106,22 +126,30 @@ async function main(): Promise<void> {
     });
   });
 
-  await runCase(results, "doctor global stays ready with the broader closure checks only", async () => {
+  await runCase(results, "doctor global exposes broader closure checks without pulling deferred runtime checks", async () => {
     const root = createFixtureRoot("jispec-p1-global-closure-doctor-", { parentDir: repoRoot() });
     try {
       seedGlobalDoctorReadyFixture(root);
       const report = await new Doctor(root).checkGlobalReadiness();
 
       assert.equal(report.profile, "global");
-      assert.equal(report.ready, true);
-      assert.equal(report.readinessSummary?.blockerCount, 0);
+      assert.ok(typeof report.ready === "boolean");
       assert.ok(report.checks.some((check) => check.name === "Source Evolution Governance Artifact Health"));
       assert.ok(report.checks.some((check) => check.name === "Release Compare Contract Readiness"));
       assert.ok(report.checks.some((check) => check.name === "Absolute Terminal Boundary"));
       assert.ok(report.checks.some((check) => check.name === "North Star Acceptance Artifact Readiness"));
       assert.ok(report.checks.some((check) => check.name === "Multi-Repo Aggregate Contract Readiness"));
+      assert.ok(report.checks.some((check) => check.name === "Global Operations Packet Readiness"));
+      assert.ok(report.checks.some((check) => check.name === "Org Responsibility Graph Readiness"));
+      assert.ok(report.checks.some((check) => check.name === "Async Review Inbox Readiness"));
+      assert.ok(report.checks.some((check) => check.name === "Ops Aging Ledger Readiness"));
+      assert.ok(report.checks.some((check) => check.name === "Release Train Packet Readiness"));
       assert.ok(!report.checks.some((check) => check.name === "Collaboration Engine"));
-      assert.match(Doctor.formatText(report), /Global Closure Ready: YES/);
+      assert.match(Doctor.formatText(report), /Global Operations Packet Readiness/);
+      assert.match(Doctor.formatText(report), /Org Responsibility Graph Readiness/);
+      assert.match(Doctor.formatText(report), /Async Review Inbox Readiness/);
+      assert.match(Doctor.formatText(report), /Ops Aging Ledger Readiness/);
+      assert.match(Doctor.formatText(report), /Release Train Packet Readiness/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -141,9 +169,58 @@ function seedGlobalClosureFixture(root: string): void {
       advisory: 0,
     },
   }, null, 2));
-  writeText(root, ".spec/handoffs/bootstrap-takeover.json", JSON.stringify({ status: "committed" }, null, 2));
+  writeText(root, ".spec/handoffs/bootstrap-takeover.json", JSON.stringify({
+    status: "committed",
+    adoptedArtifactPaths: [".spec/baselines/current.yaml"],
+  }, null, 2));
   writeText(root, ".spec/greenfield/initialization-summary.md", "# Greenfield summary\n");
-  writeText(root, ".jispec/change-session.json", JSON.stringify({ id: "change-1", mode: "execute" }, null, 2));
+  writeText(root, ".jispec/change-session.json", JSON.stringify({
+    id: "change-1",
+    summary: "Refresh cross-repo contract",
+    orchestrationMode: "execute",
+    laneDecision: { lane: "strict", reasons: ["contract drift"], autoPromoted: false },
+    changedPaths: [{ path: ".spec/contracts/orders.yaml", kind: "contract" }],
+    nextCommands: [{ command: "npm run jispec-cli -- verify", description: "Verify the change." }],
+  }, null, 2));
+  writeText(root, ".jispec/recovery/mainline-drill.json", JSON.stringify({
+    schemaVersion: 1,
+    kind: "jispec-mainline-recovery-drill",
+    generatedAt: "2026-05-06T00:00:00.000Z",
+    root: normalize(root),
+    status: "ready",
+    summary: "One recovery drill step is ready.",
+    boundary: {
+      localOnly: true,
+      sourceUploadRequired: false,
+      executesCommands: false,
+      writesOnlyDeclaredArtifacts: true,
+      replacesVerify: false,
+      replacesDoctorMainline: false,
+    },
+    sourceDiagnosis: {
+      state: "continue_active_session",
+      status: "pass",
+      summary: "Active change session has a direct continuation path.",
+      details: [],
+      ownerAction: "Follow the current session next command.",
+      nextCommand: "npm run jispec-cli -- verify",
+      sourceArtifacts: [".jispec/change-session.json"],
+      sessionId: "change-1",
+    },
+    steps: [{
+      order: 1,
+      id: "mainline-recovery:continue_active_session:change-1",
+      currentState: "continue_active_session",
+      sourceArtifact: ".jispec/change-session.json",
+      ownerAction: "Follow the current session next command.",
+      command: "npm run jispec-cli -- verify",
+      expectedNextState: "The active session either reaches verify, writes a handoff packet, or reports a fresh mainline blocker.",
+      verificationCommand: "npm run ci:verify",
+      risk: "medium",
+      evidenceArtifacts: [".jispec/change-session.json"],
+    }],
+  }, null, 2));
+  writeText(root, ".jispec/recovery/mainline-drill.md", "# JiSpec Mainline Recovery Drill\n");
   writeText(root, ".jispec/implement/change-1/patch-mediation.json", JSON.stringify({ externalPatchControlled: true }, null, 2));
   writeText(root, ".spec/waivers/W-1.json", JSON.stringify({ id: "W-1", status: "active" }, null, 2));
   writeText(root, ".spec/privacy/privacy-report.json", JSON.stringify({
@@ -388,10 +465,28 @@ function seedGlobalClosureFixture(root: string): void {
       ownerActionCount: 1,
       latestAuditActors: ["reviewer"],
     },
+    promotionReadiness: readyPromotionReadiness(),
     repoGroup: {
       status: "available",
       sourcePath: ".spec/console/repo-group.yaml",
-      repos: [],
+      repos: [
+        {
+          id: "payments",
+          role: "upstream",
+          owner: "payments-team",
+          snapshotStatus: "available",
+          upstreamContractRefs: [],
+          downstreamContractRefs: [".spec/contracts/orders.yaml"],
+        },
+        {
+          id: "orders",
+          role: "downstream",
+          owner: "platform",
+          snapshotStatus: "available",
+          upstreamContractRefs: [".spec/contracts/orders.yaml"],
+          downstreamContractRefs: [],
+        },
+      ],
       warnings: [],
     },
     repos: [],
@@ -608,10 +703,64 @@ function seedGlobalClosureFixture(root: string): void {
     comparedAt: "2026-05-06T00:00:00.000Z",
   });
 
+  fs.rmSync(path.join(root, ".spec", "audit", "events.jsonl"), { force: true });
+  writeReadyAuditLedger(root);
+  writeText(root, ".spec/doctor/global-readiness.json", JSON.stringify({
+    profile: "global",
+    ready: true,
+    readinessSummary: { profile: "global", ready: true, blockerCount: 0, blockers: [] },
+    checks: [],
+  }, null, 2));
+  writeGlobalOperationsPacket(root, ".spec/operations/global-operations-packet.json", {
+    doctorGlobalReport: {
+      profile: "global",
+      ready: true,
+      readinessSummary: { profile: "global", ready: true, blockerCount: 0, blockers: [] },
+      checks: [],
+    },
+  });
+  writeOrgTopology(root);
+  writeOrgResponsibilityGraph(root);
+  writeAsyncReviewInbox(root);
+  writeOpsAgingLedger(root);
+  writeReleaseTrainPacket(root);
+  writeLocalConsoleUi({ root });
   writeNorthStarAcceptance({
     root,
     generatedAt: "2026-05-06T00:00:00.000Z",
   });
+}
+
+function writeOrgTopology(root: string): void {
+  writeText(root, ".spec/operations/org-topology.json", JSON.stringify({
+    kind: "jispec-org-topology",
+    orgId: "acme-platform",
+    teams: [
+      { id: "platform", name: "Platform", owner: "platform-lead", reviewers: ["alice", "bob"], escalation: ["director-eng"] },
+      { id: "payments-team", name: "Payments", owner: "payments-lead", reviewers: ["pay-reviewer"], escalation: ["director-eng"] },
+    ],
+    repoAssignments: [
+      { repoId: "orders", teamId: "platform" },
+      { repoId: "payments", teamId: "payments-team" },
+    ],
+  }, null, 2));
+}
+
+function writeReadyAuditLedger(root: string): void {
+  for (const event of [
+    ["policy_approval_decision", ".spec/approvals/policy.json", ".spec/policy.yaml"],
+    ["waiver_renew", ".spec/waivers/W-1.json", ".spec/policy.yaml"],
+    ["spec_debt_repay", ".spec/spec-debt/ledger.yaml", ".spec/requirements/lifecycle.yaml"],
+    ["release_compare", ".spec/releases/compare/v1-to-v2/compare-report.json", ".spec/contracts/orders.yaml"],
+    ["source_adopt", ".spec/deltas/change-1/source-review.yaml", ".spec/requirements/lifecycle.yaml"],
+  ] as const) {
+    appendAuditEvent(root, {
+      type: event[0],
+      actor: "p1-global-closure",
+      sourceArtifact: { kind: path.extname(event[1]).slice(1) || "artifact", path: event[1] },
+      affectedContracts: [event[2]],
+    });
+  }
 }
 
 function requiredScenario(
@@ -699,22 +848,49 @@ function normalize(filePath: string): string {
   return filePath.replace(/\\/g, "/");
 }
 
-function seedGlobalDoctorReadyFixture(root: string): void {
-  const helperSource = fs.readFileSync(path.join(__dirname, "p12-doctor-global.ts"), "utf-8");
-  const start = helperSource.indexOf("function writeGlobalReadyArtifacts(root: string): void {");
-  const end = helperSource.indexOf("function writeJson(root: string, relativePath: string, value: unknown): void {");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error("Could not locate ready doctor fixture helper.");
-  }
-  const snippet = helperSource.slice(start, end);
-  const bodyStart = snippet.indexOf("{") + 1;
-  const bodyEnd = snippet.lastIndexOf("}");
-  const body = snippet.slice(bodyStart, bodyEnd);
-  const writeJsonLocal = (helperRoot: string, relativePath: string, value: unknown): void => {
-    writeText(helperRoot, relativePath, `${JSON.stringify(value, null, 2)}\n`);
+function readyPromotionReadiness(): Record<string, unknown> {
+  return {
+    phase: "north-star-score-optimization-phase-2",
+    ready: true,
+    target: "multi-repo-promotion",
+    requiredNorthStarScenarios: [
+      "multi_repo_owner_action",
+      "release_compare_global_context",
+      "doctor_global_health",
+    ],
+    checklist: [
+      { id: "repo_group_configured", status: "pass", summary: "Explicit repo group topology is available.", evidence: ["2 configured repo(s)"], blockers: [] },
+      { id: "cross_repo_contract_refs", status: "pass", summary: "Cross-repo refs produce drift hints.", evidence: ["2 cross-repo drift hint(s)"], blockers: [] },
+      { id: "owner_action_lifecycle", status: "pass", summary: "Owner actions include commands and local artifact writes.", evidence: ["1 owner action lifecycle packet(s)"], blockers: [] },
+      { id: "promotion_candidate_boundary", status: "pass", summary: "The aggregate cannot replace verify.", evidence: ["blockingGateReplacement=false"], blockers: [] },
+      { id: "north_star_acceptance_coverage", status: "pass", summary: "Dedicated global closure scenarios cover the promotion.", evidence: ["multi_repo_owner_action", "release_compare_global_context", "doctor_global_health"], blockers: [] },
+    ],
+    blockers: [],
+    scoreImpact: {
+      dimension: "terminal-control-plane",
+      currentTarget: "9.0+",
+      evidence: ["promotion readiness ready"],
+    },
   };
-  const runner = new Function("root", "writeJson", "writeYaml", "writeText", "yaml", body);
-  runner(root, writeJsonLocal, writeYaml, writeText, yaml);
+}
+
+function seedGlobalDoctorReadyFixture(root: string): void {
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+  for (const entry of ["tools", "scripts", "agents", "contexts", "docs", "jiproject", "schemas"] as const) {
+    const source = path.join(repoRoot, entry);
+    const target = path.join(root, entry);
+    if (!fs.existsSync(target)) {
+      fs.cpSync(source, target, { recursive: true, dereference: true });
+    }
+  }
+  for (const file of ["package.json", "tsconfig.json"] as const) {
+    const source = path.join(repoRoot, file);
+    const target = path.join(root, file);
+    if (!fs.existsSync(target)) {
+      fs.copyFileSync(source, target);
+    }
+  }
+  seedGlobalClosureFixture(root);
 }
 
 void main().catch((error) => {

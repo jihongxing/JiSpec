@@ -55,6 +55,8 @@ import {
   importExternalGraphArtifact,
   type ExternalGraphImportResult,
 } from "../integrations/external-graph-import";
+import { buildVerifyGateCoverageReport } from "./gate-coverage";
+import { summarizeVerifyGateGapLedger, updateVerifyGateGapLedger } from "./gate-gap-ledger";
 import {
   countPendingBootstrapSpecDebtPaths,
   isBootstrapSpecDebtPending,
@@ -255,6 +257,18 @@ async function runFullVerify(root: string, options: VerifyRunOptions): Promise<V
   result.metadata = {
     ...result.metadata,
     ...buildImpactGraphMetadata(root),
+  };
+  const gateCoverage = buildVerifyGateCoverageReport({
+    root,
+    result,
+    generatedAt: result.generatedAt,
+    policyPath: options.policyPath,
+  });
+  const gateGapLedger = updateVerifyGateGapLedger(root, gateCoverage, result.generatedAt);
+  result.metadata = {
+    ...result.metadata,
+    gateCoverage,
+    gateGapLedger: summarizeVerifyGateGapLedger(gateGapLedger),
   };
 
   return result;

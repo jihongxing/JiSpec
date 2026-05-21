@@ -106,6 +106,22 @@ Primary command selection is intentionally local and deterministic:
 
 These hints and owner actions are review prompts plus suggested commands only. They do not replace any single-repo `verify` or `ci:verify` gate, and they cannot make a repo mergeable or non-mergeable by themselves.
 
+## Phase-2 Promotion Readiness
+
+`north-star-score-optimization-phase-2` adds an explicit `promotionReadiness` object to `.spec/console/multi-repo-governance.json`.
+
+The aggregate is promotion-ready only when the machine artifact can prove:
+
+- explicit `repo-group.yaml` topology is available
+- configured repos have exported snapshots
+- cross-repo contract refs resolve into drift hints
+- each drift hint links to an owner-action lifecycle packet
+- owner actions include a primary local command, local artifact writes, affected contracts, source artifacts, and a follow-up governance export
+- hints and owner actions keep `blockingGateReplacement: false`
+- dedicated North Star scenarios cover `multi_repo_owner_action`, `release_compare_global_context`, and `doctor_global_health`
+
+`doctor global` reads this readiness contract. A legacy aggregate that is structurally valid but lacks phase-2 promotion readiness is not enough to prove the multi-repo closure loop is operational.
+
 ## What It Shows
 
 - highest-risk repos

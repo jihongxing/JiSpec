@@ -3,7 +3,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import * as yaml from "js-yaml";
+import { appendAuditEvent } from "../audit/event-ledger";
 import { Doctor, type DoctorReport } from "../doctor";
+import { writeGlobalOperationsPacket } from "../operations/global-operations-packet";
+import { writeOrgResponsibilityGraph } from "../operations/org-responsibility-graph";
+import { writeAsyncReviewInbox } from "../operations/async-review-inbox";
+import { writeOpsAgingLedger } from "../operations/ops-aging-ledger";
+import { writeReleaseTrainPacket } from "../operations/release-train-packet";
 import { collectConsoleLocalSnapshot } from "../console/read-model-snapshot";
 import { TEST_SUITES } from "./regression-runner";
 
@@ -33,6 +39,11 @@ async function main(): Promise<void> {
       "Deferred Surface Promotion Contract",
       "Absolute Terminal Boundary",
       "North Star Acceptance Artifact Readiness",
+      "Global Operations Packet Readiness",
+      "Org Responsibility Graph Readiness",
+      "Async Review Inbox Readiness",
+      "Ops Aging Ledger Readiness",
+      "Release Train Packet Readiness",
     ]) {
       assert.ok(checkNames.has(requiredName), `Missing global readiness check: ${requiredName}`);
     }
@@ -78,7 +89,7 @@ async function main(): Promise<void> {
       assert.equal(report.profile, "global");
       assert.equal(report.ready, true);
       assert.equal(report.readinessSummary?.blockerCount, 0);
-      assert.equal(report.checks.length, 9);
+      assert.equal(report.checks.length, 14);
       assert.ok(report.checks.every((check) => check.status === "pass"));
       assert.match(Doctor.formatText(report), /Global Closure Readiness/);
       assert.match(Doctor.formatText(report), /Global Closure Ready: YES/);
@@ -285,6 +296,27 @@ function writeGlobalReadyArtifacts(root: string): void {
     driftSummary: {
       overallStatus: "unchanged",
     },
+    globalContext: {
+      kind: "release_compare_global_context",
+      status: "available",
+      summary: "Release compare consumed aggregate governance context.",
+      details: {
+        aggregatePath: ".spec/console/multi-repo-governance.json",
+        lifecycleRegistryDelta: {
+          toPath: ".spec/requirements/lifecycle.yaml",
+          toVersion: 4,
+          changed: false,
+        },
+        sourceEvolutionArtifacts: {
+          toSourceEvolutionPath: ".spec/deltas/chg-source-1/source-evolution.json",
+          toSourceReviewPath: ".spec/deltas/chg-source-1/source-review.yaml",
+          toLastAdoptedChangeId: "chg-source-0",
+        },
+        relevantContractDriftHints: [{ id: "hint:1" }],
+        relevantOwnerActions: [{ id: "owner-action:1" }],
+        ownerReviewRecommendations: [{ id: "owner-review:1" }],
+      },
+    },
   });
   writeJson(root, ".spec/releases/drift-trend.json", {
     latest: {
@@ -387,20 +419,56 @@ function writeGlobalReadyArtifacts(root: string): void {
       totalBootstrapSpecDebt: 0,
       releaseDriftHotspotCount: 0,
       totalReleaseDriftComparisons: 1,
-      contractDriftHintCount: 0,
-      ownerActionCount: 0,
+      contractDriftHintCount: 1,
+      ownerActionCount: 1,
       latestAuditActors: ["reviewer"],
     },
+    promotionReadiness: readyPromotionReadiness(),
     repoGroup: {
-      status: "not_available_yet",
+      status: "available",
       sourcePath: ".spec/console/repo-group.yaml",
-      repos: [],
+      repos: [
+        {
+          id: "orders",
+          role: "downstream",
+          owner: "platform",
+          snapshotStatus: "available",
+          upstreamContractRefs: [".spec/contracts/orders.yaml"],
+          downstreamContractRefs: [],
+        },
+        {
+          id: "payments",
+          role: "upstream",
+          owner: "payments-team",
+          snapshotStatus: "available",
+          upstreamContractRefs: [],
+          downstreamContractRefs: [".spec/contracts/orders.yaml"],
+        },
+      ],
       warnings: [],
     },
     repos: [],
     missingSnapshots: [],
-    contractDriftHints: [],
-    ownerActions: [],
+    contractDriftHints: [
+      {
+        upstreamRepoId: "payments",
+        downstreamRepoId: "orders",
+        contractRef: ".spec/contracts/orders.yaml",
+        ownerActionId: "owner-action:orders:.spec/contracts/orders.yaml",
+        evidence: { downstreamSourceEvolutionChangeId: "chg-source-1" },
+      },
+    ],
+    ownerActions: [
+      {
+        id: "owner-action:orders:.spec/contracts/orders.yaml",
+        status: "ready",
+        owner: "platform",
+        repoId: "orders",
+        primaryCommand: { command: "npm run jispec-cli -- change --root ." },
+        followupCommands: [{ command: "npm run ci:verify" }],
+        affectedContracts: [".spec/contracts/orders.yaml"],
+      },
+    ],
     singleRepoGateReplacement: false,
     hotspots: {
       highestRiskRepos: [],
@@ -455,6 +523,118 @@ function writeGlobalReadyArtifacts(root: string): void {
       { id: "post_release_gate", command: "npm run post-release:gate", authority: "blocking_gate" },
     ],
   });
+  writeJson(root, ".spec/privacy/privacy-report.json", {
+    kind: "jispec-privacy-report",
+    summary: { highSeverityFindingCount: 0, findingCount: 0 },
+  });
+  fs.rmSync(path.join(root, ".spec", "audit", "events.jsonl"), { force: true });
+  writeReadyAuditLedger(root);
+  writeGlobalOperationsPacket(root, ".spec/operations/global-operations-packet.json", {
+    doctorGlobalReport: {
+      profile: "global",
+      ready: true,
+      readinessSummary: { profile: "global", ready: true, blockerCount: 0, blockers: [] },
+      checks: [],
+    },
+  });
+  writeOrgTopology(root);
+  writeOrgResponsibilityGraph(root);
+  writeAsyncReviewInbox(root);
+  writeOpsAgingLedger(root);
+  writeReleaseTrainPacket(root);
+}
+
+function writeOrgTopology(root: string): void {
+  writeJson(root, ".spec/operations/org-topology.json", {
+    kind: "jispec-org-topology",
+    orgId: "acme-platform",
+    teams: [
+      { id: "platform", name: "Platform", owner: "platform-lead", reviewers: ["alice", "bob"], escalation: ["director-eng"] },
+      { id: "payments-team", name: "Payments", owner: "payments-lead", reviewers: ["pay-reviewer"], escalation: ["director-eng"] },
+    ],
+    repoAssignments: [
+      { repoId: "orders", teamId: "platform" },
+      { repoId: "payments", teamId: "payments-team" },
+    ],
+  });
+}
+
+function writeReadyAuditLedger(root: string): void {
+  for (const event of [
+    ["policy_approval_decision", ".spec/approvals/policy.json", ".spec/policy.yaml"],
+    ["waiver_renew", ".spec/waivers/W-1.json", ".spec/policy.yaml"],
+    ["spec_debt_repay", ".spec/spec-debt/ledger.yaml", ".spec/requirements/lifecycle.yaml"],
+    ["release_compare", ".spec/releases/compare/v1-to-current/compare-report.json", ".spec/contracts/orders.yaml"],
+    ["source_adopt", ".spec/deltas/chg-source-1/source-review.yaml", ".spec/requirements/lifecycle.yaml"],
+  ] as const) {
+    appendAuditEvent(root, {
+      type: event[0],
+      actor: "p12-doctor-global",
+      sourceArtifact: { kind: path.extname(event[1]).slice(1) || "artifact", path: event[1] },
+      affectedContracts: [event[2]],
+    });
+  }
+}
+
+function readyPromotionReadiness(): Record<string, unknown> {
+  return {
+    phase: "north-star-score-optimization-phase-2",
+    ready: true,
+    target: "multi-repo-promotion",
+    requiredNorthStarScenarios: [
+      "multi_repo_owner_action",
+      "release_compare_global_context",
+      "doctor_global_health",
+    ],
+    checklist: [
+      {
+        id: "repo_group_configured",
+        status: "pass",
+        summary: "Explicit repo group topology is available and all configured repos have exported snapshots.",
+        evidence: ["2 configured repo(s)", "2/2 configured snapshot(s) available"],
+        blockers: [],
+      },
+      {
+        id: "cross_repo_contract_refs",
+        status: "pass",
+        summary: "Configured cross-repo refs resolve against exported snapshot contract refs and produce drift hints.",
+        evidence: ["2 repo-group contract ref(s)", "2 exported snapshot contract ref(s)", "1 cross-repo drift hint(s)"],
+        blockers: [],
+      },
+      {
+        id: "owner_action_lifecycle",
+        status: "pass",
+        summary: "Every drift hint has a linked owner action, primary command, local write contract, and follow-up export command.",
+        evidence: ["1 hint(s)", "1 owner action(s)", "linked hints=true", "action lifecycle=true"],
+        blockers: [],
+      },
+      {
+        id: "promotion_candidate_boundary",
+        status: "pass",
+        summary: "The aggregate remains a local support surface and cannot replace single-repo verify or CI gates.",
+        evidence: ["local aggregate consumes exported snapshots only"],
+        blockers: [],
+      },
+      {
+        id: "north_star_acceptance_coverage",
+        status: "pass",
+        summary: "The promotion target is covered by dedicated North Star global-closure scenarios.",
+        evidence: ["multi_repo_owner_action", "release_compare_global_context", "doctor_global_health"],
+        blockers: [],
+      },
+    ],
+    blockers: [],
+    scoreImpact: {
+      dimension: "terminal-control-plane",
+      currentTarget: "9.0+",
+      evidence: [
+        "2/2 configured repo snapshot(s) available",
+        "1 cross-repo drift hint(s)",
+        "1 owner action lifecycle packet(s)",
+        "promotion readiness ready",
+      ],
+    },
+  };
 }
 
 function writeJson(root: string, relativePath: string, value: unknown): void {

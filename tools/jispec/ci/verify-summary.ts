@@ -40,6 +40,8 @@ export function renderVerifySummaryMarkdown(report: VerifyReport): string {
     `- ${inferNextAction(report)}`,
     ...renderMitigationContext(report),
     ...renderGreenfieldControlContextSection(report),
+    ...renderGateCoverageContextSection(report),
+    ...renderGateGapLedgerContextSection(report),
     "",
     "## Counts",
     "",
@@ -288,6 +290,84 @@ function renderGreenfieldControlContextSection(report: VerifyReport): string[] {
     "## Greenfield Control Context",
     "",
     ...context,
+  ];
+}
+
+function renderGateCoverageContextSection(report: VerifyReport): string[] {
+  const coverage = report.modes?.gateCoverage as {
+    phase?: string;
+    status?: string;
+    stackCoverage?: {
+      detectedCount?: number;
+      fixtures?: Array<{ id?: string; status?: string; evidence?: string[] }>;
+    };
+    artifactFreshness?: Array<{ id?: string; path?: string; status?: string; nextCommand?: string }>;
+    policyStableFactGuard?: {
+      status?: string;
+      blockingRuleCount?: number;
+      unstableBlockingRuleCount?: number;
+      unknownFactCount?: number;
+      nextCommand?: string;
+    };
+    issueNextActions?: Array<{ code?: string; owner?: string; nextCommand?: string; sourceArtifact?: string }>;
+    topNextCommand?: string;
+  } | undefined;
+
+  if (!coverage?.phase) {
+    return [];
+  }
+
+  const stacks = coverage.stackCoverage?.fixtures ?? [];
+  const freshness = coverage.artifactFreshness ?? [];
+  const policy = coverage.policyStableFactGuard ?? {};
+  const nextActions = coverage.issueNextActions ?? [];
+
+  return [
+    "",
+    "## Gate Coverage",
+    "",
+    `- Phase: \`${coverage.phase}\`.`,
+    `- Status: \`${coverage.status ?? "not_available_yet"}\`.`,
+    `- Stack classes detected: ${coverage.stackCoverage?.detectedCount ?? 0}/3 (${stacks.map((entry) => `${entry.id ?? "unknown"}=${entry.status ?? "unknown"}`).join(", ") || "none"}).`,
+    `- Artifact freshness: ${freshness.map((entry) => `${entry.id ?? "unknown"}=${entry.status ?? "unknown"}`).join(", ") || "not_available_yet"}.`,
+    `- Policy stable-fact guard: \`${policy.status ?? "not_available_yet"}\` (${policy.blockingRuleCount ?? 0} blocking rule(s), ${policy.unstableBlockingRuleCount ?? 0} unstable, ${policy.unknownFactCount ?? 0} unknown fact(s)).`,
+    `- Top next command: \`${coverage.topNextCommand ?? policy.nextCommand ?? "npm run jispec-cli -- verify"}\`.`,
+    `- Issue next actions: ${nextActions.length} deterministic packet(s).`,
+    "- Gate coverage metadata is advisory evidence for review and CI UX; verify verdict and issue severities remain the gate.",
+  ];
+}
+
+function renderGateGapLedgerContextSection(report: VerifyReport): string[] {
+  const ledger = report.modes?.gateGapLedger as {
+    phase?: string;
+    path?: string;
+    total?: number;
+    unresolved?: number;
+    resolved?: number;
+    new?: number;
+    persistent?: number;
+    blocking?: number;
+    attention?: number;
+    informational?: number;
+    topNextCommand?: string;
+    unresolvedEntryIds?: string[];
+  } | undefined;
+
+  if (!ledger?.phase) {
+    return [];
+  }
+
+  return [
+    "",
+    "## Gate Gap Ledger",
+    "",
+    `- Phase: \`${ledger.phase}\`.`,
+    `- Ledger: \`${ledger.path ?? ".spec/gates/gap-ledger.json"}\`.`,
+    `- Trend: ${ledger.unresolved ?? 0} unresolved, ${ledger.resolved ?? 0} resolved, ${ledger.new ?? 0} new, ${ledger.persistent ?? 0} persistent.`,
+    `- Posture: ${ledger.blocking ?? 0} blocking, ${ledger.attention ?? 0} attention, ${ledger.informational ?? 0} informational.`,
+    `- Top next command: \`${ledger.topNextCommand ?? "npm run jispec-cli -- verify"}\`.`,
+    `- Unresolved entries: ${summarizeStringList(ledger.unresolvedEntryIds ?? [])}.`,
+    "- Gate gap ledger tracks coverage debt over time; verify verdict and issue severities remain the gate.",
   ];
 }
 

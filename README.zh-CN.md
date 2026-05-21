@@ -41,6 +41,21 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 - 在复杂仓库里，`domain/api` 在 adopt 阶段仍然需要人类引导纠偏
 - 在高噪声仓库里，`feature` 草稿目前明显弱于 `domain` 和 `api`，证据薄时会被 review gate 降级
 
+## 状态阅读指南
+
+后续判断“项目进度”时，请优先把下面几份文档当作当前状态锚点，而不是只看北极星愿景段落：
+
+- [docs/reference/v1-mainline-stable-contract.md](docs/reference/v1-mainline-stable-contract.md)
+- [docs/architecture/absolute-terminal-checklist.md](docs/architecture/absolute-terminal-checklist.md)
+- [docs/development/collaboration-surface-freeze.md](docs/development/collaboration-surface-freeze.md)
+
+当前实现状态可以直接理解为：
+
+- 已实现：V1 主线、`verify`、`ci:verify`、`change`、`implement`、`doctor mainline`、`doctor pilot`
+- 已实现的支撑面：`doctor global`、`console export-governance`、`console aggregate-governance`、`north-star acceptance`
+- 明确延后：分布式执行、协作工作区、presence awareness、notifications、conflict resolution
+- 仍属路线图：完整 Console UI、更完整的 multi-repo control room、更广义的 OS 式控制平面
+
 这版产品的正确发布口径应该是：
 
 - `V1 mainline`
