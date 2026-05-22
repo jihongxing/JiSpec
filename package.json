@@ -1,8 +1,27 @@
 {
   "name": "jispec",
-  "version": "0.1.2",
-  "private": true,
-  "description": "JiSpec-CLI: contract-driven AI delivery gate and protocol validators",
+  "version": "0.2.0",
+  "description": "Installable CLI for contract-driven AI delivery gates and local governance.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jihongxing/JiSpec.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jihongxing/JiSpec/issues"
+  },
+  "homepage": "https://github.com/jihongxing/JiSpec#readme",
+  "keywords": [
+    "ai",
+    "cli",
+    "contracts",
+    "delivery",
+    "governance",
+    "verification"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "jispec": "./bin/jispec.js",
     "jispec-cli": "./bin/jispec.js"

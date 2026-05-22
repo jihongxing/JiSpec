@@ -55,7 +55,7 @@ As of 2026-05-22, the implemented North Star score optimization phases 1-15 put 
 
 The average score moved from `8.36` to `9.71`. This is not a claim that JiSpec is a remote realtime collaboration platform. The score reflects the current local-first, auditable control plane: artifacts, owner actions, runbooks, doctor summaries, Console summaries, and deterministic regression coverage.
 
-For the v0.1.2 closeout, `verify` and `ci:verify` are clean `PASS` results with `0` blocking issues, `0` advisory issues, and `0` unresolved gate gaps. The full `post-release:gate` baseline is `173 suites / 800 tests`.
+For the v0.2.0 closeout, `verify`, `ci:verify`, and the package-friendly `jispec ci` wrapper are clean `PASS` results with `0` blocking issues, `0` advisory issues, and `0` unresolved gate gaps. The full `post-release:gate` baseline is `174 suites / 808 tests`.
 
 ## Pre-release Validation
 

@@ -6,7 +6,7 @@ jispec_verify:
   image: node:20
   script:
     - npm ci
-    - npm run ci:verify
+    - npx jispec ci
   artifacts:
     when: always
     paths:

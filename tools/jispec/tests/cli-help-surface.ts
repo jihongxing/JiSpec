@@ -44,13 +44,14 @@ function main(): void {
 
     const help = result.stdout;
 
+    assertIncludes(help, "Installable CLI shortcuts:", "help text");
     assertIncludes(help, "Semantic entry surface:", "help text");
     assertIncludes(help, "Derived operational surfaces:", "help text");
     assertIncludes(help, "Mainline workflow shortcuts:", "help text");
     if (help.includes("Legacy compatibility surface:")) {
       throw new Error("Legacy compatibility surface should no longer appear in CLI help.");
     }
-    console.log("✓ Test 1: help text is split into semantic entry, derived operational, and workflow shortcut surfaces");
+    console.log("✓ Test 1: help text is split into installable, semantic, derived operational, and workflow shortcut surfaces");
     passed++;
 
     const semanticSection = extractSection(help, "Semantic entry surface:");
@@ -60,6 +61,7 @@ function main(): void {
     assert.equal(semanticSection.includes("implement"), false);
 
     const derivedSection = extractSection(help, "Derived operational surfaces:");
+    assertIncludes(derivedSection, "jispec-cli ci", "derived operational surfaces");
     assertIncludes(derivedSection, "jispec-cli verify [--json]", "derived operational surfaces");
     assertIncludes(derivedSection, "jispec-cli init --requirements <path> [--technical-solution <path>] [--json]", "derived operational surfaces");
     assertIncludes(derivedSection, "jispec-cli first-run [--json]", "derived operational surfaces");
@@ -88,6 +90,7 @@ function main(): void {
     assertIncludes(derivedSection, "jispec-cli doctor global", "derived operational surfaces");
     assertIncludes(derivedSection, "jispec-cli doctor runtime", "derived operational surfaces");
     const ciSection = extractSection(help, "Current CI wrapper:");
+    assertIncludes(ciSection, "jispec ci", "CI wrapper");
     assertIncludes(ciSection, "npm run ci:verify", "CI wrapper");
     console.log("✓ Test 2: change remains the only semantic entry while derived surfaces still enumerate operational commands");
     passed++;

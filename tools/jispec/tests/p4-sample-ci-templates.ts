@@ -118,9 +118,9 @@ async function main(): Promise<void> {
     const walkthrough = fs.readFileSync(path.join(repoRoot, "docs", "getting-started", "first-takeover-walkthrough.md"), "utf-8");
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf-8")) as { files?: string[] };
 
-    assert.match(githubTemplate, /npm run ci:verify/);
+    assert.match(githubTemplate, /npx jispec ci/);
     assert.match(githubTemplate, /actions\/upload-artifact@v4/);
-    assert.match(gitlabTemplate, /npm run ci:verify/);
+    assert.match(gitlabTemplate, /npx jispec ci/);
     assert.match(gitlabTemplate, /\.jispec-ci\//);
     assert.match(ciDocs, /do not upload source code/i);
     assert.match(ciDocs, /local verify report remains the machine-readable gate result/i);

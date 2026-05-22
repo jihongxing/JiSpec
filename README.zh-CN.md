@@ -27,7 +27,7 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 
 基于当前主线、黄金路径 E2E 验收以及两次真实旧仓库接管演示，这个仓库现在已经处于可以发布为一个**范围明确的 V1 主线版本**的状态。
 
-当前候选发布版本：**v0.1.2**。发布门禁已经干净：`verify` 和 `ci:verify` 均为 `PASS`，blocking issue 为 `0`，advisory issue 为 `0`，未解决 gate gap 为 `0`。完整 `post-release:gate` 已通过，当前回归矩阵为 `173 suites / 800 tests`。
+当前候选发布版本：**v0.2.0**。这一版的重点是可安装 CLI 产品化入口：`npm install -D jispec`，然后使用 `npx jispec first-run`、`npx jispec discover`、`npx jispec draft`、`npx jispec adopt`、`npx jispec verify` 和 `npx jispec ci`。完整 `post-release:gate` 基线为 `174 suites / 808 tests`。
 
 这意味着：
 
@@ -253,26 +253,28 @@ Post-v1 北极星推进任务已经把 adopt summary、verify summary、bootstra
 当前构建中的一等 CLI 入口是：
 
 ```bash
-npm run verify
-npm run jispec-cli -- change "Update checkout copy"
-npm run jispec-cli -- change default-mode show
-npm run jispec-cli -- change default-mode set execute --actor <name> --reason <reason>
-npm run jispec-cli -- change default-mode reset
-npm run jispec-cli -- implement
-npm run jispec-cli -- implement --fast
-npm run jispec-cli -- bootstrap init-project
-npm run jispec-cli -- bootstrap discover
-npm run jispec-cli -- bootstrap draft
-npm run jispec-cli -- adopt --interactive
-npm run jispec-cli -- verify --json
-npm run jispec-cli -- policy migrate
-npm run jispec-cli -- release snapshot --version v1
-npm run jispec-cli -- release compare --from v1 --to current
-npm run jispec-cli -- doctor mainline
-npm run jispec-cli -- doctor runtime
-npm run jispec-cli -- doctor pilot
-npm run jispec-cli -- metrics value-report
-npm run ci:verify
+npx jispec first-run
+npx jispec init-project
+npx jispec discover
+npx jispec draft
+npx jispec adopt --interactive
+npx jispec verify
+npx jispec ci
+npx jispec change "Update checkout copy"
+npx jispec change default-mode show
+npx jispec change default-mode set execute --actor <name> --reason <reason>
+npx jispec change default-mode reset
+npx jispec implement
+npx jispec implement --fast
+npx jispec migrate-policy
+npx jispec snapshot --version v1
+npx jispec compare --from v1 --to current
+npx jispec dashboard
+npx jispec actions
+npx jispec value-report
+npx jispec privacy-report
+npx jispec pilot-package
+npx jispec acceptance
 ```
 
 它们分别做什么：
@@ -328,22 +330,36 @@ Waiver 是生命周期记录，不是静默忽略。创建后的 waiver 会携�
 
 ## Quickstart
 
-安装依赖：
+如果是在自己的项目里试用 JiSpec：
+
+```bash
+npm install -D jispec
+npx jispec first-run
+npx jispec discover --init-project
+npx jispec draft
+npx jispec adopt --interactive
+npx jispec verify
+npx jispec ci
+```
+
+如果是在 JiSpec 源码仓库里开发：
 
 ```bash
 npm install
+npm run jispec -- --help
 ```
 
-查看当前 CLI 命令面：
+产品命令会映射到已有稳定实现。例如：
 
 ```bash
-npm run jispec-cli -- --help
+npx jispec discover
+npm run jispec -- bootstrap discover
 ```
 
 本地运行仓库验证：
 
 ```bash
-npm run verify
+npx jispec verify
 ```
 
 这也会写出 `.spec/handoffs/verify-summary.md` 作为人类可读 companion summary；机器契约仍然是 `verify --json`。
@@ -351,19 +367,19 @@ npm run verify
 记录一个 change，让 JiSpec 判定 lane：
 
 ```bash
-npm run jispec-cli -- change "Add order refund validation"
+npx jispec change "Add order refund validation"
 ```
 
 以 prompt 模式记录 change，并手工查看下一步提示：
 
 ```bash
-npm run jispec-cli -- change "Add order refund validation" --mode prompt
+npx jispec change "Add order refund validation" --mode prompt
 ```
 
 以 execute 模式记录 change，让 JiSpec 在 lane 允许时继续进入 implement/verify：
 
 ```bash
-npm run jispec-cli -- change "Add order refund validation" --mode execute
+npx jispec change "Add order refund validation" --mode execute
 ```
 
 当前仓库已经使用 execute-default；未显式传入 `--mode` 的 `change` 会默认进入 execute mediation：
@@ -378,25 +394,25 @@ change:
 运行 strict implementation mediation：
 
 ```bash
-npm run jispec-cli -- implement
+npx jispec implement
 ```
 
 对停留在 fast lane 的 session 运行 fast implementation mediation：
 
 ```bash
-npm run jispec-cli -- implement --fast
+npx jispec implement --fast
 ```
 
 接入由人类或 AI coding tool 产生的外部 patch：
 
 ```bash
-npm run jispec-cli -- implement --external-patch .jispec/patches/refund.patch
+npx jispec implement --external-patch .jispec/patches/refund.patch
 ```
 
 从 handoff packet 恢复失败的 execute/implement 尝试：
 
 ```bash
-npm run jispec-cli -- implement --from-handoff .jispec/handoff/<change-session-id>.json --external-patch .jispec/patches/refund.patch
+npx jispec implement --from-handoff .jispec/handoff/<change-session-id>.json --external-patch .jispec/patches/refund.patch
 ```
 
 Implementation mediation JSON 使用稳定 outcome 名称：
@@ -406,13 +422,13 @@ Implementation mediation JSON 使用稳定 outcome 名称：
 查看机器可读的 verify contract：
 
 ```bash
-npm run jispec-cli -- verify --json
+npx jispec verify --json
 ```
 
 生成或刷新最小 policy 文件：
 
 ```bash
-npm run jispec-cli -- policy migrate
+npx jispec migrate-policy
 ```
 
 迁移后的 policy 会固定 `requires.facts_contract`，包含 `team.profile`，并规范化 `facts_contract`、`team_profile` 等已知 deprecated key。unknown fact、unknown policy key 和 deprecated key 会在 `verify` 中以确定性的 nonblocking policy issue 呈现。
@@ -420,13 +436,13 @@ npm run jispec-cli -- policy migrate
 接管旧仓库时创建显式 project scaffold：
 
 ```bash
-npm run jispec-cli -- bootstrap init-project
+npx jispec init-project
 ```
 
 运行 bootstrap discovery：
 
 ```bash
-npm run jispec-cli -- bootstrap discover
+npx jispec discover
 ```
 
 这会在 `.spec/facts/bootstrap/` 下写出机器 inventory、ranked takeover packet 和 `bootstrap-summary.md`。
@@ -434,7 +450,7 @@ npm run jispec-cli -- bootstrap discover
 生成第一批 contract bundle：
 
 ```bash
-npm run jispec-cli -- bootstrap draft
+npx jispec draft
 ```
 
 这一步不依赖 LLM provider。配置 BYOK draft assistance 时，它只能重锚草稿语言，确定性 provenance 仍然是权威来源。
@@ -442,7 +458,7 @@ npm run jispec-cli -- bootstrap draft
 认领这批 draft：
 
 ```bash
-npm run jispec-cli -- adopt --interactive
+npx jispec adopt --interactive
 ```
 
 这会写出 adopted contract、deferred spec debt、机器可读 takeover report、人类可读 takeover brief，以及紧凑 adopt summary。
@@ -454,7 +470,7 @@ npm run jispec-cli -- adopt --interactive
 运行 CI wrapper：
 
 ```bash
-npm run ci:verify
+npx jispec ci
 ```
 
 这会写出 `.jispec-ci/verify-report.json`、`.jispec-ci/ci-summary.md` 和 `.jispec-ci/verify-summary.md`。
@@ -462,8 +478,8 @@ npm run ci:verify
 冻结并比较 release baseline：
 
 ```bash
-npm run jispec-cli -- release snapshot --version v1
-npm run jispec-cli -- release compare --from v1 --to current
+npx jispec snapshot --version v1
+npx jispec compare --from v1 --to current
 ```
 
 `release compare` 会在 `.spec/releases/compare/` 下写出 JSON 与 Markdown 报告，并把 drift 拆成 contract graph、static collector 和 policy 三类。
@@ -486,27 +502,27 @@ npm run jispec -- init --root .tmp/minimal-greenfield --requirements examples/mi
 如果不确定当前仓库应该从哪里开始：
 
 ```bash
-npm run jispec -- first-run --root .
+npx jispec first-run
 ```
 
 运行健康检查：
 
 ```bash
-npm run jispec-cli -- doctor mainline
-npm run jispec-cli -- doctor runtime
-npm run jispec-cli -- doctor pilot
+npx jispec doctor mainline
+npx jispec doctor runtime
+npx jispec doctor pilot
 ```
 
 生成仓库本地采用价值报告：
 
 ```bash
-npm run jispec-cli -- metrics value-report
+npx jispec value-report
 ```
 
 运行更广义的 runtime 与兼容层健康检查：
 
 ```bash
-npm run jispec-cli -- doctor runtime
+npx jispec doctor runtime
 ```
 
 ## Verify verdict
@@ -518,9 +534,9 @@ npm run jispec-cli -- doctor runtime
 - `WARN_ADVISORY`
 - `ERROR_NONBLOCKING`
 
-对于本地脚本与未来的 CI/automation 消费者来说，`npm run jispec-cli -- verify --json` 是稳定的机器可读入口。`npm run ci:verify` 仍然是当前团队工作流使用的 wrapper。
+对于本地脚本与未来的 CI/automation 消费者来说，`npx jispec verify --json` 是稳定的机器可读入口。`npx jispec ci` 是面向安装包的 CI wrapper；`npm run ci:verify` 仍然保留给 JiSpec 源码仓库内部使用。
 
-当 `.spec/policy.yaml` 存在时，`verify` 会自动加载它。可以使用 `npm run jispec-cli -- verify --facts-out .spec/facts/latest-canonical.json` 来快照 policy evaluation 实际读取的 canonical facts 面。
+当 `.spec/policy.yaml` 存在时，`verify` 会自动加载它。可以使用 `npx jispec verify --facts-out .spec/facts/latest-canonical.json` 来快照 policy evaluation 实际读取的 canonical facts 面。
 
 ## Change And Implement
 
@@ -581,6 +597,7 @@ npm run jispec-cli -- <command>
 npm run jispec -- <command>
 npm run verify
 npm run ci:verify
+npx jispec <command>
 ```
 
 当前脚本：
@@ -588,6 +605,7 @@ npm run ci:verify
 ```bash
 npm run verify
 npm run ci:verify
+npx jispec ci
 ```
 
 Package/bin 命令面：

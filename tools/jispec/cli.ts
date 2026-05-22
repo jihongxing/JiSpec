@@ -13,8 +13,9 @@ import {
   type BootstrapInitProjectResult,
 } from "./bootstrap/init-project";
 import { renderVerifyJSON, renderVerifyText, runVerify, type VerifyRunOptions } from "./verify/verify-runner";
-import { buildVerifyReport } from "./ci/verify-report";
-import { writeLocalVerifySummary } from "./ci/verify-summary";
+import { buildCiOutputDir, buildVerifyReport, detectCiProvider, writeVerifyArtifacts } from "./ci/verify-report";
+import { renderCiSummaryMarkdown, renderCiSummaryText } from "./ci/ci-summary";
+import { renderVerifySummaryMarkdown, writeLocalVerifySummary } from "./ci/verify-summary";
 import { renderHumanDecisionSnapshotText } from "./human-decision-packet";
 import {
   createWaiver,
@@ -153,11 +154,28 @@ import type { TeamPolicyProfileName } from "./policy/policy-schema";
 
 function buildPrimarySurfaceHelpText(): string {
   return [
+    "Installable CLI shortcuts:",
+    "  jispec first-run [--json]",
+    "  jispec discover [--init-project] [--json]",
+    "  jispec draft [--json]",
+    "  jispec adopt --interactive [--json]",
+    "  jispec verify [--json]",
+    "  jispec ci",
+    "  jispec change <summary> [--mode prompt|execute] [--json]",
+    "  jispec implement [--fast] [--external-patch <path>] [--json]",
+    "  jispec dashboard [--json]",
+    "  jispec actions [--json]",
+    "  jispec pilot-package [--json]",
+    "  jispec value-report [--json]",
+    "  jispec privacy-report [--json]",
+    "  jispec acceptance [--json]",
+    "",
     "Semantic entry surface:",
     "  jispec-cli change <summary> [--mode prompt|execute] [--json]",
     "  Everything else is derived from change and never creates canonical truth on its own.",
     "",
     "Derived operational surfaces:",
+    "  jispec-cli ci",
     "  jispec-cli init --requirements <path> [--technical-solution <path>] [--json]",
     "  jispec-cli first-run [--json]",
     "  jispec-cli verify [--json]",
@@ -197,6 +215,7 @@ function buildPrimarySurfaceHelpText(): string {
     "  jispec-cli --version",
     "",
     "Current CI wrapper:",
+    "  jispec ci",
     "  npm run ci:verify",
   ].join("\n");
 }
@@ -216,6 +235,62 @@ function buildCombinedHelpText(): string {
     buildPrimarySurfaceHelpText(),
     buildWorkflowSurfaceHelpText(),
   ].join("\n\n")}\n`;
+}
+
+const FRIENDLY_COMMAND_ALIASES: Record<string, string[]> = {
+  "new-project": ["bootstrap", "new-project"],
+  "init-project": ["bootstrap", "init-project"],
+  discover: ["bootstrap", "discover"],
+  draft: ["bootstrap", "draft"],
+  dashboard: ["console", "dashboard"],
+  ui: ["console", "ui"],
+  actions: ["console", "actions"],
+  "export-governance": ["console", "export-governance"],
+  "aggregate-governance": ["console", "aggregate-governance"],
+  "value-report": ["metrics", "value-report"],
+  "privacy-report": ["privacy", "report"],
+  "pilot-package": ["pilot", "package"],
+  acceptance: ["north-star", "acceptance"],
+  snapshot: ["release", "snapshot"],
+  compare: ["release", "compare"],
+  payload: ["integrations", "payload"],
+  adapter: ["handoff", "adapter"],
+  "policy-presets": ["policy", "list-presets"],
+  "migrate-policy": ["policy", "migrate"],
+  "policy-status": ["policy", "approval", "status"],
+  "policy-approval": ["policy", "approval", "record"],
+  waivers: ["waiver", "list"],
+  "create-waiver": ["waiver", "create"],
+  "renew-waiver": ["waiver", "renew"],
+  "revoke-waiver": ["waiver", "revoke"],
+  "repay-debt": ["spec-debt", "repay"],
+  "cancel-debt": ["spec-debt", "cancel"],
+  "review-debt": ["spec-debt", "owner-review"],
+  reviews: ["review", "list"],
+  "review-brief": ["review", "brief"],
+  "refresh-source": ["source", "refresh"],
+  "source-refresh": ["source", "refresh"],
+  "diff-source": ["source", "diff"],
+  "source-diff": ["source", "diff"],
+  "adopt-source": ["source", "adopt"],
+  "source-adopt": ["source", "adopt"],
+  "verify-source": ["source", "verify"],
+  "source-verify": ["source", "verify"],
+  "ci-verify": ["ci"],
+};
+
+export function normalizeInstallableCliArgv(argv: string[]): string[] {
+  const [runtime, entry, command, ...rest] = argv;
+  if (!runtime || !entry || !command) {
+    return argv;
+  }
+
+  const alias = FRIENDLY_COMMAND_ALIASES[command];
+  if (!alias) {
+    return argv;
+  }
+
+  return [runtime, entry, ...alias, ...rest];
 }
 
 function renderVerifyResult(options: { json: boolean; result: Awaited<ReturnType<typeof runVerify>> }): void {
@@ -2042,6 +2117,7 @@ export function buildProgram(): Command {
   program.addHelpText("after", buildCombinedHelpText());
 
   registerPrimaryVerifyCommand(program);
+  registerCiCommand(program);
   registerFirstRunCommand(program);
   registerGreenfieldInitCommand(program);
   registerGreenfieldSourceCommand(program);
@@ -2065,6 +2141,45 @@ export function buildProgram(): Command {
   return program;
 }
 
+function registerCiCommand(program: Command): void {
+  program
+    .command("ci")
+    .description("Run the package-friendly CI verify wrapper and write .jispec-ci artifacts.")
+    .option("--root <path>", "Repository root.", ".")
+    .action(async (options: { root: string }) => {
+      try {
+        const root = path.resolve(options.root);
+        const ciOutputDir = buildCiOutputDir(root);
+        const verifyResult = await runVerify({
+          root,
+          useBaseline: true,
+          applyWaivers: true,
+        });
+        const report = buildVerifyReport(verifyResult, {
+          repoRoot: root,
+          provider: detectCiProvider(),
+        });
+        const artifactPaths = writeVerifyArtifacts(
+          root,
+          report,
+          renderCiSummaryMarkdown(report),
+          renderVerifySummaryMarkdown(report),
+        );
+
+        console.log(renderCiSummaryText(report));
+        console.log(`CI artifacts written to ${path.relative(root, ciOutputDir).replace(/\\/g, "/")}`);
+        console.log(`- ${path.relative(root, artifactPaths.reportPath).replace(/\\/g, "/")}`);
+        console.log(`- ${path.relative(root, artifactPaths.summaryPath).replace(/\\/g, "/")}`);
+        console.log(`- ${path.relative(root, artifactPaths.verifySummaryPath).replace(/\\/g, "/")}`);
+        process.exitCode = verifyResult.ok ? 0 : 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`JiSpec CI verify failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
+
 function registerFirstRunCommand(program: Command): void {
   program
     .command("first-run")
@@ -2085,13 +2200,15 @@ function registerFirstRunCommand(program: Command): void {
 }
 
 export async function main(argv: string[] = process.argv): Promise<number> {
-  if (isRootVersionRequest(argv)) {
+  const normalizedArgv = normalizeInstallableCliArgv(argv);
+
+  if (isRootVersionRequest(normalizedArgv)) {
     console.log(packageJson.version);
     return 0;
   }
 
   const program = buildProgram();
-  await program.parseAsync(argv);
+  await program.parseAsync(normalizedArgv);
   return typeof process.exitCode === "number" ? process.exitCode : 0;
 }
 

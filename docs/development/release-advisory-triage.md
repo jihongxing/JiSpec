@@ -10,6 +10,7 @@ The repository currently passes:
 
 - `npm run build`
 - `npm run ci:verify`
+- `npx jispec ci`
 - `npm run post-release:gate`
 - `npm run jispec -- doctor mainline --root .`
 - `npm run jispec -- doctor runtime --root .`
@@ -53,12 +54,12 @@ The current release separates those cases:
 
 ## Release Language
 
-Use this wording for v0.1.2:
+Use this wording for v0.2.0:
 
 - `post-release:gate` passes.
-- `verify` and `ci:verify` are `PASS`.
+- `verify`, `ci:verify`, and `jispec ci` are `PASS`.
 - There are `0` blocking issues, `0` advisory issues, and `0` unresolved gate gaps.
-- The regression matrix baseline is `173 suites / 800 tests`.
+- The regression matrix baseline is `174 suites / 808 tests`.
 - The release distinguishes real governance debt from artifacts that do not apply to the current project model.
 
 ## Follow-Up Guardrails
@@ -76,6 +77,7 @@ Use these commands to reproduce the current conclusion:
 ```bash
 npm run build
 npm run ci:verify
+npx jispec ci
 npm run post-release:gate
 npm run jispec -- doctor mainline --root .
 npm run jispec -- doctor runtime --root .

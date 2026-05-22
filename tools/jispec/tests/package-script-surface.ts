@@ -5,7 +5,12 @@ import { spawnSync } from "node:child_process";
 
 interface PackageJson {
   version: string;
+  private?: boolean;
   description?: string;
+  license?: string;
+  repository?: { type?: string; url?: string };
+  homepage?: string;
+  publishConfig?: { access?: string };
   bin?: Record<string, string>;
   files?: string[];
   scripts?: Record<string, string>;
@@ -58,10 +63,17 @@ function main(): void {
   try {
     assertEqual(
       packageJson.description,
-      "JiSpec-CLI: contract-driven AI delivery gate and protocol validators",
+      "Installable CLI for contract-driven AI delivery gates and local governance.",
       "package description",
     );
-    console.log("✓ Test 1: package description stays aligned to JiSpec-CLI");
+    if (packageJson.private === true) {
+      throw new Error("package must not be private for the v0.2.0 installable CLI surface.");
+    }
+    assertEqual(packageJson.license, "UNLICENSED", "package license");
+    assertEqual(packageJson.repository?.type, "git", "package repository type");
+    assertEqual(packageJson.publishConfig?.access, "public", "package publish access");
+    assertDefined(packageJson.homepage, "package homepage");
+    console.log("✓ Test 1: package metadata is ready for an installable CLI release");
     passed++;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

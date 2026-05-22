@@ -27,7 +27,7 @@ jobs:
         run: npm ci
 
       - name: JiSpec verify
-        run: npm run ci:verify
+        run: npx jispec ci
 
       - name: Upload JiSpec CI artifacts
         if: always()

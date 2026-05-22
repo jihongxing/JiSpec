@@ -30,4 +30,4 @@ npm run ci:verify
 
 - [release-advisory-triage.md](./release-advisory-triage.md)
 
-截至 2026-05-22，仓库自身的 `verify` 和 `ci:verify` 已达到 `PASS`，`0` blocking、`0` advisory、`0` unresolved gate gaps。当前完整 post-release gate 通过，回归矩阵基线为 `173 suites / 800 tests`。
+截至 2026-05-22，仓库自身的 `verify`、`ci:verify` 和面向安装包的 `jispec ci` wrapper 已达到 `PASS`，`0` blocking、`0` advisory、`0` unresolved gate gaps。当前完整 post-release gate 通过，回归矩阵基线为 `174 suites / 808 tests`。

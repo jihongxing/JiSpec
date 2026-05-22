@@ -5,7 +5,7 @@ JiSpec CI should run the same local CLI gate that developers run on their machin
 Core rule:
 
 ```bash
-npm run ci:verify
+npx jispec ci
 ```
 
 The wrapper runs `verify`, writes `.jispec-ci/verify-report.json`, `.jispec-ci/ci-summary.md`, and `.jispec-ci/verify-summary.md`, then exits non-zero only when the deterministic verify gate is blocking.
@@ -18,7 +18,7 @@ The template:
 
 - uses Node.js 20
 - installs with `npm ci`
-- runs `npm run ci:verify`
+- runs `npx jispec ci`
 - uploads `.jispec-ci/` as an artifact
 - lets `scripts/check-jispec.ts` write GitHub step summary and PR comment drafts when GitHub environment variables are present
 
@@ -30,7 +30,7 @@ The template:
 
 - uses `node:20`
 - runs `npm ci`
-- runs `npm run ci:verify`
+- runs `npx jispec ci`
 - preserves `.jispec-ci/` as an artifact for reviewer inspection
 
 ## Boundary

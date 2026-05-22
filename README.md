@@ -27,7 +27,7 @@ Today, this repository already contains a deep protocol and pipeline engine. The
 
 Based on the current mainline, the golden-path E2E, and two real legacy-repo takeover demos, this repository is now in a state where it can be released as a **scoped V1 mainline build**.
 
-Current release candidate: **v0.1.2**. The release gate is clean: `verify` and `ci:verify` report `PASS`, with `0` blocking issues, `0` advisory issues, and `0` unresolved gate gaps. The full `post-release:gate` passes with `173 suites / 800 tests`.
+Current release candidate: **v0.2.0**. The release focus is the installable CLI product surface: `npm install -D jispec`, then `npx jispec first-run`, `npx jispec discover`, `npx jispec draft`, `npx jispec adopt`, `npx jispec verify`, and `npx jispec ci`. The full `post-release:gate` baseline is `174 suites / 808 tests`.
 
 What that means:
 
@@ -253,26 +253,28 @@ That is why `console / distributed / collaboration / direct LLM blocking path` r
 The current first-class entry points in this build are:
 
 ```bash
-npm run verify
-npm run jispec-cli -- change "Update checkout copy"
-npm run jispec-cli -- change default-mode show
-npm run jispec-cli -- change default-mode set execute --actor <name> --reason <reason>
-npm run jispec-cli -- change default-mode reset
-npm run jispec-cli -- implement
-npm run jispec-cli -- implement --fast
-npm run jispec-cli -- bootstrap init-project
-npm run jispec-cli -- bootstrap discover
-npm run jispec-cli -- bootstrap draft
-npm run jispec-cli -- adopt --interactive
-npm run jispec-cli -- verify --json
-npm run jispec-cli -- policy migrate
-npm run jispec-cli -- release snapshot --version v1
-npm run jispec-cli -- release compare --from v1 --to current
-npm run jispec-cli -- doctor mainline
-npm run jispec-cli -- doctor runtime
-npm run jispec-cli -- doctor pilot
-npm run jispec-cli -- metrics value-report
-npm run ci:verify
+npx jispec first-run
+npx jispec init-project
+npx jispec discover
+npx jispec draft
+npx jispec adopt --interactive
+npx jispec verify
+npx jispec ci
+npx jispec change "Update checkout copy"
+npx jispec change default-mode show
+npx jispec change default-mode set execute --actor <name> --reason <reason>
+npx jispec change default-mode reset
+npx jispec implement
+npx jispec implement --fast
+npx jispec migrate-policy
+npx jispec snapshot --version v1
+npx jispec compare --from v1 --to current
+npx jispec dashboard
+npx jispec actions
+npx jispec value-report
+npx jispec privacy-report
+npx jispec pilot-package
+npx jispec acceptance
 ```
 
 What they do:
@@ -328,22 +330,36 @@ Waivers are lifecycle records, not silent ignores. Created waivers carry owner, 
 
 ## Quickstart
 
-Install dependencies:
+For users trying JiSpec in their own repository:
+
+```bash
+npm install -D jispec
+npx jispec first-run
+npx jispec discover --init-project
+npx jispec draft
+npx jispec adopt --interactive
+npx jispec verify
+npx jispec ci
+```
+
+For maintainers running from this source repository:
 
 ```bash
 npm install
+npm run jispec -- --help
 ```
 
-See the current CLI surface:
+The product command surface is intentionally shorter than the internal implementation route. These commands are equivalent:
 
 ```bash
-npm run jispec-cli -- --help
+npx jispec discover
+npm run jispec -- bootstrap discover
 ```
 
 Run repository verification locally:
 
 ```bash
-npm run verify
+npx jispec verify
 ```
 
 This also writes `.spec/handoffs/verify-summary.md`, a human-readable companion summary. The machine-readable contract remains `verify --json`.
@@ -351,19 +367,19 @@ This also writes `.spec/handoffs/verify-summary.md`, a human-readable companion 
 Record a change and let JiSpec decide the lane:
 
 ```bash
-npm run jispec-cli -- change "Add order refund validation"
+npx jispec change "Add order refund validation"
 ```
 
 Record a change in prompt mode and review next-step hints manually:
 
 ```bash
-npm run jispec-cli -- change "Add order refund validation" --mode prompt
+npx jispec change "Add order refund validation" --mode prompt
 ```
 
 Record a change in execute mode and let JiSpec continue into implement/verify when the lane allows it:
 
 ```bash
-npm run jispec-cli -- change "Add order refund validation" --mode execute
+npx jispec change "Add order refund validation" --mode execute
 ```
 
 This repository now uses execute-default for `change` calls that omit `--mode`:
@@ -378,25 +394,25 @@ in `jiproject/project.yaml`. Explicit `--mode prompt` or `--mode execute` still 
 Run strict implementation mediation:
 
 ```bash
-npm run jispec-cli -- implement
+npx jispec implement
 ```
 
 Run fast implementation mediation for a session that stayed on fast lane:
 
 ```bash
-npm run jispec-cli -- implement --fast
+npx jispec implement --fast
 ```
 
 Mediate an external patch produced by a human or AI coding tool:
 
 ```bash
-npm run jispec-cli -- implement --external-patch .jispec/patches/refund.patch
+npx jispec implement --external-patch .jispec/patches/refund.patch
 ```
 
 Resume a failed execute/implement attempt from its handoff packet:
 
 ```bash
-npm run jispec-cli -- implement --from-handoff .jispec/handoff/<change-session-id>.json --external-patch .jispec/patches/refund.patch
+npx jispec implement --from-handoff .jispec/handoff/<change-session-id>.json --external-patch .jispec/patches/refund.patch
 ```
 
 Implementation mediation JSON uses stable outcome names:
@@ -406,13 +422,13 @@ Implementation mediation JSON uses stable outcome names:
 Inspect the machine-readable verify contract:
 
 ```bash
-npm run jispec-cli -- verify --json
+npx jispec verify --json
 ```
 
 Scaffold or refresh the minimal policy file:
 
 ```bash
-npm run jispec-cli -- policy migrate
+npx jispec migrate-policy
 ```
 
 The migrated policy pins `requires.facts_contract`, includes `team.profile`, and normalizes known deprecated keys such as `facts_contract` and `team_profile`. Unknown facts, unknown policy keys, and deprecated keys are reported as deterministic nonblocking policy issues during `verify`.
@@ -420,13 +436,13 @@ The migrated policy pins `requires.facts_contract`, includes `team.profile`, and
 Create the explicit project scaffold when taking over a legacy repo:
 
 ```bash
-npm run jispec-cli -- bootstrap init-project
+npx jispec init-project
 ```
 
 Run bootstrap discovery:
 
 ```bash
-npm run jispec-cli -- bootstrap discover
+npx jispec discover
 ```
 
 This writes the machine inventory, ranked takeover packet, and `bootstrap-summary.md` under `.spec/facts/bootstrap/`.
@@ -434,7 +450,7 @@ This writes the machine inventory, ranked takeover packet, and `bootstrap-summar
 Draft the first contract bundle:
 
 ```bash
-npm run jispec-cli -- bootstrap draft
+npx jispec draft
 ```
 
 This works without an LLM provider. If BYOK draft assistance is configured, it can re-anchor draft language while deterministic provenance stays authoritative.
@@ -442,7 +458,7 @@ This works without an LLM provider. If BYOK draft assistance is configured, it c
 Adopt the drafted bundle:
 
 ```bash
-npm run jispec-cli -- adopt --interactive
+npx jispec adopt --interactive
 ```
 
 This writes adopted contracts, deferred spec debt, the machine takeover report, the human-readable takeover brief, and the compact adopt summary.
@@ -454,7 +470,7 @@ For the empty-directory acceptance smoke that exercises this path end-to-end, se
 Run the CI wrapper:
 
 ```bash
-npm run ci:verify
+npx jispec ci
 ```
 
 This writes `.jispec-ci/verify-report.json`, `.jispec-ci/ci-summary.md`, and `.jispec-ci/verify-summary.md`.
@@ -462,8 +478,8 @@ This writes `.jispec-ci/verify-report.json`, `.jispec-ci/ci-summary.md`, and `.j
 Freeze and compare release baselines:
 
 ```bash
-npm run jispec-cli -- release snapshot --version v1
-npm run jispec-cli -- release compare --from v1 --to current
+npx jispec snapshot --version v1
+npx jispec compare --from v1 --to current
 ```
 
 `release compare` writes JSON and Markdown reports under `.spec/releases/compare/`, with drift split into contract graph, static collector, and policy categories.
@@ -486,27 +502,27 @@ For a step-by-step first takeover and CI setup, see [docs/getting-started/first-
 When unsure where to start in a repository:
 
 ```bash
-npm run jispec -- first-run --root .
+npx jispec first-run
 ```
 
 Run health checks:
 
 ```bash
-npm run jispec-cli -- doctor mainline
-npm run jispec-cli -- doctor runtime
-npm run jispec-cli -- doctor pilot
+npx jispec doctor mainline
+npx jispec doctor runtime
+npx jispec doctor pilot
 ```
 
 Generate a repo-local adoption value report:
 
 ```bash
-npm run jispec-cli -- metrics value-report
+npx jispec value-report
 ```
 
 Run the broader runtime and compatibility health checks:
 
 ```bash
-npm run jispec-cli -- doctor runtime
+npx jispec doctor runtime
 ```
 
 ## Verify verdicts
@@ -518,9 +534,9 @@ npm run jispec-cli -- doctor runtime
 - `WARN_ADVISORY`
 - `ERROR_NONBLOCKING`
 
-For local and future CI/automation consumers, `npm run jispec-cli -- verify --json` is the stable machine-readable entry point. `npm run ci:verify` remains the current wrapper used by existing team workflows.
+For local and future CI/automation consumers, `npx jispec verify --json` is the stable machine-readable entry point. `npx jispec ci` is the package-friendly CI wrapper; `npm run ci:verify` remains available inside this source repository.
 
-When `.spec/policy.yaml` exists, `verify` loads it automatically. Use `npm run jispec-cli -- verify --facts-out .spec/facts/latest-canonical.json` to snapshot the canonical facts surface that policy evaluation reads.
+When `.spec/policy.yaml` exists, `verify` loads it automatically. Use `npx jispec verify --facts-out .spec/facts/latest-canonical.json` to snapshot the canonical facts surface that policy evaluation reads.
 
 ## Change And Implement
 
@@ -581,6 +597,7 @@ npm run jispec-cli -- <command>
 npm run jispec -- <command>
 npm run verify
 npm run ci:verify
+npx jispec <command>
 ```
 
 Current scripts:
@@ -588,6 +605,7 @@ Current scripts:
 ```bash
 npm run verify
 npm run ci:verify
+npx jispec ci
 ```
 
 Package/bin surface:

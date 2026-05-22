@@ -134,6 +134,30 @@ async function main(): Promise<void> {
     }
   });
 
+  runCase(results, "installable CLI ci command writes package-friendly verify artifacts", () => {
+    const fixtureRoot = createVerifyFixture("ci-command-installable");
+    try {
+      const repoRoot = getRepoRoot();
+      const run = spawnSync(
+        process.execPath,
+        ["--import", "tsx", path.join(repoRoot, "tools", "jispec", "cli.ts"), "ci", "--root", fixtureRoot],
+        {
+          cwd: repoRoot,
+          encoding: "utf-8",
+        },
+      );
+
+      assert.equal(run.status, 0, run.stderr);
+      assert.match(run.stdout, /JiSpec Verify: PASS/);
+      assert.match(run.stdout, /CI artifacts written to \.jispec-ci/);
+      assert.ok(fs.existsSync(path.join(fixtureRoot, ".jispec-ci", "verify-report.json")));
+      assert.ok(fs.existsSync(path.join(fixtureRoot, ".jispec-ci", "ci-summary.md")));
+      assert.ok(fs.existsSync(path.join(fixtureRoot, ".jispec-ci", "verify-summary.md")));
+    } finally {
+      cleanupVerifyFixture(fixtureRoot);
+    }
+  });
+
   let passed = 0;
   let failed = 0;
 

@@ -1,8 +1,20 @@
 # JiSpec Install
 
-JiSpec currently ships a local npm/bin surface for the repository control layer.
+JiSpec v0.2.0 is the installable CLI release. The intended user path is no longer "run the JiSpec source repository"; it is "install the CLI in the repository you want to govern."
 
-## Local Development
+## Project Install
+
+```bash
+npm install -D jispec
+npx jispec --version
+npx jispec first-run
+```
+
+No cloud account, source upload, or LLM gate is required for the core CLI.
+
+## Source Checkout
+
+Use this path only when developing JiSpec itself:
 
 ```bash
 npm install
@@ -12,16 +24,25 @@ npm run jispec -- doctor mainline
 
 The package exposes both `jispec` and `jispec-cli` bin names through `bin/jispec.js`. The bin shim dispatches to the same TypeScript CLI used by the repository scripts, so `npm run jispec -- <command>` and an installed `jispec <command>` share the same command surface.
 
-## Stable Entry Points
+## Stable Product Entry Points
 
 ```bash
-npm run jispec -- bootstrap discover
-npm run jispec -- verify
-npm run jispec -- change "Describe the intended change"
-npm run jispec -- implement
-npm run ci:verify
-npm run jispec -- pilot package
+npx jispec first-run
+npx jispec discover --init-project
+npx jispec draft
+npx jispec adopt --interactive
+npx jispec verify
+npx jispec ci
+npx jispec change "Describe the intended change"
+npx jispec implement
+npx jispec dashboard
+npx jispec actions
+npx jispec pilot-package
+npx jispec value-report
+npx jispec privacy-report
 ```
+
+The old long-form routes remain available. For example, `jispec discover` maps to `jispec bootstrap discover`, and `jispec dashboard` maps to `jispec console dashboard`.
 
 The install surface does not change V1 semantics: `verify` and `ci:verify` remain deterministic local gates, Console surfaces remain read-only unless a human runs an explicit CLI write command, and JiSpec still mediates implementation rather than owning business-code generation.
 

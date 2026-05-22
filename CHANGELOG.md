@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.0
+
+Installable CLI release.
+
+- Package metadata is now ready for an installable npm-style CLI surface: `jispec` exposes repository, homepage, publish access, keywords, and non-private package metadata.
+- Root help now advertises product-style shortcuts such as `jispec discover`, `jispec draft`, `jispec dashboard`, `jispec pilot-package`, `jispec value-report`, `jispec privacy-report`, and `jispec acceptance`.
+- Added a friendly command normalization layer that maps short product commands onto the existing stable command chains without removing legacy-compatible long-form commands.
+- Added installable CLI regression coverage, including `npm pack --dry-run --json` verification that the package includes the bin and CLI implementation while excluding test sources.
+- Current release gate baseline: `post-release:gate` passes, with regression matrix baseline at `174 suites / 808 tests`.
+
 ## v0.1.2
 
 North Star closeout release.

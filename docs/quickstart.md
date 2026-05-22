@@ -4,19 +4,19 @@ Use this when you want to know what to run first.
 
 ## Run These Three Commands
 
-From the JiSpec repository root:
+From the repository you want JiSpec to govern:
 
 ```bash
-npm install
-npm run jispec -- doctor mainline
-npm run jispec -- bootstrap discover --root examples/minimal-legacy-takeover --init-project
+npm install -D jispec
+npx jispec first-run
+npx jispec discover --init-project
 ```
 
 What they do:
 
-- `npm install` prepares the local CLI runtime.
-- `doctor mainline` checks whether the control layer is ready.
-- `bootstrap discover` scans a repository and writes the first local evidence artifacts.
+- `npm install -D jispec` installs the local CLI.
+- `first-run` recommends the next stable command for the current repository.
+- `discover` scans the repository and writes the first local evidence artifacts.
 
 No cloud account, source upload, or LLM gate is required.
 
@@ -25,7 +25,7 @@ No cloud account, source upload, or LLM gate is required.
 When you are unsure which path applies to the current repository:
 
 ```bash
-npm run jispec -- first-run --root .
+npx jispec first-run
 ```
 
 The guided flow is read-only. It detects empty directories, old repositories, existing `.spec` state, open bootstrap drafts, policy, the latest verify report, and active change sessions, then recommends the next stable CLI command.
@@ -37,9 +37,10 @@ It also says which local artifacts the recommended command will write.
 After discovery, continue with:
 
 ```bash
-npm run jispec -- bootstrap draft --root examples/minimal-legacy-takeover
-npm run jispec -- adopt --root examples/minimal-legacy-takeover --session latest --interactive
-npm run jispec -- verify --root examples/minimal-legacy-takeover
+npx jispec draft
+npx jispec adopt --session latest --interactive
+npx jispec verify
+npx jispec ci
 ```
 
 The first two commands create and review candidate contracts. The final command is the deterministic local gate.
@@ -49,9 +50,8 @@ The first two commands create and review candidate contracts. The final command 
 For a new project from documents:
 
 ```bash
-npm run jispec -- init --root .tmp/minimal-greenfield --requirements examples/minimal-greenfield/requirements.md --technical-solution examples/minimal-greenfield/technical-solution.md --force
-npm run jispec -- verify --root .tmp/minimal-greenfield --policy .spec/policy.yaml
-npm run ci:verify -- --root .tmp/minimal-greenfield --policy .tmp/minimal-greenfield/.spec/policy.yaml
+npx jispec init --root .tmp/minimal-greenfield --requirements examples/minimal-greenfield/requirements.md --technical-solution examples/minimal-greenfield/technical-solution.md --force
+npx jispec verify --root .tmp/minimal-greenfield --policy .spec/policy.yaml
 ```
 
 Use `.spec/greenfield/initialization-summary.md` and `.spec/greenfield/change-mainline-handoff.md` as the human review packet.
