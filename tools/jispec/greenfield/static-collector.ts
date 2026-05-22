@@ -902,6 +902,7 @@ function shouldSkipDirectory(relativePath: string): boolean {
     ".github",
     ".spec",
     ".tmp",
+    ".tmp-regression-runtime",
     "agents",
     "contexts",
     "dist",

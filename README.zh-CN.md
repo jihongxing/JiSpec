@@ -27,6 +27,8 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 
 基于当前主线、黄金路径 E2E 验收以及两次真实旧仓库接管演示，这个仓库现在已经处于可以发布为一个**范围明确的 V1 主线版本**的状态。
 
+当前候选发布版本：**v0.1.2**。发布门禁已经干净：`verify` 和 `ci:verify` 均为 `PASS`，blocking issue 为 `0`，advisory issue 为 `0`，未解决 gate gap 为 `0`。完整 `post-release:gate` 已通过，当前回归矩阵为 `173 suites / 800 tests`。
+
 这意味着：
 
 - V1 主线已经真实存在并且可运行：
@@ -34,6 +36,7 @@ JiSpec 正在为小型 AI 原生工程团队构建一条 `contract-driven assemb
 - 产品已经在真实仓库上证明了 V1 的 `Aha Moment`：
   它可以足够快地生成第一批契约草稿，让人类做认领和重锚，而不是从零手写整套规范
 - `verify` 已经能理解历史债务、延后 spec debt 和当前 blocking issue 之间的区别
+- 发布证据现在能区分真实 gate debt 和当前项目模型不适用的产物，例如非 Greenfield 项目的 impact graph
 
 这**不**意味着：
 

@@ -111,7 +111,7 @@ function buildCurrentGapEntries(
   generatedAt: string,
 ): VerifyGateGapLedgerEntry[] {
   const artifactGaps = coverage.artifactFreshness
-    .filter((entry) => entry.status !== "fresh")
+    .filter((entry) => entry.status !== "fresh" && entry.status !== "not_applicable")
     .map((entry): VerifyGateGapLedgerEntry => ({
       id: `artifact:${entry.id}`,
       source: "artifact_freshness",

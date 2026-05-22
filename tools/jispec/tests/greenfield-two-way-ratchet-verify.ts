@@ -187,6 +187,14 @@ async function main(): Promise<void> {
           "export const router = Router();",
           "router.post('/example-orders', (_req, res) => res.status(202).send({ ok: true }));",
         ].join("\n"));
+        writeText(root, ".tmp-regression-runtime/tools/jispec/generated-copy.ts", [
+          "export interface GeneratedRuntimeCopy {",
+          "  id: string;",
+          "}",
+          "import { Router } from 'express';",
+          "export const router = Router();",
+          "router.post('/generated-copy', (_req, res) => res.status(202).send({ ok: true }));",
+        ].join("\n"));
 
         const verify = await runVerify({ root, generatedAt: "2026-04-29T00:00:00.000Z" });
 
@@ -194,6 +202,7 @@ async function main(): Promise<void> {
         assert.ok(!verify.issues.some((issue) => issue.path === "tools/jispec/runtime-graphql.ts"));
         assert.ok(!verify.issues.some((issue) => issue.path === "tools/jispec/tests/runtime-fixture.ts"));
         assert.ok(!verify.issues.some((issue) => issue.path === "examples/minimal/src/routes.ts"));
+        assert.ok(!verify.issues.some((issue) => issue.path === ".tmp-regression-runtime/tools/jispec/generated-copy.ts"));
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }

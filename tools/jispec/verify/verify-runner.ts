@@ -474,19 +474,26 @@ function buildImpactGraphMetadata(root: string): Record<string, unknown> {
   const canonicalChangeId = resolveCanonicalChangeId(activeSession);
   const changeId = canonicalChangeId ?? activeSession?.id;
   if (impactSummary && !Array.isArray(impactSummary)) {
+    const impactGraphNotApplicable = impactSummary.freshness.status === "not_available_yet" && !isGreenfieldProject(root);
+    const impactGraphFreshness = impactGraphNotApplicable ? "not_applicable" : impactSummary.freshness.status;
+    const impactGraphFreshnessReason = impactGraphNotApplicable
+      ? "Impact graph is only required for Greenfield Spec Delta projects; this project uses a non-Greenfield delivery model."
+      : impactSummary.freshness.reason;
     return {
       ...(changeId ? { changeId } : {}),
-      impactGraphFreshness: impactSummary.freshness.status,
+      impactGraphFreshness,
       impactGraphPath: impactSummary.artifacts.impactGraphPath,
       impactReportPath: impactSummary.artifacts.impactReportPath,
       verifyFocusPath: impactSummary.artifacts.verifyFocusPath,
-      impactGraphFreshnessReason: impactSummary.freshness.reason,
+      impactGraphFreshnessReason,
       impactGraphFreshnessGeneratedAt: impactSummary.freshness.generatedAt,
       impactGraphChangedFiles: impactSummary.changedFiles,
       impactGraphImpactedFiles: impactSummary.impactedFiles,
       impactGraphContractRefs: impactSummary.contractRefs,
-      impactGraphScopeHints: impactSummary.scopeHints,
-      impactGraphMissingVerificationHints: impactSummary.missingVerificationHints,
+      impactGraphScopeHints: impactGraphNotApplicable
+        ? impactSummary.scopeHints.filter((hint) => hint !== "impact graph not_available_yet")
+        : impactSummary.scopeHints,
+      impactGraphMissingVerificationHints: impactGraphNotApplicable ? [] : impactSummary.missingVerificationHints,
       impactGraphNextReplayCommand: impactSummary.nextReplayCommand,
       impactAdvisoryOnly: impactSummary.advisoryOnly,
     };
@@ -497,6 +504,20 @@ function buildImpactGraphMetadata(root: string): Record<string, unknown> {
     impactGraphFreshness: "not_available_yet",
     impactAdvisoryOnly: true,
   };
+}
+
+function isGreenfieldProject(root: string): boolean {
+  const projectPath = path.join(root, "jiproject", "project.yaml");
+  if (!fs.existsSync(projectPath)) {
+    return false;
+  }
+
+  try {
+    const content = fs.readFileSync(projectPath, "utf-8");
+    return /^\s*delivery_model:\s*greenfield-initialization\s*$/m.test(content);
+  } catch {
+    return false;
+  }
 }
 
 function collectExternalGraphImportIssues(result: ExternalGraphImportResult): VerifyIssue[] {

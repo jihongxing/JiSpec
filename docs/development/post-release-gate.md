@@ -12,8 +12,6 @@ npm run post-release:gate
 
 ```text
 npm run typecheck
-node --import tsx ./tools/jispec/tests/v1-mainline-golden-path.ts
-node --import tsx ./tools/jispec/tests/doctor-mainline-readiness.ts
 node --import tsx ./tools/jispec/tests/regression-runner.ts
 npm run ci:verify
 ```
@@ -28,8 +26,8 @@ npm run ci:verify
 
 小型纯文档变更可以运行更窄的检查，但 release candidate 发布前必须通过完整 gate。
 
-当前仓库若出现 `WARN_ADVISORY` 但仍通过 release gate，可结合这份 companion 一起解释 advisory posture：
+如果未来某个 release candidate 出现 `WARN_ADVISORY` 但仍通过 release gate，可结合这份 companion 一起解释 advisory posture：
 
 - [release-advisory-triage.md](./release-advisory-triage.md)
 
-截至 2026-05-04，仓库自身的 `WARN_ADVISORY` 已收敛到单个 `BOOTSTRAP_SPEC_DEBT_PENDING` 历史治理债务；此前 `132` 个扫描边界噪音已完成收口。
+截至 2026-05-22，仓库自身的 `verify` 和 `ci:verify` 已达到 `PASS`，`0` blocking、`0` advisory、`0` unresolved gate gaps。当前完整 post-release gate 通过，回归矩阵基线为 `173 suites / 800 tests`。

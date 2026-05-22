@@ -390,7 +390,7 @@ Waiver 只是一种可审计 mitigation，不是永久忽略规则。匹配到�
 | `phase` | `north-star-score-optimization-phase-5` | 当前门禁覆盖模型版本锚点 |
 | `status` | `ok \| attention \| blocked \| not_available_yet` | 覆盖面自身状态；不是 verify verdict |
 | `stackCoverage` | `object` | Node/TypeScript、Python、Go/Java 三类仓库表面的检测结果与 evidence |
-| `artifactFreshness` | `array` | CI report、policy、baseline、release compare、impact graph 的 fresh/stale/missing/invalid/not_available_yet 状态 |
+| `artifactFreshness` | `array` | CI report、policy、baseline、release compare、impact graph 的 fresh/stale/missing/invalid/not_available_yet/not_applicable 状态 |
 | `policyStableFactGuard` | `object` | blocking policy rule 是否只使用 stable facts，以及 unknown/unstable fact 计数 |
 | `issueNextActions` | `array` | 每个 verify issue 的 owner、source artifact、rationale 和 deterministic next command |
 | `topNextCommand` | `string` | 当前最优先的本地下一步命令 |
@@ -403,7 +403,7 @@ Waiver 只是一种可审计 mitigation，不是永久忽略规则。匹配到�
 - `issueNextActions[]` 不改变 issue 本身，只为修复/复核提供确定性动作包。
 - 缺失 freshness artifact 会进入 gate coverage context，但不会单独把 `PASS` 改成 `FAIL_BLOCKING`；真正 gate 仍由 verify issues 决定。
 
-`metadata.gateGapLedger` 是阶段 7 后新增的稳定 read model。它把 `gateCoverage` 中的 missing/stale/invalid/not_available_yet artifact、policy stable-fact guard 和 verify issue next actions 汇总成可持续追踪的 gate gap ledger。
+`metadata.gateGapLedger` 是阶段 7 后新增的稳定 read model。它把 `gateCoverage` 中的 missing/stale/invalid/not_available_yet artifact、policy stable-fact guard 和 verify issue next actions 汇总成可持续追踪的 gate gap ledger。`not_applicable` 表示该 artifact 不属于当前项目模型的必需面，不进入 gap ledger。
 
 稳定字段包括：
 

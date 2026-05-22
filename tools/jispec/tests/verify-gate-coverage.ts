@@ -67,8 +67,30 @@ async function main(): Promise<void> {
       assert.equal(byId.get("policy")?.status, "fresh");
       assert.equal(byId.get("baseline")?.status, "fresh");
       assert.equal(byId.get("release_compare")?.status, "fresh");
-      assert.equal(byId.get("impact_graph")?.status, "not_available_yet");
+      assert.equal(byId.get("impact_graph")?.status, "not_applicable");
       assert.equal(byId.get("ci_report")?.nextCommand, "npm run ci:verify");
+    } finally {
+      cleanupVerifyFixture(root);
+    }
+  }));
+
+  results.push(await recordAsync("non-Greenfield projects do not accrue impact graph freshness debt", async () => {
+    const root = createVerifyFixture("verify-gate-impact-non-greenfield");
+    try {
+      writeText(root, "jiproject/project.yaml", [
+        "id: fixture",
+        "name: Fixture",
+        "delivery_model: bounded-context-slice",
+        "",
+      ].join("\n"));
+
+      const result = await runVerify({ root, generatedAt: FIXED_GENERATED_AT });
+      const coverage = result.metadata?.gateCoverage as VerifyGateCoverageReport;
+      const impact = coverage.artifactFreshness.find((entry) => entry.id === "impact_graph");
+      const ledger = result.metadata?.gateGapLedger as Record<string, unknown>;
+
+      assert.equal(impact?.status, "not_applicable");
+      assert.ok(!(ledger.unresolvedEntryIds as string[]).includes("artifact:impact_graph"));
     } finally {
       cleanupVerifyFixture(root);
     }
@@ -195,7 +217,7 @@ async function main(): Promise<void> {
     const suite = TEST_SUITES.find((candidate) => candidate.file === "verify-gate-coverage.ts");
     assert.ok(suite);
     assert.equal(suite.area, "verify-ci-gates");
-    assert.equal(suite.expectedTests, 6);
+    assert.equal(suite.expectedTests, 7);
     assert.equal(suite.task, "North-Star-Score-Phase-5");
   }));
 

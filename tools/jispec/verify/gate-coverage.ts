@@ -7,7 +7,7 @@ import type { VerifyPolicy } from "../policy/policy-schema";
 import type { VerifyIssue, VerifyRunResult } from "./verdict";
 
 export type GateCoverageStatus = "ok" | "attention" | "blocked" | "not_available_yet";
-export type ArtifactFreshnessStatus = "fresh" | "stale" | "missing" | "invalid" | "not_available_yet";
+export type ArtifactFreshnessStatus = "fresh" | "stale" | "missing" | "invalid" | "not_available_yet" | "not_applicable";
 
 export interface VerifyGateArtifactFreshness {
   id: "ci_report" | "policy" | "baseline" | "release_compare" | "impact_graph";
@@ -158,16 +158,16 @@ function buildArtifactFreshness(root: string, generatedAt: string, result: Verif
       missingNextCommand: "npm run jispec-cli -- verify --write-baseline",
     }),
     classifyLatestReleaseCompare(root, generatedAt),
-    {
-      id: "impact_graph",
+    classifyImpactGraphFreshness({
+      root,
       path: impactGraphPath,
-      status: normalizeImpactFreshness(impactGraphFreshness),
+      freshness: impactGraphFreshness,
+      reason: impactGraphReason,
+      replayCommand: impactReplay,
       generatedAt: typeof result.metadata?.impactGraphFreshnessGeneratedAt === "string"
         ? result.metadata.impactGraphFreshnessGeneratedAt
         : undefined,
-      reason: impactGraphReason,
-      nextCommand: impactReplay,
-    },
+    }),
   ];
 }
 
@@ -393,10 +393,59 @@ function findLatestReleaseCompareReport(root: string): string | undefined {
 }
 
 function normalizeImpactFreshness(value: string): ArtifactFreshnessStatus {
-  if (value === "fresh" || value === "stale" || value === "invalid" || value === "not_available_yet") {
+  if (
+    value === "fresh" ||
+    value === "stale" ||
+    value === "invalid" ||
+    value === "not_available_yet" ||
+    value === "not_applicable"
+  ) {
     return value;
   }
   return "not_available_yet";
+}
+
+function classifyImpactGraphFreshness(input: {
+  root: string;
+  path: string;
+  freshness: string;
+  reason: string;
+  replayCommand: string;
+  generatedAt?: string;
+}): VerifyGateArtifactFreshness {
+  const status = normalizeImpactFreshness(input.freshness);
+  if (status === "not_available_yet" && !isGreenfieldProject(input.root)) {
+    return {
+      id: "impact_graph",
+      path: input.path,
+      status: "not_applicable",
+      reason: "Impact graph is only required for Greenfield Spec Delta projects; this project uses a non-Greenfield delivery model.",
+      nextCommand: "npm run jispec-cli -- verify",
+    };
+  }
+
+  return {
+    id: "impact_graph",
+    path: input.path,
+    status,
+    generatedAt: input.generatedAt,
+    reason: input.reason,
+    nextCommand: input.replayCommand,
+  };
+}
+
+function isGreenfieldProject(root: string): boolean {
+  const projectPath = path.join(root, "jiproject", "project.yaml");
+  if (!fs.existsSync(projectPath)) {
+    return false;
+  }
+
+  try {
+    const content = fs.readFileSync(projectPath, "utf-8");
+    return /^\s*delivery_model:\s*greenfield-initialization\s*$/m.test(content);
+  } catch {
+    return false;
+  }
 }
 
 function inferOwner(issue: VerifyIssue): string {

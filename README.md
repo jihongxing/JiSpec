@@ -27,6 +27,8 @@ Today, this repository already contains a deep protocol and pipeline engine. The
 
 Based on the current mainline, the golden-path E2E, and two real legacy-repo takeover demos, this repository is now in a state where it can be released as a **scoped V1 mainline build**.
 
+Current release candidate: **v0.1.2**. The release gate is clean: `verify` and `ci:verify` report `PASS`, with `0` blocking issues, `0` advisory issues, and `0` unresolved gate gaps. The full `post-release:gate` passes with `173 suites / 800 tests`.
+
 What that means:
 
 - the V1 mainline is real and working:
@@ -34,6 +36,7 @@ What that means:
 - the product already proves the V1 `Aha Moment` on real repositories:
   it can generate the first contract draft bundle quickly enough that a human adopts and re-anchors it instead of authoring everything from scratch
 - `verify` already understands the difference between historical debt, deferred spec debt, and current blocking issues
+- release evidence now distinguishes real gate debt from artifacts that do not apply to the current project model, such as non-Greenfield impact graphs
 
 What that does **not** mean:
 

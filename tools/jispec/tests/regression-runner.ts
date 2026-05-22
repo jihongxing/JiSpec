@@ -151,7 +151,7 @@ export const TEST_SUITES: TestSuite[] = [
   gates({ name: 'Verify Baseline Hardening', file: 'verify-baseline-hardening.ts', expectedTests: 3 }),
   gates({ name: 'Verify Waiver Hardening', file: 'verify-waiver-hardening.ts', expectedTests: 4, task: 'P2-T4' }),
   gates({ name: 'Verify Mitigation Stacking', file: 'verify-mitigation-stacking.ts', expectedTests: 2 }),
-  gates({ name: 'Verify Gate Coverage', file: 'verify-gate-coverage.ts', expectedTests: 6, task: 'North-Star-Score-Phase-5' }),
+  gates({ name: 'Verify Gate Coverage', file: 'verify-gate-coverage.ts', expectedTests: 7, task: 'North-Star-Score-Phase-5' }),
   gates({ name: 'Verify Gate Gap Ledger', file: 'verify-gate-gap-ledger.ts', expectedTests: 4, task: 'North-Star-Score-Phase-7' }),
   gates({ name: 'CI Verify Wrapper', file: 'ci-verify-wrapper.ts', expectedTests: 3 }),
   gates({ name: 'CI Summary Markdown', file: 'ci-summary-markdown.ts', expectedTests: 4, task: 'P1-T5' }),

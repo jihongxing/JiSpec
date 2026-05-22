@@ -1,6 +1,6 @@
 {
   "name": "jispec",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "JiSpec-CLI: contract-driven AI delivery gate and protocol validators",
   "bin": {
